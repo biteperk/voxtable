@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+coverage/
+
+# Package manager caches
+.npm/
+.pnpm-store/
+.yarn/
+!.yarn/releases/
+!.yarn/plugins/
+!.yarn/sdks/
+!.yarn/versions/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local databases and generated data
+*.sqlite
+*.sqlite3
+*.db
+tmp/
+temp/
+
+# Hosting and tooling
+.vercel/
+.railway/
+.turbo/
+.cache/
+
+# TypeScript
+*.tsbuildinfo
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
