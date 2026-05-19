@@ -11,7 +11,7 @@ Target milestone by Day 5: Natalia hears the assistant, gives feedback, and sign
 ## Scope
 - Configure ElevenLabs with an Aussie English voice.
 - Compare Claude Sonnet 4.6 and GPT-4o for tool-calling, latency, and reliability.
-- Write production-oriented Vapi prompts for the booking flow.
+- Write production-oriented RetellAI prompts for the booking flow.
 - Add top restaurant FAQs.
 - Define staff-transfer behavior.
 - Run at least 20 internal test calls before Natalia's demo.
@@ -87,7 +87,7 @@ Target:
 - no long silent gaps after caller intent is clear.
 
 Measure:
-- Vapi call logs.
+- RetellAI call logs.
 - backend request duration.
 - LLM response timing.
 - tool-call failure rate.
@@ -138,4 +138,3 @@ Run at least these scenarios:
 - Overly friendly prompts can increase call duration; prefer clear and brief turns.
 - Tool-calling failures are more damaging than imperfect voice tone.
 - FAQ expansion can become scope creep; only Natalia's confirmed top 10 belong in v1.
-

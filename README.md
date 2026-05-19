@@ -1,11 +1,37 @@
-<div align="center">
+# VocoTable
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+Voice AI booking platform for restaurants.
 
-  <h1>Built with AI Studio</h2>
+Phase 1 builds the smallest end-to-end proof: a test phone call reaches the AI, checks availability, creates a reservation through the backend API, and persists the booking plus call log in Postgres.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Current Scope
+- Node.js + TypeScript backend.
+- PostgreSQL schema and migrations.
+- Core booking API.
+- RetellAI webhook, inbound-call, and custom-function endpoints.
+- Twilio telephony webhook/status endpoints and SIP routing docs.
+- Railway-ready deploy config.
+- Seeded Natalia's Bistro restaurant record.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## Quick Start
+```bash
+npm install
+cp .env.example .env
+npm run db:migrate
+npm run db:seed
+npm run dev:backend
+```
 
-</div>
+In another terminal:
+
+```bash
+npm run smoke:backend
+npm run smoke:retell
+npm run smoke:twilio
+```
+
+## Phase Docs
+Implementation phases live in [`plan-phases`](./plan-phases).
+
+## Backend
+Backend docs live in [`apps/backend`](./apps/backend).

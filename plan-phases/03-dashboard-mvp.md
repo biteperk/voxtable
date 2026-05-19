@@ -1,7 +1,7 @@
 # Phase 3: Dashboard MVP
 
 ## Goal
-Build the owner dashboard that Natalia can use during soft launch: live call visibility, booking management, analytics, AI configuration, and subscription/settings screens based on the provided dark UI designs.
+Build the owner dashboard that Natalia can use during soft launch: live call visibility, booking management, analytics, and subscription/settings screens based on the provided dark UI designs.
 
 ## Timeline
 Week 2 dashboard kickoff, continuing into Week 3.
@@ -14,7 +14,6 @@ Week 2 dashboard kickoff, continuing into Week 3.
   - Live Feed.
   - Booking Log.
   - Analytics.
-  - AI Configuration.
   - Settings/Billing.
 - API client for backend reservation and call-log data.
 - Responsive desktop-first layout with basic mobile usability.
@@ -36,14 +35,11 @@ Sidebar entries:
 - Live Feed.
 - Booking Log.
 - Analytics.
-- AI Configuration.
 - Settings.
 
-Primary footer action:
-- View Live Analytics.
-
-Restaurant identity:
-- Show restaurant name and AI online/offline state.
+Sidebar context:
+- Show compact product identity and owner profile.
+- Keep the nav identical across dashboard screens.
 - Use data from backend/settings, not hard-coded Natalia strings except seeded v1 defaults.
 
 ## Screens
@@ -83,17 +79,6 @@ Shows:
 
 v1 analytics can be derived from call logs and reservations. Perfect financial modeling is not required.
 
-### AI Configuration
-Shows editable or read-only v1 controls for:
-- AI status.
-- transfer phone number.
-- opening hours summary.
-- booking duration.
-- top FAQ answers.
-- voice/model configuration summary.
-
-In v1, editing can be limited to the safest fields if backend support is not ready.
-
 ### Settings/Billing
 Shows:
 - VocoTable Core Plan.
@@ -103,6 +88,19 @@ Shows:
 - billing history placeholder.
 
 Do not build real payment processing in v1 unless explicitly added later.
+
+### Not In The v1 Dashboard
+Do not build a separate AI Configuration page for this sprint.
+
+Reason:
+- The source plan requires voice prompt work, FAQs, graceful human transfer, and provider setup, but it does not require an owner-facing configuration UI.
+- Week 2 voice changes should be made directly in RetellAI/provider configuration and backend seed/settings data.
+- Adding editable AI configuration risks expanding scope before Natalia is live.
+
+Allowed v1 implementation:
+- Store opening hours, booking duration, FAQ answers, transfer phone number, and voice configuration in backend settings.
+- Show configuration summaries only where needed for debugging or internal setup.
+- Add an owner-facing configuration page later only if live usage proves Natalia needs to edit these values herself.
 
 ## Auth
 Use one shared owner login for v1.
@@ -140,4 +138,3 @@ Introduce WebSockets only if polling is visibly insufficient for Natalia's workf
 - Building polished analytics before operational flows can waste time; prioritize Live Feed and Booking Log.
 - Billing UI should not imply payment processing is complete if it is only a placeholder.
 - Hard-coded Natalia strings will slow future pilots; keep them as seed data.
-

@@ -1,0 +1,46 @@
+{
+  "name": "vocotable",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Voice AI booking platform for restaurants.",
+  "scripts": {
+    "dev:backend": "tsx watch apps/backend/src/server.ts",
+    "dev:frontend": "vite --config apps/frontend/vite.config.ts",
+    "build:backend": "tsc -p apps/backend/tsconfig.json",
+    "build:frontend": "vite build --config apps/frontend/vite.config.ts",
+    "start:backend": "node apps/backend/dist/server.js",
+    "preview:frontend": "vite preview --config apps/frontend/vite.config.ts",
+    "db:migrate": "tsx apps/backend/src/db/migrate.ts",
+    "db:seed": "tsx apps/backend/src/db/seed.ts",
+    "db:migrate:prod": "node apps/backend/dist/db/migrate.js",
+    "db:seed:prod": "node apps/backend/dist/db/seed.js",
+    "smoke:backend": "tsx apps/backend/scripts/smoke-local.ts",
+    "smoke:retell": "tsx apps/backend/scripts/smoke-retell.ts",
+    "smoke:twilio": "tsx apps/backend/scripts/smoke-twilio.ts",
+    "check": "npm run build:backend && npm run build:frontend"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.13.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "retell-sdk": "^5.26.1",
+    "twilio": "^6.0.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

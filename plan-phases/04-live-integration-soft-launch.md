@@ -20,7 +20,7 @@ Target milestone by Day 5: top five soft-launch issues are fixed and prompts are
 The backend remains the source of truth.
 
 Flow:
-1. Vapi receives inbound call.
+1. Twilio receives the inbound call and routes it into RetellAI.
 2. AI collects booking details.
 3. AI calls backend tools.
 4. Backend writes reservation and call log.
@@ -101,4 +101,3 @@ P2:
 - WebSockets can distract from launch; keep polling unless Natalia cannot operate without faster updates.
 - Soft launch can turn into product discovery; capture new ideas but do not build them in Week 3.
 - Transcript shape may vary by provider; design storage to tolerate missing or partial transcripts.
-

@@ -24,7 +24,7 @@ Before cutover:
 - Database backups or Railway recovery path are understood.
 - Sentry is configured for backend and frontend.
 - Structured logs include request ID, provider call ID, restaurant ID, and booking ID where available.
-- Twilio/Vapi forwarding path is tested end to end.
+- Twilio number, SIP trunk/forwarding path, and RetellAI agent path are tested end to end.
 - Staff transfer phone is confirmed.
 - Natalia has the dashboard URL and login.
 
@@ -95,4 +95,3 @@ Rollback must be executable without code changes.
 - Phone-number porting can take longer than expected; call forwarding is the safer Week 4 path.
 - Call recording and privacy can become a compliance risk; keep policy explicit.
 - Launch-day fixes should be narrow and reversible.
-
