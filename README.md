@@ -35,3 +35,5 @@ Implementation phases live in [`plan-phases`](./plan-phases).
 
 ## Backend
 Backend docs live in [`apps/backend`](./apps/backend).
+
+Railway production setup lives in [`apps/backend/docs/railway-production.md`](./apps/backend/docs/railway-production.md).

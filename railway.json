@@ -5,7 +5,8 @@
     "buildCommand": "npm ci && npm run build:backend"
   },
   "deploy": {
-    "startCommand": "npm run db:migrate:prod && npm run db:seed:prod && npm run start:backend",
+    "preDeployCommand": "npm run db:migrate:prod && npm run db:seed:prod",
+    "startCommand": "npm run start:backend",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",

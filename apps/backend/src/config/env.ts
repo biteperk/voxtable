@@ -3,7 +3,10 @@ import { z } from "zod";
 
 dotenv.config();
 
-const envSchema = z.object({
+const LOCAL_DEFAULT_RESTAURANT_ID = "11111111-1111-4111-8111-111111111111";
+
+const envSchema = z
+  .object({
   APP_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_VERSION: z.string().default("0.1.0"),
   PORT: z.coerce.number().int().positive().default(3050),
@@ -16,7 +19,7 @@ const envSchema = z.object({
   DEFAULT_RESTAURANT_ID: z
     .string()
     .uuid()
-    .default("11111111-1111-4111-8111-111111111111"),
+    .default(LOCAL_DEFAULT_RESTAURANT_ID),
   RETELL_API_KEY: z.string().optional(),
   RETELL_AGENT_ID: z.string().optional(),
   RETELL_PHONE_NUMBER: z.string().optional(),
@@ -33,6 +36,93 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true")
-});
+  })
+  .superRefine((value, ctx) => {
+    if (value.APP_ENV !== "production") {
+      return;
+    }
+
+    if (value.DEFAULT_RESTAURANT_ID === LOCAL_DEFAULT_RESTAURANT_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DEFAULT_RESTAURANT_ID"],
+        message: "Production must use a real generated restaurant UUID, not the local default."
+      });
+    }
+
+    const publicUrl = new URL(value.PUBLIC_API_BASE_URL);
+
+    if (["localhost", "127.0.0.1", "::1"].includes(publicUrl.hostname)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["PUBLIC_API_BASE_URL"],
+        message: "Production PUBLIC_API_BASE_URL must be the public Railway HTTPS URL."
+      });
+    }
+
+    if (!value.DATABASE_SSL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DATABASE_SSL"],
+        message: "Production DATABASE_SSL must be true for Railway PostgreSQL."
+      });
+    }
+
+    if (!value.RETELL_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RETELL_API_KEY"],
+        message: "RETELL_API_KEY is required in production."
+      });
+    }
+
+    if (!value.RETELL_AGENT_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RETELL_AGENT_ID"],
+        message: "RETELL_AGENT_ID is required in production."
+      });
+    }
+
+    if (!value.RETELL_VERIFY_SIGNATURE) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RETELL_VERIFY_SIGNATURE"],
+        message: "RETELL_VERIFY_SIGNATURE must be true in production."
+      });
+    }
+
+    if (!value.TWILIO_ACCOUNT_SID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["TWILIO_ACCOUNT_SID"],
+        message: "TWILIO_ACCOUNT_SID is required in production."
+      });
+    }
+
+    if (!value.TWILIO_AUTH_TOKEN) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["TWILIO_AUTH_TOKEN"],
+        message: "TWILIO_AUTH_TOKEN is required in production."
+      });
+    }
+
+    if (!value.TWILIO_PHONE_NUMBER) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["TWILIO_PHONE_NUMBER"],
+        message: "TWILIO_PHONE_NUMBER is required in production."
+      });
+    }
+
+    if (!value.TWILIO_VALIDATE_SIGNATURE) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["TWILIO_VALIDATE_SIGNATURE"],
+        message: "TWILIO_VALIDATE_SIGNATURE must be true in production."
+      });
+    }
+  });
 
 export const env = envSchema.parse(process.env);

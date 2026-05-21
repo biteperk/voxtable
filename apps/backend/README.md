@@ -73,6 +73,20 @@ The backend also exposes Twilio-compatible fallback/testing endpoints:
 
 See [`docs/twilio-retellai-phase1.md`](./docs/twilio-retellai-phase1.md) for the full Twilio + RetellAI setup.
 
+## Railway Production
+Use Railway for the backend service and Railway PostgreSQL for the database.
+
+The production deploy is configured in [`../../railway.json`](../../railway.json):
+
+- build: `npm ci && npm run build:backend`
+- pre-deploy: `npm run db:migrate:prod && npm run db:seed:prod`
+- start: `npm run start:backend`
+- healthcheck: `/health`
+
+Production mode intentionally rejects unsafe placeholder config. In Railway, generate a real `DEFAULT_RESTAURANT_ID`, use the public Railway URL for `PUBLIC_API_BASE_URL`, set `DATABASE_SSL=true`, and enable RetellAI/Twilio signature validation.
+
+See [`docs/railway-production.md`](./docs/railway-production.md) for the full production checklist.
+
 ## Smoke Test
 With the API running:
 
