@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "Voice AI booking platform for restaurants.",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "dev:backend": "tsx watch apps/backend/src/server.ts",
     "dev:frontend": "vite --config apps/frontend/vite.config.ts",
