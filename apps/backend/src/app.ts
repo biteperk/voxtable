@@ -22,7 +22,7 @@ export function createApp() {
     cors({
       origin:
         env.APP_ENV === "production"
-          ? ["https://vocotable.algorythmos.com.au"]
+          ? ["https://vocotable.algorythmos.com.au", "https://vocotable.web.app", "http://localhost:3051"]
           : true
     })
   );
