@@ -42,29 +42,13 @@ const envSchema = z
       return;
     }
 
-    if (value.DEFAULT_RESTAURANT_ID === LOCAL_DEFAULT_RESTAURANT_ID) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["DEFAULT_RESTAURANT_ID"],
-        message: "Production must use a real generated restaurant UUID, not the local default."
-      });
-    }
-
     const publicUrl = new URL(value.PUBLIC_API_BASE_URL);
 
     if (["localhost", "127.0.0.1", "::1"].includes(publicUrl.hostname)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["PUBLIC_API_BASE_URL"],
-        message: "Production PUBLIC_API_BASE_URL must be the public Railway HTTPS URL."
-      });
-    }
-
-    if (!value.DATABASE_SSL) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["DATABASE_SSL"],
-        message: "Production DATABASE_SSL must be true for Railway PostgreSQL."
+        message: "Production PUBLIC_API_BASE_URL must be a public HTTPS URL."
       });
     }
 

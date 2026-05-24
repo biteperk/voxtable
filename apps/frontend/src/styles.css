@@ -716,6 +716,36 @@ button {
   line-height: 23px;
 }
 
+.detail-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.back-button {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.back-button:hover {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+  border-color: rgba(173, 198, 255, 0.3);
+}
+
+.back-button .material-symbols-outlined {
+  font-size: 20px;
+}
+
 .active-call-pill {
   display: inline-flex;
   align-items: center;

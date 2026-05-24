@@ -337,7 +337,6 @@ function LiveFeedOverviewPage({ navigate }) {
 
   return (
     <DashboardShell active="Live Feed" navigate={navigate}>
-      <DashboardTopIcons />
 
       <header className="operational-header">
         <div>
@@ -537,12 +536,20 @@ function LiveFeedDetailPage({ navigate }) {
 
   return (
     <DashboardShell active="Live Feed" navigate={navigate}>
-      <DashboardTopIcons />
 
       <header className="operational-header">
-        <div>
-          <h1>Live Feed</h1>
-          <p>Monitoring active AI interactions in real-time.</p>
+        <div className="detail-header-left">
+          <button
+            className="back-button"
+            onClick={() => navigate("/live-feed")}
+            aria-label="Back to Live Feed"
+          >
+            <Icon name="arrow_back" />
+          </button>
+          <div>
+            <h1>Live Feed</h1>
+            <p>Monitoring active AI interactions in real-time.</p>
+          </div>
         </div>
         <div className="active-call-pill">
           <PulseBars small />
@@ -740,7 +747,6 @@ function BookingLogPage({ navigate }) {
 
   return (
     <DashboardShell active="Booking Log" navigate={navigate}>
-      <DashboardTopIcons />
 
       <header className="booking-log-header">
         <div>
