@@ -4,10 +4,10 @@ This is the Phase 1 voice-agent setup for VocoTable. RetellAI owns the AI conver
 
 ## Backend URLs
 
-Use the deployed Railway URL for RetellAI configuration:
+Use the deployed GCP VM URL for RetellAI configuration:
 
 ```text
-https://<railway-service>.up.railway.app
+https://<your-gcp-domain>
 ```
 
 Local testing can use:
@@ -191,7 +191,7 @@ The backend verifies the raw request body using `retell-sdk`.
 ## Phase 1 Test
 
 1. Run backend migrations and seed data.
-2. Deploy the backend to Railway.
+2. Deploy the backend to the GCP VM (see [GCP Deployment Guide](./gcp-deployment.md)).
 3. Configure Twilio number/SIP routing if using Twilio telephony.
 4. Configure RetellAI webhook URL.
 5. Configure RetellAI inbound webhook URL if using dynamic variables.

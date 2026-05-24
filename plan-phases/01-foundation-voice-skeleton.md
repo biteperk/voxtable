@@ -13,10 +13,22 @@ Target milestone by Day 5: call the number, complete a fake booking, and see the
 ## Scope
 - Create the backend project structure with Node.js and TypeScript.
 - Define Postgres schema and migrations for the v1 data model.
-- Deploy backend and Postgres to Railway.
+- Deploy backend and Postgres to a Google Cloud VM using Docker Compose.
 - Add health check and core reservation APIs.
 - Configure Twilio telephony and RetellAI enough for a real inbound test call.
 - Log inbound call metadata and final transcript/state.
+
+## Deployment Architecture (Google Cloud VM + Docker Compose)
+- A single Compute Engine VM (e.g. `e2-small` or `e2-medium`) hosts both the backend and Postgres.
+- Docker Compose orchestrates two services:
+  - `api` – Node.js backend container built from project Dockerfile.
+  - `postgres` – Official `postgres:16-alpine` image with a named volume for persistence.
+- Nginx runs on the VM as a reverse proxy with Let's Encrypt SSL (Certbot).
+- Public traffic → Nginx :443 → `api` container :3050.
+- Postgres is not exposed externally; the `api` container reaches it through the Docker bridge network.
+- Firewall rules: allow TCP 80 and 443 only. SSH via IAP or allowlisted IP.
+- `docker compose up -d` starts the stack; `docker compose down` stops it.
+- Migration runs as a one-shot Docker Compose service or via `docker compose exec api npm run db:migrate:prod`.
 
 ## Backend Architecture
 - Keep the service as a single deployable API for v1.
@@ -230,10 +242,13 @@ Behavior:
 
 ## Environment Variables
 Document these in the backend README or env example during implementation:
-- `DATABASE_URL`
+- `DATABASE_URL` – inside Docker network: `postgres://vocotable:$POSTGRES_PASSWORD@postgres:5432/vocotable`
+- `POSTGRES_USER` – Postgres container user (e.g. `vocotable`).
+- `POSTGRES_PASSWORD` – Postgres container password (stored in `.env` on VM, never committed).
+- `POSTGRES_DB` – database name (e.g. `vocotable`).
 - `PORT`
 - `APP_ENV`
-- `PUBLIC_API_BASE_URL`
+- `PUBLIC_API_BASE_URL` – the public HTTPS URL served by Nginx (e.g. `https://api.vocotable.com`).
 - `RETELL_API_KEY`
 - `RETELL_AGENT_ID`
 - `RETELL_PHONE_NUMBER`
@@ -247,17 +262,20 @@ Document these in the backend README or env example during implementation:
 - `DEFAULT_RESTAURANT_ID`
 
 ## Verification
-- `GET /health` returns `status: ok` locally and on Railway.
+- `GET /health` returns `status: ok` locally and on the Google Cloud VM via HTTPS.
 - A local API smoke test can create a reservation.
-- A deployed API smoke test can create a reservation.
+- A deployed API smoke test can create a reservation against the VM's public URL.
+- `docker compose ps` shows both `api` and `postgres` containers healthy.
+- Postgres data survives a `docker compose down && docker compose up -d` cycle (volume persistence).
 - Twilio can route inbound calls to RetellAI or the fallback `/twilio/voice` endpoint returns valid SIP TwiML.
 - RetellAI can call the `check_availability` and `create_booking` custom functions.
 - A real phone call creates one confirmed reservation in Postgres.
 - Twilio and RetellAI call metadata is stored in `call_logs`, even if transcript capture is initially partial.
 
 ## Done When
-- Backend is deployed and reachable from Twilio and RetellAI.
-- Postgres schema exists in Railway.
+- Backend is deployed on Google Cloud VM and reachable via HTTPS from Twilio and RetellAI.
+- Postgres runs as a Docker container on the same VM with persistent volume.
+- `docker-compose.yml` and `Dockerfile` exist in the repo and reproduce the stack.
 - Core endpoints are implemented with validation and clear error responses.
 - One seeded Natalia restaurant record exists.
 - A fake booking from a phone call persists in `reservations`.
@@ -266,5 +284,6 @@ Document these in the backend README or env example during implementation:
 
 ## Risks
 - Provider webhook payloads may differ from assumptions; inspect real Twilio callbacks plus RetellAI webhook and custom-function payloads before finalizing adapters.
-- Public API tunneling can hide deployment issues; test against the Railway URL before declaring success.
+- VM disk or Docker volume failure can cause data loss; set up VM snapshots or periodic `pg_dump` backups early.
+- Nginx/Certbot misconfiguration can block webhooks from Twilio/RetellAI; verify SSL and proxy pass immediately after setup.
 - Availability rules can become complex quickly; keep v1 to table capacity and overlapping reservation checks.

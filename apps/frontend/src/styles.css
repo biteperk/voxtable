@@ -2522,3 +2522,543 @@ td button {
     padding: 0 18px;
   }
 }
+
+/* ===================================================================
+   Live Feed Overview — Summary Cards + Activity Table
+   =================================================================== */
+
+.feed-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.feed-stat-card {
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.72);
+  backdrop-filter: blur(12px);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 120px;
+  transition: border-color 160ms ease;
+}
+
+.feed-stat-card:hover {
+  border-color: rgba(173, 198, 255, 0.35);
+}
+
+.feed-stat-active {
+  position: relative;
+  overflow: hidden;
+}
+
+.feed-stat-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(173, 198, 255, 0.04);
+  pointer-events: none;
+}
+
+.feed-stat-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.feed-stat-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.feed-stat-icon {
+  color: var(--outline);
+  font-size: 20px;
+}
+
+.feed-stat-live-dot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.live-ping {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--primary);
+  opacity: 0.6;
+  animation: feedPing 1.5s ease-in-out infinite;
+}
+
+.live-core {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+@keyframes feedPing {
+  0% { transform: scale(1); opacity: 0.6; }
+  70% { transform: scale(2); opacity: 0; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.feed-stat-bottom {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.feed-stat-value {
+  font-family: "Hanken Grotesk", sans-serif;
+  font-size: 40px;
+  line-height: 48px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.feed-stat-value.accent {
+  color: var(--primary);
+}
+
+.feed-stat-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.feed-stat-change .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.feed-stat-sub {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+/* --- Activity Card --- */
+
+.feed-activity-card {
+  margin-top: 24px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.72);
+  backdrop-filter: blur(12px);
+  padding: 24px;
+  overflow: hidden;
+}
+
+.feed-activity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.feed-activity-header h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.feed-activity-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.feed-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.feed-action-btn:hover {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+}
+
+.feed-action-btn .material-symbols-outlined {
+  font-size: 15px;
+}
+
+/* --- Table --- */
+
+.feed-table-wrap {
+  overflow-x: auto;
+  margin-top: 4px;
+}
+
+.feed-table {
+  width: 100%;
+  text-align: left;
+  border-collapse: collapse;
+}
+
+.feed-table thead tr {
+  border-bottom: 1px solid rgba(65, 71, 85, 0.4);
+}
+
+.feed-table th {
+  padding: 14px 16px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.feed-table .text-right {
+  text-align: right;
+}
+
+.feed-table tbody tr {
+  border-bottom: 1px solid rgba(65, 71, 85, 0.22);
+}
+
+/* --- Rows --- */
+
+.feed-row {
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.feed-row:hover {
+  background: var(--surface-container-highest);
+}
+
+.feed-row td {
+  padding: 16px 16px;
+  vertical-align: middle;
+}
+
+.feed-row-live {
+  border-left: 2px solid var(--primary);
+  background: rgba(173, 198, 255, 0.04);
+}
+
+.feed-row-live:hover {
+  background: rgba(173, 198, 255, 0.08);
+}
+
+/* --- Customer Cell --- */
+
+.feed-customer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.feed-avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.feed-avatar.neutral {
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+}
+
+.feed-avatar.secondary {
+  background: rgba(60, 73, 93, 0.7);
+  color: var(--on-surface);
+}
+
+.feed-avatar.tertiary {
+  background: rgba(0, 154, 218, 0.25);
+  color: var(--on-surface);
+}
+
+.feed-avatar .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.feed-customer strong {
+  display: block;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.feed-customer span {
+  display: block;
+  margin-top: 1px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  letter-spacing: 0.02em;
+}
+
+.feed-customer .phone-live {
+  color: var(--primary);
+}
+
+/* --- Status Badges --- */
+
+.feed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.feed-badge .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.feed-badge-live {
+  position: relative;
+  background: rgba(173, 198, 255, 0.15);
+  color: var(--primary);
+  border: 1px solid rgba(173, 198, 255, 0.3);
+  box-shadow: 0 0 12px rgba(173, 198, 255, 0.15);
+}
+
+.feed-badge-ping {
+  position: absolute;
+  left: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--primary);
+  opacity: 0.7;
+  animation: feedPing 1.5s ease-in-out infinite;
+}
+
+.feed-badge-core {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.feed-badge-handled {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+  border: 1px solid rgba(65, 71, 85, 0.5);
+}
+
+.feed-badge-handled .material-symbols-outlined {
+  color: var(--on-surface-variant);
+}
+
+.feed-badge-transferred {
+  background: rgba(255, 180, 171, 0.08);
+  color: var(--error);
+  border: 1px solid rgba(255, 180, 171, 0.2);
+}
+
+/* --- Other Cells --- */
+
+.feed-intent {
+  color: var(--on-surface-variant);
+  font-size: 14px;
+}
+
+.feed-duration {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+.feed-duration.accent {
+  color: var(--primary);
+}
+
+.feed-time strong {
+  display: block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.feed-time span {
+  display: block;
+  margin-top: 2px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.feed-time .time-note-live {
+  color: rgba(173, 198, 255, 0.6);
+}
+
+/* --- Action Buttons --- */
+
+.feed-listen-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--primary);
+  transition: background 160ms ease;
+}
+
+.feed-listen-btn:hover {
+  background: var(--surface-container-high);
+}
+
+.feed-chevron-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
+.feed-row:hover .feed-chevron-btn {
+  opacity: 1;
+}
+
+.feed-chevron-btn:hover {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.feed-chevron-btn .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* --- Table Footer --- */
+
+.feed-table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.feed-table-footer > span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+.feed-table-pager {
+  display: flex;
+  gap: 4px;
+}
+
+.feed-table-pager button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.feed-table-pager button:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.feed-table-pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.feed-table-pager .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 900px) {
+  .feed-summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .feed-stat-card {
+    min-height: auto;
+  }
+
+  .feed-activity-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .feed-table th:nth-child(3),
+  .feed-table td:nth-child(3),
+  .feed-table th:nth-child(5),
+  .feed-table td:nth-child(5) {
+    display: none;
+  }
+}

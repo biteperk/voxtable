@@ -4,7 +4,7 @@ Phase 1 backend for the VocoTable voice booking MVP.
 
 ## Local Setup
 1. Copy `.env.example` to `.env`.
-2. Set `DATABASE_URL` to a local or Railway Postgres database.
+2. Set `DATABASE_URL` to a local PostgreSQL database.
 3. Install dependencies:
    ```bash
    npm install
@@ -73,19 +73,40 @@ The backend also exposes Twilio-compatible fallback/testing endpoints:
 
 See [`docs/twilio-retellai-phase1.md`](./docs/twilio-retellai-phase1.md) for the full Twilio + RetellAI setup.
 
-## Railway Production
-Use Railway for the backend service and Railway PostgreSQL for the database.
+## Production Deployment (Google Cloud VM + Docker Compose)
 
-The production deploy is configured in [`../../railway.json`](../../railway.json):
+The backend and PostgreSQL database run on a Google Cloud VM using Docker Compose.
 
-- build: `npm ci && npm run build:backend`
-- pre-deploy: `npm run db:migrate:prod && npm run db:seed:prod`
-- start: `npm run start:backend`
-- healthcheck: `/health`
+### Docker Commands
 
-Production mode intentionally rejects unsafe placeholder config. In Railway, generate a real `DEFAULT_RESTAURANT_ID`, use the public Railway URL for `PUBLIC_API_BASE_URL`, set `DATABASE_SSL=true`, and enable RetellAI/Twilio signature validation.
+```bash
+# Build and start all services
+docker compose up -d --build
 
-See [`docs/railway-production.md`](./docs/railway-production.md) for the full production checklist.
+# View logs
+docker compose logs -f backend
+
+# Run migrations in the running container
+docker compose exec backend npm run db:migrate:prod
+
+# Run seed data
+docker compose exec backend npm run db:seed:prod
+
+# Restart the backend
+docker compose restart backend
+
+# Stop all services
+docker compose down
+
+# Stop and remove volumes (⚠️ destroys database data)
+docker compose down -v
+```
+
+### Production Environment
+
+Production mode intentionally rejects unsafe placeholder config. On the GCP VM, generate a real `DEFAULT_RESTAURANT_ID`, use the public domain for `PUBLIC_API_BASE_URL`, set `DATABASE_SSL=true` if needed, and enable RetellAI/Twilio signature validation.
+
+See [`docs/gcp-deployment.md`](./docs/gcp-deployment.md) for the full production deployment guide.
 
 ## Smoke Test
 With the API running:

@@ -40,7 +40,7 @@ graph TB
         LLM["LLM Brain<br/>(Claude Sonnet / GPT-4o)"]
     end
 
-    subgraph VOCOTABLE_BACKEND["VocoTable Backend (Railway)"]
+    subgraph VOCOTABLE_BACKEND["VocoTable Backend (GCP VM)"]
         API["Node.js + TypeScript<br/>Express REST API"]
         RetellRoutes["/retell/*<br/>Webhooks & Tool Endpoints"]
         TwilioRoutes["/twilio/*<br/>Voice & Status Endpoints"]
@@ -51,7 +51,7 @@ graph TB
     end
 
     subgraph DATA["Data Layer"]
-        Postgres[("PostgreSQL<br/>(Railway Managed)")]
+        Postgres[("PostgreSQL<br/>(Docker Compose)")]
     end
 
     subgraph FRONTEND["Dashboard (Vercel)"]
@@ -140,7 +140,7 @@ Both functions can also be routed through a generic dispatcher at `POST /retell/
 | `POST /retell/inbound` | `call_inbound` | Returns dynamic variables (restaurant name, caller phone, restaurant ID) so the agent can personalize the greeting |
 | `POST /retell/webhook` | `call_started`, `call_ended`, `call_analyzed`, `transcript_updated`, `transfer_started`, `transfer_bridged`, `transfer_cancelled`, `transfer_ended` | Upserts call state, transcript, recording URL, latency metrics, and call summary into `call_logs` |
 
-### 3.3 Backend — Node.js + TypeScript (Railway)
+### 3.3 Backend — Node.js + TypeScript (GCP VM)
 
 The backend is a monolithic Express server with a clean layered architecture:
 
@@ -197,14 +197,14 @@ apps/backend/src/
 | Polling (not WebSockets) for dashboard | Simpler to ship. WebSocket upgrade is a known future improvement if latency requirements increase. |
 | `pg_advisory_xact_lock` for booking creation | Prevents double-booking race conditions. The lock key is `restaurant_id:date`, so concurrent bookings for different dates do not block each other. |
 | Dual-casing request schemas (`snake_case` + `camelCase`) | RetellAI and the dashboard may send either `party_size` or `partySize`. Zod schemas accept both forms and normalize internally, eliminating integration friction. |
-| Sequential file-based migrations | A `schema_migrations` table tracks which `.sql` files have been applied. Each migration runs in a transaction. `railway.json` runs migrations automatically on every deploy. |
+| Sequential file-based migrations | A `schema_migrations` table tracks which `.sql` files have been applied. Each migration runs in a transaction. Docker Compose runs migrations automatically on every deploy. |
 
 #### API Surface
 
 | Method | Path | Source | Purpose |
 |---|---|---|---|
 | `GET` | `/` | Browser | HTML landing page (environment, version, link to `/health`) |
-| `GET` | `/health` | Infra | Health check + DB ping (used by Railway healthcheck) |
+| `GET` | `/health` | Infra | Health check + DB ping (used by Docker healthcheck) |
 | `POST` | `/availability/check` | Dashboard / RetellAI | Check table availability |
 | `POST` | `/bookings` | Dashboard / RetellAI | Create a reservation |
 | `PATCH` | `/bookings/:id` | Dashboard | Update reservation details / status |
@@ -271,7 +271,7 @@ The `restaurants` table has a `transfer_phone_number` column and the backend exp
 
 ### 3.4 Data Layer — PostgreSQL
 
-Hosted on Railway as a managed addon. Schema managed via raw SQL migrations in `apps/backend/db/migrations/`.
+Hosted on the GCP VM via Docker Compose. Schema managed via raw SQL migrations in `apps/backend/db/migrations/`.
 
 #### Migration System
 
@@ -291,7 +291,7 @@ Each migration runs inside a transaction — if the SQL fails, the file is not r
 | `001_initial_schema.sql` | Creates all 6 tables, 3 custom enums, 4 indexes, `pgcrypto` extension, and `set_updated_at` triggers |
 | `002_retell_provider_default.sql` | Sets `call_logs.provider` default to `'retell'` |
 
-The deploy command in `railway.json` runs `npm run db:migrate:prod && npm run db:seed:prod` before starting the server, so migrations and seed data are applied automatically on every deploy.
+The Docker Compose entrypoint runs `npm run db:migrate:prod && npm run db:seed:prod` before starting the server, so migrations and seed data are applied automatically on every deploy.
 
 #### Seed Data (Natalia's Bistro)
 
@@ -439,7 +439,7 @@ erDiagram
 | Styling | Tailwind CSS 3 |
 | Hosting | Vercel (free tier) |
 | Auth (v1) | Single shared login — one restaurant, one owner |
-| Data fetching | REST API polling to the Railway backend |
+| Data fetching | REST API polling to the GCP VM backend |
 
 #### Dashboard Screens (v1)
 
@@ -456,7 +456,7 @@ erDiagram
 |---|---|
 | **Sentry** | Error tracking and alerting for backend exceptions |
 | **Structured Logs** | Request logger middleware on every endpoint |
-| **Railway Metrics** | CPU, memory, and request latency from Railway dashboard |
+| **GCP Monitoring** | CPU, memory, and request latency from Google Cloud Console |
 | **RetellAI Dashboard** | Call recordings, transcripts, latency percentiles, success rates |
 | **Daily Summary Email** | Automated email to Natalia with booking count, call count, and issues |
 
@@ -475,9 +475,9 @@ graph LR
         FE["React SPA<br/>(Static Build)"]
     end
 
-    subgraph Railway["Railway (~$5-15/month)"]
+    subgraph GCP["GCP VM + Docker Compose (~$5-15/month)"]
         BE["Node.js Backend<br/>(Express, Port 3050)"]
-        PG[("PostgreSQL<br/>(Managed Addon)")]
+        PG[("PostgreSQL<br/>(Docker Container)")]
     end
 
     subgraph Third_Party["Third-Party Services"]
@@ -503,7 +503,7 @@ graph LR
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
-| `DATABASE_SSL` | No | `false` | Enable SSL for Railway Postgres |
+| `DATABASE_SSL` | No | `false` | Enable SSL for PostgreSQL connection |
 | `PORT` | No | `3050` | Backend listen port |
 | `PUBLIC_API_BASE_URL` | No | `http://localhost:3050` | Public URL for webhook registration |
 | `APP_ENV` | No | `development` | `development` / `test` / `production` |
@@ -606,7 +606,7 @@ sequenceDiagram
 | **RetellAI → Backend** | `X-Retell-Signature` header verified via `retell-sdk` using `RETELL_API_KEY`. Enabled by `RETELL_VERIFY_SIGNATURE=true`. |
 | **Twilio → Backend** | `X-Twilio-Signature` header verified via `twilio.validateRequest()` using `TWILIO_AUTH_TOKEN`. Enabled by `TWILIO_VALIDATE_SIGNATURE=true`. |
 | **Dashboard → Backend** | v1: CORS-only. Single shared login. No token-based auth (scope: one restaurant, one owner). |
-| **Database** | Railway-managed Postgres. SSL in production (`DATABASE_SSL=true`). Connection via `DATABASE_URL` with connection pooling. |
+| **Database** | PostgreSQL via Docker Compose on GCP VM. SSL in production (`DATABASE_SSL=true`). Connection via `DATABASE_URL` with connection pooling. |
 | **Raw body capture** | Express captures `rawBody` on all JSON and URL-encoded requests for signature verification. |
 
 ---
@@ -618,7 +618,7 @@ sequenceDiagram
 | RetellAI (50–100 calls/month) | $5–15 |
 | ElevenLabs voice synthesis | $5–10 |
 | LLM (Claude or GPT-4o) | $2–5 |
-| Railway (backend + Postgres) | $5–15 |
+| GCP VM + Docker Compose (backend + Postgres) | $5–15 |
 | Twilio (AU number + minutes) | ~$5 |
 | Vercel (frontend) | Free |
 | Sentry | Free tier |
@@ -661,7 +661,7 @@ sequenceDiagram
 | **RetellAI outage** | Twilio `/twilio/voice` endpoint exists as a fallback routing mechanism. Call logs capture both provider types. |
 | **LLM hallucination** | Tool-calling architecture means the LLM cannot fabricate availability — it must call `check_availability` which queries real DB state. |
 | **Double-booking** | `pg_advisory_xact_lock` on `restaurant_id:date` prevents concurrent booking transactions from creating conflicting reservations. |
-| **Schema drift** | Migrations are sequential SQL files tracked in `schema_migrations`. `railway.json` runs migrations on every deploy. |
+| **Schema drift** | Migrations are sequential SQL files tracked in `schema_migrations`. Docker Compose runs migrations on every deploy. |
 | **Scope creep** | v1 scope is enforced architecturally: no multi-tenant auth, no WebSocket, no outbound, no integrations. Adding any of these requires explicit new code. |
 
 ---
@@ -711,4 +711,4 @@ All smoke tests run against `http://localhost:3050` by default. Signature verifi
 ---
 
 *Document version: 1.1 — May 2026*
-*Stack: Twilio · RetellAI · ElevenLabs · Claude Sonnet / GPT-4o · Node.js · TypeScript · PostgreSQL · React · Tailwind CSS · Railway · Vercel*
+*Stack: Twilio · RetellAI · ElevenLabs · Claude Sonnet / GPT-4o · Node.js · TypeScript · PostgreSQL · React · Tailwind CSS · GCP VM · Docker Compose · Vercel*

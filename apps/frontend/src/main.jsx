@@ -31,8 +31,12 @@ function App() {
   };
 
   const page = useMemo(() => {
+    if (path === "/live-feed/detail") {
+      return <LiveFeedDetailPage navigate={navigate} />;
+    }
+
     if (path === "/live-feed") {
-      return <LiveFeedPage navigate={navigate} />;
+      return <LiveFeedOverviewPage navigate={navigate} />;
     }
 
     if (path === "/booking-log") {
@@ -279,7 +283,230 @@ function DashboardTopIcons() {
   );
 }
 
-function LiveFeedPage({ navigate }) {
+function LiveFeedOverviewPage({ navigate }) {
+  const callRows = [
+    {
+      id: "call-1",
+      name: "Unknown Caller",
+      initials: null,
+      phone: "+61 412 345 678",
+      status: "live",
+      intent: "Reservation",
+      duration: "01:24",
+      time: "Just now",
+      timeNote: "Connecting...",
+      avatarTone: "neutral"
+    },
+    {
+      id: "call-2",
+      name: "Sarah Jenkins",
+      initials: "SJ",
+      phone: "+61 498 765 432",
+      status: "handled",
+      intent: "Dietary Inquiry",
+      duration: "02:15",
+      time: "10:42 AM",
+      timeNote: "15 mins ago",
+      avatarTone: "secondary"
+    },
+    {
+      id: "call-3",
+      name: "Michael T.",
+      initials: null,
+      phone: "+61 455 123 987",
+      status: "transferred",
+      intent: "Complex Party Size",
+      duration: "04:30",
+      time: "10:15 AM",
+      timeNote: "42 mins ago",
+      avatarTone: "neutral"
+    },
+    {
+      id: "call-4",
+      name: "Emma Davis",
+      initials: "ED",
+      phone: "+61 411 222 333",
+      status: "handled",
+      intent: "Cancel Booking",
+      duration: "01:05",
+      time: "09:58 AM",
+      timeNote: "1 hour ago",
+      avatarTone: "tertiary"
+    }
+  ];
+
+  return (
+    <DashboardShell active="Live Feed" navigate={navigate}>
+      <DashboardTopIcons />
+
+      <header className="operational-header">
+        <div>
+          <h1>Live Feed</h1>
+          <p>Real-time overview of all AI call activity.</p>
+        </div>
+      </header>
+
+      {/* Summary Cards */}
+      <section className="feed-summary-cards">
+        <article className="feed-stat-card">
+          <div className="feed-stat-top">
+            <span className="feed-stat-label">Total Calls Today</span>
+            <Icon name="phone_in_talk" className="feed-stat-icon" />
+          </div>
+          <div className="feed-stat-bottom">
+            <span className="feed-stat-value">142</span>
+            <span className="feed-stat-change positive">
+              <Icon name="trending_up" /> +12%
+            </span>
+          </div>
+        </article>
+
+        <article className="feed-stat-card feed-stat-active">
+          <div className="feed-stat-top">
+            <span className="feed-stat-label">Active Calls</span>
+            <div className="feed-stat-live-dot">
+              <span className="live-ping" />
+              <span className="live-core" />
+            </div>
+          </div>
+          <div className="feed-stat-bottom">
+            <span className="feed-stat-value accent">3</span>
+            <span className="feed-stat-sub">Live Now</span>
+          </div>
+        </article>
+
+        <article className="feed-stat-card">
+          <div className="feed-stat-top">
+            <span className="feed-stat-label">AI Success Rate</span>
+            <Icon name="auto_awesome" className="feed-stat-icon" />
+          </div>
+          <div className="feed-stat-bottom">
+            <span className="feed-stat-value">94.2%</span>
+            <span className="feed-stat-sub">Handled w/o transfer</span>
+          </div>
+        </article>
+      </section>
+
+      {/* Recent Activity Table */}
+      <section className="feed-activity-card">
+        <div className="feed-activity-header">
+          <h2>Recent Activity</h2>
+          <div className="feed-activity-actions">
+            <button className="feed-action-btn">
+              <Icon name="filter_list" /> Filter
+            </button>
+            <button className="feed-action-btn">
+              <Icon name="download" /> Export
+            </button>
+          </div>
+        </div>
+
+        <div className="feed-table-wrap">
+          <table className="feed-table">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Status</th>
+                <th>Intent</th>
+                <th>Duration</th>
+                <th>Time Snapshot</th>
+                <th className="text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {callRows.map((row) => (
+                <FeedCallRow
+                  key={row.id}
+                  row={row}
+                  onClick={() => navigate("/live-feed/detail")}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="feed-table-footer">
+          <span>Showing 1-4 of 142 calls</span>
+          <div className="feed-table-pager">
+            <button disabled aria-label="Previous page">
+              <Icon name="chevron_left" />
+            </button>
+            <button aria-label="Next page">
+              <Icon name="chevron_right" />
+            </button>
+          </div>
+        </div>
+      </section>
+    </DashboardShell>
+  );
+}
+
+function FeedCallRow({ row, onClick }) {
+  const isLive = row.status === "live";
+
+  return (
+    <tr
+      className={`feed-row ${isLive ? "feed-row-live" : ""}`}
+      onClick={onClick}
+    >
+      <td>
+        <div className="feed-customer">
+          <div className={`feed-avatar ${row.avatarTone}`}>
+            {row.initials ? (
+              row.initials
+            ) : (
+              <Icon name="person" />
+            )}
+          </div>
+          <div>
+            <strong>{row.name}</strong>
+            <span className={isLive ? "phone-live" : ""}>{row.phone}</span>
+          </div>
+        </div>
+      </td>
+      <td>
+        {isLive && (
+          <span className="feed-badge feed-badge-live">
+            <span className="feed-badge-ping" />
+            <span className="feed-badge-core" />
+            LIVE NOW
+          </span>
+        )}
+        {row.status === "handled" && (
+          <span className="feed-badge feed-badge-handled">
+            <Icon name="check_circle" /> Handled by AI
+          </span>
+        )}
+        {row.status === "transferred" && (
+          <span className="feed-badge feed-badge-transferred">
+            <Icon name="call_split" /> Transferred
+          </span>
+        )}
+      </td>
+      <td className="feed-intent">{row.intent}</td>
+      <td className={`feed-duration ${isLive ? "accent" : ""}`}>{row.duration}</td>
+      <td>
+        <div className="feed-time">
+          <strong>{row.time}</strong>
+          <span className={isLive ? "time-note-live" : ""}>{row.timeNote}</span>
+        </div>
+      </td>
+      <td className="text-right">
+        {isLive ? (
+          <button className="feed-listen-btn" aria-label="Listen in">
+            <Icon name="headset_mic" />
+          </button>
+        ) : (
+          <button className="feed-chevron-btn" aria-label="View details">
+            <Icon name="chevron_right" />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function LiveFeedDetailPage({ navigate }) {
   const messages = [
     {
       speaker: "guest",

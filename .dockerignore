@@ -1,0 +1,42 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+apps/backend/dist
+
+# Version control
+.git
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Frontend (not needed for backend Docker build)
+apps/frontend
+
+# IDE / Editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# Documentation (except README)
+*.md
+!README.md
+
+# Logs
+*.log
+npm-debug.log*
+
+# Docker files (no need to copy themselves)
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# OS files
+.DS_Store
+Thumbs.db
