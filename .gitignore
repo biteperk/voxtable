@@ -58,3 +58,4 @@ Desktop.ini
 !.vscode/extensions.json
 !.vscode/settings.json
 docker-compose.override.yml
+firebase-admin.json

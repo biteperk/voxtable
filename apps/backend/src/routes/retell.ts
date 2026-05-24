@@ -13,6 +13,7 @@ type RequestWithRawBody = Express.Request & { rawBody?: string };
 export const retellRouter = Router();
 
 retellRouter.use(
+  "/retell",
   asyncHandler(async (request, _response, next) => {
     await assertRetellSignature(
       request.header("x-retell-signature"),
