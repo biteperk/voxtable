@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { AuthProvider, useAuth } from "./auth";
+import { signInWithGoogle, signOutUser } from "./firebase";
+import { getAnalytics, listCallLogs, listReservations } from "./api";
 
 const restaurantImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAgvs7qA0qHOd2Nob8Vl9D-gIFHp0BmQY1DOKvAMXDTT6bBAyL8U1lrq-MJV9hWv6MzfT7aNcQk6xL_pujBCXaCuo4ExjvEYGkRayK6-gLpd0Y8DC1Ob8QfyIyg9MMSyRAklEVHlsUdVxYc92Bl2bdKwZNbozxITISxFGSTMm1GFjFgG4jhDIby6jRZKnR_RslKyO96YbopcDOm2xoUgLx4eSTSXZli5KtJYcV_HcCcUo9FGjv2Bxy7pOCxyMYwTdf_kEv41JzNcmE";
@@ -30,31 +33,74 @@ function App() {
     setPath(nextPath);
   };
 
-  const page = useMemo(() => {
-    if (path === "/live-feed/detail") {
-      return <LiveFeedDetailPage navigate={navigate} />;
+  const dashboardPaths = ["/live-feed/detail", "/live-feed", "/booking-log", "/analytics", "/settings"];
+  const isDashboard = dashboardPaths.includes(path);
+
+  return (
+    <AuthProvider>
+      <AppRouter path={path} navigate={navigate} isDashboard={isDashboard} />
+    </AuthProvider>
+  );
+}
+
+function AppRouter({ path, navigate, isDashboard }) {
+  const { user, loading } = useAuth();
+
+  if (isDashboard && loading) {
+    return <FullPageMessage title="Loading..." />;
+  }
+
+  if (isDashboard && !user) {
+    return <LoginScreen navigate={navigate} />;
+  }
+
+  if (path === "/live-feed/detail") return <LiveFeedDetailPage navigate={navigate} />;
+  if (path === "/live-feed") return <LiveFeedOverviewPage navigate={navigate} />;
+  if (path === "/booking-log") return <BookingLogPage navigate={navigate} />;
+  if (path === "/analytics") return <AnalyticsPage navigate={navigate} />;
+  if (path === "/settings") return <BillingPage navigate={navigate} />;
+  return <LandingPage navigate={navigate} />;
+}
+
+function FullPageMessage({ title }) {
+  return (
+    <div style={{ display: "grid", placeItems: "center", minHeight: "100vh", color: "#cbd5e1" }}>
+      <p style={{ fontSize: 20 }}>{title}</p>
+    </div>
+  );
+}
+
+function LoginScreen({ navigate }) {
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleSignIn = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithGoogle();
+    } catch (e) {
+      setError(e.message ?? String(e));
+    } finally {
+      setBusy(false);
     }
+  };
 
-    if (path === "/live-feed") {
-      return <LiveFeedOverviewPage navigate={navigate} />;
-    }
-
-    if (path === "/booking-log") {
-      return <BookingLogPage navigate={navigate} />;
-    }
-
-    if (path === "/analytics") {
-      return <AnalyticsPage navigate={navigate} />;
-    }
-
-    if (path === "/settings") {
-      return <BillingPage navigate={navigate} />;
-    }
-
-    return <LandingPage navigate={navigate} />;
-  }, [path]);
-
-  return page;
+  return (
+    <div className="login-shell">
+      <div className="login-card">
+        <h1>VocoTable</h1>
+        <p>Sign in to access the restaurant dashboard.</p>
+        <button onClick={handleSignIn} disabled={busy} className="login-google">
+          <Icon name="login" /> Continue with Google
+        </button>
+        {error && <p className="login-error">{error}</p>}
+        <button onClick={() => navigate("/")} className="login-back">
+          Back to landing
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function LandingPage({ navigate }) {
@@ -206,11 +252,17 @@ function FeatureCard({ icon, title, text, tone }) {
 }
 
 function DashboardShell({ active, children, navigate }) {
+  const { user } = useAuth();
   const items = [
     ["Live Feed", "graphic_eq", "/live-feed"],
     ["Booking Log", "menu_book", "/booking-log"],
     ["Analytics", "query_stats", "/analytics"]
   ];
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    navigate("/");
+  };
 
   return (
     <div className="dashboard-shell">
@@ -256,11 +308,16 @@ function DashboardShell({ active, children, navigate }) {
             <span>Settings</span>
           </button>
 
+          <button className="settings-link" type="button" onClick={handleSignOut}>
+            <Icon name="logout" />
+            <span>Sign out</span>
+          </button>
+
           <div className="sidebar-user">
-            <img src={restaurantImage} alt="Natalia" />
+            <img src={user?.photoURL ?? restaurantImage} alt={user?.displayName ?? "User"} />
             <div>
-              <strong>Natalia</strong>
-              <span>Manager</span>
+              <strong>{user?.displayName ?? "User"}</strong>
+              <span>{user?.email ?? ""}</span>
             </div>
           </div>
         </div>
@@ -284,56 +341,33 @@ function DashboardTopIcons() {
 }
 
 function LiveFeedOverviewPage({ navigate }) {
-  const callRows = [
-    {
-      id: "call-1",
-      name: "Unknown Caller",
-      initials: null,
-      phone: "+61 412 345 678",
-      status: "live",
-      intent: "Reservation",
-      duration: "01:24",
-      time: "Just now",
-      timeNote: "Connecting...",
-      avatarTone: "neutral"
-    },
-    {
-      id: "call-2",
-      name: "Sarah Jenkins",
-      initials: "SJ",
-      phone: "+61 498 765 432",
-      status: "handled",
-      intent: "Dietary Inquiry",
-      duration: "02:15",
-      time: "10:42 AM",
-      timeNote: "15 mins ago",
-      avatarTone: "secondary"
-    },
-    {
-      id: "call-3",
-      name: "Michael T.",
-      initials: null,
-      phone: "+61 455 123 987",
-      status: "transferred",
-      intent: "Complex Party Size",
-      duration: "04:30",
-      time: "10:15 AM",
-      timeNote: "42 mins ago",
-      avatarTone: "neutral"
-    },
-    {
-      id: "call-4",
-      name: "Emma Davis",
-      initials: "ED",
-      phone: "+61 411 222 333",
-      status: "handled",
-      intent: "Cancel Booking",
-      duration: "01:05",
-      time: "09:58 AM",
-      timeNote: "1 hour ago",
-      avatarTone: "tertiary"
-    }
-  ];
+  const [callLogs, setCallLogs] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listCallLogs({ limit: 25 }), getAnalytics({ days: 1 })])
+      .then(([calls, stats]) => {
+        if (cancelled) return;
+        setCallLogs(calls.call_logs ?? []);
+        setAnalytics(stats.analytics ?? null);
+      })
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const callRows = callLogs.map((row, i) => mapCallLogToRow(row, i));
+  const totalCalls = analytics?.total_calls ?? 0;
+  const activeCalls = callLogs.filter((r) => !r.ended_at && r.status !== "completed" && r.status !== "failed").length;
+  const successRate =
+    analytics && analytics.total_calls > 0
+      ? `${Math.round((analytics.handled / analytics.total_calls) * 100)}%`
+      : "—";
 
   return (
     <DashboardShell active="Live Feed" navigate={navigate}>
@@ -353,10 +387,8 @@ function LiveFeedOverviewPage({ navigate }) {
             <Icon name="phone_in_talk" className="feed-stat-icon" />
           </div>
           <div className="feed-stat-bottom">
-            <span className="feed-stat-value">142</span>
-            <span className="feed-stat-change positive">
-              <Icon name="trending_up" /> +12%
-            </span>
+            <span className="feed-stat-value">{loading ? "…" : totalCalls}</span>
+            <span className="feed-stat-sub">Last 24h</span>
           </div>
         </article>
 
@@ -369,7 +401,7 @@ function LiveFeedOverviewPage({ navigate }) {
             </div>
           </div>
           <div className="feed-stat-bottom">
-            <span className="feed-stat-value accent">3</span>
+            <span className="feed-stat-value accent">{loading ? "…" : activeCalls}</span>
             <span className="feed-stat-sub">Live Now</span>
           </div>
         </article>
@@ -380,7 +412,7 @@ function LiveFeedOverviewPage({ navigate }) {
             <Icon name="auto_awesome" className="feed-stat-icon" />
           </div>
           <div className="feed-stat-bottom">
-            <span className="feed-stat-value">94.2%</span>
+            <span className="feed-stat-value">{loading ? "…" : successRate}</span>
             <span className="feed-stat-sub">Handled w/o transfer</span>
           </div>
         </article>
@@ -425,19 +457,56 @@ function LiveFeedOverviewPage({ navigate }) {
         </div>
 
         <div className="feed-table-footer">
-          <span>Showing 1-4 of 142 calls</span>
-          <div className="feed-table-pager">
-            <button disabled aria-label="Previous page">
-              <Icon name="chevron_left" />
-            </button>
-            <button aria-label="Next page">
-              <Icon name="chevron_right" />
-            </button>
-          </div>
+          <span>
+            {loading
+              ? "Loading…"
+              : error
+              ? `Error: ${error}`
+              : `${callRows.length} call${callRows.length === 1 ? "" : "s"}`}
+          </span>
         </div>
       </section>
     </DashboardShell>
   );
+}
+
+function mapCallLogToRow(row, index) {
+  const ended = !!row.ended_at;
+  const status = !ended ? "live" : row.transferred_to_staff ? "transferred" : "handled";
+  const started = row.started_at ? new Date(row.started_at) : new Date(row.created_at);
+  const endedAt = row.ended_at ? new Date(row.ended_at) : null;
+  const durationSec = endedAt ? Math.max(0, Math.round((endedAt - started) / 1000)) : null;
+  const tones = ["neutral", "secondary", "tertiary"];
+
+  return {
+    id: row.id,
+    name: row.caller_phone ? "Caller" : "Unknown Caller",
+    initials: null,
+    phone: row.caller_phone ?? "Unknown",
+    status,
+    intent: row.summary?.slice(0, 40) || (row.reservation_id ? "Booking" : "Inbound call"),
+    duration: durationSec != null ? formatDuration(durationSec) : "—",
+    time: started.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    timeNote: relativeTime(started),
+    avatarTone: tones[index % tones.length]
+  };
+}
+
+function formatDuration(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function relativeTime(date) {
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function FeedCallRow({ row, onClick }) {
@@ -696,56 +765,34 @@ function ContextItem({ icon, label, value }) {
 }
 
 function BookingLogPage({ navigate }) {
-  const rows = [
-    {
-      time: "18:30",
-      guest: "Sarah Jenkins",
-      phone: "+61 400 123 456",
-      party: 2,
-      status: "Confirmed",
-      statusTone: "confirmed",
-      note: "Requested a quiet corner. Anniversary dinner."
-    },
-    {
-      time: "19:00",
-      guest: "Michael Chen",
-      phone: "+61 411 987 654",
-      party: 8,
-      status: "Awaiting Deposit",
-      statusTone: "pending",
-      note: "Large group policy triggered. Payment link sent via SMS by AI. Pending.",
-      icon: "info"
-    },
-    {
-      time: "19:15",
-      guest: "Emma Thompson",
-      phone: "+61 422 345 678",
-      party: 4,
-      status: "Confirmed",
-      statusTone: "confirmed",
-      note: "Severe peanut allergy noted by caller.",
-      tag: "Allergy"
-    },
-    {
-      time: "19:45",
-      guest: "David Lee",
-      phone: "Unknown",
-      party: 2,
-      status: "Cancelled",
-      statusTone: "cancelled",
-      note: "Cancelled via SMS reply at 14:20.",
-      muted: true
-    },
-    {
-      time: "20:00",
-      guest: "Walk-in (Table 12)",
-      phone: "No details",
-      party: 3,
-      status: "Seated",
-      statusTone: "seated",
-      note: "Added manually by staff."
-    }
-  ];
+  const [reservations, setReservations] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listReservations({ limit: 100 }), getAnalytics({ days: 30 })])
+      .then(([res, stats]) => {
+        if (cancelled) return;
+        setReservations(res.reservations ?? []);
+        setAnalytics(stats.analytics ?? null);
+      })
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rows = reservations.map(mapReservationToRow);
+  const totalBookings = reservations.length;
+  const confirmed = reservations.filter((r) => r.status === "confirmed").length;
+  const cancelled = reservations.filter((r) => r.status === "cancelled").length;
+  const successRate =
+    analytics && analytics.total_calls > 0
+      ? `${Math.round((analytics.bookings_created / analytics.total_calls) * 100)}%`
+      : "—";
 
   return (
     <DashboardShell active="Booking Log" navigate={navigate}>
@@ -771,17 +818,17 @@ function BookingLogPage({ navigate }) {
       </header>
 
       <section className="booking-stats">
-        <BookingStat title="Total Bookings" value="142" note="+12% today" icon="book_online" />
-        <BookingStat title="Confirmed" value="128" note="Via AI & Web" icon="check_circle" />
-        <BookingStat title="Awaiting Action" value="14" note="Requires staff review" icon="warning" tone="warning" />
-        <BookingStat title="AI Success Rate" value="94%" note="Zero human intervention" icon="smart_toy" tone="primary" />
+        <BookingStat title="Total Bookings" value={loading ? "…" : String(totalBookings)} note="Last 100 records" icon="book_online" />
+        <BookingStat title="Confirmed" value={loading ? "…" : String(confirmed)} note="Via AI & Web" icon="check_circle" />
+        <BookingStat title="Cancelled" value={loading ? "…" : String(cancelled)} note="Customer or staff" icon="warning" tone="warning" />
+        <BookingStat title="Booking Rate" value={loading ? "…" : successRate} note="Bookings per call (30d)" icon="smart_toy" tone="primary" />
       </section>
 
       <section className="reservations-panel">
         <div className="reservations-head">
           <div>
-            <h2>Today's Reservations</h2>
-            <span>Nov 14, 2023</span>
+            <h2>Recent Reservations</h2>
+            <span>{new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</span>
           </div>
           <button>Export</button>
         </div>
@@ -790,36 +837,62 @@ function BookingLogPage({ navigate }) {
           <table className="booking-table">
             <thead>
               <tr>
-                <th>Time</th>
+                <th>Date / Time</th>
                 <th>Guest</th>
                 <th>Party</th>
                 <th>Status</th>
-                <th>AI Notes</th>
+                <th>Notes</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <BookingRow key={`${row.time}-${row.guest}`} row={row} />
+                <BookingRow key={row.id} row={row} />
               ))}
             </tbody>
           </table>
         </div>
 
         <footer className="booking-table-footer">
-          <span>Showing 1-5 of 142</span>
-          <div>
-            <button disabled aria-label="Previous page">
-              <Icon name="chevron_left" />
-            </button>
-            <button aria-label="Next page">
-              <Icon name="chevron_right" />
-            </button>
-          </div>
+          <span>
+            {loading
+              ? "Loading…"
+              : error
+              ? `Error: ${error}`
+              : `${rows.length} reservation${rows.length === 1 ? "" : "s"}`}
+          </span>
         </footer>
       </section>
     </DashboardShell>
   );
+}
+
+function mapReservationToRow(row) {
+  const statusToneMap = {
+    confirmed: "confirmed",
+    cancelled: "cancelled",
+    seated: "seated",
+    completed: "confirmed",
+    no_show: "cancelled"
+  };
+  const statusLabelMap = {
+    confirmed: "Confirmed",
+    cancelled: "Cancelled",
+    seated: "Seated",
+    completed: "Completed",
+    no_show: "No-show"
+  };
+  return {
+    id: row.id,
+    time: `${row.reservation_date} ${String(row.start_time).slice(0, 5)}`,
+    guest: row.customer_name || "Unknown",
+    phone: row.customer_phone || "Unknown",
+    party: row.party_size,
+    status: statusLabelMap[row.status] ?? row.status,
+    statusTone: statusToneMap[row.status] ?? "confirmed",
+    note: row.notes || (row.source === "voice" ? "Booked via phone" : `Booked via ${row.source}`),
+    muted: row.status === "cancelled"
+  };
 }
 
 function BookingStat({ title, value, note, icon, tone = "" }) {
@@ -874,12 +947,35 @@ function BookingRow({ row }) {
 }
 
 function AnalyticsPage({ navigate }) {
+  const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAnalytics({ days: 7 })
+      .then((res) => !cancelled && setAnalytics(res.analytics))
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const totalCalls = analytics?.total_calls ?? 0;
+  const bookingRate =
+    analytics && analytics.total_calls > 0
+      ? `${Math.round((analytics.bookings_created / analytics.total_calls) * 100)}%`
+      : "—";
+  const revenueSaved = `$${((analytics?.bookings_created ?? 0) * 80 / 30).toFixed(0)}`;
+  const avgLatency = analytics?.avg_latency_ms ? `${(analytics.avg_latency_ms / 1000).toFixed(1)}s` : "—";
+
   return (
     <DashboardShell active="Analytics" navigate={navigate} branded>
       <header className="analytics-header">
         <div>
           <h1>Performance Analytics</h1>
-          <p>Comprehensive overview of VocoTable AI efficiency and impact.</p>
+          <p>Last 7 days of VocoTable AI activity.</p>
         </div>
         <div className="analytics-actions">
           <button>
@@ -894,15 +990,15 @@ function AnalyticsPage({ navigate }) {
       </header>
 
       <section className="metric-grid">
-        <Metric icon="call" label="Total Calls Handled" value="4,285" change="12.5%" />
-        <Metric icon="event_available" label="Booking Success Rate" value="87.4%" change="8.2%" tone="secondary" />
-        <Metric icon="payments" label="Est. Revenue Saved" value="$12,450" change="15.1%" tone="tertiary" />
-        <Metric icon="speed" label="Avg. AI Response Time" value="0.8s" change="1.2s" down />
+        <Metric icon="call" label="Total Calls Handled" value={loading ? "…" : String(totalCalls)} change={error ? "error" : "live"} />
+        <Metric icon="event_available" label="Booking Conversion" value={loading ? "…" : bookingRate} change="of calls" tone="secondary" />
+        <Metric icon="payments" label="Est. Revenue (daily avg)" value={loading ? "…" : revenueSaved} change="$80/booking" tone="tertiary" />
+        <Metric icon="speed" label="Avg. AI Response Time" value={loading ? "…" : avgLatency} change="" />
       </section>
 
       <section className="analytics-lower-grid">
         <CallVolumeChart />
-        <OutcomeBreakdown />
+        <OutcomeBreakdown analytics={analytics} />
       </section>
     </DashboardShell>
   );
@@ -979,7 +1075,13 @@ function CallVolumeChart() {
   );
 }
 
-function OutcomeBreakdown() {
+function OutcomeBreakdown({ analytics }) {
+  const total = analytics?.total_calls ?? 0;
+  const bookings = analytics?.bookings_created ?? 0;
+  const transferred = analytics?.transferred ?? 0;
+  const other = Math.max(0, total - bookings - transferred);
+  const pct = (n) => (total ? `${Math.round((n / total) * 100)}%` : "—");
+
   return (
     <article className="outcome-card">
       <h2>Outcome Breakdown</h2>
@@ -988,14 +1090,14 @@ function OutcomeBreakdown() {
         <div className="diamond diamond-secondary" />
         <div className="diamond diamond-tertiary" />
         <div className="outcome-center">
-          <strong>4.2k</strong>
+          <strong>{total}</strong>
           <span>Total</span>
         </div>
       </div>
       <div className="outcome-list">
-        <OutcomeItem color="primary" label="Confirmed Bookings" value="65%" />
-        <OutcomeItem color="secondary" label="FAQ Answered" value="25%" />
-        <OutcomeItem color="tertiary" label="Transferred to Staff" value="10%" />
+        <OutcomeItem color="primary" label="Confirmed Bookings" value={pct(bookings)} />
+        <OutcomeItem color="secondary" label="FAQ / Other" value={pct(other)} />
+        <OutcomeItem color="tertiary" label="Transferred to Staff" value={pct(transferred)} />
       </div>
     </article>
   );

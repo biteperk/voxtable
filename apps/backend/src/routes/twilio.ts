@@ -11,6 +11,7 @@ import {
 export const twilioRouter = Router();
 
 twilioRouter.use(
+  "/twilio",
   asyncHandler(async (request, _response, next) => {
     assertTwilioSignature(
       request.header("x-twilio-signature"),

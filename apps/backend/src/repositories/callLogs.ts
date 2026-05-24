@@ -112,3 +112,75 @@ export async function attachReservationToCallLog(
 ): Promise<void> {
   await db.query("UPDATE call_logs SET reservation_id = $2 WHERE id = $1", [callLogId, reservationId]);
 }
+
+export interface CallLogRow {
+  id: string;
+  restaurant_id: string;
+  provider: string;
+  provider_call_id: string | null;
+  caller_phone: string | null;
+  status: CallStatus;
+  transcript: string | null;
+  summary: string | null;
+  recording_url: string | null;
+  latency_ms: number | null;
+  transferred_to_staff: boolean;
+  reservation_id: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listCallLogs(input: {
+  restaurantId: string;
+  limit?: number;
+}): Promise<CallLogRow[]> {
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const result = await pool.query<CallLogRow>(
+    `
+    SELECT *
+    FROM call_logs
+    WHERE restaurant_id = $1
+    ORDER BY COALESCE(started_at, created_at) DESC
+    LIMIT $2
+    `,
+    [input.restaurantId, limit]
+  );
+  return result.rows;
+}
+
+export async function getCallLogById(id: string): Promise<CallLogRow | null> {
+  const result = await pool.query<CallLogRow>("SELECT * FROM call_logs WHERE id = $1", [id]);
+  return result.rows[0] ?? null;
+}
+
+export interface CallLogStats {
+  total_calls: number;
+  handled: number;
+  transferred: number;
+  bookings_created: number;
+  avg_latency_ms: number | null;
+}
+
+export async function getCallLogStats(input: {
+  restaurantId: string;
+  sinceDays: number;
+}): Promise<CallLogStats> {
+  const days = Math.min(Math.max(input.sinceDays, 1), 365);
+  const result = await pool.query<CallLogStats>(
+    `
+    SELECT
+      COUNT(*)::int AS total_calls,
+      COUNT(*) FILTER (WHERE status = 'completed' AND NOT transferred_to_staff)::int AS handled,
+      COUNT(*) FILTER (WHERE transferred_to_staff)::int AS transferred,
+      COUNT(*) FILTER (WHERE reservation_id IS NOT NULL)::int AS bookings_created,
+      AVG(latency_ms)::int AS avg_latency_ms
+    FROM call_logs
+    WHERE restaurant_id = $1
+      AND created_at >= now() - ($2::int || ' days')::interval
+    `,
+    [input.restaurantId, days]
+  );
+  return result.rows[0]!;
+}

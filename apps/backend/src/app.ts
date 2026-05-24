@@ -1,8 +1,10 @@
 import cors from "cors";
 import express from "express";
 
+import { env } from "./config/env";
 import { availabilityRouter } from "./routes/availability";
 import { bookingsRouter } from "./routes/bookings";
+import { dashboardRouter } from "./routes/dashboard";
 import { healthRouter } from "./routes/health";
 import { retellRouter } from "./routes/retell";
 import { twilioRouter } from "./routes/twilio";
@@ -14,8 +16,16 @@ type RequestWithRawBody = express.Request & { rawBody?: string };
 export function createApp() {
   const app = express();
 
+  app.set("trust proxy", 1);
   app.disable("x-powered-by");
-  app.use(cors());
+  app.use(
+    cors({
+      origin:
+        env.APP_ENV === "production"
+          ? ["https://vocotable.algorythmos.com.au"]
+          : true
+    })
+  );
   app.use(
     express.json({
       limit: "1mb",
@@ -39,6 +49,7 @@ export function createApp() {
   app.use(bookingsRouter);
   app.use(retellRouter);
   app.use(twilioRouter);
+  app.use(dashboardRouter);
 
   app.use(errorHandler);
 

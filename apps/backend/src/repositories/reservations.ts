@@ -84,6 +84,48 @@ export async function getReservationById(id: string): Promise<ReservationRow | n
   return result.rows[0] ?? null;
 }
 
+export interface ReservationListItem extends ReservationRow {
+  customer_name: string;
+  customer_phone: string;
+  table_label: string | null;
+}
+
+export async function listReservations(input: {
+  restaurantId: string;
+  date?: string;
+  limit?: number;
+}): Promise<ReservationListItem[]> {
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const params: unknown[] = [input.restaurantId];
+  let whereDate = "";
+
+  if (input.date) {
+    params.push(input.date);
+    whereDate = `AND r.reservation_date = $${params.length}::date`;
+  }
+
+  params.push(limit);
+
+  const result = await pool.query<ReservationListItem>(
+    `
+    SELECT
+      r.*,
+      c.name AS customer_name,
+      c.phone AS customer_phone,
+      t.label AS table_label
+    FROM reservations r
+    JOIN customers c ON c.id = r.customer_id
+    LEFT JOIN tables t ON t.id = r.table_id
+    WHERE r.restaurant_id = $1 ${whereDate}
+    ORDER BY r.reservation_date DESC, r.start_time DESC, r.created_at DESC
+    LIMIT $${params.length}
+    `,
+    params
+  );
+
+  return result.rows;
+}
+
 export async function updateReservation(input: {
   id: string;
   tableId?: string | null;
