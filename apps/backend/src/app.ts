@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 
+import { env } from "./config/env";
 import { availabilityRouter } from "./routes/availability";
 import { bookingsRouter } from "./routes/bookings";
 import { healthRouter } from "./routes/health";
@@ -14,8 +15,16 @@ type RequestWithRawBody = express.Request & { rawBody?: string };
 export function createApp() {
   const app = express();
 
+  app.set("trust proxy", 1);
   app.disable("x-powered-by");
-  app.use(cors());
+  app.use(
+    cors({
+      origin:
+        env.APP_ENV === "production"
+          ? ["https://vocotable.algorythmos.com.au"]
+          : true
+    })
+  );
   app.use(
     express.json({
       limit: "1mb",
