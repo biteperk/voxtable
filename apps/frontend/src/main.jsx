@@ -308,10 +308,6 @@ function DashboardShell({ active, children, navigate }) {
             <span>Settings</span>
           </button>
 
-          <button className="settings-link" type="button" onClick={handleSignOut}>
-            <Icon name="logout" />
-            <span>Sign out</span>
-          </button>
 
           <div className="sidebar-user">
             <img src={user?.photoURL ?? restaurantImage} alt={user?.displayName ?? "User"} />
