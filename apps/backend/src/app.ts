@@ -4,6 +4,7 @@ import express from "express";
 import { env } from "./config/env";
 import { availabilityRouter } from "./routes/availability";
 import { bookingsRouter } from "./routes/bookings";
+import { dashboardRouter } from "./routes/dashboard";
 import { healthRouter } from "./routes/health";
 import { retellRouter } from "./routes/retell";
 import { twilioRouter } from "./routes/twilio";
@@ -48,6 +49,7 @@ export function createApp() {
   app.use(bookingsRouter);
   app.use(retellRouter);
   app.use(twilioRouter);
+  app.use(dashboardRouter);
 
   app.use(errorHandler);
 

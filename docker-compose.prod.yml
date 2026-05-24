@@ -1,0 +1,6 @@
+services:
+  api:
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/firebase-admin.json
+    volumes:
+      - ./firebase-admin.json:/secrets/firebase-admin.json:ro

@@ -35,7 +35,9 @@ const envSchema = z
   TWILIO_VALIDATE_SIGNATURE: z
     .enum(["true", "false"])
     .default("false")
-    .transform((value) => value === "true")
+    .transform((value) => value === "true"),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional()
   })
   .superRefine((value, ctx) => {
     if (value.APP_ENV !== "production") {
