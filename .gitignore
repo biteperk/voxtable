@@ -43,6 +43,7 @@ temp/
 # Hosting and tooling
 .vercel/
 .railway/
+.firebase/
 .turbo/
 .cache/
 
