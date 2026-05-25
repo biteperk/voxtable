@@ -3161,3 +3161,231 @@ td button {
   font-size: 14px;
   cursor: pointer;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Apple-style design refinements — Phase 9 polish pass
+   Keep JetBrains Mono ONLY for tabular numerics + alignment-
+   sensitive data. Switch descriptive labels back to Geist sans.
+   ───────────────────────────────────────────────────────────── */
+
+/* Stat-card supporting label — was mono-bold, now sans-light  */
+.booking-stat p,
+.feed-stat-sub,
+.feed-stat-change,
+.metric-card span,
+.feed-stat-label {
+  font-family: inherit;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+.booking-stat p {
+  font-size: 13px;
+  color: rgba(203, 213, 225, 0.62);
+  margin-top: 8px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.feed-stat-label {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.78);
+  font-weight: 600;
+}
+
+.feed-stat-sub {
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.78);
+}
+
+/* Status pills — sans, not mono. Tighter padding. */
+.status-pill,
+.feed-badge,
+.feed-badge-handled,
+.feed-badge-transferred,
+.feed-badge-live {
+  font-family: inherit;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: none;
+}
+
+/* Booking row "Date / Time" cell — now a two-line stack:
+   bold date on top, time underneath, both sans for legibility. */
+.booking-time {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 110px;
+}
+.booking-time strong {
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--on-surface);
+  letter-spacing: -0.005em;
+}
+.booking-time span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.85);
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0;
+}
+
+/* Guest column — name above, phone (mono, tabular) beneath */
+.booking-table td:nth-child(2) strong {
+  display: block;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+}
+.booking-table td:nth-child(2) span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.78);
+  font-feature-settings: "tnum" 1;
+}
+
+/* AI Notes column — readable, not mono */
+.booking-note span,
+.booking-note em {
+  font-family: inherit;
+  font-style: normal;
+  font-size: 13px;
+  color: rgba(203, 213, 225, 0.86);
+}
+.booking-note em {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(252, 165, 165, 0.12);
+  color: #fca5a5;
+  font-size: 11px;
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+/* Booking-table header — quieter, Apple-style */
+.booking-table thead th {
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.78);
+  font-weight: 600;
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+/* Table row hover — subtle elevation */
+.booking-table tbody tr {
+  transition: background-color 120ms ease;
+}
+.booking-table tbody tr:hover:not(.muted) {
+  background: rgba(173, 198, 255, 0.04);
+}
+.booking-table tbody tr.muted td strong,
+.booking-table tbody tr.muted td:nth-child(2) span {
+  color: rgba(148, 163, 184, 0.45);
+}
+
+/* "Recent Reservations" panel header date pill — sans, not mono */
+.reservations-head > div > span {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(173, 198, 255, 0.10);
+  color: rgba(203, 213, 225, 0.88);
+  font-weight: 500;
+}
+
+/* Big stat numeric in booking-stat — keep the size, switch to
+   tabular numerals so 1 vs 11 vs 111 align cleanly. */
+.booking-stat strong,
+.feed-stat-value,
+.metric-card strong {
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: -0.02em;
+}
+
+/* Loading "…" — gentle pulse so it doesn't read as broken */
+.booking-stat strong:only-child,
+.feed-stat-value,
+.metric-card strong {
+  animation: none;
+}
+.booking-stat strong:empty::after,
+.feed-stat-value:empty::after,
+.metric-card strong:empty::after {
+  content: "…";
+}
+/* When the value IS the ellipsis placeholder, pulse it. */
+@keyframes loading-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
+}
+.booking-stat strong:has-text("…"),
+.feed-stat-value:has-text("…") {
+  animation: loading-pulse 1.4s ease-in-out infinite;
+}
+
+/* Sidebar brand — keep its visual identity but tighten the
+   subtitle which is currently uppercase tracking too loose */
+.dashboard-brand strong {
+  letter-spacing: -0.01em;
+}
+.dashboard-brand span {
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+
+/* Footer "1 reservation" / "N records" lines — sans, lighter */
+.booking-table-footer span,
+.feed-table-footer span {
+  font-family: inherit;
+  color: rgba(148, 163, 184, 0.72);
+  font-size: 13px;
+}
+
+/* Search bar in the booking actions row — refine */
+.booking-search input {
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+}
+
+/* New booking + Export buttons — Apple-style refinement */
+.new-booking-button,
+.square-action {
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+.new-booking-button:hover,
+.square-action:hover {
+  transform: translateY(-1px);
+}
+
+/* Page headers — slightly softer subtitle color, better hierarchy */
+.booking-log-header h1,
+.operational-header h1,
+.analytics-header h1,
+.billing-header h1 {
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+.booking-log-header p,
+.operational-header p,
+.analytics-header p,
+.billing-header p {
+  color: rgba(148, 163, 184, 0.82);
+  font-family: inherit;
+  margin-top: 6px;
+  font-size: 14px;
+}
