@@ -1,12 +1,168 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
 import { signInWithGoogle, signOutUser } from "./firebase";
-import { getAnalytics, listCallLogs, listReservations } from "./api";
+import { getAnalytics, getCallLog, listCallLogs, listReservations } from "./api";
 
 const restaurantImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAgvs7qA0qHOd2Nob8Vl9D-gIFHp0BmQY1DOKvAMXDTT6bBAyL8U1lrq-MJV9hWv6MzfT7aNcQk6xL_pujBCXaCuo4ExjvEYGkRayK6-gLpd0Y8DC1Ob8QfyIyg9MMSyRAklEVHlsUdVxYc92Bl2bdKwZNbozxITISxFGSTMm1GFjFgG4jhDIby6jRZKnR_RslKyO96YbopcDOm2xoUgLx4eSTSXZli5KtJYcV_HcCcUo9FGjv2Bxy7pOCxyMYwTdf_kEv41JzNcmE";
+
+// SSR-safe media query hook. Returns false on first render to avoid hydration
+// mismatch (no SSR today, but future-proof) and syncs in an effect.
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mql = window.matchMedia(query);
+    const onChange = (event) => setMatches(event.matches);
+    setMatches(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
+const isBrowser = typeof window !== "undefined";
+
+// Body scroll lock that survives iOS Safari rubber-banding. Records current
+// scroll, pins body via position:fixed, restores on release.
+function lockBodyScroll() {
+  if (!isBrowser) return;
+  const body = document.body;
+  if (body.dataset.scrollLocked === "1") return;
+  const scrollY = window.scrollY;
+  body.style.position = "fixed";
+  body.style.top = `-${scrollY}px`;
+  body.style.left = "0";
+  body.style.right = "0";
+  body.style.width = "100%";
+  body.dataset.scrollLocked = "1";
+  body.dataset.scrollY = String(scrollY);
+}
+function unlockBodyScroll() {
+  if (!isBrowser) return;
+  const body = document.body;
+  if (body.dataset.scrollLocked !== "1") return;
+  const y = Number(body.dataset.scrollY || "0");
+  body.style.position = "";
+  body.style.top = "";
+  body.style.left = "";
+  body.style.right = "";
+  body.style.width = "";
+  delete body.dataset.scrollLocked;
+  delete body.dataset.scrollY;
+  window.scrollTo(0, y);
+}
+
+// Drawer state with browser history integration (Android back closes drawer),
+// Esc-to-close, scroll lock, and focus return.
+function useDrawer({ pathname, triggerRef } = {}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const wasOpenRef = useRef(false);
+
+  // Esc to close
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // popstate (system back) closes if our history entry is gone
+  useEffect(() => {
+    const onPop = () => {
+      const state = window.history.state;
+      if (!state || state.drawer !== "open") {
+        if (wasOpenRef.current) {
+          setIsOpen(false);
+          wasOpenRef.current = false;
+          unlockBodyScroll();
+        }
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // Lock scroll while open, restore focus on close
+  useEffect(() => {
+    if (isOpen) {
+      lockBodyScroll();
+      wasOpenRef.current = true;
+    } else {
+      unlockBodyScroll();
+      if (wasOpenRef.current && triggerRef && triggerRef.current) {
+        triggerRef.current.focus();
+      }
+      wasOpenRef.current = false;
+    }
+    return () => {
+      // unmount safety
+      if (isOpen) unlockBodyScroll();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // Auto-close on route change without polluting history
+  useEffect(() => {
+    if (isOpen) {
+      setIsOpen(false);
+      if (window.history.state && window.history.state.drawer === "open") {
+        // remove our drawer history entry quietly
+        window.history.back();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  function open() {
+    if (isOpen) return;
+    try {
+      window.history.pushState({ drawer: "open" }, "");
+    } catch {
+      // history API can throw in odd embeddings; non-fatal
+    }
+    setIsOpen(true);
+  }
+  function close() {
+    if (!isOpen) return;
+    if (window.history.state && window.history.state.drawer === "open") {
+      window.history.back();
+    } else {
+      setIsOpen(false);
+    }
+  }
+  function toggle() {
+    isOpen ? close() : open();
+  }
+
+  return { isOpen, open, close, toggle };
+}
+
+// Toggle .is-scrolled on a sentinel intersection so the top bar can show a
+// hairline + slight blur lift only when content is underneath.
+function useScrolled() {
+  const [scrolled, setScrolled] = useState(false);
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return undefined;
+    const io = new IntersectionObserver(
+      ([entry]) => setScrolled(!entry.isIntersecting),
+      { threshold: 0 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return { scrolled, sentinelRef };
+}
 
 function Icon({ name, fill = false, className = "" }) {
   return (
@@ -31,6 +187,21 @@ function App() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  useEffect(() => {
+    const titles = {
+      "/": "VocoTable",
+      "/live-feed": "Live Feed · VocoTable",
+      "/booking-log": "Booking Log · VocoTable",
+      "/analytics": "Analytics · VocoTable",
+      "/settings": "Settings · VocoTable",
+    };
+    if (/^\/live-feed\/[^/]+$/.test(path)) {
+      document.title = "Call detail · VocoTable";
+    } else {
+      document.title = titles[path] || "VocoTable";
+    }
+  }, [path]);
 
   const navigate = (nextPath) => {
     window.history.pushState({}, "", nextPath);
@@ -65,15 +236,15 @@ function AppRouter({ path, navigate, isDashboard }) {
   // /live-feed/<id> — detail page for a single call (id is uuid)
   const detailMatch = path.match(/^\/live-feed\/([^/]+)$/);
   if (detailMatch && detailMatch[1] !== "detail") {
-    return <LiveFeedDetailPage navigate={navigate} callId={detailMatch[1]} />;
+    return <LiveFeedDetailPage navigate={navigate} callId={detailMatch[1]} path={path} />;
   }
   // legacy mock route — keep for backward compatibility, navigates back to list
-  if (path === "/live-feed/detail") return <LiveFeedOverviewPage navigate={navigate} />;
+  if (path === "/live-feed/detail") return <LiveFeedOverviewPage navigate={navigate} path={path} />;
 
-  if (path === "/live-feed") return <LiveFeedOverviewPage navigate={navigate} />;
-  if (path === "/booking-log") return <BookingLogPage navigate={navigate} />;
-  if (path === "/analytics") return <AnalyticsPage navigate={navigate} />;
-  if (path === "/settings") return <BillingPage navigate={navigate} />;
+  if (path === "/live-feed") return <LiveFeedOverviewPage navigate={navigate} path={path} />;
+  if (path === "/booking-log") return <BookingLogPage navigate={navigate} path={path} />;
+  if (path === "/analytics") return <AnalyticsPage navigate={navigate} path={path} />;
+  if (path === "/settings") return <BillingPage navigate={navigate} path={path} />;
   return <LandingPage navigate={navigate} />;
 }
 
@@ -113,6 +284,13 @@ function LoginScreen({ navigate }) {
   return (
     <div className="login-shell">
       <div className="login-card">
+        <img
+          src="/brand/mark-light-on-dark.svg"
+          alt=""
+          className="login-mark"
+          width="64"
+          height="64"
+        />
         <h1>VocoTable</h1>
         <p>Sign in to access the restaurant dashboard.</p>
         <button onClick={handleSignIn} disabled={busy} className="login-google">
@@ -136,8 +314,19 @@ function LandingPage({ navigate }) {
   return (
     <div className="landing-shell">
       <nav className="top-nav">
-        <button className="brand-button" onClick={() => navigate("/")}>
-          VocoTable
+        <button
+          className="brand-button"
+          onClick={() => navigate("/")}
+          aria-label="VocoTable home"
+        >
+          <img
+            src="/brand/mark-light-on-dark.svg"
+            alt=""
+            className="brand-mark"
+            width="32"
+            height="32"
+          />
+          <span>VocoTable</span>
         </button>
         <div className="top-icons">
           {user ? (
@@ -317,8 +506,14 @@ function FeatureCard({ icon, title, text, tone }) {
   );
 }
 
-function DashboardShell({ active, children, navigate }) {
+function DashboardShell({ active, children, navigate, path }) {
   const { user } = useAuth();
+  const isPhone = useMediaQuery("(max-width: 767px)");
+  const burgerRef = useRef(null);
+  const drawer = useDrawer({ pathname: path, triggerRef: burgerRef });
+  const { scrolled, sentinelRef } = useScrolled();
+  const drawerTitleId = useId();
+
   const items = [
     ["Live Feed", "graphic_eq", "/live-feed"],
     ["Booking Log", "menu_book", "/booking-log"],
@@ -330,61 +525,172 @@ function DashboardShell({ active, children, navigate }) {
     navigate("/");
   };
 
-  return (
-    <div className="dashboard-shell">
-      <aside className="sidebar analytics-sidebar">
-        <div className="sidebar-top">
-          <button className="dashboard-brand" onClick={() => navigate("/")}>
+  const sidebarMarkup = (
+    <aside
+      className="sidebar analytics-sidebar"
+      role={isPhone ? "dialog" : undefined}
+      aria-modal={isPhone ? "true" : undefined}
+      aria-labelledby={isPhone ? drawerTitleId : undefined}
+    >
+      <div className="sidebar-top">
+        <h2 id={drawerTitleId} className="sr-only">
+          Menu
+        </h2>
+        <button
+          className="dashboard-brand"
+          onClick={() => navigate("/")}
+          aria-label="VocoTable home"
+        >
+          <img
+            src="/brand/mark-light-on-dark.svg"
+            alt=""
+            className="brand-mark"
+            width="36"
+            height="36"
+          />
+          <span className="dashboard-brand-text">
             <strong>VocoTable</strong>
             <span>Restaurant AI Hub</span>
-          </button>
-        </div>
+          </span>
+        </button>
+      </div>
 
-        <nav className="side-links">
-          {items.map(([label, icon, route]) => {
-            const isActive = active === label;
-            const isPending = !route;
+      <nav className="side-links" aria-label="Primary">
+        {items.map(([label, icon, route]) => {
+          const isActive = active === label;
+          const isPending = !route;
 
-            return (
-              <button
-                key={label}
-                type="button"
-                className={`${isActive ? "active" : ""} ${isPending ? "pending" : ""}`.trim()}
-                onClick={() => {
-                  if (route) {
-                    navigate(route);
-                  }
-                }}
-                aria-disabled={isPending}
-              >
-                <Icon name={icon} fill={isActive} />
-                <span>{label}</span>
-              </button>
-            );
-          })}
-        </nav>
+          return (
+            <button
+              key={label}
+              type="button"
+              className={`${isActive ? "active" : ""} ${isPending ? "pending" : ""}`.trim()}
+              onClick={() => {
+                if (route) {
+                  navigate(route);
+                }
+              }}
+              aria-disabled={isPending}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <Icon name={icon} fill={isActive} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
-        <div className="sidebar-bottom">
-          <button
-            className={`settings-link ${active === "Settings" ? "active" : ""}`}
-            type="button"
-            onClick={() => navigate("/settings")}
-          >
-            <Icon name="settings" fill={active === "Settings"} />
-            <span>Settings</span>
-          </button>
+      <div className="sidebar-bottom">
+        <button
+          className={`settings-link ${active === "Settings" ? "active" : ""}`}
+          type="button"
+          onClick={() => navigate("/settings")}
+          aria-current={active === "Settings" ? "page" : undefined}
+        >
+          <Icon name="settings" fill={active === "Settings"} />
+          <span>Settings</span>
+        </button>
 
 
-          <div className="sidebar-user">
-            <img src={user?.photoURL ?? restaurantImage} alt={user?.displayName ?? "User"} />
-            <div>
-              <strong>{user?.displayName ?? "User"}</strong>
-              <span>{user?.email ?? ""}</span>
-            </div>
+        <div className="sidebar-user">
+          <img src={user?.photoURL ?? restaurantImage} alt="" />
+          <div>
+            <strong>{user?.displayName ?? "User"}</strong>
+            <span>{user?.email ?? ""}</span>
           </div>
         </div>
-      </aside>
-      <main className="dashboard-content">{children}</main>
+        <button
+          type="button"
+          className="sidebar-signout"
+          onClick={handleSignOut}
+        >
+          <Icon name="logout" />
+          <span>Sign out</span>
+        </button>
+      </div>
+    </aside>
+  );
+
+  if (!isPhone) {
+    return (
+      <div className="dashboard-shell">
+        {sidebarMarkup}
+        <main className="dashboard-content">{children}</main>
+      </div>
+    );
+  }
+
+  // Phone: top bar + drawer + scrollable main
+  const initial = (user?.displayName || user?.email || "?").trim().charAt(0).toUpperCase();
+  return (
+    <div className="mobile-shell">
+      <a href="#mobile-main" className="skip-link">
+        Skip to content
+      </a>
+      <header className={`mobile-topbar ${scrolled ? "is-scrolled" : ""}`}>
+        <button
+          ref={burgerRef}
+          type="button"
+          className="mobile-topbar-burger"
+          aria-label={drawer.isOpen ? "Close menu" : "Open menu"}
+          aria-expanded={drawer.isOpen}
+          aria-controls="primary-drawer"
+          onClick={drawer.toggle}
+        >
+          <Icon name="menu" />
+        </button>
+        <button
+          type="button"
+          className="mobile-topbar-brand"
+          onClick={() => navigate("/")}
+          aria-label="VocoTable home"
+        >
+          <img
+            src="/brand/mark-light-on-dark.svg"
+            alt=""
+            width="28"
+            height="28"
+          />
+          <span>{active || "VocoTable"}</span>
+        </button>
+        <button
+          type="button"
+          className="mobile-topbar-avatar"
+          onClick={() => navigate("/settings")}
+          aria-label={user?.email ? `Account · ${user.email}` : "Account"}
+        >
+          {user?.photoURL ? (
+            <img src={user.photoURL} alt="" />
+          ) : (
+            <span aria-hidden="true">{initial}</span>
+          )}
+        </button>
+      </header>
+
+      <div ref={sentinelRef} aria-hidden="true" className="topbar-sentinel" />
+
+      <div
+        className={`drawer-backdrop ${drawer.isOpen ? "is-open" : ""}`}
+        onClick={drawer.close}
+        aria-hidden="true"
+      />
+      <div
+        id="primary-drawer"
+        className={`drawer ${drawer.isOpen ? "is-open" : ""}`}
+        // eslint-disable-next-line react/no-unknown-property
+        inert={!drawer.isOpen ? "" : undefined}
+      >
+        {sidebarMarkup}
+      </div>
+
+      <main
+        id="mobile-main"
+        className="dashboard-content mobile-main"
+        // eslint-disable-next-line react/no-unknown-property
+        inert={drawer.isOpen ? "" : undefined}
+      >
+        {children}
+      </main>
     </div>
   );
 }
@@ -402,11 +708,12 @@ function DashboardTopIcons() {
   );
 }
 
-function LiveFeedOverviewPage({ navigate }) {
+function LiveFeedOverviewPage({ navigate, path }) {
   const [callLogs, setCallLogs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const isPhone = useMediaQuery("(max-width: 767px)");
 
   useEffect(() => {
     let cancelled = false;
@@ -432,7 +739,7 @@ function LiveFeedOverviewPage({ navigate }) {
       : "—";
 
   return (
-    <DashboardShell active="Live Feed" navigate={navigate}>
+    <DashboardShell active="Live Feed" navigate={navigate} path={path}>
 
       <header className="operational-header">
         <div>
@@ -494,29 +801,44 @@ function LiveFeedOverviewPage({ navigate }) {
           </div>
         </div>
 
-        <div className="feed-table-wrap">
-          <table className="feed-table">
-            <thead>
-              <tr>
-                <th>Customer</th>
-                <th>Status</th>
-                <th>Intent</th>
-                <th>Duration</th>
-                <th>Time Snapshot</th>
-                <th className="text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {callRows.map((row) => (
-                <FeedCallRow
-                  key={row.id}
-                  row={row}
-                  onClick={() => navigate(`/live-feed/${row.id}`)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {isPhone ? (
+          <ul className="feed-card-list" aria-label="Recent calls">
+            {callRows.length === 0 && !loading && (
+              <li className="feed-card-empty">No calls yet.</li>
+            )}
+            {callRows.map((row) => (
+              <FeedCardItem
+                key={row.id}
+                row={row}
+                onClick={() => navigate(`/live-feed/${row.id}`)}
+              />
+            ))}
+          </ul>
+        ) : (
+          <div className="feed-table-wrap">
+            <table className="feed-table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Status</th>
+                  <th>Intent</th>
+                  <th>Duration</th>
+                  <th>Time Snapshot</th>
+                  <th className="text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {callRows.map((row) => (
+                  <FeedCallRow
+                    key={row.id}
+                    row={row}
+                    onClick={() => navigate(`/live-feed/${row.id}`)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <div className="feed-table-footer">
           <span>
@@ -657,10 +979,62 @@ function FeedCallRow({ row, onClick }) {
   );
 }
 
-function LiveFeedDetailPage({ navigate, callId }) {
+function FeedCardItem({ row, onClick }) {
+  const isLive = row.status === "live";
+  return (
+    <li className={`feed-card ${isLive ? "feed-card-live" : ""}`}>
+      <button type="button" className="feed-card-button" onClick={onClick}>
+        <div className="feed-card-row feed-card-row-top">
+          <div className="feed-card-identity">
+            <div className={`feed-avatar ${row.avatarTone}`} aria-hidden="true">
+              {row.initials || (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+                </svg>
+              )}
+            </div>
+            <div className="feed-card-name">
+              <strong>{row.name}</strong>
+              <span>{row.phone}</span>
+            </div>
+          </div>
+          <div className="feed-card-time">
+            <strong>{row.time}</strong>
+            <span>{row.timeNote}</span>
+          </div>
+        </div>
+        <div className="feed-card-row feed-card-row-meta">
+          {isLive ? (
+            <span className="feed-badge feed-badge-live">
+              <span className="feed-badge-ping" />
+              <span className="feed-badge-core" />
+              LIVE
+            </span>
+          ) : row.status === "handled" ? (
+            <span className="feed-badge feed-badge-handled">
+              <Icon name="check_circle" /> Handled
+            </span>
+          ) : row.status === "transferred" ? (
+            <span className="feed-badge feed-badge-transferred">
+              <Icon name="call_split" /> Transferred
+            </span>
+          ) : null}
+          <span className="feed-card-intent">{row.intent}</span>
+          <span className={`feed-card-duration ${isLive ? "accent" : ""}`}>
+            <Icon name="timer" />
+            {row.duration}
+          </span>
+        </div>
+      </button>
+    </li>
+  );
+}
+
+function LiveFeedDetailPage({ navigate, callId, path }) {
   const [callLog, setCallLog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const isPhone = useMediaQuery("(max-width: 767px)");
 
   useEffect(() => {
     let cancelled = false;
@@ -684,7 +1058,7 @@ function LiveFeedDetailPage({ navigate, callId }) {
   const outcome = callLog?.booking_outcome ?? null;
 
   return (
-    <DashboardShell active="Live Feed" navigate={navigate}>
+    <DashboardShell active="Live Feed" navigate={navigate} path={path}>
       <header className="operational-header">
         <div className="detail-header-left">
           <button
@@ -945,11 +1319,12 @@ function ContextItem({ icon, label, value }) {
   );
 }
 
-function BookingLogPage({ navigate }) {
+function BookingLogPage({ navigate, path }) {
   const [reservations, setReservations] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const isPhone = useMediaQuery("(max-width: 767px)");
 
   useEffect(() => {
     let cancelled = false;
@@ -976,7 +1351,7 @@ function BookingLogPage({ navigate }) {
       : "—";
 
   return (
-    <DashboardShell active="Booking Log" navigate={navigate}>
+    <DashboardShell active="Booking Log" navigate={navigate} path={path}>
 
       <header className="booking-log-header">
         <div>
@@ -1014,25 +1389,36 @@ function BookingLogPage({ navigate }) {
           <button>Export</button>
         </div>
 
-        <div className="booking-table-wrap">
-          <table className="booking-table">
-            <thead>
-              <tr>
-                <th>Date / Time</th>
-                <th>Guest</th>
-                <th>Party</th>
-                <th>Status</th>
-                <th>Notes</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <BookingRow key={row.id} row={row} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {isPhone ? (
+          <ul className="booking-card-list" aria-label="Reservations">
+            {rows.length === 0 && !loading && (
+              <li className="booking-card-empty">No reservations yet.</li>
+            )}
+            {rows.map((row) => (
+              <BookingCardItem key={row.id} row={row} />
+            ))}
+          </ul>
+        ) : (
+          <div className="booking-table-wrap">
+            <table className="booking-table">
+              <thead>
+                <tr>
+                  <th>Date / Time</th>
+                  <th>Guest</th>
+                  <th>Party</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <BookingRow key={row.id} row={row} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <footer className="booking-table-footer">
           <span>
@@ -1161,6 +1547,36 @@ function BookingRow({ row }) {
         </div>
       </td>
     </tr>
+  );
+}
+
+function BookingCardItem({ row }) {
+  return (
+    <li className={`booking-card ${row.muted ? "muted" : ""}`}>
+      <div className="booking-card-row booking-card-row-top">
+        <div className="booking-card-when">
+          <strong>{row.dateLabel}</strong>
+          <span>{row.timeLabel}</span>
+        </div>
+        <span className={`status-pill ${row.statusTone}`}>
+          {row.statusTone === "cancelled" && <Icon name="cancel" />}
+          {row.statusTone === "seated" && <Icon name="directions_walk" />}
+          {row.statusTone !== "cancelled" && row.statusTone !== "seated" && <i />}
+          {row.status}
+        </span>
+      </div>
+      <div className="booking-card-row booking-card-guest">
+        <strong>{row.guest}</strong>
+        <span>{row.phone}</span>
+      </div>
+      <div className="booking-card-row booking-card-meta">
+        <span className="booking-card-party">
+          <Icon name="group" />
+          Party of {row.party}
+        </span>
+        {row.note && <span className="booking-card-note">{row.note}</span>}
+      </div>
+    </li>
   );
 }
 
