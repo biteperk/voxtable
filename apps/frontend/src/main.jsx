@@ -124,6 +124,11 @@ function LoginScreen({ navigate }) {
 }
 
 function LandingPage({ navigate }) {
+  const { user } = useAuth();
+  // Account icon goes to the dashboard. If you're not signed in the dashboard
+  // route bounces you to the LoginScreen automatically (AppRouter gate).
+  const goToDashboard = () => navigate("/live-feed");
+
   return (
     <div className="landing-shell">
       <nav className="top-nav">
@@ -131,11 +136,38 @@ function LandingPage({ navigate }) {
           VocoTable
         </button>
         <div className="top-icons">
-          <button className="icon-button" aria-label="Notifications">
-            <Icon name="notifications" />
-          </button>
-          <button className="icon-button" aria-label="Account">
-            <Icon name="account_circle" />
+          {user ? (
+            <button
+              type="button"
+              className="nav-cta"
+              onClick={goToDashboard}
+              aria-label="Go to dashboard"
+            >
+              <Icon name="dashboard" />
+              <span>Dashboard</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="nav-cta nav-cta-ghost"
+              onClick={goToDashboard}
+              aria-label="Sign in"
+            >
+              <Icon name="login" />
+              <span>Sign in</span>
+            </button>
+          )}
+          <button
+            className="icon-button account-icon"
+            aria-label={user ? `Signed in as ${user.email}` : "Sign in"}
+            onClick={goToDashboard}
+            title={user ? `Signed in as ${user.email} — go to dashboard` : "Sign in"}
+          >
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt="" />
+            ) : (
+              <Icon name="account_circle" />
+            )}
           </button>
         </div>
       </nav>
@@ -150,12 +182,20 @@ function LandingPage({ navigate }) {
               for a flat rate of $80/month. No cover fees. No sick leave.
             </p>
             <div className="hero-actions">
-              <button className="primary-action">
-                <Icon name="play_circle" />
-                Hear the AI
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => window.open("tel:+61275011140")}
+              >
+                <Icon name="phone_in_talk" />
+                Call the AI
               </button>
-              <button className="secondary-action" onClick={() => navigate("/analytics")}>
-                Get Started
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={goToDashboard}
+              >
+                {user ? "Open dashboard" : "Get started"}
               </button>
             </div>
             <VoiceDemo />
@@ -226,7 +266,9 @@ function LandingPage({ navigate }) {
                   <Icon name="check" /> Seamless integration
                 </li>
               </ul>
-              <button onClick={() => navigate("/analytics")}>Start Free Trial</button>
+              <button onClick={() => navigate("/live-feed")}>
+                {user ? "Open dashboard" : "Start free trial"}
+              </button>
             </div>
           </div>
         </section>
@@ -1019,15 +1061,49 @@ function mapReservationToRow(row) {
   };
   return {
     id: row.id,
-    time: `${row.reservation_date} ${String(row.start_time).slice(0, 5)}`,
+    dateLabel: formatReservationDate(row.reservation_date),
+    timeLabel: formatVoiceTime12h(row.start_time),
     guest: row.customer_name || "Unknown",
-    phone: row.customer_phone || "Unknown",
+    phone: formatPhoneDisplay(row.customer_phone),
     party: row.party_size,
     status: statusLabelMap[row.status] ?? row.status,
     statusTone: statusToneMap[row.status] ?? "confirmed",
     note: row.notes || (row.source === "voice" ? "Booked via phone" : `Booked via ${row.source}`),
     muted: row.status === "cancelled"
   };
+}
+
+function formatReservationDate(isoDateOrString) {
+  if (!isoDateOrString) return "—";
+  // PG DATE columns serialise as either "2026-05-27" or full ISO.
+  const ymd = String(isoDateOrString).slice(0, 10);
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.toLocaleDateString("en-AU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC"
+  });
+}
+
+function formatVoiceTime12h(timeStr) {
+  if (!timeStr) return "";
+  const [hStr, mStr] = String(timeStr).split(":");
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (Number.isNaN(h)) return String(timeStr);
+  const suffix = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return m === 0 ? `${h12} ${suffix}` : `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+function formatPhoneDisplay(raw) {
+  if (!raw) return "";
+  // +61450011140 → "+61 450 011 140"
+  const m = String(raw).match(/^(\+\d{1,3})(\d{3})(\d{3})(\d{3,4})$/);
+  return m ? `${m[1]} ${m[2]} ${m[3]} ${m[4]}` : String(raw);
 }
 
 function BookingStat({ title, value, note, icon, tone = "" }) {
@@ -1046,7 +1122,10 @@ function BookingStat({ title, value, note, icon, tone = "" }) {
 function BookingRow({ row }) {
   return (
     <tr className={row.muted ? "muted" : ""}>
-      <td className="booking-time">{row.time}</td>
+      <td className="booking-time">
+        <strong>{row.dateLabel}</strong>
+        <span>{row.timeLabel}</span>
+      </td>
       <td>
         <strong>{row.guest}</strong>
         <span>{row.phone}</span>
