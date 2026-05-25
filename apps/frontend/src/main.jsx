@@ -124,6 +124,11 @@ function LoginScreen({ navigate }) {
 }
 
 function LandingPage({ navigate }) {
+  const { user } = useAuth();
+  // Account icon goes to the dashboard. If you're not signed in the dashboard
+  // route bounces you to the LoginScreen automatically (AppRouter gate).
+  const goToDashboard = () => navigate("/live-feed");
+
   return (
     <div className="landing-shell">
       <nav className="top-nav">
@@ -131,11 +136,38 @@ function LandingPage({ navigate }) {
           VocoTable
         </button>
         <div className="top-icons">
-          <button className="icon-button" aria-label="Notifications">
-            <Icon name="notifications" />
-          </button>
-          <button className="icon-button" aria-label="Account">
-            <Icon name="account_circle" />
+          {user ? (
+            <button
+              type="button"
+              className="nav-cta"
+              onClick={goToDashboard}
+              aria-label="Go to dashboard"
+            >
+              <Icon name="dashboard" />
+              <span>Dashboard</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="nav-cta nav-cta-ghost"
+              onClick={goToDashboard}
+              aria-label="Sign in"
+            >
+              <Icon name="login" />
+              <span>Sign in</span>
+            </button>
+          )}
+          <button
+            className="icon-button account-icon"
+            aria-label={user ? `Signed in as ${user.email}` : "Sign in"}
+            onClick={goToDashboard}
+            title={user ? `Signed in as ${user.email} — go to dashboard` : "Sign in"}
+          >
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt="" />
+            ) : (
+              <Icon name="account_circle" />
+            )}
           </button>
         </div>
       </nav>
@@ -150,12 +182,20 @@ function LandingPage({ navigate }) {
               for a flat rate of $80/month. No cover fees. No sick leave.
             </p>
             <div className="hero-actions">
-              <button className="primary-action">
-                <Icon name="play_circle" />
-                Hear the AI
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => window.open("tel:+61275011140")}
+              >
+                <Icon name="phone_in_talk" />
+                Call the AI
               </button>
-              <button className="secondary-action" onClick={() => navigate("/analytics")}>
-                Get Started
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={goToDashboard}
+              >
+                {user ? "Open dashboard" : "Get started"}
               </button>
             </div>
             <VoiceDemo />
@@ -226,7 +266,9 @@ function LandingPage({ navigate }) {
                   <Icon name="check" /> Seamless integration
                 </li>
               </ul>
-              <button onClick={() => navigate("/analytics")}>Start Free Trial</button>
+              <button onClick={() => navigate("/live-feed")}>
+                {user ? "Open dashboard" : "Start free trial"}
+              </button>
             </div>
           </div>
         </section>
