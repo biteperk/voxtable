@@ -66,10 +66,21 @@ button {
 }
 
 .material-symbols-outlined {
+  font-family: "Material Symbols Outlined", "Material Symbols Outlined Fallback";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
 }
 
 .brand-button,
@@ -3208,7 +3219,7 @@ td button {
 .booking-stat p,
 .feed-stat-sub,
 .feed-stat-change,
-.metric-card span,
+.metric-card span:not(.material-symbols-outlined),
 .feed-stat-label {
   font-family: inherit;
   font-weight: 500;
@@ -3578,3 +3589,1030 @@ td button {
   font-size: 14px;
   letter-spacing: -0.005em;
 }
+
+/* ===================================================================
+   Mobile overhaul — top bar, drawer, card lists, safe areas
+   Appended in one block so the layering order is explicit:
+   1. globals + utilities (skip link, sr-only, hover scoping)
+   2. mobile shell components (top bar, drawer, cards)
+   3. tablet polish  (max-width: 1023px)
+   4. phone overhaul (max-width: 767px) — supersedes the legacy 820px block
+   5. small phone    (max-width: 480px)
+   6. motion + safe-area
+   =================================================================== */
+
+/* ---------- 1. globals + utilities ---------- */
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    min-height: 100dvh;
+  }
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -120%);
+  background: var(--primary);
+  color: var(--on-primary);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  z-index: 100;
+  transition: transform 160ms ease;
+}
+
+.skip-link:focus-visible {
+  transform: translate(-50%, calc(env(safe-area-inset-top, 0px) + 8px));
+  outline: 2px solid var(--on-primary);
+  outline-offset: 2px;
+}
+
+/* Scope hover decorations to devices that actually hover, so taps on touch
+   devices don't leave persistent hover state behind. */
+@media (hover: none) {
+  .feed-stat-card:hover,
+  .feed-row:hover,
+  .booking-table tbody tr:hover,
+  .booking-table tbody tr:hover:not(.muted),
+  .icon-button:hover,
+  .primary-action:hover,
+  .secondary-action:hover,
+  .voco-price-card button:hover {
+    /* let :active styles handle press feedback instead */
+    background: inherit;
+    box-shadow: none;
+    transform: none;
+    border-color: inherit;
+  }
+}
+
+/* ---------- 2. mobile shell components ---------- */
+
+.mobile-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: env(safe-area-inset-top, 0);
+  padding-left: max(12px, env(safe-area-inset-left, 0));
+  padding-right: max(12px, env(safe-area-inset-right, 0));
+  height: calc(56px + env(safe-area-inset-top, 0));
+  background: rgba(14, 14, 14, 0.72);
+  border-bottom: 1px solid transparent;
+  transition: background 200ms ease, border-color 200ms ease;
+  /* iOS Safari needs an explicit layer for sticky + blur to stay smooth */
+  transform: translateZ(0);
+  contain: layout style paint;
+}
+
+@supports (backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px)) {
+  .mobile-topbar {
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+}
+
+@supports not ((backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px))) {
+  .mobile-topbar {
+    background: rgba(14, 14, 14, 0.96);
+  }
+}
+
+.mobile-topbar.is-scrolled {
+  background: rgba(14, 14, 14, 0.88);
+  border-bottom-color: rgba(139, 144, 160, 0.18);
+}
+
+.topbar-sentinel {
+  width: 100%;
+  height: 1px;
+  margin-bottom: -1px;
+}
+
+.mobile-topbar-burger,
+.mobile-topbar-avatar {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--on-surface);
+  transition: background 160ms ease, transform 120ms ease;
+}
+
+.mobile-topbar-burger .material-symbols-outlined {
+  font-size: 26px;
+}
+
+.mobile-topbar-burger:active,
+.mobile-topbar-avatar:active {
+  transform: scale(0.94);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mobile-topbar-burger:focus-visible,
+.mobile-topbar-avatar:focus-visible,
+.mobile-topbar-brand:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.mobile-topbar-brand {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  color: var(--on-surface);
+  padding: 0 4px;
+  height: 44px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+.mobile-topbar-brand img {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.mobile-topbar-brand span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-topbar-avatar {
+  overflow: hidden;
+  background: rgba(173, 198, 255, 0.14);
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.mobile-topbar-avatar img {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+/* ---------- drawer + backdrop ---------- */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 70;
+  transition: opacity 240ms ease;
+}
+
+.drawer-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 80;
+  width: min(86vw, 320px);
+  height: 100vh;
+  height: 100dvh;
+  background: var(--surface-container-lowest);
+  border-right: 1px solid var(--outline-variant);
+  transform: translateX(-100%);
+  transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex;
+  /* iOS sometimes paints scrollbars over content during transition */
+  overflow: hidden;
+  contain: layout style paint;
+}
+
+.drawer.is-open {
+  transform: translateX(0);
+}
+
+.drawer .sidebar {
+  position: static;
+  width: 100%;
+  height: 100%;
+  border-right: 0;
+  padding: calc(20px + env(safe-area-inset-top, 0)) 16px
+    calc(20px + env(safe-area-inset-bottom, 0));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.drawer .sidebar .dashboard-brand {
+  margin-bottom: 8px;
+}
+
+.drawer .side-links button,
+.drawer .settings-link {
+  min-height: 48px;
+  padding: 12px 12px;
+  border-radius: 12px;
+  gap: 14px;
+  font-size: 16px;
+}
+
+.drawer .side-links button:focus-visible,
+.drawer .settings-link:focus-visible,
+.sidebar-signout:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.drawer .side-links button:active,
+.drawer .settings-link:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.drawer .sidebar-user {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-signout {
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--on-surface);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.005em;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+@media (hover: hover) {
+  .sidebar-signout:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--outline);
+  }
+}
+
+.sidebar-signout:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-signout .material-symbols-outlined {
+  font-size: 20px;
+}
+
+/* Below the phone breakpoint the desktop sidebar shows the sign-out button
+   alongside the user card; on desktop we already have it in the user dropdown
+   pattern (none today), so hide there. */
+@media (min-width: 768px) {
+  .sidebar-signout {
+    display: none;
+  }
+}
+
+/* ---------- mobile card lists ---------- */
+
+.feed-card-list,
+.booking-card-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feed-card-empty,
+.booking-card-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--on-surface-variant);
+  border: 1px dashed var(--outline-variant);
+  border-radius: 14px;
+}
+
+.feed-card,
+.booking-card {
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  background: rgba(30, 30, 30, 0.72);
+  contain: layout style paint;
+  transition: border-color 160ms ease, transform 140ms ease;
+}
+
+.booking-card {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feed-card-button {
+  width: 100%;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  border-radius: inherit;
+}
+
+.feed-card-button:focus-visible,
+.booking-card:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.feed-card:active,
+.booking-card:active {
+  transform: scale(0.985);
+}
+
+.feed-card-live {
+  border-color: rgba(0, 238, 252, 0.35);
+}
+
+.feed-card-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.feed-card-row-top {
+  justify-content: space-between;
+}
+
+.feed-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.feed-card-identity .feed-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.feed-card-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.feed-card-name strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+  letter-spacing: -0.005em;
+}
+
+.feed-card-name span {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-card-time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+
+.feed-card-time strong {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface);
+  letter-spacing: 0;
+}
+
+.feed-card-time span {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.feed-card-row-meta {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.feed-card-intent {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.feed-card-duration {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.feed-card-duration.accent {
+  color: var(--secondary-container);
+}
+
+.feed-card-duration .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.booking-card-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.booking-card-row-top {
+  justify-content: space-between;
+}
+
+.booking-card-when {
+  display: flex;
+  flex-direction: column;
+}
+
+.booking-card-when strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+  letter-spacing: -0.005em;
+}
+
+.booking-card-when span {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.booking-card-guest {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.booking-card-guest strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.booking-card-guest span {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.booking-card-meta {
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.booking-card-party {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.booking-card-party .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.booking-card-note {
+  flex: 1 1 100%;
+  color: rgba(193, 198, 215, 0.7);
+}
+
+.booking-card.muted {
+  opacity: 0.6;
+}
+
+/* ---------- 3. tablet polish (1024px and below) ---------- */
+
+@media (max-width: 1023px) {
+  .hero-content h1 {
+    font-size: clamp(36px, 5.5vw, 48px);
+    line-height: 1.1;
+  }
+
+  .hero-section {
+    min-height: auto;
+    padding: 96px 24px 64px;
+  }
+
+  .feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* At tablet sizes (768px+) the legacy 820px block stacked the sidebar at the
+   top — exactly the bad pattern this overhaul removes. Restore the proper
+   side-by-side layout for 768–1023px. The drawer only fires below 768px. */
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .dashboard-shell {
+    display: flex;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--dashboard-sidebar-width);
+    min-height: 100vh;
+    padding: 18px 10px 12px;
+  }
+
+  .dashboard-content,
+  .analytics-sidebar + .dashboard-content {
+    width: calc(100% - var(--dashboard-sidebar-width));
+    margin-left: var(--dashboard-sidebar-width);
+    padding: 28px 28px 36px;
+  }
+}
+
+/* ---------- 4. phone overhaul (≤ 767px) ---------- */
+
+@media (max-width: 767px) {
+  /* Landing nav: shrink and use safe-area insets */
+  .top-nav {
+    height: calc(56px + env(safe-area-inset-top, 0));
+    padding: env(safe-area-inset-top, 0) 16px 0;
+  }
+
+  .brand-button {
+    font-size: 20px;
+    line-height: 28px;
+    gap: 8px;
+  }
+
+  .brand-button img {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* Compact CTA in nav: keep icon, hide only the text label */
+  .nav-cta > span:not(.material-symbols-outlined) {
+    display: none;
+  }
+
+  .nav-cta {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+
+  /* Hero typography + stacked actions */
+  .hero-section {
+    min-height: auto;
+    padding: calc(96px + env(safe-area-inset-top, 0)) 20px 56px;
+  }
+
+  .hero-content {
+    gap: 28px;
+  }
+
+  .hero-content h1 {
+    font-size: clamp(30px, 8vw, 42px);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  .hero-content p {
+    font-size: 16px;
+    line-height: 1.5;
+    margin: -8px 0 0;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: min(360px, 100%);
+    margin: 8px auto 0;
+  }
+
+  .hero-actions .primary-action,
+  .hero-actions .secondary-action {
+    width: 100%;
+    min-width: 0;
+    height: 52px;
+    font-size: 15px;
+  }
+
+  .feature-grid,
+  .pricing-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Sections breathe more on small screens */
+  .features-section,
+  .pricing-section {
+    padding: 48px 20px;
+  }
+
+  /* Dashboard shell – override the legacy 820px static-sidebar rules */
+  .dashboard-shell {
+    display: flex;
+  }
+
+  /* The legacy 820px rule turned .sidebar static + full-width; on phone we
+     hide the standalone sidebar entirely because it lives inside .drawer. */
+  .mobile-shell .sidebar:not(.drawer .sidebar) {
+    display: none;
+  }
+
+  .dashboard-content,
+  .analytics-sidebar + .dashboard-content,
+  .mobile-main {
+    width: 100%;
+    margin-left: 0;
+    padding: 20px 16px calc(40px + env(safe-area-inset-bottom, 0));
+    overflow-y: visible;
+  }
+
+  /* Headers + section spacing */
+  .operational-header,
+  .booking-log-header,
+  .analytics-header,
+  .billing-header {
+    margin-top: 4px;
+  }
+
+  .operational-header h1,
+  .booking-log-header h1,
+  .analytics-header h1,
+  .billing-header h1 {
+    font-size: clamp(24px, 6vw, 32px);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  .operational-header p,
+  .booking-log-header p,
+  .analytics-header p,
+  .billing-header p {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  /* Feed summary cards — fit 2 + 1 instead of 3 across */
+  .feed-summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .feed-stat-card {
+    padding: 14px;
+    min-height: 96px;
+    border-radius: 14px;
+  }
+
+  .feed-stat-card:nth-child(3) {
+    grid-column: span 2;
+  }
+
+  .feed-stat-label {
+    font-size: 12px;
+  }
+
+  .feed-stat-value {
+    font-size: 26px;
+  }
+
+  /* Metric grid (analytics) — 2-up on phone */
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px;
+  }
+
+  .metric-card {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .metric-card strong {
+    font-size: 24px;
+  }
+
+  /* Booking stats — keep 2-up */
+  .booking-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .booking-stat {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .booking-stat strong {
+    font-size: 22px;
+  }
+
+  /* Booking actions row stays full-width */
+  .booking-actions {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .booking-search {
+    flex: 1 1 100%;
+  }
+
+  /* Activity / reservations panels */
+  .feed-activity-card,
+  .reservations-panel {
+    margin-top: 16px;
+    border-radius: 16px;
+  }
+
+  .feed-activity-header,
+  .reservations-head {
+    padding: 14px 16px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .feed-activity-header h2,
+  .reservations-head h2 {
+    font-size: 16px;
+  }
+
+  .feed-activity-actions {
+    gap: 8px;
+  }
+
+  .feed-action-btn,
+  .reservations-head > button {
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .feed-table-footer,
+  .booking-table-footer {
+    padding: 12px 16px;
+  }
+
+  /* Call detail — put metadata above transcript on phone */
+  .live-feed-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .call-side-panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    order: -1;
+  }
+
+  .active-call-card {
+    min-height: 0;
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .live-card,
+  .context-card {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .transcript-stream {
+    padding: 4px 0;
+  }
+
+  .transcript-row {
+    width: 100%;
+  }
+
+  .transcript-bubble {
+    max-width: 88%;
+    font-size: 15px;
+    line-height: 1.45;
+    padding: 10px 12px;
+  }
+
+  .detail-header-left {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .back-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Analytics chart — keep readable on narrow viewport */
+  .analytics-lower-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+
+  .chart-card,
+  .outcome-card {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .chart-area {
+    height: 220px;
+  }
+
+  .bar {
+    width: 18px;
+  }
+
+  /* Inputs: lift to 16px to prevent iOS focus zoom */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Hide chrome that doesn't matter on phone */
+  .dashboard-top-icons {
+    display: none;
+  }
+
+  /* Sidebar header inside drawer — visible label */
+  .drawer .dashboard-brand strong {
+    font-size: 17px;
+  }
+
+  .drawer .dashboard-brand span {
+    font-size: 12px;
+  }
+
+  /* Top-nav landing icon-button: keep 44px target on phone */
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ---------- 5. small phone (≤ 480px) ---------- */
+
+@media (max-width: 480px) {
+  .dashboard-content,
+  .analytics-sidebar + .dashboard-content,
+  .mobile-main {
+    padding: 16px 14px calc(36px + env(safe-area-inset-bottom, 0));
+  }
+
+  .feed-summary-cards {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+  }
+
+  .feed-stat-card:nth-child(3) {
+    grid-column: span 1;
+  }
+
+  .metric-grid,
+  .booking-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .feature-card,
+  .voco-price-card,
+  .old-way-card {
+    padding: 24px;
+  }
+
+  .feed-activity-header,
+  .reservations-head {
+    padding: 12px 14px;
+  }
+
+  .booking-actions {
+    gap: 8px;
+  }
+
+  .square-action,
+  .new-booking-button {
+    min-height: 44px;
+  }
+
+  /* Drawer slims slightly on very narrow screens */
+  .drawer {
+    width: min(88vw, 300px);
+  }
+
+  /* Landing pricing card title sizes */
+  .voco-price-card h3,
+  .old-way-card h3 {
+    font-size: 18px;
+  }
+}
+
+/* ---------- 6. motion + safe-area ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .drawer {
+    transition: transform 80ms linear;
+  }
+
+  .drawer-backdrop {
+    transition: opacity 80ms linear;
+  }
+}
+
+/* Landscape notch clearance — applies at any size when the device has insets */
+@supports (padding: env(safe-area-inset-left)) {
+  .mobile-main,
+  .top-nav,
+  .hero-section,
+  .features-section,
+  .pricing-section {
+    padding-left: max(16px, env(safe-area-inset-left, 0));
+    padding-right: max(16px, env(safe-area-inset-right, 0));
+  }
+}
+
