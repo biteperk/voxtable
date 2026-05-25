@@ -5,7 +5,12 @@ import { requireFirebaseAuth } from "../auth/firebaseAuth";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import { getCallLogById, getCallLogStats, listCallLogs } from "../repositories/callLogs";
+import {
+  getCallLogById,
+  getCallLogDailySeries,
+  getCallLogStats,
+  listCallLogs
+} from "../repositories/callLogs";
 import { listReservations } from "../repositories/reservations";
 
 export const dashboardRouter = Router();
@@ -78,5 +83,18 @@ dashboardRouter.get(
       sinceDays: query.days ?? 7
     });
     response.json({ analytics: stats, period_days: query.days ?? 7 });
+  })
+);
+
+dashboardRouter.get(
+  "/api/analytics/daily-series",
+  asyncHandler(async (request, response) => {
+    const query = analyticsQuery.parse(request.query);
+    const days = query.days ?? 7;
+    const series = await getCallLogDailySeries({
+      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      days
+    });
+    response.json({ series, period_days: days });
   })
 );

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
 import { signInWithGoogle, signOutUser } from "./firebase";
-import { getAnalytics, getCallLog, listCallLogs, listReservations } from "./api";
+import { getAnalytics, getAnalyticsDailySeries, getCallLog, listCallLogs, listReservations } from "./api";
 
 const restaurantImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAgvs7qA0qHOd2Nob8Vl9D-gIFHp0BmQY1DOKvAMXDTT6bBAyL8U1lrq-MJV9hWv6MzfT7aNcQk6xL_pujBCXaCuo4ExjvEYGkRayK6-gLpd0Y8DC1Ob8QfyIyg9MMSyRAklEVHlsUdVxYc92Bl2bdKwZNbozxITISxFGSTMm1GFjFgG4jhDIby6jRZKnR_RslKyO96YbopcDOm2xoUgLx4eSTSXZli5KtJYcV_HcCcUo9FGjv2Bxy7pOCxyMYwTdf_kEv41JzNcmE";
@@ -1582,13 +1582,18 @@ function BookingCardItem({ row }) {
 
 function AnalyticsPage({ navigate }) {
   const [analytics, setAnalytics] = useState(null);
+  const [dailySeries, setDailySeries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    getAnalytics({ days: 7 })
-      .then((res) => !cancelled && setAnalytics(res.analytics))
+    Promise.all([getAnalytics({ days: 7 }), getAnalyticsDailySeries({ days: 7 })])
+      .then(([statsRes, seriesRes]) => {
+        if (cancelled) return;
+        setAnalytics(statsRes.analytics);
+        setDailySeries(decorateDailySeries(seriesRes.series ?? []));
+      })
       .catch((e) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -1638,7 +1643,7 @@ function AnalyticsPage({ navigate }) {
       </section>
 
       <section className="analytics-lower-grid">
-        <CallVolumeChart />
+        <CallVolumeChart series={dailySeries} loading={loading} />
         <OutcomeBreakdown analytics={analytics} />
       </section>
     </DashboardShell>
@@ -1663,16 +1668,24 @@ function Metric({ icon, label, value, change, tone = "primary", down = false }) 
   );
 }
 
-function CallVolumeChart() {
-  const days = [
-    ["Mon", 36, 58],
-    ["Tue", 54, 74],
-    ["Wed", 42, 64],
-    ["Thu", 74, 86],
-    ["Fri", 100, 90],
-    ["Sat", 88, 78],
-    ["Sun", 66, 70]
-  ];
+function decorateDailySeries(rawSeries) {
+  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return rawSeries.map((row) => {
+    const [y, m, d] = row.date.split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return {
+      key: row.date,
+      label: dayLabels[date.getUTCDay()],
+      total: row.total ?? 0,
+      confirmed: row.confirmed ?? 0
+    };
+  });
+}
+
+function CallVolumeChart({ series, loading }) {
+  const maxTotal = Math.max(1, ...series.map((d) => d.total));
+  const niceMax = Math.max(4, Math.ceil(maxTotal / 4) * 4);
+  const ticks = [niceMax, Math.round(niceMax * 0.75), Math.round(niceMax * 0.5), Math.round(niceMax * 0.25), 0];
 
   return (
     <article className="chart-card">
@@ -1691,27 +1704,34 @@ function CallVolumeChart() {
       </div>
       <div className="chart-area">
         <div className="y-axis">
-          <span>400</span>
-          <span>300</span>
-          <span>200</span>
-          <span>100</span>
-          <span>0</span>
+          {ticks.map((t, i) => (
+            <span key={i}>{t}</span>
+          ))}
         </div>
         <div className="bars">
-          {days.map(([day, total, confirmed]) => (
-            <div className="bar-column" key={day}>
-              <div className="bar total" style={{ height: `${total}%` }}>
-                <div className="confirmed" style={{ height: `${confirmed}%` }} />
+          {series.map((d) => {
+            const totalPct = niceMax > 0 ? (d.total / niceMax) * 100 : 0;
+            const confirmedPct = d.total > 0 ? (d.confirmed / d.total) * 100 : 0;
+            return (
+              <div className="bar-column" key={d.key} title={`${d.label}: ${d.total} calls, ${d.confirmed} confirmed`}>
+                <div className="bar total" style={{ height: `${totalPct}%` }}>
+                  <div className="confirmed" style={{ height: `${confirmedPct}%` }} />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       <div className="x-axis">
-        {days.map(([day]) => (
-          <span key={day}>{day}</span>
+        {series.map((d) => (
+          <span key={d.key}>{d.label}</span>
         ))}
       </div>
+      {!loading && series.every((d) => d.total === 0) && (
+        <p style={{ color: "var(--outline)", fontSize: 12, marginTop: 8, textAlign: "center" }}>
+          No calls in the last 7 days.
+        </p>
+      )}
     </article>
   );
 }

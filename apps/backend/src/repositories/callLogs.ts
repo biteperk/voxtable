@@ -222,6 +222,50 @@ export interface CallLogStats {
   sentiment_negative: number;
 }
 
+export interface CallLogDailyPoint {
+  date: string;
+  total: number;
+  confirmed: number;
+}
+
+export async function getCallLogDailySeries(input: {
+  restaurantId: string;
+  days: number;
+}): Promise<CallLogDailyPoint[]> {
+  const days = Math.min(Math.max(input.days, 1), 90);
+  const result = await pool.query<CallLogDailyPoint>(
+    `
+    WITH day_bucket AS (
+      SELECT generate_series(
+        (current_date - ($2::int - 1)),
+        current_date,
+        interval '1 day'
+      )::date AS day
+    )
+    SELECT
+      to_char(d.day, 'YYYY-MM-DD') AS date,
+      COALESCE(c.total, 0)::int   AS total,
+      COALESCE(c.confirmed, 0)::int AS confirmed
+    FROM day_bucket d
+    LEFT JOIN (
+      SELECT
+        DATE(COALESCE(started_at, created_at)) AS day,
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (
+          WHERE booking_outcome = 'confirmed' OR reservation_id IS NOT NULL
+        )::int AS confirmed
+      FROM call_logs
+      WHERE restaurant_id = $1
+        AND COALESCE(started_at, created_at) >= (current_date - ($2::int - 1))::timestamptz
+      GROUP BY DATE(COALESCE(started_at, created_at))
+    ) c ON c.day = d.day
+    ORDER BY d.day ASC
+    `,
+    [input.restaurantId, days]
+  );
+  return result.rows;
+}
+
 export async function getCallLogStats(input: {
   restaurantId: string;
   sinceDays: number;

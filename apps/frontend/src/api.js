@@ -64,3 +64,10 @@ export function getAnalytics({ days } = {}) {
   const tail = qs.toString() ? `?${qs}` : "";
   return authedFetch(`/api/analytics${tail}`);
 }
+
+export function getAnalyticsDailySeries({ days } = {}) {
+  const qs = new URLSearchParams();
+  if (days) qs.set("days", String(days));
+  const tail = qs.toString() ? `?${qs}` : "";
+  return authedFetch(`/api/analytics/daily-series${tail}`);
+}
