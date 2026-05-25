@@ -33,8 +33,12 @@ function App() {
     setPath(nextPath);
   };
 
-  const dashboardPaths = ["/live-feed/detail", "/live-feed", "/booking-log", "/analytics", "/settings"];
-  const isDashboard = dashboardPaths.includes(path);
+  const isDashboard =
+    path === "/live-feed" ||
+    path.startsWith("/live-feed/") ||
+    path === "/booking-log" ||
+    path === "/analytics" ||
+    path === "/settings";
 
   return (
     <AuthProvider>
@@ -54,7 +58,14 @@ function AppRouter({ path, navigate, isDashboard }) {
     return <LoginScreen navigate={navigate} />;
   }
 
-  if (path === "/live-feed/detail") return <LiveFeedDetailPage navigate={navigate} />;
+  // /live-feed/<id> — detail page for a single call (id is uuid)
+  const detailMatch = path.match(/^\/live-feed\/([^/]+)$/);
+  if (detailMatch && detailMatch[1] !== "detail") {
+    return <LiveFeedDetailPage navigate={navigate} callId={detailMatch[1]} />;
+  }
+  // legacy mock route — keep for backward compatibility, navigates back to list
+  if (path === "/live-feed/detail") return <LiveFeedOverviewPage navigate={navigate} />;
+
   if (path === "/live-feed") return <LiveFeedOverviewPage navigate={navigate} />;
   if (path === "/booking-log") return <BookingLogPage navigate={navigate} />;
   if (path === "/analytics") return <AnalyticsPage navigate={navigate} />;
@@ -445,7 +456,7 @@ function LiveFeedOverviewPage({ navigate }) {
                 <FeedCallRow
                   key={row.id}
                   row={row}
-                  onClick={() => navigate("/live-feed/detail")}
+                  onClick={() => navigate(`/live-feed/${row.id}`)}
                 />
               ))}
             </tbody>
@@ -466,12 +477,31 @@ function LiveFeedOverviewPage({ navigate }) {
   );
 }
 
+const INTENT_LABEL = {
+  book: "New booking",
+  modify: "Modify booking",
+  cancel: "Cancellation",
+  info: "Info / FAQ",
+  other: "Other"
+};
+
+function humanizeIntent(row) {
+  if (row.intent && INTENT_LABEL[row.intent]) return INTENT_LABEL[row.intent];
+  if (row.reservation_id) return "Booking";
+  if (row.summary) return row.summary.slice(0, 40);
+  return "Inbound call";
+}
+
 function mapCallLogToRow(row, index) {
   const ended = !!row.ended_at;
   const status = !ended ? "live" : row.transferred_to_staff ? "transferred" : "handled";
   const started = row.started_at ? new Date(row.started_at) : new Date(row.created_at);
-  const endedAt = row.ended_at ? new Date(row.ended_at) : null;
-  const durationSec = endedAt ? Math.max(0, Math.round((endedAt - started) / 1000)) : null;
+  const durationSec =
+    typeof row.duration_seconds === "number"
+      ? row.duration_seconds
+      : ended
+        ? Math.max(0, Math.round((new Date(row.ended_at) - started) / 1000))
+        : null;
   const tones = ["neutral", "secondary", "tertiary"];
 
   return {
@@ -480,7 +510,7 @@ function mapCallLogToRow(row, index) {
     initials: null,
     phone: row.caller_phone ?? "Unknown",
     status,
-    intent: row.summary?.slice(0, 40) || (row.reservation_id ? "Booking" : "Inbound call"),
+    intent: humanizeIntent(row),
     duration: durationSec != null ? formatDuration(durationSec) : "—",
     time: started.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     timeNote: relativeTime(started),
@@ -572,38 +602,34 @@ function FeedCallRow({ row, onClick }) {
   );
 }
 
-function LiveFeedDetailPage({ navigate }) {
-  const messages = [
-    {
-      speaker: "guest",
-      time: "00:05",
-      text: "Hi there, I'd like to make a reservation for this Friday evening if possible?"
-    },
-    {
-      speaker: "ai",
-      time: "00:09",
-      text: "Absolutely, I can help with that. What time were you thinking, and for how many people?"
-    },
-    {
-      speaker: "guest",
-      time: "00:15",
-      text: "Around 7:30 PM, for a party of 4. It's actually a birthday dinner."
-    },
-    {
-      speaker: "ai",
-      time: "00:22",
-      text: "Wonderful. Happy birthday to them. Let me check availability for 4 people at 7:30 PM this Friday. Yes, we have a table available."
-    },
-    {
-      speaker: "guest",
-      text: "That's great, can we also request...",
-      typing: true
-    }
-  ];
+function LiveFeedDetailPage({ navigate, callId }) {
+  const [callLog, setCallLog] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getCallLog(callId)
+      .then((res) => !cancelled && setCallLog(res.call_log ?? null))
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [callId]);
+
+  const messages = parseTranscript(callLog?.transcript);
+  const isLive = !!callLog && !callLog.ended_at;
+  const durationLabel =
+    callLog?.duration_seconds != null ? formatDuration(callLog.duration_seconds) : "—";
+  const intentLabel = callLog ? humanizeIntent(callLog) : "—";
+  const sentiment = callLog?.user_sentiment ?? null;
+  const outcome = callLog?.booking_outcome ?? null;
 
   return (
     <DashboardShell active="Live Feed" navigate={navigate}>
-
       <header className="operational-header">
         <div className="detail-header-left">
           <button
@@ -614,14 +640,28 @@ function LiveFeedDetailPage({ navigate }) {
             <Icon name="arrow_back" />
           </button>
           <div>
-            <h1>Live Feed</h1>
-            <p>Monitoring active AI interactions in real-time.</p>
+            <h1>Call detail</h1>
+            <p>
+              {loading
+                ? "Loading…"
+                : error
+                  ? `Error: ${error}`
+                  : callLog
+                    ? `${callLog.caller_phone ?? "Unknown caller"} · ${durationLabel}`
+                    : "Call not found"}
+            </p>
           </div>
         </div>
-        <div className="active-call-pill">
-          <PulseBars small />
-          <span>1 Active Call</span>
-        </div>
+        {isLive ? (
+          <div className="active-call-pill">
+            <PulseBars small />
+            <span>Live</span>
+          </div>
+        ) : (
+          <div className="active-call-pill" style={{ opacity: 0.6 }}>
+            <span>{callLog?.status ?? "ended"}</span>
+          </div>
+        )}
       </header>
 
       <section className="live-feed-grid">
@@ -631,36 +671,46 @@ function LiveFeedDetailPage({ navigate }) {
               <div className="agent-avatar">A</div>
               <div>
                 <strong>Aria (AI Agent)</strong>
-                <span>In call with +61 412 *** 789</span>
+                <span>
+                  {isLive
+                    ? `In call with ${callLog?.caller_phone ?? "unknown"}`
+                    : callLog?.caller_phone ?? "Unknown caller"}
+                </span>
               </div>
             </div>
-            <time>00:42</time>
+            <time>{durationLabel}</time>
           </div>
 
           <div className="transcript-stream">
+            {loading && <p style={{ color: "#94a3b8", padding: 12 }}>Loading transcript…</p>}
+            {!loading && messages.length === 0 && (
+              <p style={{ color: "#64748b", padding: 12 }}>
+                No transcript captured for this call.
+              </p>
+            )}
             {messages.map((message, index) => (
-              <TranscriptBubble key={message.text} message={message} delay={index} />
+              <TranscriptBubble key={index} message={message} delay={index} />
             ))}
           </div>
 
-          <div className="call-control-bar">
-            <PulseBars />
-            <div className="call-actions">
-              <button className="listen-button">
+          {callLog?.recording_url && (
+            <div className="call-control-bar">
+              <a
+                href={callLog.recording_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="listen-button"
+              >
                 <Icon name="headphones" />
-                Listen In
-              </button>
-              <button className="override-button">
-                <Icon name="front_hand" />
-                Manual Override
-              </button>
+                Listen to recording
+              </a>
             </div>
-          </div>
+          )}
         </article>
 
         <aside className="call-side-panel">
           <article className="live-card">
-            <h2>Live Metrics</h2>
+            <h2>Call metrics</h2>
             <div className="live-metric-grid">
               <div>
                 <span>
@@ -668,46 +718,126 @@ function LiveFeedDetailPage({ navigate }) {
                   Latency
                 </span>
                 <strong>
-                  420 <small>ms</small>
+                  {callLog?.latency_ms != null ? callLog.latency_ms : "—"} <small>ms</small>
                 </strong>
               </div>
               <div>
                 <span>
-                  <Icon name="psychology" />
-                  Confidence
+                  <Icon name="timer" />
+                  Duration
                 </span>
-                <strong className="blue">
-                  98 <small>%</small>
-                </strong>
+                <strong className="blue">{durationLabel}</strong>
               </div>
             </div>
             <div className="intent-row">
-              <span>Intent Recognition</span>
+              <span>Intent</span>
               <div>
                 <i />
               </div>
-              <strong>New Booking</strong>
+              <strong>{intentLabel}</strong>
             </div>
           </article>
 
           <article className="context-card">
-            <h2>Extracted Context</h2>
+            <h2>Outcome</h2>
             <div className="context-line" />
-            <ContextItem icon="event" label="Requested Date & Time" value="Friday, Oct 27 @ 7:30 PM" />
-            <ContextItem icon="group" label="Party Size" value="4 Guests" />
-            <div className="context-note">
-              <span>Extracted Notes</span>
-              <p>Birthday dinner. Currently detailing special requests.</p>
-            </div>
-            <span className="pending-chip">
-              <i />
-              Pending Confirmation
-            </span>
+            <ContextItem
+              icon="event_available"
+              label="Booking outcome"
+              value={outcome ? humanizeOutcome(outcome) : "—"}
+            />
+            <ContextItem
+              icon="mood"
+              label="Caller sentiment"
+              value={sentiment ? capitalize(sentiment) : "—"}
+            />
+            <ContextItem
+              icon="voicemail"
+              label="Voicemail"
+              value={callLog?.in_voicemail ? "Yes" : "No"}
+            />
+            {callLog?.special_requests && (
+              <div className="context-note">
+                <span>Special requests</span>
+                <p>{callLog.special_requests}</p>
+              </div>
+            )}
+            {callLog?.summary && (
+              <div className="context-note">
+                <span>Summary</span>
+                <p>{callLog.summary}</p>
+              </div>
+            )}
+            {callLog?.reservation_id && (
+              <button
+                className="primary-action"
+                style={{ marginTop: 16 }}
+                onClick={() => navigate("/booking-log")}
+              >
+                <Icon name="check_circle" />
+                View reservation
+              </button>
+            )}
           </article>
         </aside>
       </section>
     </DashboardShell>
   );
+}
+
+const OUTCOME_LABEL = {
+  confirmed: "Confirmed",
+  no_availability: "No availability",
+  declined: "Caller declined",
+  transferred: "Transferred to staff",
+  none: "No booking attempted"
+};
+function humanizeOutcome(o) {
+  return OUTCOME_LABEL[o] ?? o;
+}
+function capitalize(s) {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
+// Retell delivers transcript either as plain text or as a JSON-encoded array of
+// { role: 'agent' | 'user', content: string }. Best-effort parser.
+function parseTranscript(raw) {
+  if (!raw) return [];
+  // JSON array path
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const role = entry.role ?? entry.speaker;
+          const text = entry.content ?? entry.text ?? entry.message;
+          if (!text) return null;
+          return { speaker: role === "agent" || role === "ai" ? "ai" : "guest", text };
+        })
+        .filter(Boolean);
+    }
+  } catch {
+    // not JSON, fall through to plain-text parser
+  }
+  // Plain text: split on "Agent:" / "User:" markers Retell uses
+  const out = [];
+  const lines = String(raw).split(/\n+/).filter(Boolean);
+  for (const line of lines) {
+    const m = line.match(/^\s*(Agent|User|Aria|Caller)\s*:\s*(.*)$/i);
+    if (m) {
+      const role = m[1].toLowerCase();
+      out.push({
+        speaker: role === "agent" || role === "aria" ? "ai" : "guest",
+        text: m[2].trim()
+      });
+    } else if (out.length > 0) {
+      out[out.length - 1].text += " " + line.trim();
+    } else {
+      out.push({ speaker: "ai", text: line.trim() });
+    }
+  }
+  return out;
 }
 
 function TranscriptBubble({ message, delay }) {
@@ -959,19 +1089,26 @@ function AnalyticsPage({ navigate }) {
   }, []);
 
   const totalCalls = analytics?.total_calls ?? 0;
+  // Prefer the new analyzer-driven `bookings_confirmed`; fall back to the
+  // legacy `bookings_created` count of call_logs linked to a reservation.
+  const bookingsCount = analytics?.bookings_confirmed ?? analytics?.bookings_created ?? 0;
   const bookingRate =
-    analytics && analytics.total_calls > 0
-      ? `${Math.round((analytics.bookings_created / analytics.total_calls) * 100)}%`
+    totalCalls > 0 ? `${Math.round((bookingsCount / totalCalls) * 100)}%` : "—";
+  const dailyRevenue = `$${((bookingsCount * 80) / 30).toFixed(0)}`;
+  const avgLatency = analytics?.avg_latency_ms
+    ? `${(analytics.avg_latency_ms / 1000).toFixed(1)}s`
+    : "—";
+  const avgDuration =
+    analytics?.avg_duration_seconds != null
+      ? formatDuration(analytics.avg_duration_seconds)
       : "—";
-  const revenueSaved = `$${((analytics?.bookings_created ?? 0) * 80 / 30).toFixed(0)}`;
-  const avgLatency = analytics?.avg_latency_ms ? `${(analytics.avg_latency_ms / 1000).toFixed(1)}s` : "—";
 
   return (
     <DashboardShell active="Analytics" navigate={navigate} branded>
       <header className="analytics-header">
         <div>
           <h1>Performance Analytics</h1>
-          <p>Last 7 days of VocoTable AI activity.</p>
+          <p>{error ? `Error: ${error}` : "Last 7 days of VocoTable AI activity."}</p>
         </div>
         <div className="analytics-actions">
           <button>
@@ -986,10 +1123,10 @@ function AnalyticsPage({ navigate }) {
       </header>
 
       <section className="metric-grid">
-        <Metric icon="call" label="Total Calls Handled" value={loading ? "…" : String(totalCalls)} change={error ? "error" : "live"} />
-        <Metric icon="event_available" label="Booking Conversion" value={loading ? "…" : bookingRate} change="of calls" tone="secondary" />
-        <Metric icon="payments" label="Est. Revenue (daily avg)" value={loading ? "…" : revenueSaved} change="$80/booking" tone="tertiary" />
-        <Metric icon="speed" label="Avg. AI Response Time" value={loading ? "…" : avgLatency} change="" />
+        <Metric icon="call" label="Total Calls" value={loading ? "…" : String(totalCalls)} change="last 7d" />
+        <Metric icon="event_available" label="Booking Conversion" value={loading ? "…" : bookingRate} change={`${bookingsCount} bookings`} tone="secondary" />
+        <Metric icon="payments" label="Daily Avg Revenue" value={loading ? "…" : dailyRevenue} change="$80 / booking" tone="tertiary" />
+        <Metric icon="timer" label="Avg Call Duration" value={loading ? "…" : avgDuration} change={analytics?.avg_latency_ms ? `${avgLatency} latency` : ""} />
       </section>
 
       <section className="analytics-lower-grid">
