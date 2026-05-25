@@ -36,9 +36,11 @@ export interface AvailabilityResult {
   available: boolean;
   requestedTime: string;
   suggestedTime: string | null;
+  suggestedTimes: string[];
   tableIds: string[];
   tableLabel: string | null;
   message: string;
+  naturalAlternativesMessage: string | null;
 }
 
 export interface CreateBookingInput {

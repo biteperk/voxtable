@@ -91,8 +91,11 @@ export function normalizePartySize(body: { party_size?: number; partySize?: numb
 }
 
 export function normalizeRestaurantId(
-  body: { restaurant_id?: string; restaurantId?: string },
+  _body: { restaurant_id?: string; restaurantId?: string },
   fallbackRestaurantId: string
 ): string {
-  return body.restaurant_id ?? body.restaurantId ?? fallbackRestaurantId;
+  // SECURITY: single-tenant v1. Caller-supplied restaurant_id is ignored to
+  // prevent a malicious prompt or HTTP client from booking at a different
+  // restaurant. Remove this lockdown when multi-tenant lands.
+  return fallbackRestaurantId;
 }

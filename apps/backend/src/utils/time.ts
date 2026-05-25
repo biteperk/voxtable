@@ -65,3 +65,54 @@ export function formatVoiceTime(time: string): string {
 
   return `${hour12}:${minute.toString().padStart(2, "0")} ${suffix}`;
 }
+
+// --- TZ-aware helpers (Phase 9 hardening) ------------------------------------
+// Restaurants store dates + times as wall-clock (DATE + TIME, TZ-naive). The
+// LLM gets explicit "today in <tz>" and "tomorrow in <tz>" via dynamic vars so
+// it never has to guess what "tomorrow" means from its own server clock.
+
+function ymdInTz(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+
+  const y = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const m = parts.find((p) => p.type === "month")?.value ?? "01";
+  const d = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${y}-${m}-${d}`;
+}
+
+function hmInTz(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+
+  const h = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const m = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${h}:${m}`;
+}
+
+export function todayInTz(timeZone: string, now: Date = new Date()): string {
+  return ymdInTz(now, timeZone);
+}
+
+export function tomorrowInTz(timeZone: string, now: Date = new Date()): string {
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  return ymdInTz(tomorrow, timeZone);
+}
+
+export function nowTimeInTz(timeZone: string, now: Date = new Date()): string {
+  return hmInTz(now, timeZone);
+}
+
+export function dayNameInTz(timeZone: string, now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" })
+    .format(now)
+    .toLowerCase();
+}
