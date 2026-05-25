@@ -1543,11 +1543,11 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 24px;
+  padding: 3px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(174, 185, 208, 0.24);
-  background: rgba(62, 73, 93, 0.14);
+  border: 1px solid rgba(125, 244, 255, 0.35);
+  background: rgba(0, 219, 233, 0.12);
   color: var(--secondary-fixed);
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
@@ -3245,10 +3245,8 @@ td button {
 /* Booking row "Date / Time" cell — now a two-line stack:
    bold date on top, time underneath, both sans for legibility. */
 .booking-time {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   min-width: 110px;
+  vertical-align: middle;
 }
 .booking-time strong {
   font-family: inherit;
@@ -3256,6 +3254,7 @@ td button {
   font-size: 14px;
   color: var(--on-surface);
   letter-spacing: -0.005em;
+  margin-bottom: 4px;
 }
 .booking-time span {
   font-family: "JetBrains Mono", monospace;
