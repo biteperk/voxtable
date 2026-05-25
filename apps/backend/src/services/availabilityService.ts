@@ -6,12 +6,16 @@ import { getRestaurantSettings } from "../repositories/restaurants";
 import { formatVoiceTime, fromMinutes, isWithinOpeningHours, toMinutes } from "../utils/time";
 
 const suggestionOffsets = [0, 30, -30, 60, -60, 90, -90, 120, -120];
+const MAX_ALTERNATIVES = 3;
 
 export async function checkAvailability(
   input: AvailabilityInput,
   db: DbClient = pool
 ): Promise<AvailabilityResult> {
   const settings = await getRestaurantSettings(input.restaurantId, db);
+
+  let primary: { time: string; tableId: string; tableLabel: string | null } | null = null;
+  const alternatives: string[] = [];
 
   for (const offset of suggestionOffsets) {
     const candidateTime = fromMinutes(toMinutes(input.time) + offset);
@@ -43,28 +47,61 @@ export async function checkAvailability(
       continue;
     }
 
-    const exactMatch = candidateTime === input.time;
+    if (!primary) {
+      primary = { time: candidateTime, tableId: table.id, tableLabel: table.label };
+      if (candidateTime === input.time) {
+        // Exact match — still keep walking other offsets to collect alts the
+        // LLM can offer if the caller wants to shift.
+        continue;
+      }
+    } else if (alternatives.length < MAX_ALTERNATIVES && candidateTime !== primary.time) {
+      alternatives.push(candidateTime);
+    }
 
+    if (primary && alternatives.length >= MAX_ALTERNATIVES) break;
+  }
+
+  if (!primary) {
     return {
-      available: exactMatch,
+      available: false,
       requestedTime: input.time,
-      suggestedTime: candidateTime,
-      tableIds: [table.id],
-      tableLabel: table.label,
-      message: exactMatch
-        ? `Available at ${formatVoiceTime(candidateTime)}.`
-        : `The requested time is not available. ${formatVoiceTime(candidateTime)} is available.`
+      suggestedTime: null,
+      suggestedTimes: [],
+      tableIds: [],
+      tableLabel: null,
+      message: "No suitable table is available near the requested time.",
+      naturalAlternativesMessage: null
     };
   }
 
+  const exactMatch = primary.time === input.time;
+  const allTimes = [primary.time, ...alternatives];
+  const naturalAlternativesMessage =
+    !exactMatch && alternatives.length > 0
+      ? `I can offer ${humanJoin(allTimes.map(formatVoiceTime))}.`
+      : alternatives.length > 0
+        ? `I can also offer ${humanJoin(alternatives.map(formatVoiceTime))} if that suits.`
+        : null;
+
   return {
-    available: false,
+    available: exactMatch,
     requestedTime: input.time,
-    suggestedTime: null,
-    tableIds: [],
-    tableLabel: null,
-    message: "No suitable table is available near the requested time."
+    suggestedTime: primary.time,
+    suggestedTimes: allTimes,
+    tableIds: [primary.tableId],
+    tableLabel: primary.tableLabel,
+    message: exactMatch
+      ? `Available at ${formatVoiceTime(primary.time)}.`
+      : `The requested time is not available. ${formatVoiceTime(primary.time)} is available.`,
+    naturalAlternativesMessage
   };
+}
+
+function humanJoin(items: string[]): string {
+  if (items.length === 0) return "";
+  if (items.length === 1) return items[0]!;
+  if (items.length === 2) return `${items[0]} or ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, or ${items[items.length - 1]}`;
 }
 
 export function requireAvailableTable(result: AvailabilityResult): string {

@@ -6,10 +6,20 @@ import { CallStatus } from "../domain/types";
 import {
   availabilityRequestSchema,
   createBookingRequestSchema,
-  normalizePartySize,
-  normalizeRestaurantId
+  normalizePartySize
 } from "../http/schemas";
 import { upsertCallLog } from "../repositories/callLogs";
+import {
+  getRestaurantName,
+  getRestaurantTimezone
+} from "../repositories/restaurants";
+import { normalizePhone } from "../utils/phone";
+import {
+  dayNameInTz,
+  nowTimeInTz,
+  todayInTz,
+  tomorrowInTz
+} from "../utils/time";
 import { checkAvailability } from "./availabilityService";
 import { createBooking } from "./bookingService";
 
@@ -74,25 +84,40 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
     throw new AppError(400, "INVALID_RETELL_INBOUND", "Retell call_inbound payload is required.");
   }
 
+  const restaurantId = env.DEFAULT_RESTAURANT_ID;
+  const callerPhoneRaw = inbound.from_number ?? null;
+  const callerPhone = normalizePhone(callerPhoneRaw) ?? callerPhoneRaw;
+
+  const [tz, restaurantName] = await Promise.all([
+    getRestaurantTimezone(restaurantId),
+    getRestaurantName(restaurantId)
+  ]);
+
   await upsertCallLog({
-    restaurantId: env.DEFAULT_RESTAURANT_ID,
+    restaurantId,
     provider: RETELL_PROVIDER,
     providerCallId: getProviderCallId(inbound),
-    callerPhone: inbound.from_number ?? null,
+    callerPhone,
     status: "started",
     startedAt: new Date().toISOString()
   });
 
+  const now = new Date();
   return {
     call_inbound: {
       ...(env.RETELL_AGENT_ID ? { override_agent_id: env.RETELL_AGENT_ID } : {}),
       dynamic_variables: {
-        restaurant_id: env.DEFAULT_RESTAURANT_ID,
-        restaurant_name: "Natalia's Bistro",
-        caller_phone: inbound.from_number ?? ""
+        restaurant_id: restaurantId,
+        restaurant_name: restaurantName,
+        restaurant_timezone: tz,
+        caller_phone: callerPhone ?? "",
+        today: todayInTz(tz, now),
+        tomorrow: tomorrowInTz(tz, now),
+        now_local: nowTimeInTz(tz, now),
+        weekday_local: dayNameInTz(tz, now)
       },
       metadata: {
-        restaurant_id: env.DEFAULT_RESTAURANT_ID,
+        restaurant_id: restaurantId,
         source: "vocotable",
         inbound_from_number: inbound.from_number ?? "",
         inbound_to_number: inbound.to_number ?? ""
@@ -116,21 +141,35 @@ export async function handleRetellFunction(
   }
 
   if (name === "check_availability" || name === "checkavailability") {
-    return checkAvailability(
+    const result = await checkAvailability(
       normalizeAvailabilityArgs({
         ...args,
         provider_call_id: providerCallId
       })
     );
+    return {
+      available: result.available,
+      requested_time: result.requestedTime,
+      suggested_time: result.suggestedTime,
+      suggested_times: result.suggestedTimes,
+      table_label: result.tableLabel,
+      message: result.message,
+      natural_alternatives_message: result.naturalAlternativesMessage
+    };
   }
 
   if (name === "create_booking" || name === "createbooking") {
-    return createBooking(
+    const result = await createBooking(
       normalizeBookingArgs({
         ...args,
         provider_call_id: providerCallId
       })
     );
+    return {
+      booking_id: result.bookingId,
+      status: result.status,
+      confirmation_message: result.confirmationMessage
+    };
   }
 
   throw new AppError(400, "UNKNOWN_RETELL_FUNCTION", `Unknown Retell function: ${name}`);
@@ -147,8 +186,10 @@ async function persistRetellCall(
     return;
   }
 
+  const analysis = extractCallAnalysis(call);
+
   await upsertCallLog({
-    restaurantId: getRestaurantId(call),
+    restaurantId: env.DEFAULT_RESTAURANT_ID,
     provider: RETELL_PROVIDER,
     providerCallId,
     callerPhone: getCallerPhone(call),
@@ -159,8 +200,80 @@ async function persistRetellCall(
     latencyMs: getLatencyMs(call),
     transferredToStaff: event.startsWith("transfer_") || Boolean(payload.transfer_destination),
     startedAt: fromRetellTimestamp(call.start_timestamp),
-    endedAt: fromRetellTimestamp(call.end_timestamp)
+    endedAt: fromRetellTimestamp(call.end_timestamp),
+    intent: analysis.intent,
+    bookingOutcome: analysis.booking_outcome,
+    userSentiment: analysis.user_sentiment,
+    inVoicemail: analysis.in_voicemail,
+    callSuccessful: analysis.call_successful,
+    specialRequests: analysis.special_requests,
+    analysisJson: analysis.extras
   });
+}
+
+interface ExtractedAnalysis {
+  intent: string | null;
+  booking_outcome: string | null;
+  user_sentiment: string | null;
+  in_voicemail: boolean | null;
+  call_successful: boolean | null;
+  special_requests: string | null;
+  extras: Record<string, unknown> | null;
+}
+
+function extractCallAnalysis(call: RetellPayload): ExtractedAnalysis {
+  const analysis = (call.call_analysis ?? {}) as Record<string, unknown>;
+  const custom = (analysis.custom_analysis_data ?? {}) as Record<string, unknown>;
+
+  const intent = normalizeEnum(custom.intent, ["book", "modify", "cancel", "info", "other"]);
+  const booking_outcome = normalizeEnum(custom.booking_outcome, [
+    "confirmed",
+    "no_availability",
+    "declined",
+    "transferred",
+    "none"
+  ]);
+  const user_sentiment = normalizeEnum(analysis.user_sentiment, [
+    "positive",
+    "neutral",
+    "negative",
+    "unknown"
+  ]);
+  const in_voicemail = typeof analysis.in_voicemail === "boolean" ? analysis.in_voicemail : null;
+  const call_successful =
+    typeof analysis.call_successful === "boolean" ? analysis.call_successful : null;
+  const special_requests =
+    typeof custom.special_requests === "string" && custom.special_requests.trim().length > 0
+      ? custom.special_requests.trim()
+      : null;
+
+  // Spill any other custom fields into analysis_json so we don't lose anything
+  // Retell or we add in the future.
+  const knownCustomKeys = new Set([
+    "intent",
+    "booking_outcome",
+    "special_requests"
+  ]);
+  const extras: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(custom)) {
+    if (!knownCustomKeys.has(k)) extras[k] = v;
+  }
+
+  return {
+    intent,
+    booking_outcome,
+    user_sentiment,
+    in_voicemail,
+    call_successful,
+    special_requests,
+    extras: Object.keys(extras).length > 0 ? extras : null
+  };
+}
+
+function normalizeEnum(value: unknown, allowed: string[]): string | null {
+  if (typeof value !== "string") return null;
+  const v = value.toLowerCase().trim();
+  return allowed.includes(v) ? v : null;
 }
 
 function mapRetellStatus(event: string, call: RetellPayload): CallStatus {
@@ -232,9 +345,10 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
 }
 
 function normalizeAvailabilityArgs(args: Record<string, unknown>) {
+  // SECURITY: single-tenant v1 — LLM-supplied restaurant_id is ignored. Always
+  // use env.DEFAULT_RESTAURANT_ID so a crafted prompt can't book at another
+  // restaurant.
   const parsed = availabilityRequestSchema.parse({
-    restaurant_id: args.restaurant_id,
-    restaurantId: args.restaurantId,
     date: args.date,
     time: args.time,
     party_size: args.party_size,
@@ -247,7 +361,7 @@ function normalizeAvailabilityArgs(args: Record<string, unknown>) {
   }
 
   return {
-    restaurantId: normalizeRestaurantId(parsed, env.DEFAULT_RESTAURANT_ID),
+    restaurantId: env.DEFAULT_RESTAURANT_ID,
     date: parsed.date,
     time: parsed.time,
     partySize
@@ -255,9 +369,8 @@ function normalizeAvailabilityArgs(args: Record<string, unknown>) {
 }
 
 function normalizeBookingArgs(args: Record<string, unknown>) {
+  // SECURITY: single-tenant v1 — LLM-supplied restaurant_id ignored.
   const parsed = createBookingRequestSchema.parse({
-    restaurant_id: args.restaurant_id,
-    restaurantId: args.restaurantId,
     customer_name: args.customer_name,
     customerName: args.customerName,
     customer_phone: args.customer_phone,
@@ -290,7 +403,7 @@ function normalizeBookingArgs(args: Record<string, unknown>) {
   }
 
   return {
-    restaurantId: normalizeRestaurantId(parsed, env.DEFAULT_RESTAURANT_ID),
+    restaurantId: env.DEFAULT_RESTAURANT_ID,
     customerName,
     customerPhone,
     date: parsed.date,

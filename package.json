@@ -29,6 +29,7 @@
     "express": "^4.21.2",
     "firebase": "^12.13.0",
     "firebase-admin": "^13.10.0",
+    "libphonenumber-js": "^1.13.3",
     "pg": "^8.13.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

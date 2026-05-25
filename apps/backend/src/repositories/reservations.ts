@@ -84,6 +84,18 @@ export async function getReservationById(id: string): Promise<ReservationRow | n
   return result.rows[0] ?? null;
 }
 
+export async function getReservationByCallLogId(callLogId: string): Promise<ReservationRow | null> {
+  const result = await pool.query<ReservationRow>(
+    `SELECT * FROM reservations
+     WHERE created_from_call_log_id = $1
+       AND status NOT IN ('cancelled', 'no_show')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [callLogId]
+  );
+  return result.rows[0] ?? null;
+}
+
 export interface ReservationListItem extends ReservationRow {
   customer_name: string;
   customer_phone: string;

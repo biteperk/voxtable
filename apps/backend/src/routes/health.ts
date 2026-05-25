@@ -99,13 +99,21 @@ healthRouter.get(
   "/health",
   asyncHandler(async (_request, response) => {
     try {
-      await pool.query("SELECT 1");
+      await Promise.race([
+        pool.query("SELECT 1"),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("health-db-timeout")), 2_000)
+        )
+      ]);
     } catch (error) {
+      const slow = error instanceof Error && error.message === "health-db-timeout";
       response.status(503).json({
         status: "error",
-        database: "unavailable",
+        database: slow ? "slow" : "unavailable",
         version: env.APP_VERSION,
-        message: "Backend is running, but Postgres is not reachable. Check DATABASE_URL and start Postgres."
+        message: slow
+          ? "Postgres did not respond within 2s. Pool may be saturated."
+          : "Backend is running, but Postgres is not reachable. Check DATABASE_URL and start Postgres."
       });
       return;
     }

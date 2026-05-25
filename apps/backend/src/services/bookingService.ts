@@ -6,19 +6,38 @@ import {
   cancelReservation,
   createReservation,
   getReservationById,
+  getReservationByCallLogId,
   updateReservation,
   upsertCustomer
 } from "../repositories/reservations";
 import { checkAvailability, requireAvailableTable } from "./availabilityService";
 import { formatVoiceTime } from "../utils/time";
+import { normalizePhone } from "../utils/phone";
 
 export async function createBooking(input: CreateBookingInput): Promise<BookingResult> {
+  // Idempotency: if Retell retries the create_booking tool call, return the
+  // already-created reservation rather than inserting a duplicate.
+  if (input.callLogId) {
+    const existing = await getReservationByCallLogId(input.callLogId);
+    if (existing) {
+      return {
+        bookingId: existing.id,
+        status: existing.status,
+        confirmationMessage: `Confirmed. ${input.customerName} has a table for ${existing.party_size} on ${existing.reservation_date} at ${formatVoiceTime(existing.start_time.slice(0, 5))}.`
+      };
+    }
+  }
+
+  const normalizedPhone = normalizePhone(input.customerPhone) ?? input.customerPhone;
+
   const lockClient = await pool.connect();
 
   try {
     await lockClient.query("BEGIN");
+    // Per-slot advisory lock (was per-day). Two callers booking different
+    // times on the same day no longer block each other.
     await lockClient.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [
-      `${input.restaurantId}:${input.date}`
+      `${input.restaurantId}:${input.date}:${input.time}`
     ]);
 
     const callLogId =
@@ -28,12 +47,15 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
             restaurantId: input.restaurantId,
             provider: input.provider ?? "retell",
             providerCallId: input.providerCallId,
-            callerPhone: input.customerPhone,
+            callerPhone: normalizedPhone,
             status: "in_progress",
             startedAt: new Date().toISOString()
           }, lockClient)
         : undefined);
 
+    // Re-check inside the locked transaction. The earlier check_availability
+    // tool call ran without a lock; in the time it took the caller to confirm,
+    // the slot may have been taken.
     const availability = await checkAvailability(
       {
         restaurantId: input.restaurantId,
@@ -49,7 +71,7 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
       {
         restaurantId: input.restaurantId,
         name: input.customerName,
-        phone: input.customerPhone
+        phone: normalizedPhone
       },
       lockClient
     );
@@ -82,6 +104,15 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     };
   } catch (error) {
     await lockClient.query("ROLLBACK");
+    // The DB-level safety-net unique index (migration 003) catches double-booking races
+    // that bypass application logic. Surface as a clean availability message.
+    if (error instanceof Error && /idx_reservations_no_double_book/.test(error.message)) {
+      throw new AppError(
+        409,
+        "TABLE_JUST_TAKEN",
+        "That time just got booked by another caller. Please pick another time."
+      );
+    }
     throw error;
   } finally {
     lockClient.release();

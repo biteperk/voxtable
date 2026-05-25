@@ -33,9 +33,11 @@ availabilityRouter.post(
       available: result.available,
       requested_time: result.requestedTime,
       suggested_time: result.suggestedTime,
+      suggested_times: result.suggestedTimes,
       table_ids: result.tableIds,
       table_label: result.tableLabel,
-      message: result.message
+      message: result.message,
+      natural_alternatives_message: result.naturalAlternativesMessage
     });
   })
 );

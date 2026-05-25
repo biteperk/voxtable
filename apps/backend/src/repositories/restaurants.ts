@@ -51,3 +51,27 @@ export async function getTransferPhoneNumber(restaurantId: string): Promise<stri
 
   return result.rows[0]?.transfer_phone_number ?? null;
 }
+
+const timezoneCache = new Map<string, string>();
+
+export async function getRestaurantTimezone(restaurantId: string): Promise<string> {
+  const cached = timezoneCache.get(restaurantId);
+  if (cached) return cached;
+
+  const result = await pool.query<{ timezone: string }>(
+    "SELECT timezone FROM restaurants WHERE id = $1",
+    [restaurantId]
+  );
+
+  const tz = result.rows[0]?.timezone ?? "Australia/Sydney";
+  timezoneCache.set(restaurantId, tz);
+  return tz;
+}
+
+export async function getRestaurantName(restaurantId: string): Promise<string> {
+  const result = await pool.query<{ name: string }>(
+    "SELECT name FROM restaurants WHERE id = $1",
+    [restaurantId]
+  );
+  return result.rows[0]?.name ?? "the restaurant";
+}
