@@ -90,9 +90,18 @@ function LoginScreen({ navigate }) {
     setError(null);
     try {
       await signInWithGoogle();
+      // If we fall through to redirect, the page is navigating away — leave
+      // the button disabled until then.
     } catch (e) {
-      setError(e.message ?? String(e));
-    } finally {
+      const code = e && e.code;
+      let msg = e.message ?? String(e);
+      if (code === "auth/network-request-failed") {
+        msg =
+          "Couldn't reach Google sign-in. This is usually an ad blocker or " +
+          "privacy extension blocking identitytoolkit.googleapis.com. Try " +
+          "disabling extensions for this site, or use an incognito window.";
+      }
+      setError(msg);
       setBusy(false);
     }
   };
@@ -103,7 +112,7 @@ function LoginScreen({ navigate }) {
         <h1>VocoTable</h1>
         <p>Sign in to access the restaurant dashboard.</p>
         <button onClick={handleSignIn} disabled={busy} className="login-google">
-          <Icon name="login" /> Continue with Google
+          <Icon name="login" /> {busy ? "Signing you in…" : "Continue with Google"}
         </button>
         {error && <p className="login-error">{error}</p>}
         <button onClick={() => navigate("/")} className="login-back">
