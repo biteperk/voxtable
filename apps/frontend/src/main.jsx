@@ -12,7 +12,11 @@ function Icon({ name, fill = false, className = "" }) {
   return (
     <span
       className={`material-symbols-outlined ${className}`}
-      style={{ fontVariationSettings: `'FILL' ${fill ? 1 : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24` }}
+      style={{
+        fontFamily: '"Material Symbols Outlined"',
+        fontFeatureSettings: '"liga"',
+        fontVariationSettings: `'FILL' ${fill ? 1 : 0}, 'wght' 400`
+      }}
     >
       {name}
     </span>
