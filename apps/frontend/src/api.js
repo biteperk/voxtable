@@ -71,3 +71,21 @@ export function getAnalyticsDailySeries({ days } = {}) {
   const tail = qs.toString() ? `?${qs}` : "";
   return authedFetch(`/api/analytics/daily-series${tail}`);
 }
+
+// TODO(security): /bookings/:id and /bookings/:id/cancel are not yet auth-
+// protected on the backend. Add requireFirebaseAuth to bookingsRouter before
+// public production launch — reservation UUID is the only guard right now.
+
+export function updateReservationStatus(id, status) {
+  return authedFetch(`/bookings/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status })
+  });
+}
+
+export function cancelReservation(id, reason) {
+  return authedFetch(`/bookings/${id}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(reason ? { reason } : {})
+  });
+}

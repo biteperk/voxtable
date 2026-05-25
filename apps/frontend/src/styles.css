@@ -1880,9 +1880,48 @@ button {
   color: var(--outline);
 }
 
+.status-pill.no_show {
+  border-color: rgba(255, 180, 171, 0.3);
+  background: rgba(255, 180, 171, 0.08);
+  color: var(--error);
+}
+
 .status-pill .material-symbols-outlined {
   font-size: 14px;
 }
+
+/* Booking row pending state — soft-disable while the API mutation is in
+   flight, then snap back when the local list updates. */
+.booking-table tbody tr.pending {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.booking-table tbody tr.pending .row-actions button {
+  cursor: progress;
+}
+
+.booking-mutation-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 180, 171, 0.3);
+  background: rgba(255, 180, 171, 0.08);
+  color: var(--error);
+  font-size: 13px;
+}
+.booking-mutation-error > .material-symbols-outlined { font-size: 18px; }
+.booking-mutation-error span { flex: 1; }
+.booking-mutation-error button {
+  background: transparent;
+  border: 0;
+  color: var(--error);
+  padding: 4px;
+  cursor: pointer;
+}
+.booking-mutation-error button .material-symbols-outlined { font-size: 16px; }
 
 .booking-note {
   max-width: 420px;
@@ -5248,6 +5287,178 @@ button {
     grid-column: 1 / -1;
     justify-content: flex-start;
     padding-top: 4px;
+  }
+}
+
+/* ===========================================================================
+   Generic confirmation modal — currently used by Booking Log (no-show /
+   cancel). Glass card + backdrop blur to match the rest of the dashboard.
+   =========================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  animation: modalOverlayIn 160ms ease-out;
+}
+
+@keyframes modalOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-card {
+  width: min(460px, 100%);
+  padding: 28px 28px 22px;
+  border-radius: 16px;
+  border: 1px solid var(--outline-variant);
+  background: rgba(28, 27, 27, 0.96);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.6);
+  text-align: center;
+  animation: modalCardIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalCardIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-icon {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 14px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--outline-variant);
+}
+.modal-icon .material-symbols-outlined { font-size: 26px; }
+.modal-icon.tone-warning {
+  background: rgba(255, 181, 149, 0.12);
+  border-color: rgba(255, 181, 149, 0.35);
+  color: var(--tertiary);
+}
+.modal-icon.tone-danger {
+  background: rgba(255, 180, 171, 0.12);
+  border-color: rgba(255, 180, 171, 0.35);
+  color: var(--error);
+}
+
+.modal-title {
+  margin: 0 0 6px;
+  font-family: "Hanken Grotesk", sans-serif;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--on-surface);
+}
+
+.modal-description {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
+}
+
+.modal-context {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-low);
+  text-align: left;
+}
+.modal-context-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+}
+.modal-context-row + .modal-context-row {
+  border-top: 1px solid rgba(65, 71, 85, 0.4);
+}
+.modal-context-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--on-surface-variant);
+}
+.modal-context-row strong {
+  font-family: "Hanken Grotesk", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.modal-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-family: "Geist", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 120ms ease, transform 80ms ease;
+}
+.modal-button:disabled { opacity: 0.6; cursor: progress; }
+.modal-button:hover:not(:disabled) { filter: brightness(1.08); }
+.modal-button:active:not(:disabled) { transform: scale(0.98); }
+
+.modal-button.ghost {
+  background: transparent;
+  border-color: var(--outline-variant);
+  color: var(--on-surface);
+}
+.modal-button.ghost:hover:not(:disabled) {
+  background: var(--surface-container-high);
+}
+
+.modal-button.warning {
+  background: var(--tertiary);
+  color: #2a0a00;
+  border-color: var(--tertiary);
+}
+
+.modal-button.danger {
+  background: var(--error);
+  color: #4a0006;
+  border-color: var(--error);
+}
+
+.modal-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  border-top-color: rgba(0, 0, 0, 0.85);
+  animation: loginSpin 0.7s linear infinite;
+}
+
+@media (max-width: 480px) {
+  .modal-actions {
+    grid-template-columns: 1fr;
+  }
+  .modal-actions .modal-button.ghost {
+    order: 2;
   }
 }
 

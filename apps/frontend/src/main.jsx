@@ -3,7 +3,15 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
 import { signInWithGoogle, signOutUser } from "./firebase";
-import { getAnalytics, getAnalyticsDailySeries, getCallLog, listCallLogs, listReservations } from "./api";
+import {
+  cancelReservation,
+  getAnalytics,
+  getAnalyticsDailySeries,
+  getCallLog,
+  listCallLogs,
+  listReservations,
+  updateReservationStatus
+} from "./api";
 
 const restaurantImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAgvs7qA0qHOd2Nob8Vl9D-gIFHp0BmQY1DOKvAMXDTT6bBAyL8U1lrq-MJV9hWv6MzfT7aNcQk6xL_pujBCXaCuo4ExjvEYGkRayK6-gLpd0Y8DC1Ob8QfyIyg9MMSyRAklEVHlsUdVxYc92Bl2bdKwZNbozxITISxFGSTMm1GFjFgG4jhDIby6jRZKnR_RslKyO96YbopcDOm2xoUgLx4eSTSXZli5KtJYcV_HcCcUo9FGjv2Bxy7pOCxyMYwTdf_kEv41JzNcmE";
@@ -756,6 +764,11 @@ function DashboardTopIcons() {
   );
 }
 
+// Live Feed polls every 5 s for fresh call activity. Plan: "Live Feed: 3-5
+// second interval during soft launch." Keep the loading flag for the very
+// first fetch only — subsequent refreshes update silently in the background.
+const LIVE_FEED_POLL_MS = 5000;
+
 function LiveFeedOverviewPage({ navigate, path }) {
   const [callLogs, setCallLogs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -765,17 +778,37 @@ function LiveFeedOverviewPage({ navigate, path }) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([listCallLogs({ limit: 25 }), getAnalytics({ days: 1 })])
-      .then(([calls, stats]) => {
-        if (cancelled) return;
-        setCallLogs(calls.call_logs ?? []);
-        setAnalytics(stats.analytics ?? null);
-      })
-      .catch((e) => !cancelled && setError(e.message))
-      .finally(() => !cancelled && setLoading(false));
+
+    const fetchAll = (isInitial) =>
+      Promise.all([listCallLogs({ limit: 25 }), getAnalytics({ days: 1 })])
+        .then(([calls, stats]) => {
+          if (cancelled) return;
+          setCallLogs(calls.call_logs ?? []);
+          setAnalytics(stats.analytics ?? null);
+          if (error) setError(null);
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          // Only surface errors during the first fetch — silent retries
+          // shouldn't replace a working list with an error banner.
+          if (isInitial) setError(e.message);
+        })
+        .finally(() => {
+          if (cancelled || !isInitial) return;
+          setLoading(false);
+        });
+
+    fetchAll(true);
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      fetchAll(false);
+    }, LIVE_FEED_POLL_MS);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const callRows = useMemo(() => {
@@ -1386,6 +1419,10 @@ function BookingLogPage({ navigate, path }) {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [mutationError, setMutationError] = useState(null);
+  const [pendingIds, setPendingIds] = useState(() => new Set());
+  const [confirmState, setConfirmState] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const isPhone = useMediaQuery("(max-width: 767px)");
 
   useEffect(() => {
@@ -1403,7 +1440,63 @@ function BookingLogPage({ navigate, path }) {
     };
   }, []);
 
-  const rows = reservations.map(mapReservationToRow);
+  const markPending = (id, on) =>
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const applyStatusLocally = (id, status) => {
+    setReservations((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status } : r))
+    );
+  };
+
+  const requestConfirm = (action, id) => {
+    const reservation = reservations.find((r) => r.id === id);
+    setConfirmState({ action, id, reservation });
+  };
+
+  const dismissConfirm = () => {
+    if (confirmBusy) return;
+    setConfirmState(null);
+  };
+
+  const runMutation = async (action, id) => {
+    markPending(id, true);
+    setMutationError(null);
+    setConfirmBusy(true);
+    try {
+      if (action === "no-show") {
+        await updateReservationStatus(id, "no_show");
+        applyStatusLocally(id, "no_show");
+      } else if (action === "cancel") {
+        await cancelReservation(id);
+        applyStatusLocally(id, "cancelled");
+      } else if (action === "restore") {
+        await updateReservationStatus(id, "confirmed");
+        applyStatusLocally(id, "confirmed");
+      }
+      setConfirmState(null);
+    } catch (e) {
+      setMutationError(e.message ?? String(e));
+      setConfirmState(null);
+    } finally {
+      setConfirmBusy(false);
+      markPending(id, false);
+    }
+  };
+
+  const handleMarkNoShow = (id) => requestConfirm("no-show", id);
+  const handleCancel = (id) => requestConfirm("cancel", id);
+  const handleRestore = (id) => runMutation("restore", id);
+
+  const rows = reservations.map((r) => ({
+    ...mapReservationToRow(r),
+    pending: pendingIds.has(r.id)
+  }));
   const totalBookings = reservations.length;
   const confirmed = reservations.filter((r) => r.status === "confirmed").length;
   const cancelled = reservations.filter((r) => r.status === "cancelled").length;
@@ -1451,6 +1544,16 @@ function BookingLogPage({ navigate, path }) {
           <button>Export</button>
         </div>
 
+        {mutationError && (
+          <div className="booking-mutation-error" role="alert">
+            <Icon name="error" />
+            <span>{mutationError}</span>
+            <button type="button" onClick={() => setMutationError(null)} aria-label="Dismiss">
+              <Icon name="close" />
+            </button>
+          </div>
+        )}
+
         {isPhone ? (
           <ul className="booking-card-list" aria-label="Reservations">
             {rows.length === 0 && !loading && (
@@ -1475,7 +1578,13 @@ function BookingLogPage({ navigate, path }) {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <BookingRow key={row.id} row={row} />
+                  <BookingRow
+                    key={row.id}
+                    row={row}
+                    onMarkNoShow={handleMarkNoShow}
+                    onCancel={handleCancel}
+                    onRestore={handleRestore}
+                  />
                 ))}
               </tbody>
             </table>
@@ -1492,7 +1601,119 @@ function BookingLogPage({ navigate, path }) {
           </span>
         </footer>
       </section>
+
+      <ConfirmModal
+        state={confirmState}
+        busy={confirmBusy}
+        onCancel={dismissConfirm}
+        onConfirm={() => confirmState && runMutation(confirmState.action, confirmState.id)}
+      />
     </DashboardShell>
+  );
+}
+
+const CONFIRM_COPY = {
+  "no-show": {
+    title: "Mark as no-show?",
+    description:
+      "The guest didn't arrive. Marking as no-show frees the table for walk-ins and shows the booking as struck through on this list. You can restore it later if they call.",
+    confirmLabel: "Mark no-show",
+    confirmTone: "warning",
+    icon: "person_off"
+  },
+  cancel: {
+    title: "Cancel this reservation?",
+    description:
+      "This will set the booking to Cancelled and free the slot. The caller will not be notified automatically — please follow up with them if needed.",
+    confirmLabel: "Cancel reservation",
+    confirmTone: "danger",
+    icon: "block"
+  }
+};
+
+function ConfirmModal({ state, busy, onConfirm, onCancel }) {
+  useEffect(() => {
+    if (!state) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape" && !busy) onCancel();
+      if (e.key === "Enter" && !busy) onConfirm();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [state, busy, onCancel, onConfirm]);
+
+  if (!state) return null;
+  const copy = CONFIRM_COPY[state.action];
+  if (!copy) return null;
+
+  const r = state.reservation;
+  const dateLabel = r ? formatReservationDate(r.reservation_date) : "";
+  const timeLabel = r ? formatVoiceTime12h(r.start_time) : "";
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onCancel();
+      }}
+    >
+      <div className="modal-card">
+        <div className={`modal-icon tone-${copy.confirmTone}`}>
+          <Icon name={copy.icon} />
+        </div>
+        <h2 id="confirm-modal-title" className="modal-title">{copy.title}</h2>
+        <p className="modal-description">{copy.description}</p>
+
+        {r && (
+          <div className="modal-context">
+            <div className="modal-context-row">
+              <span className="modal-context-label">Guest</span>
+              <strong>{r.customer_name || "Unknown"}</strong>
+            </div>
+            <div className="modal-context-row">
+              <span className="modal-context-label">When</span>
+              <strong>
+                {dateLabel} · {timeLabel}
+              </strong>
+            </div>
+            <div className="modal-context-row">
+              <span className="modal-context-label">Party</span>
+              <strong>{r.party_size}</strong>
+            </div>
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="modal-button ghost"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={`modal-button ${copy.confirmTone}`}
+            disabled={busy}
+            onClick={onConfirm}
+            autoFocus
+          >
+            {busy ? (
+              <>
+                <span className="modal-spinner" aria-hidden="true" />
+                Working…
+              </>
+            ) : (
+              copy.confirmLabel
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1502,7 +1723,7 @@ function mapReservationToRow(row) {
     cancelled: "cancelled",
     seated: "seated",
     completed: "confirmed",
-    no_show: "cancelled"
+    no_show: "no_show"
   };
   const statusLabelMap = {
     confirmed: "Confirmed",
@@ -1521,7 +1742,7 @@ function mapReservationToRow(row) {
     status: statusLabelMap[row.status] ?? row.status,
     statusTone: statusToneMap[row.status] ?? "confirmed",
     note: row.notes || (row.source === "voice" ? "Booked via phone" : `Booked via ${row.source}`),
-    muted: row.status === "cancelled"
+    muted: row.status === "cancelled" || row.status === "no_show"
   };
 }
 
@@ -1571,9 +1792,15 @@ function BookingStat({ title, value, note, icon, tone = "" }) {
   );
 }
 
-function BookingRow({ row }) {
+function BookingRow({ row, onMarkNoShow, onCancel, onRestore }) {
+  const tone = row.statusTone;
+  const isClosed = tone === "cancelled" || tone === "no_show";
+  const canMarkNoShow = !isClosed && tone !== "seated";
+  const canCancel = !isClosed;
+  const canRestore = isClosed;
+
   return (
-    <tr className={row.muted ? "muted" : ""}>
+    <tr className={`${row.muted ? "muted" : ""} ${row.pending ? "pending" : ""}`}>
       <td className="booking-time">
         <strong>{row.dateLabel}</strong>
         <span>{row.timeLabel}</span>
@@ -1586,8 +1813,9 @@ function BookingRow({ row }) {
       <td>
         <span className={`status-pill ${row.statusTone}`}>
           {row.statusTone === "cancelled" && <Icon name="cancel" />}
+          {row.statusTone === "no_show" && <Icon name="person_off" />}
           {row.statusTone === "seated" && <Icon name="directions_walk" />}
-          {row.statusTone !== "cancelled" && row.statusTone !== "seated" && <i />}
+          {row.statusTone !== "cancelled" && row.statusTone !== "no_show" && row.statusTone !== "seated" && <i />}
           {row.status}
         </span>
       </td>
@@ -1600,12 +1828,39 @@ function BookingRow({ row }) {
       </td>
       <td>
         <div className="row-actions">
-          <button aria-label={`Edit ${row.guest}`}>
-            <Icon name="edit" />
-          </button>
-          <button aria-label={`Cancel ${row.guest}`}>
-            <Icon name={row.muted ? "restore" : "block"} />
-          </button>
+          {canMarkNoShow && (
+            <button
+              type="button"
+              aria-label={`Mark ${row.guest} as no-show`}
+              title="Mark as no-show"
+              disabled={row.pending}
+              onClick={() => onMarkNoShow?.(row.id)}
+            >
+              <Icon name="person_off" />
+            </button>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              aria-label={`Cancel ${row.guest}`}
+              title="Cancel reservation"
+              disabled={row.pending}
+              onClick={() => onCancel?.(row.id)}
+            >
+              <Icon name="block" />
+            </button>
+          )}
+          {canRestore && (
+            <button
+              type="button"
+              aria-label={`Restore ${row.guest}`}
+              title="Restore to confirmed"
+              disabled={row.pending}
+              onClick={() => onRestore?.(row.id)}
+            >
+              <Icon name="restore" />
+            </button>
+          )}
         </div>
       </td>
     </tr>
