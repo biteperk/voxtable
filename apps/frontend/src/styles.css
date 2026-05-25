@@ -73,13 +73,49 @@ button {
 }
 
 .brand-button,
-.dashboard-logo {
+.dashboard-logo,
+.dashboard-brand {
   border: 0;
   background: transparent;
   color: var(--primary);
   font-weight: 700;
   letter-spacing: 0;
   text-align: left;
+}
+
+.brand-button,
+.dashboard-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.brand-mark {
+  display: block;
+  flex-shrink: 0;
+  transform: translateY(-1px);
+}
+
+.dashboard-brand-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+
+.login-mark {
+  display: block;
+  margin: 0 auto 20px;
+}
+
+.brand-button:focus-visible,
+.dashboard-brand:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 
 .landing-shell {

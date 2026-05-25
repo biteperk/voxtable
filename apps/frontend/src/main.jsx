@@ -28,6 +28,21 @@ function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  useEffect(() => {
+    const titles = {
+      "/": "VocoTable",
+      "/live-feed": "Live Feed · VocoTable",
+      "/booking-log": "Booking Log · VocoTable",
+      "/analytics": "Analytics · VocoTable",
+      "/settings": "Settings · VocoTable",
+    };
+    if (/^\/live-feed\/[^/]+$/.test(path)) {
+      document.title = "Call detail · VocoTable";
+    } else {
+      document.title = titles[path] || "VocoTable";
+    }
+  }, [path]);
+
   const navigate = (nextPath) => {
     window.history.pushState({}, "", nextPath);
     setPath(nextPath);
@@ -109,6 +124,13 @@ function LoginScreen({ navigate }) {
   return (
     <div className="login-shell">
       <div className="login-card">
+        <img
+          src="/brand/mark-light-on-dark.svg"
+          alt=""
+          className="login-mark"
+          width="64"
+          height="64"
+        />
         <h1>VocoTable</h1>
         <p>Sign in to access the restaurant dashboard.</p>
         <button onClick={handleSignIn} disabled={busy} className="login-google">
@@ -132,8 +154,19 @@ function LandingPage({ navigate }) {
   return (
     <div className="landing-shell">
       <nav className="top-nav">
-        <button className="brand-button" onClick={() => navigate("/")}>
-          VocoTable
+        <button
+          className="brand-button"
+          onClick={() => navigate("/")}
+          aria-label="VocoTable home"
+        >
+          <img
+            src="/brand/mark-light-on-dark.svg"
+            alt=""
+            className="brand-mark"
+            width="32"
+            height="32"
+          />
+          <span>VocoTable</span>
         </button>
         <div className="top-icons">
           {user ? (
@@ -330,9 +363,22 @@ function DashboardShell({ active, children, navigate }) {
     <div className="dashboard-shell">
       <aside className="sidebar analytics-sidebar">
         <div className="sidebar-top">
-          <button className="dashboard-brand" onClick={() => navigate("/")}>
-            <strong>VocoTable</strong>
-            <span>Restaurant AI Hub</span>
+          <button
+            className="dashboard-brand"
+            onClick={() => navigate("/")}
+            aria-label="VocoTable home"
+          >
+            <img
+              src="/brand/mark-light-on-dark.svg"
+              alt=""
+              className="brand-mark"
+              width="36"
+              height="36"
+            />
+            <span className="dashboard-brand-text">
+              <strong>VocoTable</strong>
+              <span>Restaurant AI Hub</span>
+            </span>
           </button>
         </div>
 
