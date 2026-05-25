@@ -211,9 +211,11 @@ function App() {
   const isDashboard =
     path === "/live-feed" ||
     path.startsWith("/live-feed/") ||
+    path === "/live-tables" ||
     path === "/booking-log" ||
     path === "/analytics" ||
-    path === "/settings";
+    path === "/settings" ||
+    path === "/profile";
 
   return (
     <AuthProvider>
@@ -242,9 +244,11 @@ function AppRouter({ path, navigate, isDashboard }) {
   if (path === "/live-feed/detail") return <LiveFeedOverviewPage navigate={navigate} path={path} />;
 
   if (path === "/live-feed") return <LiveFeedOverviewPage navigate={navigate} path={path} />;
+  if (path === "/live-tables") return <LiveTablesPage navigate={navigate} path={path} />;
   if (path === "/booking-log") return <BookingLogPage navigate={navigate} path={path} />;
   if (path === "/analytics") return <AnalyticsPage navigate={navigate} path={path} />;
   if (path === "/settings") return <BillingPage navigate={navigate} path={path} />;
+  if (path === "/profile") return <ProfilePage navigate={navigate} path={path} />;
   return <LandingPage navigate={navigate} />;
 }
 
@@ -283,23 +287,59 @@ function LoginScreen({ navigate }) {
 
   return (
     <div className="login-shell">
+      <div className="login-bg-glow login-bg-glow-1" aria-hidden="true" />
+      <div className="login-bg-glow login-bg-glow-2" aria-hidden="true" />
+
       <div className="login-card">
         <img
           src="/brand/mark-light-on-dark.svg"
-          alt=""
+          alt="VocoTable"
           className="login-mark"
-          width="64"
-          height="64"
+          width="56"
+          height="56"
         />
-        <h1>VocoTable</h1>
-        <p>Sign in to access the restaurant dashboard.</p>
-        <button onClick={handleSignIn} disabled={busy} className="login-google">
-          <Icon name="login" /> {busy ? "Signing you in…" : "Continue with Google"}
+        <h1 className="login-title">VocoTable</h1>
+        <p className="login-tagline">Voice AI booking for restaurants</p>
+
+        <div className="login-divider" aria-hidden="true" />
+
+        <h2 className="login-heading">Sign in to your dashboard</h2>
+        <p className="login-sub">Manage live tables, calls, and bookings — all in one place.</p>
+
+        <button onClick={handleSignIn} disabled={busy} className="login-google" type="button">
+          {busy ? (
+            <>
+              <span className="login-spinner" aria-hidden="true" />
+              <span>Signing you in…</span>
+            </>
+          ) : (
+            <>
+              <BrandMark brand="google" />
+              <span>Continue with Google</span>
+            </>
+          )}
         </button>
-        {error && <p className="login-error">{error}</p>}
-        <button onClick={() => navigate("/")} className="login-back">
-          Back to landing
-        </button>
+
+        {error && (
+          <div className="login-error" role="alert">
+            <Icon name="error" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <p className="login-coming-soon">
+          More sign-in methods coming soon — Apple, email & password.
+        </p>
+
+        <div className="login-footer">
+          <button onClick={() => navigate("/")} className="login-back" type="button">
+            <Icon name="arrow_back" />
+            Back to home
+          </button>
+          <p className="login-legal">
+            By continuing, you agree to our Terms & Privacy Policy.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -515,6 +555,7 @@ function DashboardShell({ active, children, navigate, path }) {
   const drawerTitleId = useId();
 
   const items = [
+    ["Live Tables", "table_restaurant", "/live-tables"],
     ["Live Feed", "graphic_eq", "/live-feed"],
     ["Booking Log", "menu_book", "/booking-log"],
     ["Analytics", "query_stats", "/analytics"]
@@ -582,31 +623,20 @@ function DashboardShell({ active, children, navigate, path }) {
 
       <div className="sidebar-bottom">
         <button
-          className={`settings-link ${active === "Settings" ? "active" : ""}`}
+          className={`settings-link ${active === "Billing" ? "active" : ""}`}
           type="button"
           onClick={() => navigate("/settings")}
-          aria-current={active === "Settings" ? "page" : undefined}
+          aria-current={active === "Billing" ? "page" : undefined}
         >
-          <Icon name="settings" fill={active === "Settings"} />
-          <span>Settings</span>
+          <Icon name="credit_card" fill={active === "Billing"} />
+          <span>Billing</span>
         </button>
 
-
-        <div className="sidebar-user">
-          <img src={user?.photoURL ?? restaurantImage} alt="" />
-          <div>
-            <strong>{user?.displayName ?? "User"}</strong>
-            <span>{user?.email ?? ""}</span>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="sidebar-signout"
-          onClick={handleSignOut}
-        >
-          <Icon name="logout" />
-          <span>Sign out</span>
-        </button>
+        <SidebarUserButton
+          user={user}
+          active={active === "Profile"}
+          onClick={() => navigate("/profile")}
+        />
       </div>
     </aside>
   );
@@ -695,6 +725,24 @@ function DashboardShell({ active, children, navigate, path }) {
   );
 }
 
+function SidebarUserButton({ user, active, onClick }) {
+  return (
+    <button
+      className={`sidebar-user ${active ? "active" : ""}`}
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+    >
+      <img src={user?.photoURL ?? restaurantImage} alt="" />
+      <div>
+        <strong>{user?.displayName ?? "User"}</strong>
+        <span>{user?.email ?? ""}</span>
+      </div>
+      <Icon name="chevron_right" className="sidebar-user-chevron" />
+    </button>
+  );
+}
+
 function DashboardTopIcons() {
   return (
     <div className="dashboard-top-icons">
@@ -730,9 +778,17 @@ function LiveFeedOverviewPage({ navigate, path }) {
     };
   }, []);
 
-  const callRows = callLogs.map((row, i) => mapCallLogToRow(row, i));
+  const callRows = useMemo(() => {
+    const rows = callLogs.map((row, i) => mapCallLogToRow(row, i));
+    // Live calls float to the top, then most recent first.
+    return rows.sort((a, b) => {
+      if (a.status === "live" && b.status !== "live") return -1;
+      if (b.status === "live" && a.status !== "live") return 1;
+      return 0;
+    });
+  }, [callLogs]);
   const totalCalls = analytics?.total_calls ?? 0;
-  const activeCalls = callLogs.filter((r) => !r.ended_at && r.status !== "completed" && r.status !== "failed").length;
+  const activeCalls = callRows.filter((r) => r.status === "live").length;
   const successRate =
     analytics && analytics.total_calls > 0
       ? `${Math.round((analytics.handled / analytics.total_calls) * 100)}%`
@@ -869,10 +925,16 @@ function humanizeIntent(row) {
   return "Inbound call";
 }
 
+// Calls without an ended_at older than this are treated as stale (Retell
+// end-of-call webhook never landed) rather than "live forever".
+const LIVE_THRESHOLD_MS = 10 * 60 * 1000;
+
 function mapCallLogToRow(row, index) {
   const ended = !!row.ended_at;
-  const status = !ended ? "live" : row.transferred_to_staff ? "transferred" : "handled";
   const started = row.started_at ? new Date(row.started_at) : new Date(row.created_at);
+  const recent = Date.now() - started.getTime() < LIVE_THRESHOLD_MS;
+  const isLive = !ended && recent;
+  const status = isLive ? "live" : row.transferred_to_staff ? "transferred" : "handled";
   const durationSec =
     typeof row.duration_seconds === "number"
       ? row.duration_seconds
@@ -889,7 +951,7 @@ function mapCallLogToRow(row, index) {
     status,
     intent: humanizeIntent(row),
     duration: durationSec != null ? formatDuration(durationSec) : "—",
-    time: started.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    time: started.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true }),
     timeNote: relativeTime(started),
     avatarTone: tones[index % tones.length]
   };
@@ -1384,7 +1446,7 @@ function BookingLogPage({ navigate, path }) {
         <div className="reservations-head">
           <div>
             <h2>Recent Reservations</h2>
-            <span>{new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</span>
+            <span>{new Date().toLocaleDateString("en-AU", { year: "numeric", month: "long", day: "numeric" })}</span>
           </div>
           <button>Export</button>
         </div>
@@ -1578,6 +1640,220 @@ function BookingCardItem({ row }) {
       </div>
     </li>
   );
+}
+
+// ----------------------------------------------------------------------------
+// Live Tables — mock-data scaffold. Wire to GET /api/tables-status when ready.
+// Delete MOCK_TABLES + the loadMock effect to switch to real data.
+// ----------------------------------------------------------------------------
+const MOCK_TABLES = [
+  { label: "T1", minCapacity: 1, maxCapacity: 2, status: "available" },
+  {
+    label: "T2",
+    minCapacity: 1,
+    maxCapacity: 2,
+    status: "reserved",
+    reservation: { time: "7:30 PM", guest: "John", party: 2, minutesUntil: 30 }
+  },
+  {
+    label: "T3",
+    minCapacity: 2,
+    maxCapacity: 4,
+    status: "seated",
+    reservation: { time: "6:45 PM", guest: "Maria", party: 4, freesAt: "8:15 PM", seatedMinutesAgo: 12 }
+  },
+  { label: "T4", minCapacity: 2, maxCapacity: 4, status: "available" },
+  {
+    label: "T5",
+    minCapacity: 4,
+    maxCapacity: 6,
+    status: "reserved",
+    reservation: { time: "8:00 PM", guest: "Sam", party: 5, minutesUntil: 60 }
+  },
+  { label: "T6", minCapacity: 6, maxCapacity: 8, status: "available" },
+  { label: "T7", minCapacity: 8, maxCapacity: 10, status: "available" }
+];
+
+function LiveTablesPage({ navigate }) {
+  const [tables, setTables] = useState([]);
+  const [refreshedAt, setRefreshedAt] = useState(new Date());
+
+  useEffect(() => {
+    setTables(MOCK_TABLES);
+  }, []);
+
+  const refresh = () => {
+    setTables([...MOCK_TABLES]);
+    setRefreshedAt(new Date());
+  };
+
+  const counts = useMemo(() => {
+    const total = tables.length;
+    const seated = tables.filter((t) => t.status === "seated").length;
+    const reserved = tables.filter((t) => t.status === "reserved").length;
+    return { total, seated, reserved };
+  }, [tables]);
+
+  const todayLabel = new Date().toLocaleDateString("en-AU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric"
+  });
+  const refreshedAgo = formatRefreshedAgo(refreshedAt);
+
+  return (
+    <DashboardShell active="Live Tables" navigate={navigate} branded>
+      <header className="operational-header live-tables-header">
+        <div>
+          <h1>Live Tables</h1>
+          <p>Real-time floor and reservation status.</p>
+        </div>
+        <div className="live-tables-meta">
+          <span className="today-pill">
+            <Icon name="calendar_today" />
+            {todayLabel}
+          </span>
+          <button className="feed-action-btn" onClick={refresh} aria-label="Refresh">
+            <Icon name="refresh" />
+            {refreshedAgo}
+          </button>
+          <span className="mock-badge">MOCK DATA</span>
+        </div>
+      </header>
+
+      <section className="feed-summary-cards">
+        <article className="feed-stat-card">
+          <div className="feed-stat-top">
+            <span className="feed-stat-label">Total Tables</span>
+            <Icon name="table_restaurant" className="feed-stat-icon" />
+          </div>
+          <div className="feed-stat-bottom">
+            <span className="feed-stat-value">{counts.total}</span>
+            <span className="feed-stat-sub">Active in floor</span>
+          </div>
+        </article>
+
+        <article className="feed-stat-card">
+          <div className="feed-stat-top">
+            <span className="feed-stat-label">Occupied</span>
+            <i className="kpi-status-dot seated" />
+          </div>
+          <div className="feed-stat-bottom">
+            <span className="feed-stat-value">
+              {counts.seated}
+              <em className="feed-stat-denominator">/ {counts.total}</em>
+            </span>
+            <span className="feed-stat-sub">Seated now</span>
+          </div>
+        </article>
+
+        <article className="feed-stat-card">
+          <div className="feed-stat-top">
+            <span className="feed-stat-label">Upcoming Today</span>
+            <i className="kpi-status-dot reserved" />
+          </div>
+          <div className="feed-stat-bottom">
+            <span className="feed-stat-value">{counts.reserved}</span>
+            <span className="feed-stat-sub">Reserved tonight</span>
+          </div>
+        </article>
+      </section>
+
+      <section className="feed-activity-card">
+        <div className="feed-activity-header">
+          <h2>Tonight's Tables</h2>
+          <div className="feed-activity-actions">
+            <button className="feed-action-btn">
+              <Icon name="person_add" />
+              Assign Walk-in
+            </button>
+          </div>
+        </div>
+
+        <div className="live-tables-list">
+          <div className="live-tables-row live-tables-row-head">
+            <span>Table</span>
+            <span>Capacity</span>
+            <span>Status</span>
+            <span className="live-tables-action-col">Action</span>
+          </div>
+          {tables.map((t) => (
+            <TableRow key={t.label} table={t} />
+          ))}
+        </div>
+      </section>
+    </DashboardShell>
+  );
+}
+
+function TableRow({ table }) {
+  const isReserved = table.status === "reserved";
+  const isSeated = table.status === "seated";
+  const r = table.reservation;
+
+  return (
+    <div className={`live-tables-row status-${table.status}`}>
+      <span className="table-label">{table.label}</span>
+      <span className="table-capacity">
+        <Icon name="group" />
+        {table.minCapacity}-{table.maxCapacity}
+      </span>
+      <span className="table-status">
+        <i className={`status-dot ${table.status}`} />
+        {table.status === "available" && "Available"}
+        {isReserved && (
+          <>
+            Reserved {r.time} — {r.guest} ({r.party}pp)
+            <em className="status-sub">in {formatMinutes(r.minutesUntil)}</em>
+          </>
+        )}
+        {isSeated && (
+          <>
+            Seated {r.time} — {r.guest} ({r.party}pp)
+            <em className="status-sub">frees up at {r.freesAt}</em>
+          </>
+        )}
+      </span>
+      <span className="live-tables-action-col">
+        {table.status === "available" && (
+          <button className="row-action ghost">
+            <Icon name="person_add" /> Walk-in
+          </button>
+        )}
+        {isReserved && (
+          <>
+            <button className="row-action primary">
+              <Icon name="chair_alt" /> Seat
+            </button>
+            <button className="row-action danger-ghost" aria-label="Cancel reservation">
+              <Icon name="close" />
+            </button>
+          </>
+        )}
+        {isSeated && (
+          <button className="row-action primary">
+            <Icon name="check" /> Mark Done
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function formatMinutes(mins) {
+  if (mins == null) return "—";
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function formatRefreshedAgo(date) {
+  const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return `Refreshed ${seconds}s ago`;
+  const m = Math.floor(seconds / 60);
+  return `Refreshed ${m}m ago`;
 }
 
 function AnalyticsPage({ navigate }) {
@@ -1776,9 +2052,148 @@ function OutcomeItem({ color, label, value }) {
   );
 }
 
+function BrandMark({ brand }) {
+  if (brand === "google") {
+    // Official Google "G" — multi-color
+    return (
+      <svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true">
+        <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34.1 6.1 29.3 4 24 4 12.95 4 4 12.95 4 24s8.95 20 20 20 20-8.95 20-20c0-1.3-.1-2.4-.4-3.5z" />
+        <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+        <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2L31 33.5c-2 1.6-4.5 2.5-7 2.5-5.2 0-9.6-3.3-11.2-8L6.3 33C9.6 39.5 16.3 44 24 44z" />
+        <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.7l6.4 5.3C40.9 35.4 44 30.1 44 24c0-1.3-.1-2.4-.4-3.5z" />
+      </svg>
+    );
+  }
+  if (brand === "apple") {
+    return (
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+        <path d="M17.05 20.28c-.98.95-2.05.94-3.08.49-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.49C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+      </svg>
+    );
+  }
+  return null;
+}
+
+function ProfilePage({ navigate }) {
+  const { user } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    navigate("/");
+  };
+
+  const signInMethods = [
+    {
+      id: "google",
+      label: "Google",
+      description: user?.email ?? "Connected via Google",
+      brand: "google",
+      connected: true,
+      primary: true
+    },
+    {
+      id: "apple",
+      label: "Apple",
+      description: "Sign in with your Apple ID",
+      brand: "apple",
+      connected: false,
+      comingSoon: true
+    },
+    {
+      id: "email",
+      label: "Email & password",
+      description: "Use a dedicated email and password",
+      brand: "email",
+      connected: false,
+      comingSoon: true
+    }
+  ];
+
+  return (
+    <DashboardShell active="Profile" navigate={navigate}>
+      <header className="operational-header">
+        <div>
+          <h1>My Profile</h1>
+          <p>Manage your account and how you sign in to VocoTable.</p>
+        </div>
+      </header>
+
+      <section className="profile-grid">
+        <article className="profile-identity-card">
+          <img
+            className="profile-avatar"
+            src={user?.photoURL ?? restaurantImage}
+            alt=""
+          />
+          <div className="profile-identity-text">
+            <strong>{user?.displayName ?? "User"}</strong>
+            <span>{user?.email ?? ""}</span>
+            <span className="profile-session-pill">
+              <i className="profile-session-dot" />
+              Active session — signed in with Google
+            </span>
+          </div>
+        </article>
+
+        <article className="profile-card">
+          <header>
+            <h2>Sign-in methods</h2>
+            <p>Choose how you want to access VocoTable. You can connect multiple providers.</p>
+          </header>
+          <ul className="signin-method-list">
+            {signInMethods.map((m) => (
+              <li key={m.id} className={`signin-method-row ${m.comingSoon ? "disabled" : ""}`}>
+                <div className={`signin-method-icon brand-${m.brand}`}>
+                  {m.brand === "email" ? <Icon name="mail" /> : <BrandMark brand={m.brand} />}
+                </div>
+                <div className="signin-method-text">
+                  <strong>{m.label}</strong>
+                  <span>{m.description}</span>
+                </div>
+                <div className="signin-method-action">
+                  {m.connected && <span className="signin-pill active">Connected · Active</span>}
+                  {m.comingSoon && <span className="signin-pill muted">Coming soon</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="profile-card">
+          <header>
+            <h2>Account</h2>
+            <p>Manage profile photo, name, and password through your Google account.</p>
+          </header>
+          <a
+            className="profile-action-row"
+            href="https://myaccount.google.com"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Icon name="open_in_new" />
+            <div>
+              <strong>Manage Google Account</strong>
+              <span>Update photo, name, password, and 2-factor settings</span>
+            </div>
+            <Icon name="chevron_right" className="profile-action-chevron" />
+          </a>
+          <button className="profile-action-row danger" type="button" onClick={handleSignOut}>
+            <Icon name="logout" />
+            <div>
+              <strong>Sign out</strong>
+              <span>End your session on this device</span>
+            </div>
+            <Icon name="chevron_right" className="profile-action-chevron" />
+          </button>
+        </article>
+      </section>
+    </DashboardShell>
+  );
+}
+
 function BillingPage({ navigate }) {
   return (
-    <DashboardShell active="Settings" navigate={navigate}>
+    <DashboardShell active="Billing" navigate={navigate}>
       <header className="billing-header">
         <h1>Billing & Subscription</h1>
         <p>Manage your payment methods and view past invoices.</p>

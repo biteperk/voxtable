@@ -683,16 +683,37 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 6px;
+  padding: 6px 8px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.sidebar-user:hover {
+  background: rgba(173, 198, 255, 0.06);
+  border-color: var(--outline-variant);
+}
+.sidebar-user.active {
+  background: rgba(173, 198, 255, 0.1);
+  border-color: rgba(173, 198, 255, 0.3);
 }
 
 .sidebar-user img {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
   border-radius: 999px;
   object-fit: cover;
   border: 1px solid var(--outline-variant);
+}
+
+.sidebar-user > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .sidebar-user strong,
@@ -700,21 +721,265 @@ button {
   display: block;
   font-family: "JetBrains Mono", monospace;
   letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-user strong {
   color: var(--on-surface);
-  font-size: 10px;
-  line-height: 12px;
+  font-size: 11px;
+  line-height: 14px;
   font-weight: 700;
 }
 
 .sidebar-user span {
   color: var(--secondary-fixed);
-  font-size: 8px;
-  line-height: 10px;
-  font-weight: 700;
+  font-size: 9px;
+  line-height: 12px;
+  font-weight: 600;
 }
+
+.sidebar-user-chevron {
+  flex: 0 0 auto;
+  color: var(--outline);
+  font-size: 18px;
+}
+
+/* (legacy dropdown styles removed — profile is now a dedicated /profile page) */
+
+/* ===========================================================================
+   /profile — My Profile page. Reuses .operational-header from Live Feed.
+   =========================================================================== */
+.profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+}
+.profile-grid > .profile-identity-card {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 960px) {
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profile-identity-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.72);
+  backdrop-filter: blur(12px);
+}
+.profile-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid var(--outline-variant);
+  flex: 0 0 auto;
+}
+.profile-identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.profile-identity-text strong {
+  font-family: "Hanken Grotesk", sans-serif;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+.profile-identity-text > span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+.profile-session-pill {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin-top: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 244, 255, 0.35);
+  background: rgba(0, 219, 233, 0.1);
+  color: var(--secondary-fixed);
+  font-size: 11px !important;
+  width: fit-content;
+}
+.profile-session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--secondary-fixed-dim);
+  box-shadow: 0 0 6px rgba(0, 219, 233, 0.6);
+}
+
+.profile-card {
+  padding: 24px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.72);
+  backdrop-filter: blur(12px);
+}
+.profile-card > header {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.profile-card h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.profile-card header p {
+  margin: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.signin-method-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.signin-method-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-low);
+}
+.signin-method-row.disabled {
+  opacity: 0.55;
+}
+.signin-method-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid var(--outline-variant);
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.signin-method-icon svg { display: block; }
+.signin-method-icon .material-symbols-outlined { font-size: 22px; color: var(--tertiary); }
+.signin-method-icon.brand-apple {
+  background: #000;
+  color: #fff;
+}
+.signin-method-icon.brand-email {
+  background: rgba(255, 181, 149, 0.12);
+  border-color: rgba(255, 181, 149, 0.35);
+}
+.signin-method-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.signin-method-text strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.signin-method-text span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.signin-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.signin-pill.active {
+  background: rgba(0, 219, 233, 0.1);
+  color: var(--secondary-fixed);
+  border: 1px solid rgba(125, 244, 255, 0.35);
+}
+.signin-pill.muted {
+  background: var(--surface-container-high);
+  color: var(--outline);
+  border: 1px solid var(--outline-variant);
+}
+
+.profile-action-row {
+  display: grid;
+  grid-template-columns: 24px 1fr 24px;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--outline-variant);
+  background: transparent;
+  color: var(--on-surface);
+  text-decoration: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.profile-action-row:last-child { border-bottom: 0; }
+.profile-action-row:hover {
+  background: rgba(173, 198, 255, 0.05);
+}
+.profile-action-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.profile-action-row strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.profile-action-row span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+.profile-action-row > .material-symbols-outlined:first-child {
+  color: var(--on-surface-variant);
+  font-size: 20px;
+  justify-self: center;
+}
+.profile-action-chevron {
+  color: var(--outline);
+  font-size: 18px;
+}
+.profile-action-row.danger {
+  color: var(--error);
+}
+.profile-action-row.danger strong { color: var(--error); }
+.profile-action-row.danger > .material-symbols-outlined:first-child { color: var(--error); }
+.profile-action-row.danger:hover { background: rgba(255, 180, 171, 0.06); }
 
 .dashboard-content {
   width: calc(100% - var(--dashboard-sidebar-width));
@@ -1531,6 +1796,7 @@ button {
   color: var(--on-surface);
   font-size: 16px;
   line-height: 22px;
+  vertical-align: middle;
 }
 
 .booking-table tbody tr:hover {
@@ -1936,14 +2202,17 @@ button {
   height: 12px;
   flex: 0 0 auto;
   border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .legend-primary {
   background: var(--primary);
+  box-shadow: 0 0 8px rgba(173, 198, 255, 0.55);
 }
 
 .legend-secondary {
-  background: var(--secondary);
+  background: var(--secondary-fixed-dim);
+  box-shadow: 0 0 8px rgba(0, 219, 233, 0.55);
 }
 
 .chart-area {
@@ -3166,32 +3435,97 @@ td button {
 
 /* Login screen */
 .login-shell {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 30% 20%, rgba(99, 102, 241, 0.15), transparent 60%), #0b0b0e;
   padding: 24px;
+  background: var(--background);
+  overflow: hidden;
+}
+
+.login-bg-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(120px);
+  pointer-events: none;
+  opacity: 0.35;
+}
+.login-bg-glow-1 {
+  top: -120px;
+  left: -120px;
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, var(--primary) 0%, transparent 70%);
+}
+.login-bg-glow-2 {
+  bottom: -120px;
+  right: -120px;
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, var(--secondary-fixed-dim) 0%, transparent 70%);
+  opacity: 0.25;
 }
 
 .login-card {
-  width: min(420px, 100%);
-  background: #15151a;
-  border: 1px solid #2a2a32;
+  position: relative;
+  width: min(440px, 100%);
+  background: rgba(28, 27, 27, 0.85);
+  border: 1px solid var(--outline-variant);
   border-radius: 16px;
-  padding: 36px 32px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+  padding: 36px 32px 28px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
   text-align: center;
+  backdrop-filter: blur(20px);
 }
 
-.login-card h1 {
-  font-size: 36px;
-  margin: 0 0 8px;
-  color: #f4f4f5;
+.login-mark {
+  margin: 0 auto 14px;
+  display: block;
 }
 
-.login-card p {
-  color: #94a3b8;
-  margin: 0 0 28px;
+.login-title {
+  font-family: "Hanken Grotesk", sans-serif;
+  font-size: 30px;
+  line-height: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  background: linear-gradient(90deg, var(--primary), var(--secondary-fixed-dim));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.login-tagline {
+  margin: 4px 0 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.login-divider {
+  height: 1px;
+  margin: 24px 0;
+  background: linear-gradient(90deg, transparent, var(--outline-variant), transparent);
+}
+
+.login-heading {
+  margin: 0 0 6px;
+  font-family: "Hanken Grotesk", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.login-sub {
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--on-surface-variant);
 }
 
 .login-google {
@@ -3199,35 +3533,113 @@ td button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   padding: 12px 16px;
   border-radius: 10px;
-  border: none;
-  background: linear-gradient(135deg, #4f46e5, #6366f1);
-  color: #fff;
-  font-size: 16px;
+  border: 1px solid #dadce0;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: transform 0.1s ease, opacity 0.2s ease;
+  transition: box-shadow 160ms ease, transform 80ms ease;
+}
+.login-google:hover:not(:disabled) {
+  box-shadow: 0 4px 18px rgba(173, 198, 255, 0.25);
+  transform: translateY(-1px);
+}
+.login-google:active:not(:disabled) {
+  transform: translateY(0);
+}
+.login-google:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.login-google svg {
+  display: block;
+  flex: 0 0 auto;
 }
 
-.login-google:hover { transform: translateY(-1px); }
-.login-google:disabled { opacity: 0.6; cursor: not-allowed; }
+.login-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(31, 31, 31, 0.2);
+  border-top-color: #1f1f1f;
+  animation: loginSpin 0.7s linear infinite;
+}
+
+@keyframes loginSpin {
+  to { transform: rotate(360deg); }
+}
 
 .login-error {
   margin-top: 16px;
-  color: #fca5a5;
-  font-size: 14px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 8px;
+  background: rgba(255, 180, 171, 0.08);
+  border: 1px solid rgba(255, 180, 171, 0.3);
+  color: var(--error);
+  font-size: 13px;
+  line-height: 18px;
   text-align: left;
+}
+.login-error .material-symbols-outlined {
+  font-size: 18px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.login-coming-soon {
+  margin: 16px 0 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--outline);
+  letter-spacing: 0;
+}
+
+.login-footer {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--outline-variant);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
 .login-back {
-  margin-top: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
   background: none;
-  border: none;
-  color: #94a3b8;
-  font-size: 14px;
+  border: 0;
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
+  border-radius: 6px;
+}
+.login-back:hover {
+  background: rgba(173, 198, 255, 0.06);
+  color: var(--on-surface);
+}
+.login-back .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.login-legal {
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--outline);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -3281,12 +3693,9 @@ td button {
   text-transform: none;
 }
 
-/* Booking row "Date / Time" cell — now a two-line stack:
-   bold date on top, time underneath, both sans for legibility. */
+/* Booking row "Date / Time" cell — two-line stack vertically centered in cell.
+   Kept as table-cell (not flex) so column alignment with header is preserved. */
 .booking-time {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   min-width: 110px;
   vertical-align: middle;
 }
@@ -3294,6 +3703,7 @@ td button {
   font-family: inherit;
   font-weight: 600;
   font-size: 14px;
+  line-height: 18px;
   color: var(--on-surface);
   letter-spacing: -0.005em;
   margin-bottom: 4px;
@@ -3301,6 +3711,7 @@ td button {
 .booking-time span {
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
+  line-height: 16px;
   color: rgba(148, 163, 184, 0.85);
   font-feature-settings: "tnum" 1;
   letter-spacing: 0;
@@ -4636,6 +5047,207 @@ button {
   .pricing-section {
     padding-left: max(16px, env(safe-area-inset-left, 0));
     padding-right: max(16px, env(safe-area-inset-right, 0));
+  }
+}
+
+/* ===========================================================================
+   Live Tables page — reuses .operational-header / .feed-summary-cards /
+   .feed-stat-card / .feed-activity-card / .feed-action-btn from Live Feed
+   so typography + colour palette stay consistent. Only the table list and
+   inline mock pieces are page-specific.
+   =========================================================================== */
+.live-tables-header {
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.live-tables-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.today-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--outline-variant);
+  background: rgba(30, 30, 30, 0.72);
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 500;
+}
+.today-pill .material-symbols-outlined { font-size: 14px; }
+
+.mock-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(239, 103, 25, 0.14);
+  border: 1px solid rgba(239, 103, 25, 0.42);
+  color: var(--tertiary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.kpi-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.kpi-status-dot.seated   { background: var(--error);    box-shadow: 0 0 8px rgba(255, 180, 171, 0.55); }
+.kpi-status-dot.reserved { background: var(--tertiary); box-shadow: 0 0 8px rgba(255, 181, 149, 0.55); }
+
+.feed-stat-denominator {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 18px;
+  font-weight: 500;
+  font-style: normal;
+  color: var(--outline);
+  margin-left: 6px;
+}
+
+.live-tables-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.live-tables-row {
+  display: grid;
+  grid-template-columns: 80px 110px 1fr 220px;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(65, 71, 85, 0.5);
+  font-size: 14px;
+  color: var(--on-surface);
+}
+.live-tables-row:last-child { border-bottom: 0; }
+.live-tables-row-head {
+  background: var(--surface-container-low);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--on-surface-variant);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.live-tables-row:not(.live-tables-row-head):hover {
+  background: rgba(173, 198, 255, 0.04);
+}
+
+.table-label {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--on-surface);
+}
+.table-capacity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+}
+.table-capacity .material-symbols-outlined { font-size: 16px; }
+
+.table-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+.status-dot.available {
+  background: var(--secondary-fixed-dim);
+  box-shadow: 0 0 6px rgba(0, 219, 233, 0.5);
+}
+.status-dot.reserved {
+  background: var(--tertiary);
+  box-shadow: 0 0 6px rgba(255, 181, 149, 0.55);
+}
+.status-dot.seated {
+  background: var(--error);
+  box-shadow: 0 0 6px rgba(255, 180, 171, 0.55);
+}
+.status-sub {
+  font-style: normal;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--outline);
+  padding-left: 8px;
+  border-left: 1px solid var(--outline-variant);
+  margin-left: 4px;
+}
+
+.live-tables-action-col {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+.row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  letter-spacing: 0;
+}
+.row-action .material-symbols-outlined { font-size: 14px; }
+.row-action.primary {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+.row-action.primary:hover { filter: brightness(1.08); }
+.row-action.ghost {
+  background: transparent;
+  border-color: var(--outline-variant);
+  color: var(--on-surface-variant);
+}
+.row-action.ghost:hover { background: var(--surface-container-high); color: var(--on-surface); }
+.row-action.danger-ghost {
+  background: transparent;
+  border-color: rgba(255, 180, 171, 0.3);
+  color: var(--error);
+  padding: 6px 8px;
+}
+.row-action.danger-ghost:hover { background: rgba(255, 180, 171, 0.08); }
+
+@media (max-width: 720px) {
+  .live-tables-row,
+  .live-tables-row-head {
+    grid-template-columns: 60px 90px 1fr;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .live-tables-row .live-tables-action-col,
+  .live-tables-row-head .live-tables-action-col {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-top: 4px;
   }
 }
 
