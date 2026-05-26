@@ -5,6 +5,7 @@ import { warmRestaurantCache } from "./repositories/restaurants";
 import { installCalcomExecutor } from "./services/calcomService";
 import { verifyCalcomSchemasAgainstFixtures } from "./services/calcomSchemas";
 import { startOutboxWorker, stopOutboxWorker } from "./workers/calcomOutboxWorker";
+import { startCleanupWorker, stopCleanupWorker } from "./workers/cleanupWorker";
 import { startHealthAlerter, stopHealthAlerter } from "./workers/healthAlerter";
 
 // Workers register their shutdown hooks here so server.ts doesn't have to know
@@ -53,11 +54,15 @@ async function main(): Promise<void> {
   installCalcomExecutor();
   startOutboxWorker();
   startHealthAlerter();
+  startCleanupWorker();
   registerShutdownHook(async () => {
     await stopOutboxWorker();
   });
   registerShutdownHook(async () => {
     await stopHealthAlerter();
+  });
+  registerShutdownHook(async () => {
+    await stopCleanupWorker();
   });
 
   let shuttingDown = false;
