@@ -26,9 +26,13 @@ export function createApp() {
           : true
     })
   );
+  // Limit bumped from 1mb → 2mb to accommodate Retell `call_analyzed` payloads
+  // that ship full transcripts inline. Express default is 100kb which silently
+  // 413s longer calls. Cap stays conservative to limit blast radius if a buggy
+  // upstream tries to stream binary at us.
   app.use(
     express.json({
-      limit: "1mb",
+      limit: "2mb",
       verify: (request, _response, buffer) => {
         (request as RequestWithRawBody).rawBody = buffer.toString("utf8");
       }
@@ -37,6 +41,7 @@ export function createApp() {
   app.use(
     express.urlencoded({
       extended: false,
+      limit: "2mb",
       verify: (request, _response, buffer) => {
         (request as RequestWithRawBody).rawBody = buffer.toString("utf8");
       }

@@ -37,7 +37,23 @@ const envSchema = z
     .default("false")
     .transform((value) => value === "true"),
   FIREBASE_PROJECT_ID: z.string().optional(),
-  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional()
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
+
+  // Cal.com hybrid integration — all optional in dev, conditionally required
+  // in production when CALCOM_SYNC_ENABLED=true.
+  CALCOM_SYNC_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  CALCOM_API_KEY: z.string().optional(),
+  CALCOM_EVENT_TYPE_ID: z.coerce.number().int().positive().optional(),
+  CALCOM_BASE_URL: z.string().url().default("https://api.cal.com/v2"),
+  CALCOM_WEBHOOK_SECRET: z.string().optional(),
+  CALCOM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  CALCOM_OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
+
+  // Operations alerting — Slack webhook for outbox depth + circuit breaker events.
+  OPS_SLACK_WEBHOOK_URL: z.string().url().optional()
   })
   .superRefine((value, ctx) => {
     if (value.APP_ENV !== "production") {
@@ -108,6 +124,35 @@ const envSchema = z
         path: ["TWILIO_VALIDATE_SIGNATURE"],
         message: "TWILIO_VALIDATE_SIGNATURE must be true in production."
       });
+    }
+
+    // Cal.com integration — only enforce credential presence when the flag is on.
+    // Lets us deploy the scaffolding to production with the flag OFF for one
+    // observation window, then flip on with credentials ready.
+    if (value.CALCOM_SYNC_ENABLED) {
+      if (!value.CALCOM_API_KEY) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CALCOM_API_KEY"],
+          message: "CALCOM_API_KEY is required when CALCOM_SYNC_ENABLED=true."
+        });
+      }
+      if (!value.CALCOM_EVENT_TYPE_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CALCOM_EVENT_TYPE_ID"],
+          message: "CALCOM_EVENT_TYPE_ID is required when CALCOM_SYNC_ENABLED=true."
+        });
+      }
+      if (!value.CALCOM_WEBHOOK_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CALCOM_WEBHOOK_SECRET"],
+          message:
+            "CALCOM_WEBHOOK_SECRET is required when CALCOM_SYNC_ENABLED=true " +
+            "(used to verify Cal.com webhook HMAC signatures)."
+        });
+      }
     }
   });
 
