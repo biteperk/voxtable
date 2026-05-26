@@ -80,8 +80,11 @@ export async function createReservation(input: {
   return result.rows[0]!;
 }
 
-export async function getReservationById(id: string): Promise<ReservationRow | null> {
-  const result = await pool.query<ReservationRow>("SELECT * FROM reservations WHERE id = $1", [id]);
+export async function getReservationById(
+  id: string,
+  db: DbClient = pool
+): Promise<ReservationRow | null> {
+  const result = await db.query<ReservationRow>("SELECT * FROM reservations WHERE id = $1", [id]);
   return result.rows[0] ?? null;
 }
 
@@ -139,16 +142,19 @@ export async function listReservations(input: {
   return result.rows;
 }
 
-export async function updateReservation(input: {
-  id: string;
-  tableId?: string | null;
-  date?: string;
-  time?: string;
-  partySize?: number;
-  notes?: string | null;
-  status?: ReservationStatus;
-}): Promise<ReservationRow> {
-  const current = await getReservationById(input.id);
+export async function updateReservation(
+  input: {
+    id: string;
+    tableId?: string | null;
+    date?: string;
+    time?: string;
+    partySize?: number;
+    notes?: string | null;
+    status?: ReservationStatus;
+  },
+  db: DbClient = pool
+): Promise<ReservationRow> {
+  const current = await getReservationById(input.id, db);
 
   if (!current) {
     throw new Error("Reservation not found.");
@@ -157,7 +163,7 @@ export async function updateReservation(input: {
   const nextStatus = input.status ?? current.status;
   const cancelledAtSql = nextStatus === "cancelled" ? "now()" : "cancelled_at";
 
-  const result = await pool.query<ReservationRow>(
+  const result = await db.query<ReservationRow>(
     `
     UPDATE reservations
     SET

@@ -1,6 +1,6 @@
 import { AppError } from "../domain/errors";
 import { BookingResult, CreateBookingInput, ReservationStatus } from "../domain/types";
-import { pool } from "../db/pool";
+import { pool, withTransaction } from "../db/pool";
 import { attachReservationToCallLog, upsertCallLog } from "../repositories/callLogs";
 import {
   cancelReservation,
@@ -10,12 +10,13 @@ import {
   updateReservation,
   upsertCustomer
 } from "../repositories/reservations";
+import { getRestaurantTimezone } from "../repositories/restaurants";
 import { checkAvailability, requireAvailableTable } from "./availabilityService";
 import {
   enqueueCancelForReservation,
   enqueueCreateForReservation
 } from "./calcomService";
-import { formatVoiceTime } from "../utils/time";
+import { formatVoiceTime, todayInTz } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 
 export async function createBooking(input: CreateBookingInput): Promise<BookingResult> {
@@ -30,6 +31,32 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
         confirmationMessage: `Confirmed. ${input.customerName} has a table for ${existing.party_size} on ${existing.reservation_date} at ${formatVoiceTime(existing.start_time.slice(0, 5))}.`
       };
     }
+  }
+
+  // Defence-in-depth date sanity check (audit Sweep B). The Retell prompt now
+  // has a Time anchor rule (PR #15) telling Aria to never pass a past year,
+  // but a prompt edge case + LLM hallucination could still slip a 2024 date
+  // through. Reject it here before we burn a DB row + an outbox push that
+  // Cal.com would reject anyway. Error messages are LLM-friendly so the
+  // agent reads them and re-prompts the caller.
+  const restaurantTz = await getRestaurantTimezone(input.restaurantId);
+  const todayIso = todayInTz(restaurantTz);
+  if (input.date < todayIso) {
+    throw new AppError(
+      400,
+      "BOOKING_DATE_IN_PAST",
+      `I can't book a date in the past. Today is ${todayIso}; you asked for ${input.date}. What date did you mean?`
+    );
+  }
+  const oneYearOutDate = new Date(`${todayIso}T00:00:00Z`);
+  oneYearOutDate.setUTCFullYear(oneYearOutDate.getUTCFullYear() + 1);
+  const oneYearOutIso = oneYearOutDate.toISOString().slice(0, 10);
+  if (input.date > oneYearOutIso) {
+    throw new AppError(
+      400,
+      "BOOKING_DATE_TOO_FAR",
+      `I can only book up to a year ahead (so by ${oneYearOutIso}). You asked for ${input.date}. What date did you mean?`
+    );
   }
 
   const normalizedPhone = normalizePhone(input.customerPhone) ?? input.customerPhone;
@@ -138,60 +165,84 @@ export async function modifyBooking(input: {
   notes?: string;
   status?: ReservationStatus;
 }): Promise<BookingResult> {
-  const current = await getReservationById(input.bookingId);
+  // Audit Sweep B fix: the previous implementation ran updateReservation and
+  // the customers UPDATE on TWO separate pool connections — a race window
+  // where step 1 commits and step 2 fails leaves a partial mutation visible.
+  // Wrap everything in a single transaction so it's all-or-nothing.
+  //
+  // Also fixes the dead conditional that compared `input.customerName` (a
+  // string) to `current.customer_id` (a UUID) — those are never equal, so
+  // the UPDATE used to run even when the name was unchanged. Now we fetch
+  // the actual current customer name and skip the UPDATE iff it matches.
+  return withTransaction(async (db) => {
+    const current = await getReservationById(input.bookingId, db);
 
-  if (!current) {
-    throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
-  }
+    if (!current) {
+      throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
+    }
 
-  const nextDate = input.date ?? current.reservation_date;
-  const nextTime = input.time ?? current.start_time.slice(0, 5);
-  const nextPartySize = input.partySize ?? current.party_size;
-  const shouldRecheckAvailability =
-    input.date !== undefined || input.time !== undefined || input.partySize !== undefined;
+    const nextDate = input.date ?? current.reservation_date;
+    const nextTime = input.time ?? current.start_time.slice(0, 5);
+    const nextPartySize = input.partySize ?? current.party_size;
+    const shouldRecheckAvailability =
+      input.date !== undefined || input.time !== undefined || input.partySize !== undefined;
 
-  let tableId: string | undefined;
+    let tableId: string | undefined;
 
-  if (shouldRecheckAvailability && (input.status ?? current.status) !== "cancelled") {
-    const availability = await checkAvailability({
-      restaurantId: current.restaurant_id,
-      date: nextDate,
-      time: nextTime,
-      partySize: nextPartySize,
-      excludeReservationId: current.id
-    });
-    tableId = requireAvailableTable(availability);
-  }
+    if (shouldRecheckAvailability && (input.status ?? current.status) !== "cancelled") {
+      const availability = await checkAvailability(
+        {
+          restaurantId: current.restaurant_id,
+          date: nextDate,
+          time: nextTime,
+          partySize: nextPartySize,
+          excludeReservationId: current.id
+        },
+        db
+      );
+      tableId = requireAvailableTable(availability);
+    }
 
-  const reservation = await updateReservation({
-    id: current.id,
-    tableId,
-    date: input.date,
-    time: input.time,
-    partySize: input.partySize,
-    notes: input.notes,
-    status: input.status
+    const reservation = await updateReservation(
+      {
+        id: current.id,
+        tableId,
+        date: input.date,
+        time: input.time,
+        partySize: input.partySize,
+        notes: input.notes,
+        status: input.status
+      },
+      db
+    );
+
+    // Name correction — only fire the UPDATE if the name actually changed.
+    // Fetch current customer name inside the txn so it shares the snapshot.
+    let nameChanged = false;
+    if (input.customerName && input.customerName.trim()) {
+      const newName = input.customerName.trim();
+      const currentNameResult = await db.query<{ name: string }>(
+        "SELECT name FROM customers WHERE id = $1",
+        [current.customer_id]
+      );
+      const currentName = currentNameResult.rows[0]?.name ?? "";
+      if (currentName !== newName) {
+        await db.query("UPDATE customers SET name = $1 WHERE id = $2", [
+          newName,
+          current.customer_id
+        ]);
+        nameChanged = true;
+      }
+    }
+
+    return {
+      bookingId: reservation.id,
+      status: reservation.status,
+      confirmationMessage: nameChanged
+        ? `Updated. The booking is under ${input.customerName!.trim()} now.`
+        : `Updated. The booking is now ${reservation.status}.`
+    };
   });
-
-  // Name correction — caller said "actually my name is X" after create_booking.
-  // We update customers.name directly; this is safe for the common case where
-  // the customer record was created moments ago for this booking. For a
-  // long-tenured customer with multiple past reservations, this propagates the
-  // new name everywhere — acceptable trade-off for v1.
-  if (input.customerName && input.customerName.trim() && input.customerName !== current.customer_id) {
-    await pool.query("UPDATE customers SET name = $1 WHERE id = $2", [
-      input.customerName.trim(),
-      current.customer_id
-    ]);
-  }
-
-  return {
-    bookingId: reservation.id,
-    status: reservation.status,
-    confirmationMessage: input.customerName
-      ? `Updated. The booking is under ${input.customerName.trim()} now.`
-      : `Updated. The booking is now ${reservation.status}.`
-  };
 }
 
 export async function cancelBooking(input: {

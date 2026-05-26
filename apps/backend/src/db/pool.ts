@@ -50,3 +50,42 @@ export async function closePool(): Promise<void> {
   // End both pools in parallel; either failure shouldn't block the other.
   await Promise.allSettled([pool.end(), readPool.end()]);
 }
+
+/**
+ * Run `fn` inside a single transaction with guaranteed connection release.
+ *
+ *   * BEGIN before fn(), COMMIT after if fn resolves, ROLLBACK if fn throws.
+ *   * Client always released to the pool in the finally — no leak even if
+ *     ROLLBACK itself fails (which it can if the connection is already
+ *     terminated; we swallow that secondary error so the original error
+ *     propagates to the caller).
+ *   * Pass the txn client through to repository functions that accept a
+ *     DbClient argument. Reads + writes in the same fn share the same
+ *     snapshot (PG's default isolation is READ COMMITTED, sufficient for our
+ *     advisory-lock pattern).
+ *
+ * Use this for ANY multi-step state mutation. The audit's confirmed
+ * `modifyBooking` race window (UPDATE reservations + UPDATE customers on two
+ * separate pool connections) is the canonical anti-pattern this prevents.
+ */
+export async function withTransaction<T>(
+  fn: (db: DbClient) => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Already in an error path; suppress the secondary so the original
+      // error reaches the caller untouched.
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
