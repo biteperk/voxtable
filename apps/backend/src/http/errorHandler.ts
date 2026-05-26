@@ -2,6 +2,7 @@ import { ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 
 import { isAppError } from "../domain/errors";
+import { logger } from "../utils/logger";
 
 export const errorHandler: ErrorRequestHandler = (error, request, response, _next) => {
   const fromRetellTool = request.path?.startsWith("/retell/tools/");
@@ -39,7 +40,16 @@ export const errorHandler: ErrorRequestHandler = (error, request, response, _nex
     return;
   }
 
-  console.error(error);
+  // Audit Sweep D: NEVER spread the raw error. Some thrown errors (esp from
+  // fetch / axios wrappers) carry `error.config.headers.Authorization` and
+  // `error.request.body` — that's how the API key + PII used to land in logs.
+  // logger.error sanitises down to name/message/code/status/short-stack only.
+  logger.error({
+    evt: "unhandled_error",
+    method: request.method,
+    path: request.path,
+    error
+  });
   response.status(500).json({
     error: {
       code: "INTERNAL_SERVER_ERROR",
