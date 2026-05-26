@@ -198,30 +198,61 @@ const CalcomEmbed = React.lazy(() => import("@calcom/embed-react"));
 const CALCOM_CAL_LINK = import.meta.env.VITE_CALCOM_CAL_LINK || "";
 const CALCOM_NAMESPACE = import.meta.env.VITE_CALCOM_NAMESPACE || "vocotable-bookings";
 
+// Direct link to open the Cal.com page in a new tab — useful as a hard
+// fallback when the embed iframe is blocked (ad-blockers, restrictive
+// network proxies). cal.com itself isn't usually blocked the way the embed
+// script (`app.cal.com/embed/embed.js`) is.
+const CALCOM_DIRECT_URL = CALCOM_CAL_LINK
+  ? `https://cal.com/${CALCOM_CAL_LINK.replace(/^\/+/, "")}`
+  : "";
+
 export function isCalcomConfigured() {
   return Boolean(CALCOM_CAL_LINK);
 }
 
 /**
- * Reusable "embed failed — call us instead" card. Same content for both
- * timeout and error fallbacks; placed inline (not a portal) so it sits
- * inside the same modal body slot as the embed would have.
+ * Reusable "embed failed — recover" card. Three escape hatches in priority
+ * order: (1) open Cal.com directly in a new tab, which bypasses most
+ * ad-blockers and iframe-level CSP issues; (2) call the restaurant —
+ * Bella's always there; (3) retry the embed in place. Placed inline (not
+ * a portal) so it sits inside the same modal body slot as the embed.
  */
-function EmbedFailedFallback({ reason }) {
+function EmbedFailedFallback({ reason, onRetry }) {
   return (
     <div className="book-modal-fallback" role="alert" aria-live="assertive">
       <Icon name="error_outline" />
-      <h2>Booking widget unavailable</h2>
+      <h2>Booking widget didn't load</h2>
       <p>
         {reason ||
-          "Our online booking didn't load. This can happen if an ad-blocker or your network is filtering Cal.com."}
+          "Cal.com is taking longer than usual — often caused by an ad-blocker or strict network. You have three options:"}
       </p>
+      {CALCOM_DIRECT_URL && (
+        <a
+          href={CALCOM_DIRECT_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="book-modal-fallback-cta book-modal-fallback-cta-primary"
+        >
+          <Icon name="open_in_new" />
+          Open booking in a new tab
+        </a>
+      )}
       <a href="tel:+61275011140" className="book-modal-fallback-cta">
         <Icon name="phone_in_talk" />
         Call us on +61 2 7501 1140
       </a>
+      {onRetry && (
+        <button
+          type="button"
+          className="book-modal-fallback-retry"
+          onClick={onRetry}
+        >
+          <Icon name="refresh" />
+          Try the widget again
+        </button>
+      )}
       <p className="book-modal-fallback-hint">
-        Or try reloading. Bella's available 24/7 by phone.
+        Bella's available 24/7 by phone if you'd rather skip the form.
       </p>
     </div>
   );
@@ -275,24 +306,94 @@ class EmbedErrorBoundary extends React.Component {
 }
 
 /**
- * Time-bounds the Suspense fallback. If the embed hasn't rendered (i.e.
- * we're still inside the Suspense spinner) after `timeoutMs`, replace the
- * children entirely with the call-us card. Covers the case where the
- * lazy chunk loads fine but Cal.com itself never paints (CSP, outage,
- * blocked iframe).
+ * Listens for the Cal.com iframe's actual ready signal and overlays a
+ * recovery card if it never arrives within `timeoutMs`.
+ *
+ * Why postMessage instead of a dumb timer:
+ *   Cal.com's embed script posts `{ type: "__iframeReady" }` (and later
+ *   `linkReady`) from its iframe once it's actually rendered the booking
+ *   UI. Listening for that event means a 1.5s slow paint doesn't trip the
+ *   fallback, but a never-paint (ad-blocker swallowed the embed script)
+ *   does — accurately.
+ *
+ * Why overlay instead of replace:
+ *   If we replace `children` after timeout, even a late-loading Cal.com
+ *   (e.g. cold-start at 11s) can never recover — the embed is unmounted.
+ *   Overlaying keeps the iframe alive; if Cal.com signals ready after the
+ *   timeout fired (rare but real), we dismiss the overlay automatically.
+ *
+ * Retry resets the timer + `attempt` key, which unmounts and remounts the
+ * embed — gives the user one explicit re-shot without closing the modal.
  */
-function EmbedTimeoutFallback({ timeoutMs, children }) {
+function EmbedTimeoutFallback({ timeoutMs, children, onAttemptChange }) {
   const [timedOut, setTimedOut] = useState(false);
+  const [embedReady, setEmbedReady] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
+  // Timer — only counts down while embed hasn't signalled ready.
   useEffect(() => {
+    if (embedReady) return undefined;
+    setTimedOut(false);
     const t = setTimeout(() => setTimedOut(true), timeoutMs);
     return () => clearTimeout(t);
-  }, [timeoutMs]);
+  }, [timeoutMs, embedReady, attempt]);
 
-  if (timedOut) {
-    return <EmbedFailedFallback />;
-  }
-  return children;
+  // postMessage listener for Cal.com's ready signal. Cal.com SDK posts
+  // multiple lifecycle events; we accept any of the known "actually
+  // painted" markers. Origin is loosely checked (any *.cal.com) — the
+  // event type is the real signal.
+  useEffect(() => {
+    const onMessage = (ev) => {
+      if (typeof ev.origin !== "string") return;
+      let host;
+      try {
+        host = new URL(ev.origin).host;
+      } catch {
+        return; // opaque / null origin — not from Cal.com
+      }
+      if (!/\.cal\.com$/.test(host) && host !== "cal.com") return;
+      const data = ev.data;
+      if (!data || typeof data !== "object") return;
+      const type = data.type || data.data?.type;
+      if (
+        type === "__iframeReady" ||
+        type === "linkReady" ||
+        type === "__windowLoadComplete" ||
+        type === "__dimensionChanged"
+      ) {
+        setEmbedReady(true);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  // Notify parent of the current attempt (used to key the embed below so
+  // a retry forces a fresh mount).
+  useEffect(() => {
+    if (onAttemptChange) onAttemptChange(attempt);
+  }, [attempt, onAttemptChange]);
+
+  const handleRetry = () => {
+    setTimedOut(false);
+    setEmbedReady(false);
+    setAttempt((n) => n + 1);
+  };
+
+  const showOverlay = timedOut && !embedReady;
+
+  return (
+    <div className="book-modal-embed-frame">
+      {/* Embed stays mounted under the overlay — if it eventually loads we
+          drop the overlay automatically (embedReady flips, showOverlay → false). */}
+      <div className={`book-modal-embed-slot ${showOverlay ? "is-hidden" : ""}`}>
+        {children}
+      </div>
+      {showOverlay && (
+        <EmbedFailedFallback onRetry={handleRetry} />
+      )}
+    </div>
+  );
 }
 
 /**
@@ -364,6 +465,11 @@ function BookOnlineModal({ open, onClose, triggerRef }) {
     };
   }, [open, triggerRef]);
 
+  // `attempt` tracked here (not inside EmbedTimeoutFallback) so it can
+  // key the <CalcomEmbed> below — bumping it forces a clean unmount/remount,
+  // which is the only reliable way to retry a failed Cal.com embed load.
+  const [embedAttempt, setEmbedAttempt] = useState(0);
+
   // When the modal isn't open we render NOTHING — no DOM, no listeners, no
   // Cal.com script in the bundle. The lazy chunk only fetches when `open`
   // flips true the first time.
@@ -390,13 +496,17 @@ function BookOnlineModal({ open, onClose, triggerRef }) {
           </button>
         </header>
         <div className="book-modal-body">
-          {/* Audit Sweep E: wrap embed in EmbedErrorBoundary (catches chunk
-              load failures + Cal.com render errors) + EmbedTimeout (shows
-              fallback if the embed doesn't paint within 10s — covers ad
-              blockers, CSP misconfig, Cal.com outage). Tel-link gives the
-              caller an immediate recovery path. */}
+          {/* Audit Sweep E + follow-up: error boundary catches chunk-load /
+              render errors; EmbedTimeoutFallback overlays a recovery card
+              if Cal.com's iframe never signals `linkReady` within 12s. The
+              embed stays mounted under the overlay so a late paint can
+              still recover, and a Retry button bumps `embedAttempt` to
+              force a fresh mount. */}
           <EmbedErrorBoundary>
-            <EmbedTimeoutFallback timeoutMs={10000}>
+            <EmbedTimeoutFallback
+              timeoutMs={12000}
+              onAttemptChange={setEmbedAttempt}
+            >
               <Suspense
                 fallback={
                   <div className="book-modal-loading" role="status" aria-live="polite">
@@ -406,6 +516,7 @@ function BookOnlineModal({ open, onClose, triggerRef }) {
                 }
               >
                 <CalcomEmbed
+                  key={embedAttempt}
                   namespace={CALCOM_NAMESPACE}
                   calLink={CALCOM_CAL_LINK}
                   style={{ width: "100%", height: "100%", overflow: "auto" }}

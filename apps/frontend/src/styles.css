@@ -5825,3 +5825,83 @@ button {
   color: rgba(193, 198, 215, 0.7);
 }
 
+/* Primary fallback CTA (open Cal.com in a new tab) — uses the same pill as
+   the phone CTA but with a tonal accent so it reads as "try this first". */
+.book-modal-fallback-cta-primary {
+  background: var(--tertiary, var(--primary));
+  color: var(--on-tertiary, var(--on-primary));
+}
+
+.book-modal-fallback-cta-primary .material-symbols-outlined {
+  color: var(--on-tertiary, var(--on-primary));
+}
+
+/* "Try the widget again" — text-button styling, lower visual weight than
+   the two anchor CTAs so users escalate to "open in tab" or phone first. */
+.book-modal-fallback-retry {
+  appearance: none;
+  background: transparent;
+  border: 1px solid rgba(193, 198, 215, 0.25);
+  color: var(--on-surface);
+  border-radius: 999px;
+  padding: 10px 18px;
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.book-modal-fallback-retry .material-symbols-outlined {
+  font-size: 16px;
+  color: inherit;
+}
+
+@media (hover: hover) {
+  .book-modal-fallback-retry:hover {
+    background: rgba(193, 198, 215, 0.08);
+    border-color: rgba(193, 198, 215, 0.4);
+  }
+}
+
+.book-modal-fallback-retry:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Embed frame + overlay system. The embed stays mounted under the overlay
+   so a slow Cal.com paint can still recover after the timeout fires. */
+.book-modal-embed-frame {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.book-modal-embed-slot {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  width: 100%;
+}
+
+.book-modal-embed-slot.is-hidden {
+  /* Visually hide but keep mounted so the Cal.com SDK / iframe lifecycle
+     continues. visibility:hidden (not display:none) so the iframe doesn't
+     get torn down by the browser. */
+  visibility: hidden;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.book-modal-embed-frame .book-modal-fallback {
+  position: absolute;
+  inset: 0;
+  background: var(--surface, #0e0e0e);
+  z-index: 1;
+}
+
