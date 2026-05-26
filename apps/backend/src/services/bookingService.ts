@@ -11,6 +11,10 @@ import {
   upsertCustomer
 } from "../repositories/reservations";
 import { checkAvailability, requireAvailableTable } from "./availabilityService";
+import {
+  enqueueCancelForReservation,
+  enqueueCreateForReservation
+} from "./calcomService";
 import { formatVoiceTime } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 
@@ -95,6 +99,12 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
       await attachReservationToCallLog(callLogId, reservation.id, lockClient);
     }
 
+    // Cal.com mirror — enqueue OUTSIDE the advisory-lock-held critical query
+    // ordering but still INSIDE the transaction, so atomicity holds. No-op
+    // when CALCOM_SYNC_ENABLED=false (defensive — no Cal.com side-effects in
+    // tests / dev).
+    await enqueueCreateForReservation(reservation.id, lockClient);
+
     await lockClient.query("COMMIT");
 
     return {
@@ -173,18 +183,41 @@ export async function cancelBooking(input: {
   bookingId: string;
   reason?: string;
 }): Promise<BookingResult> {
-  const reservation = await cancelReservation({
-    id: input.bookingId,
-    reason: input.reason
-  });
+  // Cancel and Cal.com-outbox-enqueue in one transaction so a row is never
+  // marked cancelled in our DB while the calendar mirror remains "confirmed".
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  if (!reservation) {
-    throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
+    const current = await client.query<{
+      id: string;
+      calcom_booking_uid: string | null;
+    }>("SELECT id, calcom_booking_uid FROM reservations WHERE id = $1", [input.bookingId]);
+    if (current.rowCount === 0) {
+      await client.query("ROLLBACK");
+      throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
+    }
+    const calcomUid = current.rows[0]!.calcom_booking_uid;
+
+    const reservation = await cancelReservation({ id: input.bookingId, reason: input.reason }, client);
+
+    await enqueueCancelForReservation(reservation.id, calcomUid, input.reason, client);
+
+    await client.query("COMMIT");
+
+    return {
+      bookingId: reservation.id,
+      status: reservation.status,
+      confirmationMessage: "Cancelled. The reservation has been cancelled."
+    };
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      /* already in error path */
+    }
+    throw error;
+  } finally {
+    client.release();
   }
-
-  return {
-    bookingId: reservation.id,
-    status: reservation.status,
-    confirmationMessage: "Cancelled. The reservation has been cancelled."
-  };
 }

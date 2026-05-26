@@ -1,4 +1,4 @@
-export type BookingSource = "voice" | "dashboard";
+export type BookingSource = "voice" | "dashboard" | "web";
 export type ReservationStatus = "pending" | "confirmed" | "cancelled" | "no_show" | "completed";
 export type CallStatus = "started" | "in_progress" | "completed" | "failed" | "transferred";
 

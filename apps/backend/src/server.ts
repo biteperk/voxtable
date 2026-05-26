@@ -2,7 +2,9 @@ import { env } from "./config/env";
 import { createApp } from "./app";
 import { closePool } from "./db/pool";
 import { warmRestaurantCache } from "./repositories/restaurants";
+import { installCalcomExecutor } from "./services/calcomService";
 import { startOutboxWorker, stopOutboxWorker } from "./workers/calcomOutboxWorker";
+import { startHealthAlerter, stopHealthAlerter } from "./workers/healthAlerter";
 
 // Workers register their shutdown hooks here so server.ts doesn't have to know
 // the full set. PR 1 leaves the array empty; PR 2 adds the Cal.com outbox
@@ -32,12 +34,17 @@ async function main(): Promise<void> {
     console.log(`VocoTable backend listening on port ${env.PORT}`);
   });
 
-  // Start background workers. Each registers its own drain hook so SIGTERM
-  // halts the interval and waits for in-flight work to settle before the
-  // pool closes. No-op when CALCOM_SYNC_ENABLED=false.
+  // Cal.com executor is installed before the worker starts so the worker's
+  // very first tick has the real implementation (not the dead-letter stub).
+  // Both are no-ops when CALCOM_SYNC_ENABLED=false.
+  installCalcomExecutor();
   startOutboxWorker();
+  startHealthAlerter();
   registerShutdownHook(async () => {
     await stopOutboxWorker();
+  });
+  registerShutdownHook(async () => {
+    await stopHealthAlerter();
   });
 
   let shuttingDown = false;

@@ -16,7 +16,7 @@
  */
 
 import { env } from "../config/env";
-import { pool } from "../db/pool";
+import { DbClient, pool } from "../db/pool";
 import { claimReadyOutbox, markOutboxFailed, markOutboxRetry, markOutboxSucceeded } from "../repositories/outbox";
 
 const TICK_INTERVAL_MS = 2_000;
@@ -31,26 +31,32 @@ let tickInFlight = false;
 // this so SIGTERM doesn't kill mid-batch.
 let currentTick: Promise<void> | null = null;
 
-export interface OutboxRowExecutor {
-  /**
-   * Execute a single outbox row's intended op (push/cancel/reschedule).
-   * Returns `succeeded` if Cal.com accepted; `transient` to retry; `permanent`
-   * to dead-letter.
-   *
-   * PR 1 ships with a stub that always returns `permanent` so any row that
-   * accidentally lands while sync is off doesn't loop forever. PR 2 will
-   * replace this with the real implementation.
-   */
-  execute(row: {
-    id: string;
-    reservation_id: string;
-    op: "create" | "cancel" | "reschedule";
-    payload: Record<string, unknown>;
-    attempts: number;
-  }): Promise<{ outcome: "succeeded" | "transient" | "permanent"; error?: string }>;
+export interface OutboxExecutorRow {
+  id: string;
+  reservation_id: string;
+  op: "create" | "cancel" | "reschedule";
+  payload: Record<string, unknown>;
+  attempts: number;
 }
 
-// Stub executor for PR 1 — replaced in PR 2.
+export interface OutboxExecutionResult {
+  outcome: "succeeded" | "transient" | "permanent";
+  error?: string;
+}
+
+export interface OutboxRowExecutor {
+  /**
+   * Execute one outbox row's intended op. Receives the worker's txn `db`
+   * client so the executor can update the reservation (uid stamping) inside
+   * the same transaction that marks the outbox row succeeded — atomic.
+   *
+   * Returns `succeeded` if Cal.com accepted; `transient` to retry with
+   * backoff; `permanent` to dead-letter. PR 1 ships with a stub that always
+   * dead-letters; PR 2 replaces it via `setOutboxExecutor`.
+   */
+  execute(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult>;
+}
+
 const stubExecutor: OutboxRowExecutor = {
   async execute(row) {
     return {
@@ -101,13 +107,16 @@ async function processBatch(): Promise<void> {
       if (index > 0) await delay(intervalBetweenPushesMs);
 
       try {
-        const result = await executor.execute({
-          id: row.id,
-          reservation_id: row.reservation_id,
-          op: row.op,
-          payload: row.payload,
-          attempts: row.attempts
-        });
+        const result = await executor.execute(
+          {
+            id: row.id,
+            reservation_id: row.reservation_id,
+            op: row.op,
+            payload: row.payload,
+            attempts: row.attempts
+          },
+          client
+        );
 
         if (result.outcome === "succeeded") {
           await markOutboxSucceeded(row.id, client);

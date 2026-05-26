@@ -12,6 +12,9 @@ import {
   listCallLogs
 } from "../repositories/callLogs";
 import { listReservations } from "../repositories/reservations";
+import { getInboxStats } from "../repositories/inbox";
+import { getOutboxStats } from "../repositories/outbox";
+import { getBreakerState } from "../services/calcomClient";
 
 export const dashboardRouter = Router();
 
@@ -96,5 +99,26 @@ dashboardRouter.get(
       days
     });
     response.json({ series, period_days: days });
+  })
+);
+
+// Operations: surface Cal.com integration health for the dashboard ops tile.
+// Returns plausible values whether the flag is on (real numbers) or off
+// (zeros + "disabled" state). Firebase auth + email allowlist already gated.
+dashboardRouter.get(
+  "/api/ops/calcom-health",
+  asyncHandler(async (_request, response) => {
+    const [outbox, inbox] = await Promise.all([getOutboxStats(), getInboxStats()]);
+    const breaker = getBreakerState();
+    response.json({
+      enabled: env.CALCOM_SYNC_ENABLED,
+      outbox,
+      inbox,
+      circuit_breaker: {
+        state: breaker.state,
+        consecutive_failures: breaker.consecutiveFailures,
+        opened_at: breaker.openedAt ? new Date(breaker.openedAt).toISOString() : null
+      }
+    });
   })
 );

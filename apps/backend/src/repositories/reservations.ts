@@ -14,6 +14,7 @@ export interface ReservationRow {
   notes: string | null;
   cancellation_reason: string | null;
   created_from_call_log_id: string | null;
+  calcom_booking_uid: string | null;
 }
 
 export async function upsertCustomer(input: {
@@ -184,11 +185,51 @@ export async function updateReservation(input: {
   return result.rows[0]!;
 }
 
-export async function cancelReservation(input: {
-  id: string;
-  reason?: string;
-}): Promise<ReservationRow> {
-  const result = await pool.query<ReservationRow>(
+/**
+ * Stamp a successful Cal.com push uid onto our reservation. Called by the
+ * outbox worker after `POST /v2/bookings` returns 200. UNIQUE constraint on
+ * `idx_reservations_calcom_uid` means duplicate uids fail loudly — a signal
+ * we'd be double-pushing.
+ *
+ * Pass a transaction client (`db`) when called inside one (the executor does
+ * this); falls back to the pool otherwise.
+ */
+export async function updateReservationCalcomUid(
+  reservationId: string,
+  uid: string,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(
+    "UPDATE reservations SET calcom_booking_uid = $2 WHERE id = $1",
+    [reservationId, uid]
+  );
+}
+
+/**
+ * Look up a reservation by its Cal.com booking uid. Used by the inbox handler
+ * for loop prevention: when we receive `BOOKING_CREATED` for a uid we already
+ * stamped on a reservation, we know we created that booking ourselves and skip
+ * the side-effect path.
+ */
+export async function findReservationByCalcomUid(
+  uid: string,
+  db: DbClient = pool
+): Promise<ReservationRow | null> {
+  const result = await db.query<ReservationRow>(
+    "SELECT * FROM reservations WHERE calcom_booking_uid = $1 LIMIT 1",
+    [uid]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function cancelReservation(
+  input: {
+    id: string;
+    reason?: string;
+  },
+  db: DbClient = pool
+): Promise<ReservationRow> {
+  const result = await db.query<ReservationRow>(
     `
     UPDATE reservations
     SET
