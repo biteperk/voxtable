@@ -116,3 +116,74 @@ export function dayNameInTz(timeZone: string, now: Date = new Date()): string {
     .format(now)
     .toLowerCase();
 }
+
+// --- UTC <-> wall-clock conversion (Cal.com integration) ---------------------
+// Our reservations table stores TZ-naive wall-clock (DATE + TIME). External
+// APIs (Cal.com, iCal) expect ISO 8601 with offset. Hand-rolled conversion
+// avoids pulling in date-fns-tz / Temporal. DST-safe: tz offset is recomputed
+// per call so AEST/AEDT switching is transparent.
+
+/**
+ * Convert "YYYY-MM-DD" + "HH:MM" + IANA timezone → UTC ISO 8601.
+ *
+ * Algorithm (the canonical Intl trick):
+ *   1. Build an "as-if-UTC" timestamp from the wall-clock parts.
+ *   2. Format it BACK in the target tz — this tells us the wall-clock that
+ *      our assumed-UTC moment would have in that tz.
+ *   3. The difference between the requested wall-clock and the formatted one
+ *      is the tz offset. Apply it.
+ *
+ * Throws if the date/time/tz are unparseable.
+ */
+export function zonedWallClockToUtcISO(date: string, time: string, timeZone: string): string {
+  const ymd = date.split("-").map(Number);
+  const hm = time.split(":").map(Number);
+  const year = ymd[0];
+  const month = ymd[1];
+  const day = ymd[2];
+  const hour = hm[0] ?? 0;
+  const minute = hm[1] ?? 0;
+  if (!year || !month || !day || Number.isNaN(hour) || Number.isNaN(minute)) {
+    throw new Error(`Invalid date/time: ${date} ${time}`);
+  }
+
+  // Step 1: as-if-UTC.
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute);
+
+  // Step 2: format that moment in the target tz.
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(new Date(utcGuess));
+  const y = parts.find((p) => p.type === "year")?.value;
+  const mo = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  let h = parts.find((p) => p.type === "hour")?.value;
+  const mi = parts.find((p) => p.type === "minute")?.value;
+  // Intl quirk: some tz format hour as "24" at midnight rather than "00".
+  if (h === "24") h = "00";
+
+  // Step 3: compute the offset by parsing the tz-formatted wall-clock as UTC
+  // and diffing against our assumed-UTC.
+  const formattedAsUtc = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
+  const offset = utcGuess - formattedAsUtc;
+  return new Date(utcGuess + offset).toISOString();
+}
+
+/**
+ * Inverse of `zonedWallClockToUtcISO`. Given a UTC ISO 8601 string and an IANA
+ * tz, return { date: "YYYY-MM-DD", time: "HH:MM" } in that tz.
+ */
+export function utcIsoToZonedWallClock(
+  utcIso: string,
+  timeZone: string
+): { date: string; time: string } {
+  const d = new Date(utcIso);
+  if (Number.isNaN(d.getTime())) throw new Error(`Invalid UTC ISO: ${utcIso}`);
+  return { date: ymdInTz(d, timeZone), time: hmInTz(d, timeZone) };
+}

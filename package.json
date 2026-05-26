@@ -21,6 +21,7 @@
     "smoke:backend": "tsx apps/backend/scripts/smoke-local.ts",
     "smoke:retell": "tsx apps/backend/scripts/smoke-retell.ts",
     "smoke:twilio": "tsx apps/backend/scripts/smoke-twilio.ts",
+    "smoke:calcom": "tsx apps/backend/scripts/smoke-calcom.ts",
     "check": "npm run build:backend && npm run build:frontend"
   },
   "dependencies": {
