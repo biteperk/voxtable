@@ -192,7 +192,11 @@ async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<Outb
     const response = await calcomRequest<unknown>({
       method: "POST",
       path: "/bookings",
-      body: payload
+      body: payload,
+      // Audit Sweep F: per-outbox-row idempotency key. If the worker crashes
+      // mid-POST and another tick retries, Cal.com returns the SAME booking
+      // (matched by this key) instead of creating a duplicate calendar event.
+      idempotencyKey: `vocotable-outbox-${row.id}`
     });
     const uid = extractUidFromCreateResponse(response.data);
     if (!uid) {
@@ -368,14 +372,23 @@ export function verifyCalcomSignature(rawBody: string, header: string | undefine
   return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(provided, "hex"));
 }
 
-/** A deterministic id for a Cal.com webhook payload — used as the inbox PK so
- *  retries dedup. We don't trust Cal.com's `createdAt` alone because they
- *  reuse it across retries; including triggerEvent + uid disambiguates. */
+/**
+ * Deterministic id for a Cal.com webhook payload — the inbox PK that gives us
+ * idempotency on retries. The hash includes `createdAt` (Audit Sweep F fix):
+ * without it, two LEGITIMATE webhook deliveries for the same booking-uid
+ * (e.g. admin clicks "resend" in Cal.com UI, or a reschedule re-emits) hash
+ * the same and the second is silently dropped as a "replay".
+ *
+ * Retries within Cal.com's automatic 5xx-retry loop ship the SAME createdAt
+ * → still hash the same → still dedup correctly. Re-sends from admin UI
+ * ship a NEW createdAt → unique hash → processed. Both cases handled.
+ */
 export function computeInboxEventId(payload: Record<string, unknown>): string {
   const uid = (payload.payload as Record<string, unknown> | undefined)?.uid ?? payload.uid ?? "";
   const startTime = (payload.payload as Record<string, unknown> | undefined)?.startTime ?? "";
   const trigger = payload.triggerEvent ?? "";
-  const raw = `${String(trigger)}|${String(uid)}|${String(startTime)}`;
+  const createdAt = payload.createdAt ?? "";
+  const raw = `${String(trigger)}|${String(uid)}|${String(startTime)}|${String(createdAt)}`;
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 

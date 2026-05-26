@@ -40,8 +40,32 @@ export interface EnqueueOutboxInput {
  * Insert a new outbox row. MUST be called with a DbClient bound to the same
  * transaction that mutates the reservation — atomicity is the whole point of
  * the outbox pattern.
+ *
+ * Audit Sweep F — enqueue-time de-dup: if a non-succeeded, non-failed row
+ * already exists for `(reservation_id, op)`, return its id instead of
+ * inserting a new one. Prevents retry-spam: if Retell sends the same
+ * create_booking tool call twice (rare but possible), we don't queue two
+ * Cal.com pushes for the same reservation. The existing row's idempotency
+ * key already protects against duplicate Cal.com bookings; this just keeps
+ * the outbox table clean.
  */
 export async function enqueueOutbox(input: EnqueueOutboxInput, db: DbClient = pool): Promise<string> {
+  const existing = await db.query<{ id: string }>(
+    `
+    SELECT id FROM outbox_calcom
+     WHERE reservation_id = $1
+       AND op = $2
+       AND succeeded_at IS NULL
+       AND failed_at IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1
+    `,
+    [input.reservationId, input.op]
+  );
+  if (existing.rowCount && existing.rowCount > 0) {
+    return existing.rows[0]!.id;
+  }
+
   const result = await db.query<{ id: string }>(
     `
     INSERT INTO outbox_calcom (reservation_id, op, payload)

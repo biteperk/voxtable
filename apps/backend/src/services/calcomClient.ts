@@ -119,6 +119,13 @@ export interface CalcomRequestOptions {
   skipAuth?: boolean;
   /** Override the configured timeout for a single call (rare). */
   timeoutMs?: number;
+  /**
+   * Optional Idempotency-Key. Used by the outbox executor — keying on the
+   * outbox row's UUID means a network blip mid-push gets the SAME booking
+   * back on retry instead of a duplicate. Cal.com v2 honours the standard
+   * Idempotency-Key header per RFC draft.
+   */
+  idempotencyKey?: string;
 }
 
 export interface CalcomResponse<T> {
@@ -160,6 +167,13 @@ export async function calcomRequest<T = unknown>(options: CalcomRequestOptions):
     // breakage when they ship a new default.
     "cal-api-version": "2024-08-13"
   };
+  if (options.idempotencyKey) {
+    // Standard Idempotency-Key header — Cal.com returns the same booking on a
+    // retry with the same key rather than creating a duplicate. Without this,
+    // a network blip mid-POST followed by an outbox retry would produce two
+    // calendar events for the same reservation.
+    headers["idempotency-key"] = options.idempotencyKey;
+  }
   if (!options.skipAuth) {
     if (!env.CALCOM_API_KEY) {
       // Defensive: should be enforced by env validation when sync is enabled,
