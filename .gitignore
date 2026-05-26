@@ -60,3 +60,6 @@ Desktop.ini
 !.vscode/settings.json
 docker-compose.override.yml
 firebase-admin.json
+
+# Claude Code local session config (per-developer launch.json etc.)
+.claude/
