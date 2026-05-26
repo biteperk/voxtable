@@ -1,0 +1,96 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project context
+
+VocoTable is a voice-AI booking platform for restaurants. The MVP target is **Natalia's Bistro** in Sydney — a single tenant. Customer dials a Twilio AU number, Retell AI's voice agent takes the booking, the backend writes it to Postgres, and the React dashboard renders calls + reservations live. Build plan, weekly milestones, and scope guardrails live in [`plan-phases/`](plan-phases/) and [`apps/backend/docs/architecture_diagram.md`](apps/backend/docs/architecture_diagram.md).
+
+## Commands
+
+```bash
+# First-time setup
+npm install
+cp .env.example .env                    # then fill real Retell/Twilio creds
+npm run db:migrate                      # applies anything new in apps/backend/db/migrations/
+npm run db:seed                         # idempotent — seeds Natalia's Bistro restaurant + tables
+
+# Local dev
+npm run dev:backend                     # tsx watch on apps/backend/src/server.ts (port 3050)
+npm run dev:frontend                    # vite dev server (port 3051)
+npm run check                           # tsc backend + vite build frontend — no tests, this is the CI gate
+
+# Smoke tests (no automated test suite by design — see plan-phases speed levers)
+npm run smoke:backend                   # full lifecycle: health → availability → create → update → cancel
+npm run smoke:retell                    # exercises /retell/inbound, /retell/webhook, /retell/tools/*
+npm run smoke:twilio                    # exercises /twilio/voice, /twilio/status
+
+# Production builds (used inside the Dockerfile)
+npm run build:backend                   # tsc → apps/backend/dist
+npm run build:frontend                  # vite build → apps/frontend/dist
+npm run start:backend                   # node apps/backend/dist/server.js
+npm run db:migrate:prod                 # node ... migrate.js (pre-built JS)
+```
+
+To exercise a single integration without a real phone call, hit the routes directly with `curl` — e.g. `curl -X POST localhost:3050/availability/check -d '{"date":"2026-06-01","time":"19:00","party_size":4}' -H 'Content-Type: application/json'`. The `/retell/*` and `/twilio/*` paths require HMAC signatures in production (`RETELL_VERIFY_SIGNATURE=true`, `TWILIO_VALIDATE_SIGNATURE=true`); leave both `false` in dev or use the smoke scripts.
+
+## Architecture
+
+### Call lifecycle (the only flow that matters)
+
+1. Caller dials the AU number → **Twilio** receives it.
+2. Twilio's SIP trunk `algorythmos` forwards to `sip.retellai.com`. The trunk's Termination URI is set in the Twilio console, not in this repo.
+3. **Retell** matches the called number to the registered `Natalia's Bistro` agent (`inbound_agent_id` on the phone number, set via Retell API). Dynamic variables (`today`, `tomorrow`, `restaurant_name`, etc.) come from the LLM's `default_dynamic_variables` — **not** from our `/retell/inbound` webhook, which only fires when the phone number is registered with a webhook URL rather than a static `inbound_agent_id`.
+4. The Retell LLM (GPT-4.1, single-prompt, voice 11labs-Anna en-AU) calls our **custom function** endpoints at `/retell/tools/check-availability` and `/retell/tools/create-booking`. These return snake_case JSON the LLM can read out (`confirmation_message`, `natural_alternatives_message`).
+5. Retell sends lifecycle events to **`/retell/webhook`** (signed). Final `call_analyzed` event includes `call_analysis.custom_analysis_data.{intent, booking_outcome, special_requests, caller_satisfied}` — the keys are configured on the agent via `post_call_analysis_data`.
+6. `apps/backend/src/services/retellService.ts::persistRetellCall` extracts those fields and upserts into `call_logs` (unique on `(provider, provider_call_id)`).
+7. The React dashboard at `vocotable.web.app` fetches from `/api/reservations`, `/api/call-logs`, `/api/analytics` (all Firebase-ID-token-gated) and renders.
+
+### Backend layout — what reads which
+
+- `routes/` thin handlers; signature middleware is scoped per-router (`retellRouter.use("/retell", …)`) — **don't drop the path prefix**, doing so applies the signature check app-wide and breaks every other endpoint.
+- `services/` business logic. `bookingService.createBooking` is the canonical example of the transactional pattern: per-slot advisory lock (`hashtextextended('restaurant:date:time', 0)`), re-check availability inside the locked txn, insert, then attach to the call_log. A partial `UNIQUE INDEX idx_reservations_no_double_book` is the DB-level safety net.
+- `repositories/` raw SQL. Pool config (max 20, statement_timeout 15s, query_timeout 15s) is in `db/pool.ts` — the small default would starve under sustained call load.
+- `auth/firebaseAuth.ts` lazy-initialises Firebase Admin SDK from `GOOGLE_APPLICATION_CREDENTIALS`. Dashboard endpoints (`dashboardRouter`) require `Bearer <Firebase ID token>`; webhook endpoints use HMAC instead.
+- `utils/time.ts` exposes TZ-aware date helpers (`todayInTz`, `tomorrowInTz`). The Retell agent's `default_dynamic_variables.{today, tomorrow}` need to be refreshed daily — currently a manual `PATCH /update-retell-llm` (no cron yet).
+- `utils/phone.ts` normalises caller-supplied phones to E.164 via `libphonenumber-js`. Returns null for `anonymous`/`unknown`/`private`/`blocked`/`restricted`.
+
+### Single-tenant lockdown
+
+`normalizeRestaurantId()` in `http/schemas.ts` and the Retell function normalizers in `services/retellService.ts` **ignore caller-supplied `restaurant_id`** and always use `env.DEFAULT_RESTAURANT_ID`. This is intentional for v1 — removes a category of "AI tricked into booking elsewhere" attacks. Reverse it when multi-tenant lands.
+
+### Frontend layout
+
+`apps/frontend/src/main.jsx` is a single-file React 19 SPA. Path-based dispatch (no react-router) — `AppRouter` reads `window.location.pathname` and renders one of `LandingPage`/`LiveFeedOverviewPage`/`LiveFeedDetailPage`/`BookingLogPage`/`AnalyticsPage`/`BillingPage`. Dashboard pages are gated by `AuthProvider`; landing is public. `api.js` attaches the Firebase ID token as Bearer and force-refreshes on 401 (single retry). `firebase.js` tries `signInWithPopup` then falls back to `signInWithRedirect` if extensions block the popup network call.
+
+## Database
+
+Custom migration runner — **not Knex/Prisma**. `apps/backend/src/db/migrate.ts` reads `apps/backend/db/migrations/*.sql` in lexical order and records applied files in `schema_migrations`. Each migration runs in one `client.query(sql)` call, so **multi-statement DDL with `GENERATED ALWAYS AS` expressions can trip node-pg with error `08P01` (invalid message format)** — when that happens, apply the SQL via `psql -f` directly and `INSERT INTO schema_migrations (filename) VALUES (…)` manually. Migration `003` hit this; it's now applied but worth knowing for future migrations.
+
+Schema is in `001_initial_schema.sql`. The interesting columns added in `003`:
+- `call_logs.intent`, `booking_outcome`, `user_sentiment`, `in_voicemail`, `call_successful`, `special_requests`, `analysis_json` (JSONB), `duration_seconds` (GENERATED).
+- `reservations` partial UNIQUE INDEX preventing double-booking at the same `(table_id, date, start_time)` for non-cancelled rows.
+
+Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restaurant). Lifecycle timestamps are `TIMESTAMPTZ`. The restaurant's TZ comes from `restaurants.timezone` (memoized in `repositories/restaurants.ts`).
+
+## Deployment
+
+- **Backend**: GCP VM `core-central-vm` (project `vocotable-497209`, static IP `136.113.35.88`) running `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`. The `prod` override mounts `/opt/vocotable/firebase-admin.json` → `/secrets/firebase-admin.json` (read-only) and sets `GOOGLE_APPLICATION_CREDENTIALS`. The base compose stays Firebase-Admin-free so local dev doesn't need a service-account JSON.
+- **TLS** via nginx + certbot at `https://vocotable.algorythmos.com.au`. Nginx config is in `deploy/nginx/vocotable.conf` — rate limits at the top-level `http {}` scope (already correct), raw body buffering on webhook paths for signature verification.
+- **Frontend** on Firebase Hosting (`vocotable.web.app`). Build with `VITE_API_BASE_URL=https://vocotable.algorythmos.com.au` before `firebase deploy --only hosting`.
+- **DNS** managed in Cloudflare under `algorythmos.com.au`. The `vocotable` A record must be **DNS-only (gray cloud)** — orange-cloud proxying breaks Let's Encrypt HTTP-01 and Retell/Twilio signature URLs.
+- **Retell config snapshots** for rollback are kept in `deploy/retell-snapshots/<timestamp>-<reason>/{llm.json,agent.json}`. Re-apply via `PATCH /update-retell-llm/{llm_id}` and `/update-agent/{agent_id}`.
+
+## Collaboration
+
+An intern engineer at Algorythmos (Ali Ümit ALGAN) works on the same VM and **pushes directly to `main`** rather than opening PRs. Coordination happens via LinkedIn messenger, not git. Before any backend deploy:
+
+1. `git fetch origin && git log --oneline origin/main -5` — check for unexpected commits.
+2. SSH the VM (`gcloud compute ssh core-central-vm --zone us-central1-a`) and `git -C /opt/vocotable status` — files there are often mid-edit, root-owned, and `sudo tar --overwrite` is the safe way to push code without trampling.
+3. Expect occasional conflicts in `firebase.json`, `app.ts` CORS, and `main.jsx`. Resolve and move on; don't escalate.
+
+## Hard rules of thumb
+
+- The 4-week MVP timeline (see `plan-phases/00-overview.md`) explicitly says **no automated tests, manual smoke tests only**. Stick to that; don't add Jest unless a paying customer is asking for stability.
+- Stay in-scope: no multi-tenant, no multilingual, no outbound calling, no loyalty, no mobile, no ResDiary/OpenTable integration in v1.
+- Dashboard auth is currently **open to any verified Google account**. Lock it to an email allowlist before any real bookings flow (tracked as a pre-launch task).
