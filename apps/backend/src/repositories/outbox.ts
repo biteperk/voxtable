@@ -13,6 +13,7 @@
  */
 
 import { DbClient, pool, readPool } from "../db/pool";
+import { redactSecrets } from "../utils/logger";
 
 export type OutboxOp = "create" | "cancel" | "reschedule";
 
@@ -97,12 +98,15 @@ export async function markOutboxRetry(
            next_attempt_at = now() + ($3 || ' milliseconds')::interval
      WHERE id = $1
     `,
-    [id, error.slice(0, 1000), String(nextAttemptDelayMs)]
+    [id, redactSecrets(error).slice(0, 1000), String(nextAttemptDelayMs)]
   );
 }
 
 /**
  * Dead-letter the row — won't be retried again until ops intervenes.
+ * Error string is redacted before storage — Cal.com 4xx echoes back our
+ * request body which can include the Authorization header / synthesized
+ * email / phone number. We do not want those persisted in a DB column.
  */
 export async function markOutboxFailed(id: string, error: string, db: DbClient = pool): Promise<void> {
   await db.query(
@@ -113,7 +117,7 @@ export async function markOutboxFailed(id: string, error: string, db: DbClient =
            failed_at = now()
      WHERE id = $1
     `,
-    [id, error.slice(0, 1000)]
+    [id, redactSecrets(error).slice(0, 1000)]
   );
 }
 
