@@ -26,6 +26,7 @@ import {
   processInboxEvent,
   verifyCalcomSignature
 } from "../services/calcomService";
+import { calcomWebhookEnvelopeSchema } from "../services/calcomSchemas";
 
 type RequestWithRawBody = Express.Request & { rawBody?: string };
 
@@ -55,9 +56,22 @@ calRouter.post(
       throw new AppError(401, "CALCOM_SIGNATURE_INVALID", "Invalid Cal.com signature.");
     }
 
-    const payload = request.body as Record<string, unknown>;
-    const triggerEvent = String(payload?.triggerEvent ?? "");
-    const createdAt = String(payload?.createdAt ?? "");
+    // Schema-validate the envelope. Cal.com SHOULD always send a triggerEvent
+    // + payload, but a corrupted retry / future API change could ship junk.
+    // Better to reject with a clear 400 than to dereference garbage downstream.
+    const parsed = calcomWebhookEnvelopeSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError(
+        400,
+        "CALCOM_ENVELOPE_INVALID",
+        `Cal.com webhook envelope failed schema: ${parsed.error.issues
+          .map((i) => i.message)
+          .join("; ")}`
+      );
+    }
+    const payload = parsed.data;
+    const triggerEvent = payload.triggerEvent;
+    const createdAt = payload.createdAt ?? "";
 
     // Replay-window guard: reject events older than 5 minutes. Cal.com retries
     // 5xx but should not be retrying ancient events with a fresh signature
@@ -74,13 +88,13 @@ calRouter.post(
       }
     }
 
-    const eventId = computeInboxEventId(payload);
+    const eventId = computeInboxEventId(payload as Record<string, unknown>);
 
     // Persist before processing. ON CONFLICT DO NOTHING — replays are no-ops.
     const isFresh = await recordInboxEvent({
       eventId,
       triggerEvent,
-      rawPayload: payload
+      rawPayload: payload as Record<string, unknown>
     });
 
     if (!isFresh) {
@@ -98,7 +112,7 @@ calRouter.post(
       await processInboxEvent({
         triggerEvent,
         createdAt,
-        payload: (payload.payload as Record<string, unknown>) ?? {}
+        payload: payload.payload ?? {}
       });
       await markInboxProcessed(eventId);
       response.status(200).json({ status: "processed" });
