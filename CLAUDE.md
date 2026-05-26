@@ -46,14 +46,27 @@ To exercise a single integration without a real phone call, hit the routes direc
 6. `apps/backend/src/services/retellService.ts::persistRetellCall` extracts those fields and upserts into `call_logs` (unique on `(provider, provider_call_id)`).
 7. The React dashboard at `vocotable.web.app` fetches from `/api/reservations`, `/api/call-logs`, `/api/analytics` (all Firebase-ID-token-gated) and renders.
 
+### Cal.com mirror (durable outbox + inbox)
+
+Bookings created by the voice path are mirrored to Cal.com asynchronously — the voice path **never blocks on Cal.com**. The pattern:
+
+- `bookingService.createBooking` enqueues an `outbox_calcom` row in the same DB txn as the reservation insert. If Cal.com is down, the booking still lands in Postgres and the caller hears a confirmation.
+- `workers/calcomOutboxWorker.ts` ticks every 2 s, pulls due rows, posts to Cal.com v2 with an `Idempotency-Key` header (the outbox row UUID), and updates `succeeded_at` / `next_attempt_at` with exponential backoff. Errors classified as transient retry; permanent ones short-circuit. A circuit breaker in `services/calcomClient.ts` trips after consecutive failures.
+- Inbound Cal.com webhooks land at `POST /cal/webhook` (HMAC + 5-min replay window), dedupe via `inbox_calcom_events`, and reconcile back into `reservations` (loop guard: skip events whose `metadata.vocotable_source = "voice"`).
+- Kill switch: `CALCOM_SYNC_ENABLED=false` disables the outbox executor AND `/cal/webhook` (returns 410). Voice path keeps working. Health endpoint: `GET /api/ops/calcom-health` returns outbox depth, breaker state, voice_today, and quota.
+
 ### Backend layout — what reads which
 
 - `routes/` thin handlers; signature middleware is scoped per-router (`retellRouter.use("/retell", …)`) — **don't drop the path prefix**, doing so applies the signature check app-wide and breaks every other endpoint.
 - `services/` business logic. `bookingService.createBooking` is the canonical example of the transactional pattern: per-slot advisory lock (`hashtextextended('restaurant:date:time', 0)`), re-check availability inside the locked txn, insert, then attach to the call_log. A partial `UNIQUE INDEX idx_reservations_no_double_book` is the DB-level safety net.
-- `repositories/` raw SQL. Pool config (max 20, statement_timeout 15s, query_timeout 15s) is in `db/pool.ts` — the small default would starve under sustained call load.
+- **Multi-statement writes go through `withTransaction(async (client) => …)`** from `db/pool.ts`. Never juggle two pool connections for a single logical write — `modifyBooking`, `cancelBooking`, and the outbox executor all follow this pattern. Repositories accept an optional `DbClient` so they can join the caller's txn.
+- `repositories/` raw SQL. Pool config (max 20, statement_timeout 15s, query_timeout 15s) is in `db/pool.ts` — the small default would starve under sustained call load. `db/pool.ts` also pins the pg type parser for `DATE` (OID 1082) to return strings, not JS `Date` — otherwise outbox payloads serialise weirdly.
+- **All logging goes through `utils/logger.ts`** — structured JSON, AsyncLocalStorage-propagated `request_id` (via `http/requestLogger.ts`), and key/value PII redaction (`cal_live_*`, `Bearer …`, E.164 phones). Never `console.error(err)` directly; use `logger.error({ error })` so `sanitiseError` strips headers/secrets before they hit stdout.
+- **Every external payload is Zod-validated at the boundary.** Retell tool args use `http/schemas.ts` (`modifyBookingRequestSchema`, etc.); Cal.com webhooks + create-booking responses use `services/calcomSchemas.ts`. Boot-time `verifyCalcomSchemasAgainstFixtures()` catches upstream schema drift before any traffic hits.
 - `auth/firebaseAuth.ts` lazy-initialises Firebase Admin SDK from `GOOGLE_APPLICATION_CREDENTIALS`. Dashboard endpoints (`dashboardRouter`) require `Bearer <Firebase ID token>`; webhook endpoints use HMAC instead.
-- `utils/time.ts` exposes TZ-aware date helpers (`todayInTz`, `tomorrowInTz`). The Retell agent's `default_dynamic_variables.{today, tomorrow}` need to be refreshed daily — currently a manual `PATCH /update-retell-llm` (no cron yet).
+- `utils/time.ts` exposes TZ-aware date helpers (`todayInTz`, `tomorrowInTz`, `zonedWallClockToUtcISO`, `utcIsoToZonedWallClock`). The Retell agent's `default_dynamic_variables.{today, tomorrow}` need to be refreshed daily — currently a manual `PATCH /update-retell-llm` (no cron yet).
 - `utils/phone.ts` normalises caller-supplied phones to E.164 via `libphonenumber-js`. Returns null for `anonymous`/`unknown`/`private`/`blocked`/`restricted`.
+- `workers/` — `calcomOutboxWorker` (2 s tick), `healthAlerter` (Slack on outbox depth / breaker open / inbox failures / Cal.com daily quota), `cleanupWorker` (6 h tick, deletes outbox + inbox rows older than 30 days).
 
 ### Single-tenant lockdown
 
@@ -80,6 +93,8 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
 - **Frontend** on Firebase Hosting (`vocotable.web.app`). Build with `VITE_API_BASE_URL=https://vocotable.algorythmos.com.au` before `firebase deploy --only hosting`.
 - **DNS** managed in Cloudflare under `algorythmos.com.au`. The `vocotable` A record must be **DNS-only (gray cloud)** — orange-cloud proxying breaks Let's Encrypt HTTP-01 and Retell/Twilio signature URLs.
 - **Retell config snapshots** for rollback are kept in `deploy/retell-snapshots/<timestamp>-<reason>/{llm.json,agent.json}`. Re-apply via `PATCH /update-retell-llm/{llm_id}` and `/update-agent/{agent_id}`.
+- **Failure-mode runbooks** live in `deploy/runbooks/` — `rollback.md` for image-crash / Cal.com misbehaving / migration-breaks-reads recovery (target ≤5 min revert), `backup-restore.md` for pg_dump verification + restore drills.
+- **Cal.com-specific env vars** (required in prod when `CALCOM_SYNC_ENABLED=true`): `CALCOM_BASE_URL`, `CALCOM_API_KEY`, `CALCOM_WEBHOOK_SECRET`, `CALCOM_EVENT_TYPE_ID`, `CALCOM_OUTBOX_MAX_ATTEMPTS`, `CALCOM_REQUEST_TIMEOUT_MS`, `CALCOM_DAILY_QUOTA_THRESHOLD`. Slack alerting: `OPS_SLACK_WEBHOOK_URL`. See `.env.example` for the full list.
 
 ## Collaboration
 
