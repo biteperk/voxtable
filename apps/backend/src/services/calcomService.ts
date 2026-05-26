@@ -91,7 +91,7 @@ export interface CreatePayloadInput {
  * only fields Cal.com documents are included. `bookingFieldsResponses` is
  * keyed by the custom field slug we set on the event type (`party-size`).
  *
- * `metadata.noEmail = true` for voice/dashboard bookings — Aria/Staff
+ * `metadata.noEmail = true` for voice/dashboard bookings — Bella/Staff
  * already confirmed verbally, no need for Cal.com to email a duplicate.
  * Web bookings keep email confirmations on (set caller-side, not here).
  */
