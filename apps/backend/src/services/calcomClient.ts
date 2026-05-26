@@ -138,7 +138,14 @@ export async function calcomRequest<T = unknown>(options: CalcomRequestOptions):
     throw new CalcomCircuitOpenError();
   }
 
-  const url = new URL(options.path.startsWith("/") ? options.path : `/${options.path}`, env.CALCOM_BASE_URL);
+  // URL constructor quirk: `new URL("/bookings", "https://api.cal.com/v2")`
+  // resolves to "https://api.cal.com/bookings" because a leading slash on
+  // the path is treated as ABSOLUTE and replaces baseUrl's path entirely.
+  // Cal.com routes everything under /v2/* — without the prefix you get a
+  // NestJS "Cannot POST /bookings" 404. Hand-stitch the URL instead.
+  const baseClean = env.CALCOM_BASE_URL.replace(/\/+$/, "");
+  const pathClean = options.path.startsWith("/") ? options.path : `/${options.path}`;
+  const url = new URL(baseClean + pathClean);
   if (options.query) {
     for (const [key, value] of Object.entries(options.query)) {
       if (value === undefined) continue;
