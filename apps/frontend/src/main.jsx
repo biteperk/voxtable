@@ -203,6 +203,99 @@ export function isCalcomConfigured() {
 }
 
 /**
+ * Reusable "embed failed — call us instead" card. Same content for both
+ * timeout and error fallbacks; placed inline (not a portal) so it sits
+ * inside the same modal body slot as the embed would have.
+ */
+function EmbedFailedFallback({ reason }) {
+  return (
+    <div className="book-modal-fallback" role="alert" aria-live="assertive">
+      <Icon name="error_outline" />
+      <h2>Booking widget unavailable</h2>
+      <p>
+        {reason ||
+          "Our online booking didn't load. This can happen if an ad-blocker or your network is filtering Cal.com."}
+      </p>
+      <a href="tel:+61275011140" className="book-modal-fallback-cta">
+        <Icon name="phone_in_talk" />
+        Call us on +61 2 7501 1140
+      </a>
+      <p className="book-modal-fallback-hint">
+        Or try reloading. Aria's available 24/7 by phone.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Error boundary specifically for the Cal.com embed. Catches both
+ * React.lazy chunk-load failures (`ChunkLoadError` thrown during the
+ * dynamic import) and runtime errors inside the embed iframe wrapper.
+ * Silently logs to console and falls back to the call-us card so the
+ * user always has a recovery path.
+ */
+class EmbedErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    // eslint-disable-next-line no-console
+    console.error("[vocotable] BookOnline embed error:", {
+      name: error?.name,
+      message: error?.message?.slice(0, 200),
+      componentStack: info?.componentStack?.split("\n").slice(0, 4).join("\n")
+    });
+  }
+
+  render() {
+    if (this.state.error) {
+      const isChunk =
+        this.state.error?.name === "ChunkLoadError" ||
+        /Loading chunk|Failed to fetch dynamically imported module/i.test(
+          String(this.state.error?.message ?? "")
+        );
+      return (
+        <EmbedFailedFallback
+          reason={
+            isChunk
+              ? "We couldn't download the booking widget. Your network might be filtering Cal.com."
+              : undefined
+          }
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Time-bounds the Suspense fallback. If the embed hasn't rendered (i.e.
+ * we're still inside the Suspense spinner) after `timeoutMs`, replace the
+ * children entirely with the call-us card. Covers the case where the
+ * lazy chunk loads fine but Cal.com itself never paints (CSP, outage,
+ * blocked iframe).
+ */
+function EmbedTimeoutFallback({ timeoutMs, children }) {
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setTimedOut(true), timeoutMs);
+    return () => clearTimeout(t);
+  }, [timeoutMs]);
+
+  if (timedOut) {
+    return <EmbedFailedFallback />;
+  }
+  return children;
+}
+
+/**
  * Full-screen modal hosting the Cal.com embed. Reuses the same a11y +
  * scroll-lock pattern as the dashboard drawer (`useDrawer` hook):
  *   - body scroll lock survives iOS rubber-banding
@@ -297,28 +390,101 @@ function BookOnlineModal({ open, onClose, triggerRef }) {
           </button>
         </header>
         <div className="book-modal-body">
-          <Suspense
-            fallback={
-              <div className="book-modal-loading" role="status" aria-live="polite">
-                <span className="book-modal-spinner" aria-hidden="true" />
-                <span>Loading booking…</span>
-              </div>
-            }
-          >
-            <CalcomEmbed
-              namespace={CALCOM_NAMESPACE}
-              calLink={CALCOM_CAL_LINK}
-              style={{ width: "100%", height: "100%", overflow: "auto" }}
-              config={{
-                layout: "month_view",
-                theme: "dark"
-              }}
-            />
-          </Suspense>
+          {/* Audit Sweep E: wrap embed in EmbedErrorBoundary (catches chunk
+              load failures + Cal.com render errors) + EmbedTimeout (shows
+              fallback if the embed doesn't paint within 10s — covers ad
+              blockers, CSP misconfig, Cal.com outage). Tel-link gives the
+              caller an immediate recovery path. */}
+          <EmbedErrorBoundary>
+            <EmbedTimeoutFallback timeoutMs={10000}>
+              <Suspense
+                fallback={
+                  <div className="book-modal-loading" role="status" aria-live="polite">
+                    <span className="book-modal-spinner" aria-hidden="true" />
+                    <span>Loading booking…</span>
+                  </div>
+                }
+              >
+                <CalcomEmbed
+                  namespace={CALCOM_NAMESPACE}
+                  calLink={CALCOM_CAL_LINK}
+                  style={{ width: "100%", height: "100%", overflow: "auto" }}
+                  config={{
+                    layout: "month_view",
+                    theme: "dark"
+                  }}
+                />
+              </Suspense>
+            </EmbedTimeoutFallback>
+          </EmbedErrorBoundary>
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * Top-level error boundary. Audit Sweep E — without this, a single render
+ * error in ANY page component (LiveFeedOverview, BookingLog, Analytics, etc.)
+ * crashes the whole SPA to a white screen. The dashboard renders arbitrary
+ * DB data (customer names, notes); one row with an unexpected null on a
+ * non-coalesced field would take down the staff's only tool during dinner
+ * service. This is the floor.
+ *
+ * On error: log structured to console (Sweep D logger upgrade is backend-only
+ * for now; frontend still uses console), show a friendly recovery card with
+ * the restaurant phone number, and offer a "reload" action.
+ */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    // eslint-disable-next-line no-console
+    console.error("[vocotable] uncaught render error:", {
+      message: error?.message,
+      stack: error?.stack?.split("\n").slice(0, 6).join("\n"),
+      componentStack: info?.componentStack?.split("\n").slice(0, 6).join("\n")
+    });
+  }
+
+  reset = () => {
+    this.setState({ error: null });
+  };
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="error-boundary-shell" role="alert" aria-live="assertive">
+          <div className="error-boundary-card">
+            <h1>Something went wrong</h1>
+            <p>
+              The page hit an unexpected error. Try reloading — if it keeps happening,
+              please call us on <a href="tel:+61275011140">+61 2 7501 1140</a>.
+            </p>
+            <p className="error-boundary-detail">
+              {this.state.error?.message?.slice(0, 200) || "Unknown error"}
+            </p>
+            <div className="error-boundary-actions">
+              <button type="button" onClick={() => window.location.reload()}>
+                Reload page
+              </button>
+              <button type="button" className="ghost" onClick={this.reset}>
+                Try to continue
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function App() {
@@ -2707,4 +2873,8 @@ function BillingPage({ navigate }) {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);

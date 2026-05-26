@@ -5656,3 +5656,172 @@ button {
   outline-offset: 2px;
 }
 
+/* ===================================================================
+   Audit Sweep E — frontend resilience: top-level ErrorBoundary +
+   BookOnlineModal embed-failed fallback. Both surfaces a "call us"
+   recovery path so a render error or embed outage never leaves the
+   user staring at a white screen / infinite spinner.
+   =================================================================== */
+
+.error-boundary-shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 180, 171, 0.15), transparent 60%),
+    #0b0b0e;
+}
+
+.error-boundary-card {
+  width: min(560px, 100%);
+  padding: 32px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 16px;
+  background: var(--surface-container-lowest);
+  text-align: left;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.error-boundary-card h1 {
+  margin: 0 0 12px;
+  font-size: clamp(22px, 4vw, 28px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--on-surface);
+}
+
+.error-boundary-card p {
+  margin: 0 0 12px;
+  color: var(--on-surface-variant);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.error-boundary-card a {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.error-boundary-detail {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  padding: 10px 12px;
+  background: rgba(255, 180, 171, 0.08);
+  border-left: 3px solid var(--error);
+  border-radius: 6px;
+  word-break: break-word;
+  color: rgba(255, 180, 171, 0.92) !important;
+}
+
+.error-boundary-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.error-boundary-actions button {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 0;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 160ms ease;
+}
+
+.error-boundary-actions button:active {
+  transform: scale(0.98);
+}
+
+.error-boundary-actions button.ghost {
+  background: transparent;
+  color: var(--on-surface);
+  border: 1px solid var(--outline-variant);
+}
+
+@media (hover: hover) {
+  .error-boundary-actions button:hover {
+    box-shadow: 0 0 16px rgba(173, 198, 255, 0.32);
+  }
+  .error-boundary-actions button.ghost:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--outline);
+  }
+}
+
+/* BookOnlineModal embed-failed fallback — same dimensions as the embed
+   slot so it fills the modal body cleanly. */
+
+.book-modal-fallback {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 28px 24px;
+  text-align: center;
+  color: var(--on-surface-variant);
+}
+
+.book-modal-fallback .material-symbols-outlined {
+  font-size: 44px;
+  color: var(--tertiary);
+}
+
+.book-modal-fallback h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--on-surface);
+  letter-spacing: -0.01em;
+}
+
+.book-modal-fallback p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  max-width: 36ch;
+}
+
+.book-modal-fallback-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+  transition: transform 120ms ease, box-shadow 160ms ease;
+}
+
+.book-modal-fallback-cta:active {
+  transform: scale(0.98);
+}
+
+@media (hover: hover) {
+  .book-modal-fallback-cta:hover {
+    box-shadow: 0 0 18px rgba(173, 198, 255, 0.4);
+  }
+}
+
+.book-modal-fallback-cta .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--on-primary);
+}
+
+.book-modal-fallback-hint {
+  font-size: 13px;
+  color: rgba(193, 198, 215, 0.7);
+}
+
