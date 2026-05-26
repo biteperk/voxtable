@@ -25,6 +25,7 @@
  */
 
 import { env } from "../config/env";
+import { recordCalcomRequest } from "./calcomQuotaTracker";
 
 export class CalcomTransientError extends Error {
   constructor(public readonly status: number | null, message: string) {
@@ -203,6 +204,10 @@ export async function calcomRequest<T = unknown>(options: CalcomRequestOptions):
   } catch (error) {
     clearTimeout(timer);
     recordTransientFailure();
+    // Audit Sweep I: network errors + timeouts still cost a rate-limit slot
+    // at Cal.com's edge in most cases; count them so the quota tracker isn't
+    // falsely optimistic.
+    recordCalcomRequest();
     const message =
       error instanceof Error && error.name === "AbortError"
         ? `Cal.com request timed out after ${timeoutMs}ms (${options.method} ${options.path})`
@@ -211,6 +216,10 @@ export async function calcomRequest<T = unknown>(options: CalcomRequestOptions):
   }
   clearTimeout(timer);
   const durationMs = Date.now() - startedAt;
+
+  // Quota counter — every reply (success or 4xx/5xx) counts against Cal.com's
+  // rate limit. Recording AFTER the response confirms a real round-trip.
+  recordCalcomRequest();
 
   // Best-effort JSON parse — error responses sometimes ship text/plain.
   const rawText = await response.text();

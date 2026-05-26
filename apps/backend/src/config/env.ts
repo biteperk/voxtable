@@ -52,6 +52,11 @@ const envSchema = z
   CALCOM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   CALCOM_OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
 
+  // Audit Sweep I: per-day Cal.com API request threshold. When today's count
+  // crosses this, healthAlerter fires a Slack ping. Default is 80% of free
+  // tier (100k/mo ÷ 30 days × 0.8 ≈ 2666/day). Override when on a paid plan.
+  CALCOM_DAILY_QUOTA_THRESHOLD: z.coerce.number().int().positive().optional(),
+
   // Operations alerting — Slack webhook for outbox depth + circuit breaker events.
   OPS_SLACK_WEBHOOK_URL: z.string().url().optional()
   })
