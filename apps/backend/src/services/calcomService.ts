@@ -499,27 +499,80 @@ async function handleBookingCreated(
     "Guest";
   const customerEmail =
     (typeof firstAttendee?.email === "string" && firstAttendee.email) || "";
-  const partySizeRaw = responses["party-size"] ?? responses["partySize"];
-  const partySize = Math.max(1, Number(partySizeRaw) || 2);
   const phone =
     (typeof firstAttendee?.phoneNumber === "string" && firstAttendee.phoneNumber) ||
     (typeof responses["attendeePhoneNumber"] === "string"
       ? (responses["attendeePhoneNumber"] as string)
       : "");
 
+  // -- Data-quality review flags ------------------------------------------
+  // The Cal.com event type SHOULD ask "How many people?" + collect a real
+  // phone number. When the dashboard config is missing those questions, the
+  // webhook still arrives — silent defaults (partySize=2, synthetic email
+  // as phone) used to mask the problem. Now we flag for review so staff
+  // call the customer back before they show up to the wrong-size table.
+  const reviewFlags: string[] = [];
+
+  const partySizeRaw = responses["party-size"] ?? responses["partySize"];
+  const partySizeNum = Number(partySizeRaw);
+  const partySizeValid =
+    partySizeRaw !== undefined &&
+    partySizeRaw !== null &&
+    partySizeRaw !== "" &&
+    Number.isFinite(partySizeNum) &&
+    partySizeNum >= 1 &&
+    partySizeNum <= 20;
+  const partySize = partySizeValid ? Math.floor(partySizeNum) : 2;
+  if (!partySizeValid) reviewFlags.push("party_size_missing");
+
+  // A "real" phone is anything non-empty that isn't the @bookings.vocotable
+  // synthetic email Cal.com gives us when the customer didn't provide one.
+  const normalizedPhone = normalizePhone(phone);
+  const phoneIsSynthetic =
+    !phone ||
+    phone.includes(`@${SYNTH_EMAIL_DOMAIN}`) ||
+    (customerEmail && customerEmail.includes(`@${SYNTH_EMAIL_DOMAIN}`) && !normalizedPhone);
+  if (!normalizedPhone) reviewFlags.push(phoneIsSynthetic ? "phone_synthetic" : "phone_invalid");
+
+  if (reviewFlags.length > 0) {
+    // Loud, structured, grep-able. Keep this evt name stable — healthAlerter
+    // / future Slack alert can subscribe on the literal string.
+    console.warn(
+      JSON.stringify({
+        evt: "calcom_inbox_web_booking_needs_review",
+        uid,
+        flags: reviewFlags,
+        party_size_raw: typeof partySizeRaw === "string" || typeof partySizeRaw === "number"
+          ? partySizeRaw
+          : null,
+        phone_present: Boolean(normalizedPhone),
+        customer_email_present: Boolean(customerEmail)
+      })
+    );
+  }
+
   const restaurantTimezone = await getRestaurantTimezone(env.DEFAULT_RESTAURANT_ID);
   const { date, time } = utcIsoToZonedWallClock(startTime, restaurantTimezone);
+
+  // Booking goes through. We don't refuse it — the customer already has a
+  // Cal.com confirmation email and refusing would leave them stranded. The
+  // reviewFlags get prepended to `notes` so staff see them at a glance on
+  // the dashboard's booking-log row.
+  const notesPrefix = reviewFlags.length > 0
+    ? `[NEEDS REVIEW: ${reviewFlags.join(", ")}] `
+    : "";
+  const notes = `${notesPrefix}Web booking via Cal.com (uid ${uid}); email ${customerEmail}`;
 
   try {
     const booking = await createBooking({
       restaurantId: env.DEFAULT_RESTAURANT_ID,
       customerName,
-      customerPhone: phone || customerEmail, // fallback so we don't crash on missing phone
+      customerPhone: normalizedPhone || phone || customerEmail, // fallback chain
       date,
       time,
       partySize,
       source: "web" as BookingSource,
-      notes: `Web booking via Cal.com (uid ${uid}); email ${customerEmail}`
+      notes
     });
     // Stamp the uid onto the just-created reservation so future webhooks
     // (e.g. BOOKING_CANCELLED for this uid) can find it.
@@ -529,7 +582,8 @@ async function handleBookingCreated(
         evt: "calcom_inbox_web_booking_accepted",
         uid,
         reservation_id: booking.bookingId,
-        phone_redacted: redactPhone(phone)
+        phone_redacted: redactPhone(normalizedPhone || phone),
+        review_flags: reviewFlags.length > 0 ? reviewFlags : undefined
       })
     );
   } catch (error) {
