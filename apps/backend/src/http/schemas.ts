@@ -86,6 +86,40 @@ export const cancelBookingRequestSchema = z.object({
   source: z.enum(["voice", "dashboard"]).optional()
 });
 
+/**
+ * Schema for the Retell `modify_booking` tool. Required: booking_id (the
+ * UUID returned by a prior create_booking in the same conversation). All
+ * other fields are partial — Aria sends only what changed. Dual-key for
+ * LLM tolerance.
+ */
+export const modifyBookingRequestSchema = z.object({
+  booking_id: uuidSchema.optional(),
+  bookingId: uuidSchema.optional(),
+  customer_name: z.string().min(1).max(120).optional(),
+  customerName: z.string().min(1).max(120).optional(),
+  date: dateSchema.optional(),
+  time: timeSchema.optional(),
+  party_size: partySizeSchema.optional(),
+  partySize: partySizeSchema.optional(),
+  notes: z.string().max(1000).optional()
+}).refine(
+  (v) => Boolean(v.booking_id ?? v.bookingId),
+  { message: "booking_id is required.", path: ["booking_id"] }
+);
+
+export type ModifyBookingArgs = z.infer<typeof modifyBookingRequestSchema>;
+
+export function normalizeModifyBookingArgs(args: ModifyBookingArgs) {
+  return {
+    bookingId: (args.booking_id ?? args.bookingId)!,
+    customerName: args.customer_name ?? args.customerName,
+    date: args.date,
+    time: args.time,
+    partySize: args.party_size ?? args.partySize,
+    notes: args.notes
+  };
+}
+
 export function normalizePartySize(body: { party_size?: number; partySize?: number }): number {
   return body.party_size ?? body.partySize ?? 0;
 }

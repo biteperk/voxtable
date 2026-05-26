@@ -44,6 +44,11 @@ import { getRestaurantTimezone } from "../repositories/restaurants";
 import { utcIsoToZonedWallClock, zonedWallClockToUtcISO } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 import { createBooking } from "./bookingService";
+import {
+  calcomWebhookEnvelopeSchema,
+  extractUidFromCreateResponse,
+  parseCalcomWebhookPayload
+} from "./calcomSchemas";
 
 // --- helpers -----------------------------------------------------------------
 
@@ -154,19 +159,9 @@ async function loadReservationForPush(
   return result.rows[0] ?? null;
 }
 
-interface CalcomCreateResponse {
-  data?: { uid?: string; id?: number };
-  status?: string;
-  uid?: string; // v1-shaped fallback if Cal.com returns flat
-}
-
-/** Pull the booking uid out of Cal.com's create response. Cal.com v2 nests
- *  under `data.uid` per current docs; we accept a few shapes defensively. */
-function extractCalcomUid(body: unknown): string | null {
-  if (!body || typeof body !== "object") return null;
-  const b = body as CalcomCreateResponse;
-  return b.data?.uid ?? b.uid ?? (b.data?.id != null ? String(b.data.id) : null);
-}
+// Cal.com response uid extraction goes through the validated schema in
+// services/calcomSchemas.ts (imported at top) — replaces the prior untyped
+// `as CalcomCreateResponse` cast that silently allowed schema drift.
 
 async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult> {
   // Loop guard: if the reservation already has a uid (an earlier attempt
@@ -194,12 +189,12 @@ async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<Outb
   });
 
   try {
-    const response = await calcomRequest<CalcomCreateResponse>({
+    const response = await calcomRequest<unknown>({
       method: "POST",
       path: "/bookings",
       body: payload
     });
-    const uid = extractCalcomUid(response.data);
+    const uid = extractUidFromCreateResponse(response.data);
     if (!uid) {
       return {
         outcome: "permanent",
@@ -398,36 +393,72 @@ interface CalcomWebhookPayload {
  * mark the inbox row failed.
  */
 export async function processInboxEvent(event: CalcomWebhookPayload): Promise<void> {
-  const trigger = event.triggerEvent;
-  const payload = event.payload ?? {};
-  const uid = String(payload.uid ?? "");
+  // Schema-validate the inner payload by trigger type. Replaces the previous
+  // untyped `event.payload?.attendees?.[0]?.name` chains that silently fell
+  // through to defaults when Cal.com shape drifted (next-class-of-bug risk).
+  const parsed = parseCalcomWebhookPayload(event.triggerEvent, event.payload);
 
-  if (!uid) {
-    // Some Cal.com event types (PING, etc.) don't carry a uid. Ignore quietly.
+  if (parsed.kind === "invalid") {
+    // Shape regression — log loud and throw so the inbox row is marked failed
+    // and ops can investigate. Don't silently swallow.
+    console.error(
+      JSON.stringify({
+        evt: "calcom_inbox_payload_invalid",
+        trigger: event.triggerEvent,
+        error: parsed.error
+      })
+    );
+    throw new AppError(
+      400,
+      "CALCOM_PAYLOAD_INVALID",
+      `Cal.com ${event.triggerEvent} payload failed schema: ${parsed.error}`
+    );
+  }
+
+  if (parsed.kind === "ignored") {
+    console.log(JSON.stringify({ evt: "calcom_inbox_event_ignored", trigger: event.triggerEvent }));
     return;
   }
 
-  if (trigger === "BOOKING_CREATED" || trigger === "BOOKING_CONFIRMED") {
-    await handleBookingCreated(event, uid);
+  if (parsed.kind === "created") {
+    await handleBookingCreated(parsed.data);
     return;
   }
-  if (trigger === "BOOKING_CANCELLED" || trigger === "BOOKING_CANCELED") {
-    await handleBookingCancelled(event, uid);
+  if (parsed.kind === "cancelled") {
+    await handleBookingCancelled(parsed.data);
     return;
   }
-  if (trigger === "BOOKING_RESCHEDULED") {
+  if (parsed.kind === "rescheduled") {
     // Conservative for v1: treat as cancel + ignore. Natalia can manually
     // re-book if Cal.com reschedules. Documented limitation.
     console.log(
-      JSON.stringify({ evt: "calcom_inbox_reschedule_ignored", uid, message: "Reschedule not yet handled" })
+      JSON.stringify({
+        evt: "calcom_inbox_reschedule_ignored",
+        uid: parsed.data.uid,
+        message: "Reschedule not yet handled"
+      })
     );
     return;
   }
-  // PING, BOOKING_REQUESTED, etc. — log + ignore.
-  console.log(JSON.stringify({ evt: "calcom_inbox_event_ignored", trigger, uid }));
 }
 
-async function handleBookingCreated(event: CalcomWebhookPayload, uid: string): Promise<void> {
+/**
+ * `data` is the schema-validated BOOKING_CREATED payload — `uid` and
+ * `startTime` are guaranteed non-empty strings by the schema's `.min(1)`
+ * constraints. Everything else is still defensively narrowed because
+ * Cal.com's attendees array may legitimately be empty (server-side bookings)
+ * and responses are keyed by event-type custom fields.
+ */
+async function handleBookingCreated(
+  data: ReturnType<typeof parseCalcomWebhookPayload> extends infer R
+    ? R extends { kind: "created"; data: infer D }
+      ? D
+      : never
+    : never
+): Promise<void> {
+  const uid = data.uid;
+  const startTime = data.startTime;
+
   // Loop check — did WE create this booking via the outbox?
   const existing = await findReservationByCalcomUid(uid, readPool);
   if (existing) {
@@ -441,24 +472,27 @@ async function handleBookingCreated(event: CalcomWebhookPayload, uid: string): P
   // commit? Scan pending outbox rows matching this booking's start time.
   // (We rely on the unique index to ensure uid uniqueness — if we find a
   // match here, we're stamping our own row.)
-  const reconciled = await tryReconcileOutboxRow(uid, event);
+  const reconciled = await tryReconcileOutboxRow(uid);
   if (reconciled) return;
 
   // Genuine web-channel booking. Funnel through bookingService so capacity
-  // rules and double-booking guards still run.
-  const customerName = String(event.payload?.attendees?.[0]?.name ?? event.payload?.responses?.name ?? "Guest");
-  const customerEmail = String(event.payload?.attendees?.[0]?.email ?? "");
-  const partySizeRaw = event.payload?.responses?.["party-size"] ?? event.payload?.responses?.partySize;
+  // rules and double-booking guards still run. Defensive narrowing on the
+  // attendee/responses since both may be empty / shape-variant.
+  const firstAttendee = data.attendees?.[0];
+  const responses = (data.responses ?? {}) as Record<string, unknown>;
+  const customerName =
+    (typeof firstAttendee?.name === "string" && firstAttendee.name) ||
+    (typeof responses.name === "string" && responses.name) ||
+    "Guest";
+  const customerEmail =
+    (typeof firstAttendee?.email === "string" && firstAttendee.email) || "";
+  const partySizeRaw = responses["party-size"] ?? responses["partySize"];
   const partySize = Math.max(1, Number(partySizeRaw) || 2);
-  const phone = String(
-    event.payload?.attendees?.[0]?.phoneNumber ??
-      event.payload?.responses?.attendeePhoneNumber ??
-      ""
-  );
-  const startTime = String(event.payload?.startTime ?? "");
-  if (!startTime) {
-    throw new AppError(400, "CALCOM_BOOKING_MISSING_START", "Cal.com BOOKING_CREATED missing startTime.");
-  }
+  const phone =
+    (typeof firstAttendee?.phoneNumber === "string" && firstAttendee.phoneNumber) ||
+    (typeof responses["attendeePhoneNumber"] === "string"
+      ? (responses["attendeePhoneNumber"] as string)
+      : "");
 
   const restaurantTimezone = await getRestaurantTimezone(env.DEFAULT_RESTAURANT_ID);
   const { date, time } = utcIsoToZonedWallClock(startTime, restaurantTimezone);
@@ -512,7 +546,14 @@ async function handleBookingCreated(event: CalcomWebhookPayload, uid: string): P
   }
 }
 
-async function handleBookingCancelled(_event: CalcomWebhookPayload, uid: string): Promise<void> {
+async function handleBookingCancelled(
+  data: ReturnType<typeof parseCalcomWebhookPayload> extends infer R
+    ? R extends { kind: "cancelled"; data: infer D }
+      ? D
+      : never
+    : never
+): Promise<void> {
+  const uid = data.uid;
   const existing = await findReservationByCalcomUid(uid, readPool);
   if (!existing) {
     console.log(JSON.stringify({ evt: "calcom_inbox_cancel_no_match", uid }));
@@ -539,7 +580,7 @@ async function handleBookingCancelled(_event: CalcomWebhookPayload, uid: string)
  *
  * Returns true if reconciled (caller should NOT create a new reservation).
  */
-async function tryReconcileOutboxRow(uid: string, _event: CalcomWebhookPayload): Promise<boolean> {
+async function tryReconcileOutboxRow(uid: string): Promise<boolean> {
   // Pessimistic scan — the outbox is usually small, and this only runs for
   // unmatched BOOKING_CREATED events. If the table gets huge we'll add an
   // index on (op, succeeded_at).

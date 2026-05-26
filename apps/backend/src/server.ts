@@ -3,6 +3,7 @@ import { createApp } from "./app";
 import { closePool } from "./db/pool";
 import { warmRestaurantCache } from "./repositories/restaurants";
 import { installCalcomExecutor } from "./services/calcomService";
+import { verifyCalcomSchemasAgainstFixtures } from "./services/calcomSchemas";
 import { startOutboxWorker, stopOutboxWorker } from "./workers/calcomOutboxWorker";
 import { startHealthAlerter, stopHealthAlerter } from "./workers/healthAlerter";
 
@@ -20,6 +21,18 @@ const SHUTDOWN_WORKER_TIMEOUT_MS = 10_000;
 const SHUTDOWN_HTTP_TIMEOUT_MS = 15_000;
 
 async function main(): Promise<void> {
+  // Fail-loud check: every Zod schema for an external Cal.com payload must
+  // parse a known-good fixture. If any schema regressed, fail to boot — that
+  // turns a silent prod incident into a CrashLoop the deploy pipeline catches
+  // before the new image ever serves traffic.
+  try {
+    verifyCalcomSchemasAgainstFixtures();
+    console.log("[startup] calcom schemas verified against fixtures.");
+  } catch (error) {
+    console.error("[startup] FATAL — calcom schema fixture failed:", (error as Error).message);
+    throw error;
+  }
+
   // Warm memoized restaurant settings BEFORE binding the port so the very
   // first /retell/inbound request after a container restart doesn't burn a
   // cold DB hit while Retell holds the SIP leg open.

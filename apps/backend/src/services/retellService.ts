@@ -6,6 +6,8 @@ import { CallStatus } from "../domain/types";
 import {
   availabilityRequestSchema,
   createBookingRequestSchema,
+  modifyBookingRequestSchema,
+  normalizeModifyBookingArgs,
   normalizePartySize
 } from "../http/schemas";
 import { upsertCallLog } from "../repositories/callLogs";
@@ -174,36 +176,21 @@ export async function handleRetellFunction(
 
   if (name === "modify_booking" || name === "modifybooking") {
     // Mid-call corrections: caller realises after create_booking that we got
-    // the name wrong, or wants to change time / party / notes. Aria calls
-    // this with only the fields that need changing.
-    const a = args as Record<string, unknown>;
-    const bookingIdRaw = a.booking_id ?? a.bookingId;
-    if (!bookingIdRaw || typeof bookingIdRaw !== "string") {
+    // the name wrong, or wants to change time / party / notes. Schema-validated
+    // via modifyBookingRequestSchema — booking_id is required, everything
+    // else partial. The schema accepts both snake_case (Retell convention) and
+    // camelCase (defensive) keys.
+    const parsed = modifyBookingRequestSchema.safeParse(args);
+    if (!parsed.success) {
       throw new AppError(
         400,
-        "MODIFY_BOOKING_MISSING_ID",
-        "modify_booking requires booking_id from the previous create_booking response."
+        "MODIFY_BOOKING_INVALID",
+        `modify_booking args invalid: ${parsed.error.issues
+          .map((i) => i.message)
+          .join("; ")}`
       );
     }
-    const partySizeRaw = a.party_size ?? a.partySize;
-    const result = await modifyBooking({
-      bookingId: bookingIdRaw,
-      customerName:
-        typeof a.customer_name === "string"
-          ? a.customer_name
-          : typeof a.customerName === "string"
-            ? a.customerName
-            : undefined,
-      date: typeof a.date === "string" ? a.date : undefined,
-      time: typeof a.time === "string" ? a.time : undefined,
-      partySize:
-        typeof partySizeRaw === "number"
-          ? partySizeRaw
-          : typeof partySizeRaw === "string"
-            ? Number(partySizeRaw)
-            : undefined,
-      notes: typeof a.notes === "string" ? a.notes : undefined
-    });
+    const result = await modifyBooking(normalizeModifyBookingArgs(parsed.data));
     return {
       booking_id: result.bookingId,
       status: result.status,
