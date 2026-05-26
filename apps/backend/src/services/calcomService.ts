@@ -115,13 +115,17 @@ export function buildCreatePayload(input: CreatePayloadInput): Record<string, un
       // The Cal.com event type must have a number field with slug "party-size".
       "party-size": String(input.reservation.party_size)
     },
+    // Cal.com v2 metadata validator requires ALL values to be strings — a
+    // boolean (e.g. noEmail: true) returns 400 BAD_REQUEST. Real email
+    // suppression for voice bookings should be configured on the Cal.com
+    // event type itself (Notifications → "Don't send confirmation emails
+    // to attendees"); metadata is purely an audit trail for our DB ↔ Cal.com
+    // reconciliation.
     metadata: {
-      // Identifiers Natalia can grep for if Cal.com support ever needs context.
-      vocotable_reservation_id: input.reservation.id,
-      vocotable_source: input.reservation.source,
-      vocotable_restaurant_id: input.reservation.restaurant_id,
-      // Tell Cal.com to suppress the guest confirmation email for non-web sources.
-      noEmail: suppressEmail
+      vocotable_reservation_id: String(input.reservation.id),
+      vocotable_source: String(input.reservation.source),
+      vocotable_restaurant_id: String(input.reservation.restaurant_id),
+      vocotable_suppress_email: suppressEmail ? "true" : "false"
     }
   };
 }
