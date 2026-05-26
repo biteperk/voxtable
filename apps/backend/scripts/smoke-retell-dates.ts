@@ -11,7 +11,7 @@
  * SHOULD have computed, and asserts the backend's date sanity guard
  * (Sweep B) correctly rejects past/too-far dates.
  *
- * For LLM-side regression coverage (does Aria correctly resolve "the 12th"?)
+ * For LLM-side regression coverage (does Bella correctly resolve "the 12th"?)
  * the only reliable approach is a real test call — placed by hand per the
  * pre-prod gate. This smoke covers the BACKEND defence-in-depth.
  *
@@ -22,7 +22,7 @@ const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
 
 interface SmokeCase {
   name: string;
-  date: string;             // YYYY-MM-DD that Aria would send
+  date: string;             // YYYY-MM-DD that Bella would send
   expect: "ok" | "past" | "too-far";
   why: string;
 }

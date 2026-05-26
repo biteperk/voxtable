@@ -221,7 +221,7 @@ function EmbedFailedFallback({ reason }) {
         Call us on +61 2 7501 1140
       </a>
       <p className="book-modal-fallback-hint">
-        Or try reloading. Aria's available 24/7 by phone.
+        Or try reloading. Bella's available 24/7 by phone.
       </p>
     </div>
   );
@@ -1526,9 +1526,9 @@ function LiveFeedDetailPage({ navigate, callId, path }) {
         <article className="active-call-card">
           <div className="active-call-head">
             <div className="agent-identity">
-              <div className="agent-avatar">A</div>
+              <div className="agent-avatar">B</div>
               <div>
-                <strong>Aria (AI Agent)</strong>
+                <strong>Bella (AI Agent)</strong>
                 <span>
                   {isLive
                     ? `In call with ${callLog?.caller_phone ?? "unknown"}`
@@ -1682,11 +1682,11 @@ function parseTranscript(raw) {
   const out = [];
   const lines = String(raw).split(/\n+/).filter(Boolean);
   for (const line of lines) {
-    const m = line.match(/^\s*(Agent|User|Aria|Caller)\s*:\s*(.*)$/i);
+    const m = line.match(/^\s*(Agent|User|Aria|Bella|Caller)\s*:\s*(.*)$/i);
     if (m) {
       const role = m[1].toLowerCase();
       out.push({
-        speaker: role === "agent" || role === "aria" ? "ai" : "guest",
+        speaker: role === "agent" || role === "aria" || role === "bella" ? "ai" : "guest",
         text: m[2].trim()
       });
     } else if (out.length > 0) {

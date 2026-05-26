@@ -34,7 +34,7 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
   }
 
   // Defence-in-depth date sanity check (audit Sweep B). The Retell prompt now
-  // has a Time anchor rule (PR #15) telling Aria to never pass a past year,
+  // has a Time anchor rule (PR #15) telling Bella to never pass a past year,
   // but a prompt edge case + LLM hallucination could still slip a 2024 date
   // through. Reject it here before we burn a DB row + an outbox push that
   // Cal.com would reject anyway. Error messages are LLM-friendly so the

@@ -89,7 +89,7 @@ export const cancelBookingRequestSchema = z.object({
 /**
  * Schema for the Retell `modify_booking` tool. Required: booking_id (the
  * UUID returned by a prior create_booking in the same conversation). All
- * other fields are partial — Aria sends only what changed. Dual-key for
+ * other fields are partial — Bella sends only what changed. Dual-key for
  * LLM tolerance.
  */
 export const modifyBookingRequestSchema = z.object({

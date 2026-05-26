@@ -64,7 +64,7 @@ curl -sw "%{http_code}\n" https://vocotable.algorythmos.com.au/cal/webhook -X PO
 # expect: 410
 ```
 
-The voice booking path (`/retell/*`) is untouched — Aria keeps taking calls and writing to Postgres. Only the Cal.com mirror stops.
+The voice booking path (`/retell/*`) is untouched — Bella keeps taking calls and writing to Postgres. Only the Cal.com mirror stops.
 
 **If outbox has dead-letters that shouldn't be retried after the fix:**
 ```sql
