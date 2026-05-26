@@ -21,7 +21,7 @@ import {
   tomorrowInTz
 } from "../utils/time";
 import { checkAvailability } from "./availabilityService";
-import { createBooking } from "./bookingService";
+import { createBooking, modifyBooking } from "./bookingService";
 
 type RetellPayload = Record<string, any>;
 
@@ -165,6 +165,45 @@ export async function handleRetellFunction(
         provider_call_id: providerCallId
       })
     );
+    return {
+      booking_id: result.bookingId,
+      status: result.status,
+      confirmation_message: result.confirmationMessage
+    };
+  }
+
+  if (name === "modify_booking" || name === "modifybooking") {
+    // Mid-call corrections: caller realises after create_booking that we got
+    // the name wrong, or wants to change time / party / notes. Aria calls
+    // this with only the fields that need changing.
+    const a = args as Record<string, unknown>;
+    const bookingIdRaw = a.booking_id ?? a.bookingId;
+    if (!bookingIdRaw || typeof bookingIdRaw !== "string") {
+      throw new AppError(
+        400,
+        "MODIFY_BOOKING_MISSING_ID",
+        "modify_booking requires booking_id from the previous create_booking response."
+      );
+    }
+    const partySizeRaw = a.party_size ?? a.partySize;
+    const result = await modifyBooking({
+      bookingId: bookingIdRaw,
+      customerName:
+        typeof a.customer_name === "string"
+          ? a.customer_name
+          : typeof a.customerName === "string"
+            ? a.customerName
+            : undefined,
+      date: typeof a.date === "string" ? a.date : undefined,
+      time: typeof a.time === "string" ? a.time : undefined,
+      partySize:
+        typeof partySizeRaw === "number"
+          ? partySizeRaw
+          : typeof partySizeRaw === "string"
+            ? Number(partySizeRaw)
+            : undefined,
+      notes: typeof a.notes === "string" ? a.notes : undefined
+    });
     return {
       booking_id: result.bookingId,
       status: result.status,

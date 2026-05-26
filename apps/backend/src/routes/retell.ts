@@ -62,3 +62,11 @@ retellRouter.post(
     response.json(result);
   })
 );
+
+retellRouter.post(
+  "/retell/tools/modify-booking",
+  asyncHandler(async (request, response) => {
+    const result = await handleRetellFunction(request.body, "modify_booking");
+    response.json(result);
+  })
+);

@@ -131,6 +131,7 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
 
 export async function modifyBooking(input: {
   bookingId: string;
+  customerName?: string;
   date?: string;
   time?: string;
   partySize?: number;
@@ -172,10 +173,24 @@ export async function modifyBooking(input: {
     status: input.status
   });
 
+  // Name correction — caller said "actually my name is X" after create_booking.
+  // We update customers.name directly; this is safe for the common case where
+  // the customer record was created moments ago for this booking. For a
+  // long-tenured customer with multiple past reservations, this propagates the
+  // new name everywhere — acceptable trade-off for v1.
+  if (input.customerName && input.customerName.trim() && input.customerName !== current.customer_id) {
+    await pool.query("UPDATE customers SET name = $1 WHERE id = $2", [
+      input.customerName.trim(),
+      current.customer_id
+    ]);
+  }
+
   return {
     bookingId: reservation.id,
     status: reservation.status,
-    confirmationMessage: `Updated. The booking is now ${reservation.status}.`
+    confirmationMessage: input.customerName
+      ? `Updated. The booking is under ${input.customerName.trim()} now.`
+      : `Updated. The booking is now ${reservation.status}.`
   };
 }
 
