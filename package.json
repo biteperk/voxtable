@@ -25,6 +25,7 @@
     "check": "npm run build:backend && npm run build:frontend"
   },
   "dependencies": {
+    "@calcom/embed-react": "^1.5.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

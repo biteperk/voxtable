@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
@@ -187,6 +187,140 @@ function Icon({ name, fill = false, className = "" }) {
   );
 }
 
+// --- Cal.com booking modal (lazy-loaded) ------------------------------------
+// The Cal.com embed package is ~120 KB gzipped — too much to ship eagerly on
+// the marketing landing page. React.lazy with dynamic import means the
+// browser only fetches it the first time a visitor clicks "Book online".
+// Loading state below covers the few hundred ms.
+
+const CalcomEmbed = React.lazy(() => import("@calcom/embed-react"));
+
+const CALCOM_CAL_LINK = import.meta.env.VITE_CALCOM_CAL_LINK || "";
+const CALCOM_NAMESPACE = import.meta.env.VITE_CALCOM_NAMESPACE || "vocotable-bookings";
+
+export function isCalcomConfigured() {
+  return Boolean(CALCOM_CAL_LINK);
+}
+
+/**
+ * Full-screen modal hosting the Cal.com embed. Reuses the same a11y +
+ * scroll-lock pattern as the dashboard drawer (`useDrawer` hook):
+ *   - body scroll lock survives iOS rubber-banding
+ *   - Esc closes
+ *   - backdrop click closes
+ *   - browser back closes (we pushState on open)
+ *   - focus returns to the trigger on close
+ *   - outside content gets `inert` so screen readers / tab stops can't escape
+ */
+function BookOnlineModal({ open, onClose, triggerRef }) {
+  const titleId = useId();
+
+  // Esc key
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  // History-back closes (Android system back, browser back)
+  useEffect(() => {
+    if (!open) return undefined;
+    try {
+      window.history.pushState({ bookModal: "open" }, "");
+    } catch {
+      /* harmless in non-browser contexts */
+    }
+    const onPop = () => onClose();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [open, onClose]);
+
+  // Body scroll lock — same iOS-Safari-safe pattern as the dashboard drawer.
+  useEffect(() => {
+    if (!open) return undefined;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+    return () => {
+      body.style.position = "";
+      body.style.top = "";
+      body.style.left = "";
+      body.style.right = "";
+      body.style.width = "";
+      window.scrollTo(0, scrollY);
+    };
+  }, [open]);
+
+  // Return focus to the trigger when the modal closes.
+  useEffect(() => {
+    if (open) return undefined;
+    return () => {
+      if (triggerRef && triggerRef.current) {
+        triggerRef.current.focus();
+      }
+    };
+  }, [open, triggerRef]);
+
+  // When the modal isn't open we render NOTHING — no DOM, no listeners, no
+  // Cal.com script in the bundle. The lazy chunk only fetches when `open`
+  // flips true the first time.
+  if (!open) return null;
+
+  return (
+    <div
+      className="book-modal-root"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+    >
+      <div className="book-modal-backdrop" onClick={onClose} aria-hidden="true" />
+      <div className="book-modal-card">
+        <header className="book-modal-head">
+          <h2 id={titleId}>Book a table</h2>
+          <button
+            type="button"
+            className="book-modal-close"
+            onClick={onClose}
+            aria-label="Close booking dialog"
+          >
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="book-modal-body">
+          <Suspense
+            fallback={
+              <div className="book-modal-loading" role="status" aria-live="polite">
+                <span className="book-modal-spinner" aria-hidden="true" />
+                <span>Loading booking…</span>
+              </div>
+            }
+          >
+            <CalcomEmbed
+              namespace={CALCOM_NAMESPACE}
+              calLink={CALCOM_CAL_LINK}
+              style={{ width: "100%", height: "100%", overflow: "auto" }}
+              config={{
+                layout: "month_view",
+                theme: "dark"
+              }}
+            />
+          </Suspense>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [path, setPath] = useState(window.location.pathname);
 
@@ -359,6 +493,17 @@ function LandingPage({ navigate }) {
   // route bounces you to the LoginScreen automatically (AppRouter gate).
   const goToDashboard = () => navigate("/live-feed");
 
+  // Book-online modal state. The trigger ref is so focus returns to the
+  // button on close — same pattern as the dashboard drawer's hamburger.
+  // `isCalcomConfigured()` checks the build-time VITE_CALCOM_CAL_LINK env var
+  // so the button is HIDDEN on builds that haven't configured Cal.com yet
+  // (no broken CTA shipping to prod ahead of the canary).
+  const [bookOpen, setBookOpen] = useState(false);
+  const bookTriggerRef = useRef(null);
+  const showBookButton = isCalcomConfigured();
+  const openBookModal = () => setBookOpen(true);
+  const closeBookModal = useCallback(() => setBookOpen(false), []);
+
   return (
     <div className="landing-shell">
       <nav className="top-nav">
@@ -431,6 +576,19 @@ function LandingPage({ navigate }) {
                 <Icon name="phone_in_talk" />
                 Call the AI
               </button>
+              {showBookButton && (
+                <button
+                  ref={bookTriggerRef}
+                  type="button"
+                  className="secondary-action book-online-cta"
+                  onClick={openBookModal}
+                  aria-haspopup="dialog"
+                  aria-expanded={bookOpen}
+                >
+                  <Icon name="event_available" />
+                  Book online
+                </button>
+              )}
               <button
                 type="button"
                 className="secondary-action"
@@ -514,6 +672,16 @@ function LandingPage({ navigate }) {
           </div>
         </section>
       </main>
+      {/* Modal renders ONLY when bookOpen flips true — the Cal.com JS chunk
+          isn't fetched until first open (React.lazy + Suspense). Hidden
+          entirely on builds where VITE_CALCOM_CAL_LINK is unset. */}
+      {showBookButton && (
+        <BookOnlineModal
+          open={bookOpen}
+          onClose={closeBookModal}
+          triggerRef={bookTriggerRef}
+        />
+      )}
     </div>
   );
 }
