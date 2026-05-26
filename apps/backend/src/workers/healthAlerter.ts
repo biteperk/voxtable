@@ -19,6 +19,7 @@ import { env } from "../config/env";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
 import { getBreakerState } from "../services/calcomClient";
+import { quotaSnapshot, shouldFireQuotaAlert } from "../services/calcomQuotaTracker";
 
 const CHECK_INTERVAL_MS = 60_000; // every minute
 const OUTBOX_DEPTH_THRESHOLD = 100;
@@ -116,6 +117,16 @@ async function checkOnce(): Promise<void> {
       // Don't post a recovery for inbox failures — they decay naturally with
       // the 24h window.
       state.inboxFailuresAlerted = false;
+    }
+
+    // 4) Cal.com daily quota — edge-triggered alert (once per UTC day).
+    //    Audit Sweep I. Catches runaway-loop scenarios where the outbox
+    //    retry budget burns the Cal.com rate limit before we notice.
+    if (shouldFireQuotaAlert()) {
+      const snap = quotaSnapshot();
+      await postToSlack(
+        `:warning: Cal.com API quota: ${snap.count} / ${snap.daily_threshold} requests today (UTC ${snap.day_key}). Window opened ${snap.window_started_at}. Investigate if outbox is healthy.`
+      );
     }
   } catch (error) {
     console.warn("[health-alerter] check failed:", (error as Error).message);

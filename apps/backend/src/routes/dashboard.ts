@@ -15,6 +15,8 @@ import { listReservations } from "../repositories/reservations";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
 import { getBreakerState } from "../services/calcomClient";
+import { quotaSnapshot } from "../services/calcomQuotaTracker";
+import { pool } from "../db/pool";
 
 export const dashboardRouter = Router();
 
@@ -105,11 +107,43 @@ dashboardRouter.get(
 // Operations: surface Cal.com integration health for the dashboard ops tile.
 // Returns plausible values whether the flag is on (real numbers) or off
 // (zeros + "disabled" state). Firebase auth + email allowlist already gated.
+//
+// Audit Sweep I extension — now also reports today's voice-channel cost
+// estimate + Cal.com daily quota usage. The cost numbers are a rolling
+// proxy: Retell bills per minute, so we estimate from call_logs.duration.
 dashboardRouter.get(
   "/api/ops/calcom-health",
   asyncHandler(async (_request, response) => {
-    const [outbox, inbox] = await Promise.all([getOutboxStats(), getInboxStats()]);
+    const [outbox, inbox, costRow] = await Promise.all([
+      getOutboxStats(),
+      getInboxStats(),
+      pool.query<{
+        calls_today: string;
+        bookings_today: string;
+        duration_seconds_today: string;
+      }>(
+        `
+        SELECT
+          COUNT(*) FILTER (WHERE started_at >= date_trunc('day', now()))::text  AS calls_today,
+          COUNT(*) FILTER (
+            WHERE started_at >= date_trunc('day', now())
+              AND booking_outcome = 'confirmed'
+          )::text                                                                AS bookings_today,
+          COALESCE(SUM(duration_seconds)
+            FILTER (WHERE started_at >= date_trunc('day', now())), 0)::text     AS duration_seconds_today
+        FROM call_logs
+        `
+      )
+    ]);
     const breaker = getBreakerState();
+    const quota = quotaSnapshot();
+    const callsToday = Number(costRow.rows[0]?.calls_today ?? "0");
+    const bookingsToday = Number(costRow.rows[0]?.bookings_today ?? "0");
+    const durationSecToday = Number(costRow.rows[0]?.duration_seconds_today ?? "0");
+    // Retell billing is roughly per-minute of LLM+TTS+STT; the published rate
+    // varies. Surface duration and let ops do the math against whatever
+    // rate card is current. ALSO surface a "minutes today" view because
+    // that's the unit Retell's dashboard shows.
     response.json({
       enabled: env.CALCOM_SYNC_ENABLED,
       outbox,
@@ -118,7 +152,14 @@ dashboardRouter.get(
         state: breaker.state,
         consecutive_failures: breaker.consecutiveFailures,
         opened_at: breaker.openedAt ? new Date(breaker.openedAt).toISOString() : null
-      }
+      },
+      voice_today: {
+        calls: callsToday,
+        bookings_confirmed: bookingsToday,
+        duration_seconds: durationSecToday,
+        minutes_rounded_up: Math.ceil(durationSecToday / 60)
+      },
+      calcom_quota: quota
     });
   })
 );
