@@ -5986,6 +5986,10 @@ button {
   transform: translateY(-2px);
   box-shadow: 0 12px 38px rgba(255, 157, 60, 0.4);
 }
+.lp-btn,
+.lp-btn-ghost {
+  white-space: nowrap;
+}
 .lp-btn-ghost {
   display: inline-flex;
   align-items: center;
@@ -7033,6 +7037,25 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 }
 
 @media (max-width: 560px) {
+  .lp-nav-inner {
+    height: 64px;
+  }
+  .lp-mark {
+    width: 34px;
+    height: 34px;
+  }
+  .lp-brand-name {
+    font-size: 16px;
+  }
+  .lp-nav-links {
+    gap: 8px;
+  }
+  .lp-nav-links .lp-btn-ghost,
+  .lp-nav-links .lp-btn {
+    padding: 9px 14px;
+    font-size: 13px;
+    gap: 6px;
+  }
   .lp-bella-card {
     aspect-ratio: 1 / 1.08;
     padding: 28px 24px 64px;
