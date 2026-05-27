@@ -61,11 +61,15 @@ const SENSITIVE_KEY_PATTERN =
 // - Retell API keys:  key_<base62 mix, ~30+ chars>
 // - Bearer tokens:    "Bearer <anything>" (greedy until whitespace/quote)
 // - E.164 phones:     +<10-15 digits>, or raw 10-15 digit strings with country prefix
+// - AU local phones:  0<digit>XXXXXXXX — mobile (04..) and landline (02/03/07/08..).
+//   Audit L5: catches the form libphonenumber sees BEFORE normalisation, e.g.
+//   when an error stack quotes the raw input.
 const REDACTION_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
   { regex: /cal_live_[a-zA-Z0-9]{16,}/g, replacement: "cal_live_[REDACTED]" },
   { regex: /\bkey_[a-zA-Z0-9]{16,}\b/g, replacement: "key_[REDACTED]" },
   { regex: /Bearer\s+[A-Za-z0-9._\-]+/g, replacement: "Bearer [REDACTED]" },
-  { regex: /\+\d{10,15}\b/g, replacement: "+[REDACTED-PHONE]" }
+  { regex: /\+\d{10,15}\b/g, replacement: "+[REDACTED-PHONE]" },
+  { regex: /\b0[234578]\d{8}\b/g, replacement: "[REDACTED-PHONE]" }
 ];
 
 function redactString(input: string): string {
