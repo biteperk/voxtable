@@ -47,6 +47,10 @@ export function listReservations({ date, limit } = {}) {
   return authedFetch(`/api/reservations${tail}`);
 }
 
+export function listTables() {
+  return authedFetch(`/api/tables`);
+}
+
 export function listCallLogs({ limit } = {}) {
   const qs = new URLSearchParams();
   if (limit) qs.set("limit", String(limit));

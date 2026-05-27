@@ -12,6 +12,7 @@ import {
   listCallLogs
 } from "../repositories/callLogs";
 import { listReservations } from "../repositories/reservations";
+import { listTables } from "../repositories/tables";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
 import { getBreakerState } from "../services/calcomClient";
@@ -40,6 +41,14 @@ dashboardRouter.get(
       limit: query.limit
     });
     response.json({ reservations: rows });
+  })
+);
+
+dashboardRouter.get(
+  "/api/tables",
+  asyncHandler(async (_request, response) => {
+    const rows = await listTables(env.DEFAULT_RESTAURANT_ID);
+    response.json({ tables: rows });
   })
 );
 
