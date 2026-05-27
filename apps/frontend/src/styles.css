@@ -5905,3 +5905,725 @@ button {
   z-index: 1;
 }
 
+
+/* ===================================================================
+   LANDING PAGE (Biteperk / VocoTable brand) — added in audit-era pass.
+   All classes prefixed `lp-` to avoid collision with dashboard styles.
+   Design tokens borrowed from public/Bella/biteperk-website.html.
+   =================================================================== */
+
+.lp-shell {
+  --lp-ink: #0a0b0d;
+  --lp-ink2: #101216;
+  --lp-surface: #15171c;
+  --lp-amber: #ff9d3c;
+  --lp-amber2: #e8801f;
+  --lp-amber-glow: rgba(255, 157, 60, 0.14);
+  --lp-white: #ffffff;
+  --lp-mist: #9aa1ad;
+  --lp-line: rgba(255, 255, 255, 0.10);
+
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  background: var(--lp-ink);
+  color: var(--lp-white);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  /* No overflow-x:hidden here — that implicitly forces overflow-y:auto and
+     creates an inner scroll container that fights window.scrollTo. Horizontal
+     overflow protection lives on the hero scrim instead via clip-path. */
+}
+
+/* Horizontal overflow protection lives inside lp-hero via clip on the hero
+   bg pseudo so it can't bleed into the page-level scrollbar. The shell stays
+   `overflow: visible` so window.scrollTo and dashboard fixed positioning
+   keep working normally. */
+.lp-hero {
+  overflow: hidden;
+}
+
+.lp-shell *,
+.lp-shell *::before,
+.lp-shell *::after {
+  box-sizing: border-box;
+}
+
+.lp-shell a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.lp-amber {
+  color: var(--lp-amber);
+}
+.lp-mist {
+  color: var(--lp-mist);
+}
+
+.lp-wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: linear-gradient(135deg, var(--lp-amber), var(--lp-amber2));
+  color: #1a0f04;
+  padding: 15px 30px;
+  border-radius: 100px;
+  font-weight: 700;
+  font-size: 16px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 8px 30px rgba(255, 157, 60, 0.25);
+}
+.lp-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 38px rgba(255, 157, 60, 0.4);
+}
+.lp-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 15px 30px;
+  border-radius: 100px;
+  font-weight: 600;
+  font-size: 16px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s, border-color 0.2s;
+}
+.lp-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.lp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--lp-line);
+  border-radius: 100px;
+  padding: 8px 17px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #e6e9ee;
+  background: rgba(255, 255, 255, 0.03);
+}
+.lp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lp-amber);
+  box-shadow: 0 0 10px var(--lp-amber);
+}
+.lp-eyebrow {
+  font-size: 13px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #c9a072;
+  font-weight: 600;
+}
+
+/* NAV */
+.lp-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  backdrop-filter: blur(12px);
+  background: rgba(10, 11, 13, 0.6);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.3s, background 0.3s;
+}
+.lp-nav.lp-scrolled {
+  background: rgba(10, 11, 13, 0.92);
+  border-bottom: 1px solid var(--lp-line);
+}
+.lp-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 72px;
+}
+.lp-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+}
+.lp-mark {
+  width: 42px;
+  height: 42px;
+  display: inline-block;
+}
+.lp-brand-name {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+.lp-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+}
+.lp-nav-links .lp-lnk {
+  font-size: 15px;
+  font-weight: 500;
+  color: #c0c5ce;
+  transition: color 0.2s;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  font-family: inherit;
+  padding: 0;
+}
+.lp-nav-links .lp-lnk:hover {
+  color: #fff;
+}
+
+/* HERO */
+.lp-hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  padding: 120px 0 70px;
+  overflow: hidden;
+}
+.lp-hero-bg {
+  position: absolute;
+  inset: 0;
+  /* portrait.png is `site_bella.png` from the reference site — a screenshot
+     of the Bella section that includes baked-in text on the LEFT half plus
+     the Bella portrait on the RIGHT. We zoom in and right-anchor so only
+     the portrait shows and the baked-in text is cropped off the canvas.
+     `background-size: auto 110%` makes the image overflow vertically so the
+     aspect ratio stays clean on wide viewports. */
+  background: url("/bella/portrait.png") right center / auto 160% no-repeat;
+  opacity: 0.95;
+  z-index: 0;
+}
+.lp-hero-scrim {
+  position: absolute;
+  inset: 0;
+  /* Stronger left-half wash to hide any text bleed from the screenshot's
+     middle column on smaller viewports. */
+  background: linear-gradient(90deg, var(--lp-ink) 0%, rgba(10, 11, 13, 0.95) 45%, rgba(10, 11, 13, 0.55) 70%, rgba(10, 11, 13, 0.08) 100%);
+  z-index: 1;
+}
+.lp-hero-scrim2 {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 80% at 18% 50%, rgba(255, 157, 60, 0.10), transparent 70%);
+  z-index: 1;
+}
+.lp-hero .lp-wrap {
+  position: relative;
+  z-index: 2;
+}
+.lp-hero-content {
+  max-width: 720px;
+}
+.lp-hero-title {
+  font-size: clamp(48px, 8vw, 96px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -2.5px;
+  margin: 20px 0 24px;
+}
+.lp-sub {
+  font-size: 19px;
+  line-height: 1.55;
+  color: #d5d9e0;
+  max-width: 540px;
+}
+.lp-hero-cta-row {
+  margin-top: 38px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.lp-hero-meta {
+  margin-top: 56px;
+  display: flex;
+  gap: 56px;
+  flex-wrap: wrap;
+}
+.lp-stat .lp-n {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--lp-amber);
+  letter-spacing: -1px;
+}
+.lp-stat .lp-l {
+  font-size: 12px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--lp-mist);
+  margin-top: 4px;
+}
+
+/* TRUST STRIP */
+.lp-trust {
+  border-top: 1px solid var(--lp-line);
+  border-bottom: 1px solid var(--lp-line);
+  background: var(--lp-ink2);
+}
+.lp-trust-inner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 20px 0;
+  font-size: 13px;
+  color: var(--lp-mist);
+  letter-spacing: 0.5px;
+}
+
+/* SECTION shell */
+.lp-section {
+  padding: 110px 0;
+}
+.lp-section h2 {
+  font-size: clamp(36px, 5.4vw, 56px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -1.5px;
+  margin: 10px 0 24px;
+}
+.lp-lead {
+  font-size: 18px;
+  color: var(--lp-mist);
+  line-height: 1.6;
+  max-width: 640px;
+}
+.lp-center {
+  text-align: center;
+}
+.lp-center .lp-lead {
+  margin: 0 auto;
+}
+
+/* PROBLEM stat grid */
+.lp-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin-top: 56px;
+}
+.lp-stat-card {
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-line);
+  border-radius: 18px;
+  padding: 30px 26px;
+}
+.lp-stat-card .lp-big {
+  font-size: 54px;
+  font-weight: 800;
+  color: var(--lp-amber);
+  letter-spacing: -1.5px;
+  line-height: 1;
+}
+.lp-stat-card .lp-t {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+.lp-stat-card .lp-s {
+  font-size: 14px;
+  color: var(--lp-mist);
+  line-height: 1.5;
+}
+
+/* BELLA section */
+.lp-bella {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+}
+.lp-bella h2 {
+  font-size: clamp(44px, 6vw, 72px);
+  margin-top: 10px;
+}
+.lp-bella-text p {
+  font-size: 17px;
+  color: #d5d9e0;
+  line-height: 1.65;
+  margin-top: 22px;
+  max-width: 480px;
+}
+.lp-bella-traits {
+  margin-top: 36px;
+  display: grid;
+  gap: 16px;
+}
+.lp-trait {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.lp-trait .lp-ic {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 10px;
+  background: rgba(255, 157, 60, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+.lp-trait .lp-tt {
+  font-weight: 700;
+  font-size: 15px;
+}
+.lp-trait .lp-ts {
+  font-size: 14px;
+  color: var(--lp-mist);
+  margin-top: 2px;
+}
+.lp-bella-img {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border-radius: 20px;
+  background: url("/bella/portrait.png") center/cover no-repeat;
+  border: 1px solid var(--lp-line);
+}
+
+/* FEATURES */
+.lp-feat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+  margin-top: 60px;
+}
+.lp-feat {
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-line);
+  border-radius: 18px;
+  padding: 30px 26px;
+  transition: border-color 0.25s, transform 0.25s;
+}
+.lp-feat:hover {
+  border-color: rgba(255, 157, 60, 0.4);
+  transform: translateY(-2px);
+}
+.lp-feat .lp-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 157, 60, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+.lp-feat h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 18px 0 8px;
+}
+.lp-feat p {
+  font-size: 14.5px;
+  color: var(--lp-mist);
+  line-height: 1.6;
+}
+
+/* HOW steps */
+.lp-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 22px;
+  margin-top: 60px;
+}
+.lp-step {
+  background: var(--lp-ink);
+  border: 1px solid var(--lp-line);
+  border-radius: 18px;
+  padding: 32px 28px;
+}
+.lp-step .lp-num {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--lp-amber);
+  letter-spacing: 3px;
+}
+.lp-step h3 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 14px 0 10px;
+}
+.lp-step p {
+  font-size: 14.5px;
+  color: var(--lp-mist);
+  line-height: 1.6;
+}
+
+/* PRICING */
+.lp-price-wrap {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 24px;
+  margin-top: 60px;
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.lp-price-card {
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-line);
+  border-radius: 22px;
+  padding: 38px 36px;
+}
+.lp-price-card.lp-feature {
+  border-color: rgba(255, 157, 60, 0.35);
+  background: linear-gradient(160deg, rgba(255, 157, 60, 0.06), var(--lp-surface) 60%);
+}
+.lp-price-card .lp-amt {
+  font-size: 60px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  margin: 14px 0 12px;
+}
+.lp-price-card ul {
+  list-style: none;
+  margin-top: 24px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.lp-price-card li {
+  font-size: 15px;
+  display: flex;
+  gap: 10px;
+  color: #e0e3ea;
+}
+.lp-tick {
+  color: var(--lp-amber);
+  font-weight: 800;
+}
+
+/* QUOTE */
+.lp-quote-card {
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-line);
+  border-radius: 22px;
+  padding: 48px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.lp-quote-card .lp-q {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #f3f4f7;
+  margin-top: 10px;
+}
+.lp-quote-author {
+  margin-top: 32px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.lp-quote-author .lp-av {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--lp-amber), var(--lp-amber2));
+  color: #1a0f04;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 18px;
+}
+
+/* CTA */
+.lp-cta {
+  position: relative;
+  padding: 110px 0;
+  text-align: center;
+  overflow: hidden;
+}
+.lp-cta-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(50% 60% at 50% 30%, rgba(255, 157, 60, 0.18), transparent 70%);
+  z-index: 0;
+}
+.lp-closing-content {
+  position: relative;
+  z-index: 1;
+}
+.lp-contact-bar {
+  margin-top: 52px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.lp-contact-bar .lp-c {
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-line);
+  border-radius: 14px;
+  padding: 22px;
+  text-align: center;
+}
+.lp-contact-bar .lp-cl {
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--lp-mist);
+}
+.lp-contact-bar .lp-cv {
+  font-size: 19px;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+/* FOOTER */
+.lp-footer {
+  border-top: 1px solid var(--lp-line);
+  background: var(--lp-ink);
+  padding: 60px 0 32px;
+}
+.lp-foot-inner {
+  display: grid;
+  grid-template-columns: 1.4fr 2fr;
+  gap: 48px;
+}
+.lp-foot-brand p {
+  color: var(--lp-mist);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 14px;
+  max-width: 360px;
+}
+.lp-biteperk-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--lp-mist);
+}
+.lp-biteperk-tag strong {
+  color: var(--lp-amber);
+  font-weight: 700;
+}
+.lp-foot-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+}
+.lp-foot-col h4 {
+  font-size: 14px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #f0f2f6;
+  margin-bottom: 16px;
+}
+.lp-foot-col a {
+  display: block;
+  font-size: 14px;
+  color: var(--lp-mist);
+  margin-bottom: 10px;
+  transition: color 0.2s;
+}
+.lp-foot-col a:hover {
+  color: #fff;
+}
+.lp-foot-bottom {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--lp-line);
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--lp-mist);
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* Scroll-fade reveal — CSS-only replacement for the GSAP reveals in the
+   reference HTML. IntersectionObserver in JS adds .lp-in. We gate the
+   initial-hidden state behind the html.lp-js-ready class, set by the
+   LandingPage useEffect AFTER the IO is wired. That way if JS fails or is
+   slow, content is visible by default — no blank-page risk. */
+.lp-reveal {
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+html.lp-js-ready .lp-reveal:not(.lp-in) {
+  opacity: 0;
+  transform: translateY(28px);
+}
+.lp-reveal.lp-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (max-width: 860px) {
+  .lp-nav-links {
+    gap: 16px;
+  }
+  .lp-nav-links .lp-lnk {
+    display: none;
+  }
+  .lp-hero {
+    padding-top: 100px;
+  }
+  .lp-hero-meta {
+    gap: 32px;
+    margin-top: 40px;
+  }
+  .lp-bella {
+    grid-template-columns: 1fr;
+  }
+  .lp-bella-img {
+    order: -1;
+    aspect-ratio: 4 / 4.5;
+  }
+  .lp-price-wrap {
+    grid-template-columns: 1fr;
+  }
+  .lp-foot-inner {
+    grid-template-columns: 1fr;
+  }
+  .lp-foot-cols {
+    grid-template-columns: 1fr 1fr;
+  }
+  .lp-section {
+    padding: 80px 0;
+  }
+  .lp-quote-card {
+    padding: 32px 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

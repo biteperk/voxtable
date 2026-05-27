@@ -766,238 +766,575 @@ function LoginScreen({ navigate }) {
   );
 }
 
+// V-shape brand mark used in the landing nav + footer. Inlined SVG so we
+// don't burn an HTTP request on a 1 KB icon. Same geometry as the reference
+// design in public/Bella/biteperk-website.html.
+function BiteperkMark({ size = 42 }) {
+  return (
+    <svg
+      viewBox="-160 -200 320 380"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="lp-mk" x1="18%" y1="0%" x2="60%" y2="100%">
+          <stop offset="0%" stopColor="#fff" />
+          <stop offset="46%" stopColor="#e2e7f1" />
+          <stop offset="100%" stopColor="#919bac" />
+        </linearGradient>
+        <radialGradient id="lp-ok" cx="35%" cy="26%" r="86%">
+          <stop offset="0%" stopColor="#fff" />
+          <stop offset="20%" stopColor="#fdeede" />
+          <stop offset="54%" stopColor="#ff9d3c" />
+          <stop offset="100%" stopColor="#9a5a16" />
+        </radialGradient>
+        <filter id="lp-fk" x="-80%" y="-80%" width="260%" height="260%">
+          <feDropShadow dx="0" dy="9" stdDeviation="18" floodColor="#000" floodOpacity="0.4" />
+        </filter>
+      </defs>
+      <g filter="url(#lp-fk)">
+        <path d="M -118 -130 L 4 88" stroke="url(#lp-mk)" strokeWidth="100" strokeLinecap="round" fill="none" />
+        <path d="M 118 -130 L -4 88" stroke="url(#lp-mk)" strokeWidth="100" strokeLinecap="round" fill="none" />
+      </g>
+      <circle cx="0" cy="70" r="66" fill="url(#lp-ok)" filter="url(#lp-fk)" />
+      <ellipse cx="-20" cy="44" rx="15" ry="9" fill="#fff" opacity="0.6" />
+    </svg>
+  );
+}
+
 function LandingPage({ navigate }) {
   const { user } = useAuth();
-  // Account icon goes to the dashboard. If you're not signed in the dashboard
-  // route bounces you to the LoginScreen automatically (AppRouter gate).
   const goToDashboard = () => navigate("/live-feed");
 
-  // Book-online modal state. The trigger ref is so focus returns to the
-  // button on close — same pattern as the dashboard drawer's hamburger.
-  // `isCalcomConfigured()` checks the build-time VITE_CALCOM_CAL_LINK env var
-  // so the button is HIDDEN on builds that haven't configured Cal.com yet
-  // (no broken CTA shipping to prod ahead of the canary).
-  const [bookOpen, setBookOpen] = useState(false);
-  const bookTriggerRef = useRef(null);
-  const showBookButton = isCalcomConfigured();
-  const openBookModal = () => setBookOpen(true);
-  const closeBookModal = useCallback(() => setBookOpen(false), []);
+  // Sticky nav background flips at scroll > 40px. Pure CSS class toggle, no
+  // re-render of children.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Scroll-reveal — single IntersectionObserver wires up every .lp-reveal in
+  // the page, adds .lp-in when it crosses into view. The fade-in styling is
+  // gated on html.lp-js-ready so the page stays visible if JS fails or is
+  // slow. Reduced-motion skips the animation entirely.
+  useEffect(() => {
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      document.querySelectorAll(".lp-reveal").forEach((el) => el.classList.add("lp-in"));
+      return;
+    }
+    document.documentElement.classList.add("lp-js-ready");
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("lp-in");
+            io.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0, rootMargin: "0px 0px -8% 0px" }
+    );
+    document.querySelectorAll(".lp-reveal").forEach((el) => io.observe(el));
+    return () => {
+      io.disconnect();
+      document.documentElement.classList.remove("lp-js-ready");
+    };
+  }, []);
+
+  // Smooth-scroll a nav anchor without changing the URL.
+  const scrollTo = (id) => (event) => {
+    event.preventDefault();
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const phoneHref = "tel:+61450011140";
+  const emailHref = "mailto:hello@biteperk.com.au";
 
   return (
-    <div className="landing-shell">
-      <nav className="top-nav">
-        <button
-          className="brand-button"
-          onClick={() => navigate("/")}
-          aria-label="VocoTable home"
-        >
-          <img
-            src="/brand/mark-light-on-dark.svg"
-            alt=""
-            className="brand-mark"
-            width="32"
-            height="32"
-          />
-          <span>VocoTable</span>
-        </button>
-        <div className="top-icons">
-          {user ? (
-            <button
-              type="button"
-              className="nav-cta"
-              onClick={goToDashboard}
-              aria-label="Go to dashboard"
-            >
-              <Icon name="dashboard" />
-              <span>Dashboard</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="nav-cta nav-cta-ghost"
-              onClick={goToDashboard}
-              aria-label="Sign in"
-            >
-              <Icon name="login" />
-              <span>Sign in</span>
-            </button>
-          )}
-          <button
-            className="icon-button account-icon"
-            aria-label={user ? `Signed in as ${user.email}` : "Sign in"}
-            onClick={goToDashboard}
-            title={user ? `Signed in as ${user.email} — go to dashboard` : "Sign in"}
-          >
-            {user?.photoURL ? (
-              <img src={user.photoURL} alt="" />
-            ) : (
-              <Icon name="account_circle" />
-            )}
+    <div className="lp-shell">
+      <nav className={`lp-nav ${scrolled ? "lp-scrolled" : ""}`}>
+        <div className="lp-wrap lp-nav-inner">
+          <button className="lp-brand" onClick={() => navigate("/")} aria-label="VocoTable home">
+            <span className="lp-mark">
+              <BiteperkMark size={42} />
+            </span>
+            <span className="lp-brand-name">
+              Voco<span className="lp-mist" style={{ fontWeight: 300 }}>Table</span>
+            </span>
           </button>
+          <div className="lp-nav-links">
+            <button type="button" className="lp-lnk" onClick={scrollTo("how")}>
+              How it works
+            </button>
+            <button type="button" className="lp-lnk" onClick={scrollTo("bella")}>
+              Meet Bella
+            </button>
+            <button type="button" className="lp-lnk" onClick={scrollTo("pricing")}>
+              Pricing
+            </button>
+            <button
+              type="button"
+              className="lp-btn-ghost"
+              onClick={goToDashboard}
+              aria-label={user ? "Open dashboard" : "Sign in"}
+            >
+              {user ? "Dashboard" : "Sign in"}
+            </button>
+            <button type="button" className="lp-btn" onClick={scrollTo("contact")}>
+              Start free trial →
+            </button>
+          </div>
         </div>
       </nav>
 
-      <main>
-        <section className="hero-section">
-          <div className="hero-glow" />
-          <div className="hero-content">
-            <h1>Your AI Front of House</h1>
-            <p>
-              Never miss a booking. Our natural-sounding Australian AI handles calls 24/7. All
-              for a flat rate of $80/month. No cover fees. No sick leave.
+      <header className="lp-hero">
+        <div className="lp-hero-bg" />
+        <div className="lp-hero-scrim" />
+        <div className="lp-hero-scrim2" />
+        <div className="lp-wrap">
+          <div className="lp-hero-content">
+            <div className="lp-pill">
+              <span className="lp-dot" />
+              Meet Bella · your AI host
+            </div>
+            <h1 className="lp-hero-title">
+              Never miss
+              <br />
+              another <span className="lp-amber">booking.</span>
+            </h1>
+            <p className="lp-sub">
+              Bella answers every call in a warm Australian voice, books the table, and never
+              sleeps — the AI phone host built for Sydney restaurants.
             </p>
-            <div className="hero-actions">
-              <button
-                type="button"
-                className="primary-action"
-                onClick={() => window.open("tel:+61275011140")}
-              >
-                <Icon name="phone_in_talk" />
-                Call the AI
+            <div className="lp-hero-cta-row">
+              <button type="button" className="lp-btn" onClick={scrollTo("contact")}>
+                Start your free week →
               </button>
-              {showBookButton && (
-                <button
-                  ref={bookTriggerRef}
-                  type="button"
-                  className="secondary-action book-online-cta"
-                  onClick={openBookModal}
-                  aria-haspopup="dialog"
-                  aria-expanded={bookOpen}
-                >
-                  <Icon name="event_available" />
-                  Book online
-                </button>
-              )}
-              <button
-                type="button"
-                className="secondary-action"
-                onClick={goToDashboard}
-              >
-                {user ? "Open dashboard" : "Get started"}
-              </button>
+              <a className="lp-btn-ghost" href={phoneHref}>
+                Hear Bella live ▸
+              </a>
             </div>
-            <VoiceDemo />
+            <div className="lp-hero-meta">
+              <div className="lp-stat">
+                <div className="lp-n">24/7</div>
+                <div className="lp-l">always answering</div>
+              </div>
+              <div className="lp-stat">
+                <div className="lp-n">&lt;1s</div>
+                <div className="lp-l">to respond</div>
+              </div>
+              <div className="lp-stat">
+                <div className="lp-n">
+                  $80<span style={{ fontSize: 16, color: "var(--lp-mist)" }}>/mo</span>
+                </div>
+                <div className="lp-l">flat, no lock-in</div>
+              </div>
+            </div>
           </div>
-        </section>
+        </div>
+      </header>
 
-        <section className="features-section">
-          <h2>Precision Engineered for Hospitality</h2>
-          <div className="feature-grid">
-            <FeatureCard
-              icon="support_agent"
-              title="24/7 Answering"
-              text="Capture every booking, even during the busiest dinner rush or after hours. VocoTable never sleeps."
-              tone="primary"
-            />
-            <FeatureCard
-              icon="record_voice_over"
-              title="Local Accent"
-              text="A natural, conversational Australian voice model that understands local nuances and hospitality terms."
-              tone="secondary"
-            />
-            <FeatureCard
-              icon="money_off"
-              title="Zero Cover Fees"
-              text="Stop paying per-seat booking fees. We charge a flat monthly rate, regardless of volume."
-              tone="tertiary"
-            />
-          </div>
-        </section>
+      <div className="lp-trust">
+        <div className="lp-wrap lp-trust-inner">
+          <span className="lp-dot" />
+          <span>Trusted by Sydney restaurants</span>
+          <span style={{ color: "#41464e" }}>•</span>
+          <span>Made in Australia</span>
+          <span style={{ color: "#41464e" }}>•</span>
+          <span>Powered by VocoTable voice AI</span>
+        </div>
+      </div>
 
-        <section className="pricing-section">
-          <div className="pricing-heading">
-            <h2>Transparent, Predictable Pricing</h2>
-            <p>No complex tiers. No hidden per-cover costs.</p>
+      <section className="lp-section" id="problem">
+        <div className="lp-wrap">
+          <div className="lp-pill" style={{ marginBottom: 18 }}>
+            The problem
           </div>
-          <div className="pricing-grid">
-            <div className="old-way-card">
-              <h3>The Old Way</h3>
-              <div className="old-price">
-                $100+<span>/mo</span>
+          <h2>
+            Your phone is ringing.
+            <br />
+            <span className="lp-amber">Nobody can pick up.</span>
+          </h2>
+          <p className="lp-lead">
+            Peak call times are peak service times. Your team is serving guests, so the phone
+            rings out. Here's what that costs you.
+          </p>
+          <div className="lp-stat-grid">
+            <div className="lp-stat-card lp-reveal">
+              <div className="lp-big">58%</div>
+              <div className="lp-t">of calls go unanswered</div>
+              <div className="lp-s">Most restaurant calls ring out, especially at peak and after hours.</div>
+            </div>
+            <div className="lp-stat-card lp-reveal">
+              <div className="lp-big">69%</div>
+              <div className="lp-t">give up if no answer</div>
+              <div className="lp-s">Nearly 7 in 10 callers won't try again — they book elsewhere.</div>
+            </div>
+            <div className="lp-stat-card lp-reveal">
+              <div className="lp-big">63%</div>
+              <div className="lp-t">still prefer to phone</div>
+              <div className="lp-s">Calling remains the #1 way guests reach a restaurant.</div>
+            </div>
+            <div className="lp-stat-card lp-reveal">
+              <div className="lp-big">89%</div>
+              <div className="lp-t">are happy with AI</div>
+              <div className="lp-s">Almost 9 in 10 diners are open to an AI agent — if it's natural.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-section" id="bella" style={{ paddingTop: 20 }}>
+        <div className="lp-wrap">
+          <div className="lp-bella">
+            <div className="lp-bella-text">
+              <div className="lp-eyebrow">Say hello to</div>
+              <h2>
+                Bella<span className="lp-amber">.</span>
+              </h2>
+              <p>
+                Bella — 'beautiful' — is the voice behind your phone line. Calm, clear and
+                unmistakably Australian, she greets every caller like a regular. She never
+                sleeps, never takes a smoke break, and never puts a guest on hold.
+              </p>
+              <div className="lp-bella-traits">
+                <div className="lp-trait">
+                  <div className="lp-ic">🇦🇺</div>
+                  <div>
+                    <div className="lp-tt">Natural Aussie accent</div>
+                    <div className="lp-ts">Your regulars won't know she's AI</div>
+                  </div>
+                </div>
+                <div className="lp-trait">
+                  <div className="lp-ic">⏱</div>
+                  <div>
+                    <div className="lp-tt">Answers in under a second</div>
+                    <div className="lp-ts">No menus, no hold music, ever</div>
+                  </div>
+                </div>
+                <div className="lp-trait">
+                  <div className="lp-ic">🗓</div>
+                  <div>
+                    <div className="lp-tt">Books, moves &amp; cancels</div>
+                    <div className="lp-ts">Live into your system, no errors</div>
+                  </div>
+                </div>
+                <div className="lp-trait">
+                  <div className="lp-ic">∞</div>
+                  <div>
+                    <div className="lp-tt">Unlimited calls at once</div>
+                    <div className="lp-ts">Ten callers? She greets all ten</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="lp-bella-img" role="img" aria-label="Bella, the AI phone host" />
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-section" id="features">
+        <div className="lp-wrap">
+          <div className="lp-center">
+            <div className="lp-pill" style={{ marginBottom: 18 }}>
+              Why restaurants switch
+            </div>
+            <h2>
+              Every call answered.
+              <br />
+              <span className="lp-amber">Every table filled.</span>
+            </h2>
+          </div>
+          <div className="lp-feat-grid">
+            <div className="lp-feat lp-reveal">
+              <div className="lp-ic">📞</div>
+              <h3>Never miss a call</h3>
+              <p>
+                Bella picks up instantly, even mid-service or at 11pm — so a missed call never
+                becomes a lost booking.
+              </p>
+            </div>
+            <div className="lp-feat lp-reveal">
+              <div className="lp-ic">🍽</div>
+              <h3>Never double-books</h3>
+              <p>
+                She checks live table availability on every call, so two parties never land in
+                the same slot.
+              </p>
+            </div>
+            <div className="lp-feat lp-reveal">
+              <div className="lp-ic">💬</div>
+              <h3>Handles the awkward stuff</h3>
+              <p>
+                Date changes, cancellations, dietary notes, big groups — and transfers cleanly to
+                a human when needed.
+              </p>
+            </div>
+            <div className="lp-feat lp-reveal">
+              <div className="lp-ic">🔒</div>
+              <h3>You own your data</h3>
+              <p>No third-party booking platform skimming your guests or your margins. It is all yours.</p>
+            </div>
+            <div className="lp-feat lp-reveal">
+              <div className="lp-ic">❓</div>
+              <h3>Top questions, answered</h3>
+              <p>
+                Hours, parking, set menus, BYO — answered instantly so your staff are not tied to
+                the phone.
+              </p>
+            </div>
+            <div className="lp-feat lp-reveal">
+              <div className="lp-ic">📊</div>
+              <h3>Live dashboard</h3>
+              <p>
+                Every call, booking and transcript in one place, in real time — with no-show
+                tracking and analytics.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        className="lp-section"
+        id="how"
+        style={{
+          background: "var(--lp-ink2)",
+          borderTop: "1px solid var(--lp-line)",
+          borderBottom: "1px solid var(--lp-line)"
+        }}
+      >
+        <div className="lp-wrap">
+          <div className="lp-pill" style={{ marginBottom: 18 }}>
+            How it works
+          </div>
+          <h2>
+            Set up in hours,
+            <br />
+            not weeks.
+          </h2>
+          <div className="lp-steps">
+            <div className="lp-step lp-reveal">
+              <div className="lp-num">01</div>
+              <h3>Your guest calls</h3>
+              <p>They dial your existing number, exactly like today. Nothing changes for them.</p>
+            </div>
+            <div className="lp-step lp-reveal">
+              <div className="lp-num">02</div>
+              <h3>Bella books it</h3>
+              <p>She answers instantly, checks live availability, and confirms the booking on the spot.</p>
+            </div>
+            <div className="lp-step lp-reveal">
+              <div className="lp-num">03</div>
+              <h3>You see it live</h3>
+              <p>Every call and reservation lands in your VocoTable dashboard in real time.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-section" id="pricing">
+        <div className="lp-wrap">
+          <div className="lp-center">
+            <div className="lp-pill" style={{ marginBottom: 18 }}>
+              Simple pricing
+            </div>
+            <h2>
+              One flat price.
+              <br />
+              <span className="lp-amber">No surprises.</span>
+            </h2>
+          </div>
+          <div className="lp-price-wrap">
+            <div className="lp-price-card lp-feature">
+              <div className="lp-eyebrow" style={{ color: "#ffb463" }}>
+                Everything included
+              </div>
+              <div className="lp-amt">
+                $80
+                <span style={{ fontSize: 20, color: "var(--lp-mist)", fontWeight: 500 }}>/month</span>
+              </div>
+              <div className="lp-mist" style={{ fontSize: 15 }}>
+                Flat rate. No per-cover fees. No lock-in. Cancel anytime.
               </div>
               <ul>
                 <li>
-                  <Icon name="close" /> Per-cover booking fees
+                  <span className="lp-tick">✓</span> Unlimited calls answered, 24/7
                 </li>
                 <li>
-                  <Icon name="close" /> Missed calls during rush
+                  <span className="lp-tick">✓</span> Live booking into your dashboard
                 </li>
                 <li>
-                  <Icon name="close" /> Staff tied to the phone
+                  <span className="lp-tick">✓</span> Transcripts, analytics &amp; no-show tracking
+                </li>
+                <li>
+                  <span className="lp-tick">✓</span> Natural Australian voice (Bella)
+                </li>
+                <li>
+                  <span className="lp-tick">✓</span> Local Sydney support
                 </li>
               </ul>
             </div>
-            <div className="voco-price-card">
-              <span className="flat-rate">Flat Rate</span>
-              <h3>VocoTable</h3>
-              <div className="price">
-                $80<span>/mo</span>
+            <div className="lp-price-card">
+              <div className="lp-eyebrow">Special launch offer</div>
+              <div className="lp-amt">
+                1 week
+                <br />
+                <span className="lp-amber">free</span>
               </div>
-              <ul>
-                <li>
-                  <Icon name="check" /> Zero per-cover fees
-                </li>
-                <li>
-                  <Icon name="check" /> Unlimited AI answering
-                </li>
-                <li>
-                  <Icon name="check" /> Seamless integration
-                </li>
-              </ul>
-              <button onClick={() => navigate("/live-feed")}>
-                {user ? "Open dashboard" : "Start free trial"}
+              <div className="lp-mist" style={{ fontSize: 15 }}>
+                Try Bella on your own line. No card required. Keep every booking she makes — even
+                if you don't continue.
+              </div>
+              <button
+                type="button"
+                className="lp-btn"
+                style={{ marginTop: 26 }}
+                onClick={scrollTo("contact")}
+              >
+                Start your free week →
               </button>
             </div>
           </div>
-        </section>
-      </main>
-      {/* Modal renders ONLY when bookOpen flips true — the Cal.com JS chunk
-          isn't fetched until first open (React.lazy + Suspense). Hidden
-          entirely on builds where VITE_CALCOM_CAL_LINK is unset. */}
-      {showBookButton && (
-        <BookOnlineModal
-          open={bookOpen}
-          onClose={closeBookModal}
-          triggerRef={bookTriggerRef}
-        />
-      )}
-    </div>
-  );
-}
+        </div>
+      </section>
 
-function VoiceDemo() {
-  const bars = [32, 48, 28, 56, 40, 18, 62, 32];
-  return (
-    <div className="voice-demo">
-      <div className="voice-demo-head">
-        <span>Live Demo</span>
-        <strong>
-          <i />
-          Listening
-        </strong>
-      </div>
-      <div className="voice-bars" aria-hidden="true">
-        {bars.map((height, index) => (
-          <span
-            key={height + index}
-            style={{ height }}
-            className={index % 2 === 0 ? "bar-primary" : "bar-secondary"}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
+      <section
+        className="lp-section"
+        id="proof"
+        style={{ background: "var(--lp-ink2)", borderTop: "1px solid var(--lp-line)" }}
+      >
+        <div className="lp-wrap">
+          <div className="lp-quote-card lp-reveal">
+            <div style={{ fontSize: 56, color: "var(--lp-amber)", lineHeight: 0.5 }}>“</div>
+            <div className="lp-q">
+              We used to lose tables every Friday night just because nobody could reach the phone.
+              Now Bella picks up every single call — and the bookings just appear on our screen.
+              It paid for itself in the first week.
+            </div>
+            <div className="lp-quote-author">
+              <div className="lp-av">N</div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>Natalia</div>
+                <div style={{ fontSize: 13, color: "var(--lp-mist)" }}>
+                  Owner · Natalia's Bistro, Sydney
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-function FeatureCard({ icon, title, text, tone }) {
-  return (
-    <article className="feature-card">
-      <div className={`feature-icon ${tone}`}>
-        <Icon name={icon} />
-      </div>
-      <h3>{title}</h3>
-      <p>{text}</p>
-    </article>
+      <section className="lp-cta" id="contact">
+        <div className="lp-cta-glow" />
+        <div className="lp-wrap lp-closing-content">
+          <div className="lp-pill" style={{ marginBottom: 20 }}>
+            <span className="lp-dot" />
+            Special launch offer
+          </div>
+          <h2>
+            Ready to stop
+            <br />
+            missing bookings?
+          </h2>
+          <p className="lp-lead lp-center" style={{ marginTop: 18 }}>
+            We'll put Bella on your line in hours — no card required. Hear her answer your
+            restaurant today.
+          </p>
+          <div
+            style={{
+              marginTop: 34,
+              display: "flex",
+              gap: 14,
+              justifyContent: "center",
+              flexWrap: "wrap"
+            }}
+          >
+            <a className="lp-btn" href={phoneHref}>
+              Call to start · 0450 011 140
+            </a>
+            <a className="lp-btn-ghost" href={emailHref}>
+              Email us
+            </a>
+          </div>
+          <div className="lp-contact-bar">
+            <div className="lp-c">
+              <div className="lp-cl">Call</div>
+              <div className="lp-cv">
+                <a href={phoneHref}>0450 011 140</a>
+              </div>
+            </div>
+            <div className="lp-c">
+              <div className="lp-cl">Email</div>
+              <div className="lp-cv">
+                <a href={emailHref}>hello@biteperk.com.au</a>
+              </div>
+            </div>
+            <div className="lp-c">
+              <div className="lp-cl">Web</div>
+              <div className="lp-cv">biteperk.com.au</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer className="lp-footer">
+        <div className="lp-wrap">
+          <div className="lp-foot-inner">
+            <div className="lp-foot-brand">
+              <div className="lp-brand" style={{ pointerEvents: "none" }}>
+                <span className="lp-mark" style={{ width: 34, height: 34 }}>
+                  <BiteperkMark size={34} />
+                </span>
+                <span className="lp-brand-name" style={{ fontSize: 17 }}>
+                  Voco<span className="lp-mist" style={{ fontWeight: 300 }}>Table</span>
+                </span>
+              </div>
+              <p>
+                The AI phone host for restaurants. Bella answers every call, books the table, and
+                never sleeps. Made in Sydney.
+              </p>
+              <div className="lp-biteperk-tag">
+                A <strong>Biteperk</strong> product
+              </div>
+            </div>
+            <div className="lp-foot-cols">
+              <div className="lp-foot-col">
+                <h4>Product</h4>
+                <a href="#how" onClick={scrollTo("how")}>How it works</a>
+                <a href="#bella" onClick={scrollTo("bella")}>Meet Bella</a>
+                <a href="#features" onClick={scrollTo("features")}>Features</a>
+                <a href="#pricing" onClick={scrollTo("pricing")}>Pricing</a>
+              </div>
+              <div className="lp-foot-col">
+                <h4>Company</h4>
+                <a href="#proof" onClick={scrollTo("proof")}>Customers</a>
+                <a href={emailHref}>Contact</a>
+                <a href="#contact" onClick={scrollTo("contact")}>Free trial</a>
+              </div>
+              <div className="lp-foot-col">
+                <h4>Get in touch</h4>
+                <a href={phoneHref}>0450 011 140</a>
+                <a href={emailHref}>hello@biteperk.com.au</a>
+                <a href="https://biteperk.com.au" rel="noopener noreferrer">biteperk.com.au</a>
+              </div>
+            </div>
+          </div>
+          <div className="lp-foot-bottom">
+            <div>© {new Date().getFullYear()} Biteperk Pty Ltd. All rights reserved.</div>
+            <div>VocoTable · Voice AI booking for restaurants · Sydney, Australia</div>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }
 
