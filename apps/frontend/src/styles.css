@@ -1846,9 +1846,9 @@ button {
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 16px;
   min-height: 24px;
-  padding: 3px 12px;
+  padding: 4px 14px;
   min-height: 28px;
   border-radius: 999px;
   border: 1px solid rgba(125, 244, 255, 0.35);
@@ -1888,6 +1888,14 @@ button {
 
 .status-pill .material-symbols-outlined {
   font-size: 14px;
+  line-height: 1;
+  position: relative;
+  top: 3px;
+  margin-right: 8px;
+}
+
+.status-pill-label {
+  display: inline-block;
 }
 
 /* Booking row pending state — soft-disable while the API mutation is in
