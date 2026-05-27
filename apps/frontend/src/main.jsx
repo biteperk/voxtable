@@ -563,6 +563,8 @@ class ErrorBoundary extends React.Component {
       stack: error?.stack?.split("\n").slice(0, 6).join("\n"),
       componentStack: info?.componentStack?.split("\n").slice(0, 6).join("\n")
     });
+    // Forward to Sentry. No-op when VITE_SENTRY_DSN is unset.
+    sentryCapture(error, { componentStack: info?.componentStack });
   }
 
   reset = () => {

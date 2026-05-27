@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 
 import { isAppError } from "../domain/errors";
 import { logger } from "../utils/logger";
+import { captureException } from "../utils/sentry";
 
 export const errorHandler: ErrorRequestHandler = (error, request, response, _next) => {
   const fromRetellTool = request.path?.startsWith("/retell/tools/");
@@ -50,6 +51,8 @@ export const errorHandler: ErrorRequestHandler = (error, request, response, _nex
     path: request.path,
     error
   });
+  // Sentry mirrors the log line. No-op until SENTRY_DSN is set.
+  captureException(error, { method: request.method, path: request.path });
   response.status(500).json({
     error: {
       code: "INTERNAL_SERVER_ERROR",

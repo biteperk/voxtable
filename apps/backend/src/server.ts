@@ -4,6 +4,7 @@ import { closePool } from "./db/pool";
 import { warmRestaurantCache } from "./repositories/restaurants";
 import { installCalcomExecutor } from "./services/calcomService";
 import { verifyCalcomSchemasAgainstFixtures } from "./services/calcomSchemas";
+import { initSentry } from "./utils/sentry";
 import { startOutboxWorker, stopOutboxWorker } from "./workers/calcomOutboxWorker";
 import { startCleanupWorker, stopCleanupWorker } from "./workers/cleanupWorker";
 import { startHealthAlerter, stopHealthAlerter } from "./workers/healthAlerter";
@@ -22,6 +23,10 @@ const SHUTDOWN_WORKER_TIMEOUT_MS = 10_000;
 const SHUTDOWN_HTTP_TIMEOUT_MS = 15_000;
 
 async function main(): Promise<void> {
+  // Sentry first — wires the global unhandled-rejection / uncaught-exception
+  // hooks before anything else runs. No-op without SENTRY_DSN.
+  initSentry();
+
   // Fail-loud check: every Zod schema for an external Cal.com payload must
   // parse a known-good fixture. If any schema regressed, fail to boot — that
   // turns a silent prod incident into a CrashLoop the deploy pipeline catches

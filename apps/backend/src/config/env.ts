@@ -72,7 +72,13 @@ const envSchema = z
   CALCOM_DAILY_QUOTA_THRESHOLD: z.coerce.number().int().positive().optional(),
 
   // Operations alerting — Slack webhook for outbox depth + circuit breaker events.
-  OPS_SLACK_WEBHOOK_URL: z.string().url().optional()
+  OPS_SLACK_WEBHOOK_URL: z.string().url().optional(),
+
+  // Sentry — error tracking. No-op when unset; safe to ship the scaffolding
+  // without a DSN. Not enforced in production yet (Phase 5 calls for it but
+  // we're staging the rollout) — set it when the Sentry project exists.
+  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1)
   })
   .superRefine((value, ctx) => {
     if (value.APP_ENV !== "production") {
