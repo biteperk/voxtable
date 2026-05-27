@@ -5,12 +5,14 @@ import { AuthProvider, useAuth } from "./auth";
 import { signInWithGoogle, signOutUser } from "./firebase";
 import {
   cancelReservation,
+  completeReservation,
   getAnalytics,
   getAnalyticsDailySeries,
   getCallLog,
   listCallLogs,
   listReservations,
   listTables,
+  seatReservation,
   updateReservationStatus
 } from "./api";
 
@@ -2697,8 +2699,10 @@ function BookingCardItem({ row }) {
 }
 
 // ----------------------------------------------------------------------------
-// Live Tables — read-only list backed by GET /api/tables. Status is always
-// "available" until PR2 adds seat/done write paths + live reservation join.
+// Live Tables — GET /api/tables joins today's active reservation per table.
+// Status derives from seated_at / completed_at on the joined reservation;
+// the partial unique index on reservations (migration 005) is the source of
+// truth for "occupies this slot".
 // ----------------------------------------------------------------------------
 
 function LiveTablesPage({ navigate }) {
@@ -2706,19 +2710,37 @@ function LiveTablesPage({ navigate }) {
   const [refreshedAt, setRefreshedAt] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [actionBusyId, setActionBusyId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await listTables();
-      const mapped = (data.tables ?? []).map((t) => ({
-        id: t.id,
-        label: t.label,
-        minCapacity: t.min_capacity,
-        maxCapacity: t.max_capacity,
-        status: "available"
-      }));
+      const mapped = (data.tables ?? []).map((t) => {
+        const hasReservation = Boolean(t.reservation_id);
+        const status = !hasReservation
+          ? "available"
+          : t.reservation_seated_at
+            ? "seated"
+            : "reserved";
+        return {
+          id: t.id,
+          label: t.label,
+          minCapacity: t.min_capacity,
+          maxCapacity: t.max_capacity,
+          status,
+          reservation: hasReservation
+            ? {
+                id: t.reservation_id,
+                startTime: t.reservation_start_time,
+                partySize: t.reservation_party_size,
+                seatedAt: t.reservation_seated_at,
+                guestName: t.customer_name
+              }
+            : null
+        };
+      });
       setTables(mapped);
       setRefreshedAt(new Date());
     } catch (err) {
@@ -2735,6 +2757,38 @@ function LiveTablesPage({ navigate }) {
   const refresh = () => {
     load();
   };
+
+  const handleSeat = useCallback(
+    async (reservationId) => {
+      setActionBusyId(reservationId);
+      setError(null);
+      try {
+        await seatReservation(reservationId);
+        await load();
+      } catch (err) {
+        setError(err.message ?? String(err));
+      } finally {
+        setActionBusyId(null);
+      }
+    },
+    [load]
+  );
+
+  const handleComplete = useCallback(
+    async (reservationId) => {
+      setActionBusyId(reservationId);
+      setError(null);
+      try {
+        await completeReservation(reservationId);
+        await load();
+      } catch (err) {
+        setError(err.message ?? String(err));
+      } finally {
+        setActionBusyId(null);
+      }
+    },
+    [load]
+  );
 
   const counts = useMemo(() => {
     const total = tables.length;
@@ -2836,7 +2890,13 @@ function LiveTablesPage({ navigate }) {
             <div className="live-tables-row"><span>No tables configured.</span></div>
           )}
           {tables.map((t) => (
-            <TableRow key={t.id ?? t.label} table={t} />
+            <TableRow
+              key={t.id ?? t.label}
+              table={t}
+              onSeat={handleSeat}
+              onComplete={handleComplete}
+              busy={t.reservation && actionBusyId === t.reservation.id}
+            />
           ))}
         </div>
       </section>
@@ -2844,10 +2904,13 @@ function LiveTablesPage({ navigate }) {
   );
 }
 
-function TableRow({ table }) {
+function TableRow({ table, onSeat, onComplete, busy }) {
   const isReserved = table.status === "reserved";
   const isSeated = table.status === "seated";
   const r = table.reservation;
+  const timeLabel = r ? formatVoiceTime12h(r.startTime) : "";
+  const guest = r?.guestName ?? "Guest";
+  const party = r?.partySize ?? "";
 
   return (
     <div className={`live-tables-row status-${table.status}`}>
@@ -2861,18 +2924,35 @@ function TableRow({ table }) {
         {table.status === "available" && "Available"}
         {isReserved && (
           <>
-            Reserved {r.time} — {r.guest} ({r.party}pp)
-            <em className="status-sub">in {formatMinutes(r.minutesUntil)}</em>
+            Reserved {timeLabel} — {guest} ({party}pp)
           </>
         )}
         {isSeated && (
           <>
-            Seated {r.time} — {r.guest} ({r.party}pp)
-            <em className="status-sub">frees up at {r.freesAt}</em>
+            Seated — {guest} ({party}pp)
           </>
         )}
       </span>
-      <span className="live-tables-action-col" />
+      <span className="live-tables-action-col">
+        {isReserved && (
+          <button
+            className="row-action primary"
+            onClick={() => onSeat?.(r.id)}
+            disabled={busy}
+          >
+            <Icon name="chair_alt" /> {busy ? "Seating…" : "Seat"}
+          </button>
+        )}
+        {isSeated && (
+          <button
+            className="row-action primary"
+            onClick={() => onComplete?.(r.id)}
+            disabled={busy}
+          >
+            <Icon name="check" /> {busy ? "Marking…" : "Mark Done"}
+          </button>
+        )}
+      </span>
     </div>
   );
 }
