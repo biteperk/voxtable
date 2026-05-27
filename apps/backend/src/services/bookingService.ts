@@ -59,7 +59,17 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     );
   }
 
-  const normalizedPhone = normalizePhone(input.customerPhone) ?? input.customerPhone;
+  // Audit M1: if libphonenumber can't parse what Retell transcribed, reject
+  // explicitly rather than silently storing the raw string. Message is
+  // LLM-readable so Bella re-prompts the caller instead of dumping a 500.
+  const normalizedPhone = normalizePhone(input.customerPhone);
+  if (!normalizedPhone) {
+    throw new AppError(
+      400,
+      "CUSTOMER_PHONE_INVALID",
+      "That phone number didn't quite come through. Could you read it back digit by digit?"
+    );
+  }
 
   const lockClient = await pool.connect();
 
