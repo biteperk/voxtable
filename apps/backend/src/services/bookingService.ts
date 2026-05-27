@@ -174,75 +174,101 @@ export async function modifyBooking(input: {
   // string) to `current.customer_id` (a UUID) — those are never equal, so
   // the UPDATE used to run even when the name was unchanged. Now we fetch
   // the actual current customer name and skip the UPDATE iff it matches.
-  return withTransaction(async (db) => {
-    const current = await getReservationById(input.bookingId, db);
+  //
+  // Audit H3: take the same per-slot advisory lock that createBooking uses
+  // when date/time is changing, so a concurrent create on the destination
+  // slot can't race past our availability re-check. Catch the partial-unique
+  // index violation as a friendly 409 (the DB safety net used to surface as a
+  // raw 500 from modifyBooking).
+  try {
+    return await withTransaction(async (db) => {
+      const current = await getReservationById(input.bookingId, db);
 
-    if (!current) {
-      throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
-    }
+      if (!current) {
+        throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
+      }
 
-    const nextDate = input.date ?? current.reservation_date;
-    const nextTime = input.time ?? current.start_time.slice(0, 5);
-    const nextPartySize = input.partySize ?? current.party_size;
-    const shouldRecheckAvailability =
-      input.date !== undefined || input.time !== undefined || input.partySize !== undefined;
+      const nextDate = input.date ?? current.reservation_date;
+      const nextTime = input.time ?? current.start_time.slice(0, 5);
+      const nextPartySize = input.partySize ?? current.party_size;
+      const shouldRecheckAvailability =
+        input.date !== undefined || input.time !== undefined || input.partySize !== undefined;
 
-    let tableId: string | undefined;
+      // Lock the DESTINATION slot whenever the slot is changing, so a
+      // concurrent createBooking on (restaurant, nextDate, nextTime) blocks
+      // until we commit (or rolls back if it lost the race).
+      if (shouldRecheckAvailability) {
+        await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [
+          `${current.restaurant_id}:${nextDate}:${nextTime}`
+        ]);
+      }
 
-    if (shouldRecheckAvailability && (input.status ?? current.status) !== "cancelled") {
-      const availability = await checkAvailability(
+      let tableId: string | undefined;
+
+      if (shouldRecheckAvailability && (input.status ?? current.status) !== "cancelled") {
+        const availability = await checkAvailability(
+          {
+            restaurantId: current.restaurant_id,
+            date: nextDate,
+            time: nextTime,
+            partySize: nextPartySize,
+            excludeReservationId: current.id
+          },
+          db
+        );
+        tableId = requireAvailableTable(availability);
+      }
+
+      const reservation = await updateReservation(
         {
-          restaurantId: current.restaurant_id,
-          date: nextDate,
-          time: nextTime,
-          partySize: nextPartySize,
-          excludeReservationId: current.id
+          id: current.id,
+          tableId,
+          date: input.date,
+          time: input.time,
+          partySize: input.partySize,
+          notes: input.notes,
+          status: input.status
         },
         db
       );
-      tableId = requireAvailableTable(availability);
-    }
 
-    const reservation = await updateReservation(
-      {
-        id: current.id,
-        tableId,
-        date: input.date,
-        time: input.time,
-        partySize: input.partySize,
-        notes: input.notes,
-        status: input.status
-      },
-      db
-    );
-
-    // Name correction — only fire the UPDATE if the name actually changed.
-    // Fetch current customer name inside the txn so it shares the snapshot.
-    let nameChanged = false;
-    if (input.customerName && input.customerName.trim()) {
-      const newName = input.customerName.trim();
-      const currentNameResult = await db.query<{ name: string }>(
-        "SELECT name FROM customers WHERE id = $1",
-        [current.customer_id]
-      );
-      const currentName = currentNameResult.rows[0]?.name ?? "";
-      if (currentName !== newName) {
-        await db.query("UPDATE customers SET name = $1 WHERE id = $2", [
-          newName,
-          current.customer_id
-        ]);
-        nameChanged = true;
+      // Name correction — only fire the UPDATE if the name actually changed.
+      // Fetch current customer name inside the txn so it shares the snapshot.
+      let nameChanged = false;
+      if (input.customerName && input.customerName.trim()) {
+        const newName = input.customerName.trim();
+        const currentNameResult = await db.query<{ name: string }>(
+          "SELECT name FROM customers WHERE id = $1",
+          [current.customer_id]
+        );
+        const currentName = currentNameResult.rows[0]?.name ?? "";
+        if (currentName !== newName) {
+          await db.query("UPDATE customers SET name = $1 WHERE id = $2", [
+            newName,
+            current.customer_id
+          ]);
+          nameChanged = true;
+        }
       }
-    }
 
-    return {
-      bookingId: reservation.id,
-      status: reservation.status,
-      confirmationMessage: nameChanged
-        ? `Updated. The booking is under ${input.customerName!.trim()} now.`
-        : `Updated. The booking is now ${reservation.status}.`
-    };
-  });
+      return {
+        bookingId: reservation.id,
+        status: reservation.status,
+        confirmationMessage: nameChanged
+          ? `Updated. The booking is under ${input.customerName!.trim()} now.`
+          : `Updated. The booking is now ${reservation.status}.`
+      };
+    });
+  } catch (error) {
+    if (error instanceof Error && /idx_reservations_no_double_book/.test(error.message)) {
+      throw new AppError(
+        409,
+        "TABLE_JUST_TAKEN",
+        "That time just got booked by another caller. Please pick another time."
+      );
+    }
+    throw error;
+  }
 }
 
 export async function cancelBooking(input: {
