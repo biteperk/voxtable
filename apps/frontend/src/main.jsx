@@ -10,6 +10,7 @@ import {
   getCallLog,
   listCallLogs,
   listReservations,
+  listTables,
   updateReservationStatus
 } from "./api";
 
@@ -2696,48 +2697,43 @@ function BookingCardItem({ row }) {
 }
 
 // ----------------------------------------------------------------------------
-// Live Tables — mock-data scaffold. Wire to GET /api/tables-status when ready.
-// Delete MOCK_TABLES + the loadMock effect to switch to real data.
+// Live Tables — read-only list backed by GET /api/tables. Status is always
+// "available" until PR2 adds seat/done write paths + live reservation join.
 // ----------------------------------------------------------------------------
-const MOCK_TABLES = [
-  { label: "T1", minCapacity: 1, maxCapacity: 2, status: "available" },
-  {
-    label: "T2",
-    minCapacity: 1,
-    maxCapacity: 2,
-    status: "reserved",
-    reservation: { time: "7:30 PM", guest: "John", party: 2, minutesUntil: 30 }
-  },
-  {
-    label: "T3",
-    minCapacity: 2,
-    maxCapacity: 4,
-    status: "seated",
-    reservation: { time: "6:45 PM", guest: "Maria", party: 4, freesAt: "8:15 PM", seatedMinutesAgo: 12 }
-  },
-  { label: "T4", minCapacity: 2, maxCapacity: 4, status: "available" },
-  {
-    label: "T5",
-    minCapacity: 4,
-    maxCapacity: 6,
-    status: "reserved",
-    reservation: { time: "8:00 PM", guest: "Sam", party: 5, minutesUntil: 60 }
-  },
-  { label: "T6", minCapacity: 6, maxCapacity: 8, status: "available" },
-  { label: "T7", minCapacity: 8, maxCapacity: 10, status: "available" }
-];
 
 function LiveTablesPage({ navigate }) {
   const [tables, setTables] = useState([]);
   const [refreshedAt, setRefreshedAt] = useState(new Date());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    setTables(MOCK_TABLES);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listTables();
+      const mapped = (data.tables ?? []).map((t) => ({
+        id: t.id,
+        label: t.label,
+        minCapacity: t.min_capacity,
+        maxCapacity: t.max_capacity,
+        status: "available"
+      }));
+      setTables(mapped);
+      setRefreshedAt(new Date());
+    } catch (err) {
+      setError(err.message ?? String(err));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   const refresh = () => {
-    setTables([...MOCK_TABLES]);
-    setRefreshedAt(new Date());
+    load();
   };
 
   const counts = useMemo(() => {
@@ -2771,7 +2767,6 @@ function LiveTablesPage({ navigate }) {
             <Icon name="refresh" />
             {refreshedAgo}
           </button>
-          <span className="mock-badge">MOCK DATA</span>
         </div>
       </header>
 
@@ -2831,8 +2826,17 @@ function LiveTablesPage({ navigate }) {
             <span>Status</span>
             <span className="live-tables-action-col">Action</span>
           </div>
+          {loading && tables.length === 0 && (
+            <div className="live-tables-row"><span>Loading tables…</span></div>
+          )}
+          {error && (
+            <div className="live-tables-row"><span>Failed to load tables: {error}</span></div>
+          )}
+          {!loading && !error && tables.length === 0 && (
+            <div className="live-tables-row"><span>No tables configured.</span></div>
+          )}
           {tables.map((t) => (
-            <TableRow key={t.label} table={t} />
+            <TableRow key={t.id ?? t.label} table={t} />
           ))}
         </div>
       </section>
@@ -2868,28 +2872,7 @@ function TableRow({ table }) {
           </>
         )}
       </span>
-      <span className="live-tables-action-col">
-        {table.status === "available" && (
-          <button className="row-action ghost">
-            <Icon name="person_add" /> Walk-in
-          </button>
-        )}
-        {isReserved && (
-          <>
-            <button className="row-action primary">
-              <Icon name="chair_alt" /> Seat
-            </button>
-            <button className="row-action danger-ghost" aria-label="Cancel reservation">
-              <Icon name="close" />
-            </button>
-          </>
-        )}
-        {isSeated && (
-          <button className="row-action primary">
-            <Icon name="check" /> Mark Done
-          </button>
-        )}
-      </span>
+      <span className="live-tables-action-col" />
     </div>
   );
 }
