@@ -6522,14 +6522,29 @@ button {
 .lp-biteperk-tag {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 20px;
-  font-size: 13px;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 8px 14px;
+  border: 1px solid var(--lp-line);
+  border-radius: 100px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
   color: var(--lp-mist);
+  transition: border-color 0.2s, background 0.2s;
 }
-.lp-biteperk-tag strong {
-  color: var(--lp-amber);
-  font-weight: 700;
+.lp-biteperk-tag:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+.lp-biteperk-tag img {
+  height: 26px;
+  width: auto;
+  /* Logo JPEG ships on a black plate — same as the page bg, so it blends
+     seamlessly. Small radius softens the corners against the pill outline. */
+  border-radius: 3px;
+  display: block;
 }
 .lp-foot-cols {
   display: grid;

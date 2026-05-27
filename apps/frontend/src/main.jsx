@@ -1302,9 +1302,23 @@ function LandingPage({ navigate }) {
                 The AI phone host for restaurants. Bella answers every call, books the table, and
                 never sleeps. Made in Sydney.
               </p>
-              <div className="lp-biteperk-tag">
-                A <strong>Biteperk</strong> product
-              </div>
+              <a
+                className="lp-biteperk-tag"
+                href="https://biteperk.com.au"
+                rel="noopener noreferrer"
+                aria-label="Biteperk — the company behind VocoTable"
+              >
+                <span>A</span>
+                <img
+                  src="/brand/biteperk-logo.jpeg"
+                  alt="Biteperk"
+                  width="120"
+                  height="32"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <span>product</span>
+              </a>
             </div>
             <div className="lp-foot-cols">
               <div className="lp-foot-col">
