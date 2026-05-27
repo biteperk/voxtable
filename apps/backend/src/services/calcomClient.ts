@@ -25,6 +25,7 @@
  */
 
 import { env } from "../config/env";
+import { logger } from "../utils/logger";
 import { recordCalcomRequest } from "./calcomQuotaTracker";
 
 export class CalcomTransientError extends Error {
@@ -75,11 +76,14 @@ function shouldShortCircuit(): boolean {
 }
 
 function recordSuccess(): void {
+  const wasOpenOrHalf = breakerState !== "closed";
   consecutiveFailures = 0;
   firstFailureAt = null;
-  if (breakerState !== "closed") {
+  if (wasOpenOrHalf) {
     breakerState = "closed";
     openedAt = null;
+    // Audit L3: log breaker recovery so ops can correlate with Cal.com outages.
+    logger.info({ evt: "calcom_breaker_closed" });
   }
 }
 
@@ -91,9 +95,16 @@ function recordTransientFailure(): void {
   } else {
     consecutiveFailures += 1;
   }
-  if (consecutiveFailures >= BREAKER_FAILURE_THRESHOLD) {
+  if (consecutiveFailures >= BREAKER_FAILURE_THRESHOLD && breakerState !== "open") {
     breakerState = "open";
     openedAt = now;
+    // Audit L3: log breaker trip. healthAlerter posts to Slack on the next
+    // tick; this gives us the structured log line for forensic correlation.
+    logger.warn({
+      evt: "calcom_breaker_open",
+      consecutive_failures: consecutiveFailures,
+      window_ms: BREAKER_FAILURE_WINDOW_MS
+    });
   }
 }
 
