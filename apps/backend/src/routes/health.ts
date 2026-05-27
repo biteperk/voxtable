@@ -110,7 +110,6 @@ healthRouter.get(
       response.status(503).json({
         status: "error",
         database: slow ? "slow" : "unavailable",
-        version: env.APP_VERSION,
         message: slow
           ? "Postgres did not respond within 2s. Pool may be saturated."
           : "Backend is running, but Postgres is not reachable. Check DATABASE_URL and start Postgres."
@@ -120,8 +119,7 @@ healthRouter.get(
 
     response.json({
       status: "ok",
-      database: "ok",
-      version: env.APP_VERSION
+      database: "ok"
     });
   })
 );
