@@ -228,13 +228,23 @@ export async function findReservationByCalcomUid(
   return result.rows[0] ?? null;
 }
 
+/**
+ * Atomically transition a reservation to cancelled. Returns the cancelled row,
+ * or null if the row was already cancelled (so a concurrent second caller is a
+ * no-op rather than re-firing the Cal.com cancel webhook).
+ *
+ * Audit fix M3 — the previous version always returned a row, which meant two
+ * racing cancels both succeeded and both enqueued a Cal.com cancel-outbox
+ * push. Cal.com's idempotency key absorbs the duplicate at the upstream end,
+ * but we'd still double-write the outbox + emit duplicate logs.
+ */
 export async function cancelReservation(
   input: {
     id: string;
     reason?: string;
   },
   db: DbClient = pool
-): Promise<ReservationRow> {
+): Promise<ReservationRow | null> {
   const result = await db.query<ReservationRow>(
     `
     UPDATE reservations
@@ -243,10 +253,11 @@ export async function cancelReservation(
       cancellation_reason = $2,
       cancelled_at = now()
     WHERE id = $1
+      AND status <> 'cancelled'
     RETURNING *
     `,
     [input.id, input.reason ?? null]
   );
 
-  return result.rows[0]!;
+  return result.rows[0] ?? null;
 }

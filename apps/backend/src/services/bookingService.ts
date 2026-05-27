@@ -293,23 +293,30 @@ export async function cancelBooking(input: {
 
     const current = await client.query<{
       id: string;
+      status: string;
       calcom_booking_uid: string | null;
-    }>("SELECT id, calcom_booking_uid FROM reservations WHERE id = $1", [input.bookingId]);
+    }>("SELECT id, status, calcom_booking_uid FROM reservations WHERE id = $1", [input.bookingId]);
     if (current.rowCount === 0) {
       await client.query("ROLLBACK");
       throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
     }
     const calcomUid = current.rows[0]!.calcom_booking_uid;
 
+    // Audit M3: cancelReservation now returns null when the row was already
+    // cancelled (atomic `WHERE status <> 'cancelled'`). Two concurrent cancel
+    // calls — only the winner enqueues Cal.com; the loser is a silent no-op
+    // returning the already-cancelled state.
     const reservation = await cancelReservation({ id: input.bookingId, reason: input.reason }, client);
 
-    await enqueueCancelForReservation(reservation.id, calcomUid, input.reason, client);
+    if (reservation) {
+      await enqueueCancelForReservation(reservation.id, calcomUid, input.reason, client);
+    }
 
     await client.query("COMMIT");
 
     return {
-      bookingId: reservation.id,
-      status: reservation.status,
+      bookingId: input.bookingId,
+      status: "cancelled",
       confirmationMessage: "Cancelled. The reservation has been cancelled."
     };
   } catch (error) {
