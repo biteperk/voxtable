@@ -25,19 +25,27 @@ const CHECK_INTERVAL_MS = 60_000; // every minute
 const OUTBOX_DEPTH_THRESHOLD = 100;
 const OUTBOX_DEPTH_CONSECUTIVE_CHECKS = 5; // ≥ 5 min lag before pinging
 const INBOX_FAILURES_THRESHOLD = 5;
+// Audit L4: any permanent-failed outbox row in the last 24h means a Cal.com
+// push hit MAX_ATTEMPTS and stopped retrying — there's a reservation in
+// Postgres that never reached Cal.com. Alert immediately, no debounce.
+const OUTBOX_DEAD_LETTER_THRESHOLD = 0;
 
 interface AlertState {
   outboxDepthBreaches: number;
   outboxDepthAlerted: boolean;
   breakerAlerted: boolean;
   inboxFailuresAlerted: boolean;
+  outboxDeadLetterCount: number;
+  outboxDeadLetterAlerted: boolean;
 }
 
 const state: AlertState = {
   outboxDepthBreaches: 0,
   outboxDepthAlerted: false,
   breakerAlerted: false,
-  inboxFailuresAlerted: false
+  inboxFailuresAlerted: false,
+  outboxDeadLetterCount: 0,
+  outboxDeadLetterAlerted: false
 };
 
 let intervalHandle: NodeJS.Timeout | null = null;
@@ -103,6 +111,23 @@ async function checkOnce(): Promise<void> {
     } else if (state.breakerAlerted) {
       await postToSlack(`:white_check_mark: Cal.com circuit breaker closed.`);
       state.breakerAlerted = false;
+    }
+
+    // 3b) Outbox dead-letter rows — any row that hit CALCOM_OUTBOX_MAX_ATTEMPTS
+    //     and was marked permanently failed in the last 24h. Edge-triggered:
+    //     only ping when the count grows. Resets daily as `failed_last_24h`
+    //     decays.
+    if (outbox.failedLast24h > OUTBOX_DEAD_LETTER_THRESHOLD) {
+      if (outbox.failedLast24h > state.outboxDeadLetterCount && !state.outboxDeadLetterAlerted) {
+        await postToSlack(
+          `:rotating_light: Cal.com outbox dead-letter: ${outbox.failedLast24h} reservation(s) failed to sync in the last 24h. Check /api/ops/calcom-health and outbox_calcom for stuck rows.`
+        );
+        state.outboxDeadLetterAlerted = true;
+      }
+      state.outboxDeadLetterCount = outbox.failedLast24h;
+    } else {
+      state.outboxDeadLetterCount = 0;
+      state.outboxDeadLetterAlerted = false;
     }
 
     // 3) Inbox failures — immediate, no debounce. Threshold counts last 24h.
