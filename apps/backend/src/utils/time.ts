@@ -40,10 +40,32 @@ export function isWithinOpeningHours(
   const start = toMinutes(time);
   const end = start + durationMinutes;
 
+  // Audit M2: handle windows that cross midnight (e.g. open 18:00, close 02:00).
+  // When close <= open we treat the window as wrapping; the booking must fit
+  // fully in either the evening leg `[open, 24:00)` or the morning leg
+  // `[00:00, close)`.
   return windows.some((window) => {
     const open = toMinutes(window.open);
     const close = toMinutes(window.close);
-    return start >= open && end <= close;
+
+    if (close > open) {
+      // Same-day window (the common case).
+      return start >= open && end <= close;
+    }
+
+    if (close === open) {
+      // Degenerate "closed all day" — never satisfied.
+      return false;
+    }
+
+    // close < open → wraps midnight. Evening leg accepts bookings starting at
+    // or after `open`; the booking can spill past midnight up to `close+1440`.
+    // Morning leg accepts bookings starting before `open` and ending by `close`.
+    const closeAcrossMidnight = close + 1440;
+    if (start >= open) {
+      return end <= closeAcrossMidnight;
+    }
+    return end <= close;
   });
 }
 
