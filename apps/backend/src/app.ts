@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import rateLimit from "express-rate-limit";
 
 import { env } from "./config/env";
 import { availabilityRouter } from "./routes/availability";
@@ -49,6 +50,31 @@ export function createApp() {
     })
   );
   app.use(requestLogger);
+
+  // Audit M5: app-level rate limit as a second line of defence behind nginx.
+  // Skips webhook endpoints (HMAC-gated, legitimate retell/twilio bursts), the
+  // health probe (load-balancer poll), and the root landing page. 120 req/min
+  // per IP is generous enough that a logged-in dashboard polling at 5s won't
+  // trip it, but caps abuse if someone discovers a reservation UUID and tries
+  // to brute-cancel.
+  app.use(
+    rateLimit({
+      windowMs: 60_000,
+      limit: 120,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      skip: (request) => {
+        const path = request.path;
+        return (
+          path === "/" ||
+          path === "/health" ||
+          path.startsWith("/retell/") ||
+          path.startsWith("/twilio/") ||
+          path.startsWith("/cal/")
+        );
+      }
+    })
+  );
 
   app.use(healthRouter);
   app.use(availabilityRouter);
