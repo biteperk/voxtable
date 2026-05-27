@@ -18,15 +18,18 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
+    <link rel="canonical" href="https://vocotable.biteperk.com.au" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="VocoTable by Biteperk — AI that answers every restaurant call" />
     <meta property="og:description" content="Bella answers every call 24/7 in a natural Australian voice and books the table. Made in Sydney." />
-    <meta property="og:image" content="https://vocotable.web.app/og-image.png" />
+    <meta property="og:image" content="https://vocotable.biteperk.com.au/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:url" content="https://vocotable.web.app" />
+    <meta property="og:url" content="https://vocotable.biteperk.com.au" />
+    <meta property="og:site_name" content="VocoTable by Biteperk" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://vocotable.web.app/og-image.png" />
+    <meta name="twitter:image" content="https://vocotable.biteperk.com.au/og-image.png" />
+    <meta name="twitter:site" content="@biteperk" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -65,6 +68,22 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Canonical-URL redirect: send anyone arriving at the .web.app or
+      // .firebaseapp.com fallback domains to the branded subdomain. Runs
+      // before React mounts so customers always see the right URL bar.
+      (function () {
+        var h = window.location.hostname;
+        if (h === "vocotable.web.app" || h === "vocotable.firebaseapp.com") {
+          window.location.replace(
+            "https://vocotable.biteperk.com.au" +
+              window.location.pathname +
+              window.location.search +
+              window.location.hash
+          );
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -24,7 +24,15 @@ export function createApp() {
     cors({
       origin:
         env.APP_ENV === "production"
-          ? ["https://vocotable.algorythmos.com.au", "https://vocotable.web.app"]
+          ? [
+              // Branded production URLs — canonical surface for customers.
+              "https://vocotable.biteperk.com.au",
+              "https://biteperk.com.au",
+              // Legacy / fallback Firebase Hosting URLs. Kept so existing
+              // bookmarks and the .web.app default keep working without 401s.
+              "https://vocotable.web.app",
+              "https://vocotable.algorythmos.com.au"
+            ]
           : true
     })
   );
