@@ -897,11 +897,11 @@ function LandingPage({ navigate }) {
       </nav>
 
       <header className="lp-hero">
-        <div className="lp-hero-bg" />
-        <div className="lp-hero-scrim" />
-        <div className="lp-hero-scrim2" />
-        <div className="lp-wrap">
-          <div className="lp-hero-content">
+        <div className="lp-hero-stage" aria-hidden="true">
+          <div className="lp-hero-stage-glow" />
+        </div>
+        <div className="lp-wrap lp-hero-grid">
+          <div className="lp-hero-text">
             <div className="lp-pill">
               <span className="lp-dot" />
               Meet Bella · your AI host
@@ -923,22 +923,41 @@ function LandingPage({ navigate }) {
                 Hear Bella live ▸
               </a>
             </div>
-            <div className="lp-hero-meta">
-              <div className="lp-stat">
-                <div className="lp-n">24/7</div>
-                <div className="lp-l">always answering</div>
-              </div>
-              <div className="lp-stat">
-                <div className="lp-n">&lt;1s</div>
-                <div className="lp-l">to respond</div>
-              </div>
-              <div className="lp-stat">
-                <div className="lp-n">
-                  $80<span style={{ fontSize: 16, color: "var(--lp-mist)" }}>/mo</span>
-                </div>
-                <div className="lp-l">flat, no lock-in</div>
-              </div>
+          </div>
+          <div className="lp-hero-visual">
+            <figure className="lp-hero-card">
+              <div className="lp-hero-card-halo" aria-hidden="true" />
+              <img
+                src="/bella/portrait.png"
+                alt="Bella, the AI phone host"
+                className="lp-hero-card-img"
+                width="640"
+                height="800"
+                fetchpriority="high"
+              />
+              <figcaption className="lp-hero-card-caption">
+                <span className="lp-hero-card-dot" aria-hidden="true" />
+                Live · 24/7
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+        <div className="lp-wrap lp-hero-stats-row">
+          <div className="lp-stat">
+            <div className="lp-n">24/7</div>
+            <div className="lp-l">always answering</div>
+          </div>
+          <span className="lp-stat-divider" aria-hidden="true" />
+          <div className="lp-stat">
+            <div className="lp-n">&lt;1s</div>
+            <div className="lp-l">to respond</div>
+          </div>
+          <span className="lp-stat-divider" aria-hidden="true" />
+          <div className="lp-stat">
+            <div className="lp-n">
+              $80<span style={{ fontSize: 18, color: "var(--lp-mist)", fontWeight: 500 }}>/mo</span>
             </div>
+            <div className="lp-l">flat, no lock-in</div>
           </div>
         </div>
       </header>
