@@ -72,9 +72,9 @@ export function getAnalyticsDailySeries({ days } = {}) {
   return authedFetch(`/api/analytics/daily-series${tail}`);
 }
 
-// TODO(security): /bookings/:id and /bookings/:id/cancel are not yet auth-
-// protected on the backend. Add requireFirebaseAuth to bookingsRouter before
-// public production launch — reservation UUID is the only guard right now.
+// /bookings/:id and /bookings/:id/cancel are auth-protected on the backend
+// (requireFirebaseAuth gated by env.DASHBOARD_VERIFY_AUTH). authedFetch below
+// already attaches the Firebase ID token as Bearer.
 
 export function updateReservationStatus(id, status) {
   return authedFetch(`/bookings/${id}`, {

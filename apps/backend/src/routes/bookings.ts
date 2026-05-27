@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { requireFirebaseAuth } from "../auth/firebaseAuth";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
@@ -57,8 +58,13 @@ bookingsRouter.post(
   })
 );
 
+// PATCH and cancel are dashboard-only mutations — the voice path uses
+// /retell/tools/modify-booking (HMAC-gated). Require Firebase auth so an
+// attacker who learns a reservation UUID (URL leak, log scrape) can't
+// silently change or cancel someone else's reservation.
 bookingsRouter.patch(
   "/bookings/:id",
+  requireFirebaseAuth,
   asyncHandler(async (request, response) => {
     const body = updateBookingRequestSchema.parse(request.body);
     const bookingId = bookingIdParamSchema.parse(request.params.id);
@@ -82,6 +88,7 @@ bookingsRouter.patch(
 
 bookingsRouter.post(
   "/bookings/:id/cancel",
+  requireFirebaseAuth,
   asyncHandler(async (request, response) => {
     const body = cancelBookingRequestSchema.parse(request.body);
     const bookingId = bookingIdParamSchema.parse(request.params.id);

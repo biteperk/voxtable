@@ -39,6 +39,20 @@ const envSchema = z
   FIREBASE_PROJECT_ID: z.string().optional(),
   GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
 
+  // Dashboard auth gate. Defaults to OFF in dev so smoke scripts and local
+  // curl probes work without minting a Firebase ID token (mirrors the
+  // RETELL_VERIFY_SIGNATURE / TWILIO_VALIDATE_SIGNATURE pattern). Production
+  // is forced ON by superRefine below.
+  DASHBOARD_VERIFY_AUTH: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+
+  // Comma-separated list of email addresses allowed to hit the dashboard /
+  // booking-mutation endpoints. Empty means "any verified Google account" —
+  // dev-only. Production superRefine requires this to be non-empty.
+  DASHBOARD_ALLOWED_EMAILS: z.string().optional(),
+
   // Cal.com hybrid integration — all optional in dev, conditionally required
   // in production when CALCOM_SYNC_ENABLED=true.
   CALCOM_SYNC_ENABLED: z
@@ -128,6 +142,27 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ["TWILIO_VALIDATE_SIGNATURE"],
         message: "TWILIO_VALIDATE_SIGNATURE must be true in production."
+      });
+    }
+
+    if (!value.DASHBOARD_VERIFY_AUTH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DASHBOARD_VERIFY_AUTH"],
+        message: "DASHBOARD_VERIFY_AUTH must be true in production."
+      });
+    }
+
+    const allowlist = (value.DASHBOARD_ALLOWED_EMAILS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (allowlist.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DASHBOARD_ALLOWED_EMAILS"],
+        message:
+          "DASHBOARD_ALLOWED_EMAILS must list at least one email in production (comma-separated)."
       });
     }
 
