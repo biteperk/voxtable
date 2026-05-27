@@ -2190,7 +2190,10 @@ button {
 .outcome-card,
 .plan-card,
 .payment-card,
-.billing-history {
+.billing-history,
+.plan-tier-card,
+.plan-faq-card,
+.plan-danger-card {
   border: 1px solid var(--card-border);
   border-radius: 8px;
   background: rgba(30, 30, 30, 0.7);
@@ -6830,5 +6833,392 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     opacity: 1;
     transform: none;
     transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Manage Subscription Plan page
+ *
+ * Reuses the shared Billing aesthetic (sharp corners, JetBrains Mono on
+ * data/buttons, primary-blue accents, frosted card background — see the
+ * .plan-card / .payment-card / .billing-history base rule above). Only the
+ * tier-specific layout and pill variants live here.
+ * ------------------------------------------------------------------------- */
+
+/* Page header: shares the .billing-header type scale; just adds a back button
+ * row above the title. */
+.manage-plan-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.manage-plan-header .back-button {
+  margin-top: 4px;
+}
+
+/* Each tier card spans 4 of 12 cols in .billing-grid → three across desktop,
+ * one across on narrow screens (handled by the existing .billing-grid media
+ * query that collapses to 1-col). */
+.plan-tier-card {
+  grid-column: span 4;
+  position: relative;
+  min-height: 460px;
+  padding: 30px 34px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.plan-tier-card.featured {
+  border-color: rgba(173, 198, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(173, 198, 255, 0.25);
+}
+
+/* Pills inside h2 — same visual as the existing "Active" pill on .plan-head
+ * but with a "current" variant tinted differently. */
+.plan-tier-head {
+  position: relative;
+  z-index: 1;
+}
+
+.plan-tier-head h2 {
+  margin: 0;
+  color: var(--on-surface);
+  font-size: 21px;
+  line-height: 27px;
+  font-weight: 600;
+}
+
+.plan-tier-pill {
+  display: inline-flex;
+  margin-left: 8px;
+  padding: 2px 9px;
+  transform: translateY(-3px);
+  border: 1px solid rgba(173, 198, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(173, 198, 255, 0.1);
+  color: var(--primary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.plan-tier-blurb {
+  margin: 8px 0 0;
+  color: var(--on-surface-variant);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.plan-tier-price {
+  position: relative;
+  z-index: 1;
+  margin: 22px 0 20px;
+}
+
+.plan-tier-price strong {
+  display: block;
+  color: var(--on-surface);
+  font-size: 40px;
+  line-height: 46px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.plan-tier-price strong span {
+  color: var(--on-surface-variant);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+}
+
+.plan-tier-features {
+  position: relative;
+  z-index: 1;
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  flex: 1;
+}
+
+.plan-tier-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+  color: var(--on-surface);
+  font-size: 14px;
+  line-height: 20px;
+  border-bottom: 1px solid rgba(65, 71, 85, 0.4);
+}
+
+.plan-tier-features li:last-child {
+  border-bottom: none;
+}
+
+.plan-tier-features .material-symbols-outlined {
+  color: var(--primary);
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.plan-tier-cta {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 16px;
+  border: 1px solid var(--outline);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--primary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.plan-tier-cta:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  border-color: var(--primary);
+}
+
+.plan-tier-cta:disabled {
+  color: var(--on-surface-variant);
+  border-color: rgba(139, 144, 160, 0.4);
+  cursor: default;
+}
+
+.plan-tier-card.featured .plan-tier-cta {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
+}
+
+.plan-tier-card.featured .plan-tier-cta:hover {
+  background: var(--primary-container);
+  color: #fff;
+}
+
+/* FAQ + Danger zone share the .plan-card base background. */
+.plan-faq-card {
+  grid-column: span 12;
+  margin-top: 24px;
+  padding: 30px 34px;
+}
+
+.plan-faq-card h2 {
+  margin: 0 0 18px;
+  color: var(--on-surface);
+  font-size: 21px;
+  line-height: 27px;
+  font-weight: 600;
+}
+
+.plan-faq-card details {
+  border-bottom: 1px solid rgba(65, 71, 85, 0.5);
+  padding: 14px 0;
+}
+
+.plan-faq-card details:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.plan-faq-card summary {
+  cursor: pointer;
+  list-style-position: inside;
+  padding: 4px 0;
+  color: var(--on-surface);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.plan-faq-card summary:hover {
+  color: var(--primary);
+}
+
+.plan-faq-card details p {
+  margin: 10px 0 4px;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.plan-danger-card {
+  grid-column: span 12;
+  margin-top: 24px;
+  padding: 24px 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-color: rgba(255, 180, 171, 0.3);
+}
+
+.plan-danger-card h3 {
+  margin: 0 0 4px;
+  color: var(--on-surface);
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.plan-danger-card p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.plan-danger-card button {
+  min-height: 50px;
+  padding: 0 22px;
+  border: 1px solid var(--error);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--error);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.plan-danger-card button:hover {
+  background: rgba(255, 180, 171, 0.08);
+}
+
+/* Modal overlay — matches the rest of the dashboard's dialog tone. */
+.plan-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.plan-modal {
+  width: 100%;
+  max-width: 460px;
+  padding: 28px 32px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(12px);
+}
+
+.plan-modal h2 {
+  margin: 0 0 12px;
+  color: var(--on-surface);
+  font-size: 21px;
+  line-height: 27px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plan-modal h2 .material-symbols-outlined {
+  color: var(--primary);
+  font-size: 22px;
+}
+
+.plan-modal p {
+  margin: 0 0 12px;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.plan-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+.plan-modal-actions button {
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.plan-modal-actions .ghost-button {
+  border: 1px solid var(--outline);
+  background: transparent;
+  color: var(--on-surface);
+}
+
+.plan-modal-actions .ghost-button:hover {
+  background: var(--surface-container-high);
+  border-color: var(--on-surface);
+}
+
+.plan-modal-actions .primary-button {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.plan-modal-actions .primary-button:hover {
+  background: var(--primary-container);
+  color: #fff;
+}
+
+.plan-modal-actions .danger-button {
+  border: 1px solid var(--error);
+  background: var(--error);
+  color: var(--on-error);
+}
+
+.plan-modal-actions .danger-button:hover {
+  filter: brightness(0.95);
+}
+
+/* Responsive: tier cards stack on narrow screens (matches .billing-grid
+ * collapse breakpoint at 1500px). */
+@media (max-width: 1500px) {
+  .plan-tier-card {
+    grid-column: span 1;
+  }
+
+  .plan-faq-card,
+  .plan-danger-card {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .plan-danger-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .plan-danger-card button {
+    width: 100%;
   }
 }
