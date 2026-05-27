@@ -12,6 +12,11 @@ import {
   updateBookingRequestSchema
 } from "../http/schemas";
 import { cancelBooking, createBooking, modifyBooking } from "../services/bookingService";
+import {
+  completeReservation,
+  getReservationById,
+  seatReservation
+} from "../repositories/reservations";
 import { z } from "zod";
 
 export const bookingsRouter = Router();
@@ -102,5 +107,54 @@ bookingsRouter.post(
       status: result.status,
       confirmation_message: result.confirmationMessage
     });
+  })
+);
+
+// PR2 floor-state transitions. Single UPDATE in the repo; on no-op we do a
+// follow-up SELECT to disambiguate 404 (truly missing) from 409 (already in
+// the target state / cancelled / no_show). Matches the M3 cancel pattern.
+bookingsRouter.post(
+  "/bookings/:id/seat",
+  requireFirebaseAuth,
+  asyncHandler(async (request, response) => {
+    const bookingId = bookingIdParamSchema.parse(request.params.id);
+    const updated = await seatReservation(bookingId);
+
+    if (!updated) {
+      const existing = await getReservationById(bookingId);
+      if (!existing) {
+        throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
+      }
+      throw new AppError(
+        409,
+        "BOOKING_NOT_SEATABLE",
+        `Cannot seat reservation in status '${existing.status}' (seated_at=${existing.seated_at ?? "null"}, completed_at=${existing.completed_at ?? "null"}).`
+      );
+    }
+
+    response.json({ reservation: updated });
+  })
+);
+
+bookingsRouter.post(
+  "/bookings/:id/complete",
+  requireFirebaseAuth,
+  asyncHandler(async (request, response) => {
+    const bookingId = bookingIdParamSchema.parse(request.params.id);
+    const updated = await completeReservation(bookingId);
+
+    if (!updated) {
+      const existing = await getReservationById(bookingId);
+      if (!existing) {
+        throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
+      }
+      throw new AppError(
+        409,
+        "BOOKING_NOT_COMPLETABLE",
+        `Cannot complete reservation in status '${existing.status}' (completed_at=${existing.completed_at ?? "null"}).`
+      );
+    }
+
+    response.json({ reservation: updated });
   })
 );

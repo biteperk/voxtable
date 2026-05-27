@@ -12,9 +12,11 @@ import {
   listCallLogs
 } from "../repositories/callLogs";
 import { listReservations } from "../repositories/reservations";
+import { getRestaurantTimezone } from "../repositories/restaurants";
 import { listTables } from "../repositories/tables";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
+import { todayInTz } from "../utils/time";
 import { getBreakerState } from "../services/calcomClient";
 import { quotaSnapshot } from "../services/calcomQuotaTracker";
 import { pool } from "../db/pool";
@@ -47,7 +49,9 @@ dashboardRouter.get(
 dashboardRouter.get(
   "/api/tables",
   asyncHandler(async (_request, response) => {
-    const rows = await listTables(env.DEFAULT_RESTAURANT_ID);
+    const tz = await getRestaurantTimezone(env.DEFAULT_RESTAURANT_ID);
+    const today = todayInTz(tz);
+    const rows = await listTables(env.DEFAULT_RESTAURANT_ID, today);
     response.json({ tables: rows });
   })
 );

@@ -93,3 +93,11 @@ export function cancelReservation(id, reason) {
     body: JSON.stringify(reason ? { reason } : {})
   });
 }
+
+export function seatReservation(id) {
+  return authedFetch(`/bookings/${id}/seat`, { method: "POST" });
+}
+
+export function completeReservation(id) {
+  return authedFetch(`/bookings/${id}/complete`, { method: "POST" });
+}

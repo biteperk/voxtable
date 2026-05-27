@@ -15,6 +15,8 @@ export interface ReservationRow {
   cancellation_reason: string | null;
   created_from_call_log_id: string | null;
   calcom_booking_uid: string | null;
+  seated_at: string | null;
+  completed_at: string | null;
 }
 
 export async function upsertCustomer(input: {
@@ -257,6 +259,52 @@ export async function cancelReservation(
     RETURNING *
     `,
     [input.id, input.reason ?? null]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+// Floor-state transitions — mirror the M3 cancelReservation pattern:
+// single UPDATE ... RETURNING with guard conditions, returns null on no-op so
+// the route can disambiguate "already in that state" vs "not found" with a
+// follow-up SELECT. Idempotency is the caller's responsibility; seating a
+// row twice returns null the second time.
+
+export async function seatReservation(
+  id: string,
+  db: DbClient = pool
+): Promise<ReservationRow | null> {
+  const result = await db.query<ReservationRow>(
+    `
+    UPDATE reservations
+    SET seated_at = now()
+    WHERE id = $1
+      AND status = 'confirmed'
+      AND seated_at IS NULL
+      AND completed_at IS NULL
+    RETURNING *
+    `,
+    [id]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function completeReservation(
+  id: string,
+  db: DbClient = pool
+): Promise<ReservationRow | null> {
+  const result = await db.query<ReservationRow>(
+    `
+    UPDATE reservations
+    SET status = 'completed',
+        completed_at = now()
+    WHERE id = $1
+      AND status = 'confirmed'
+      AND completed_at IS NULL
+    RETURNING *
+    `,
+    [id]
   );
 
   return result.rows[0] ?? null;
