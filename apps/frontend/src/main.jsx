@@ -2638,7 +2638,7 @@ function BookingRow({ row, onMarkNoShow, onCancel, onRestore }) {
           {row.statusTone === "no_show" && <Icon name="person_off" />}
           {row.statusTone === "seated" && <Icon name="directions_walk" />}
           {row.statusTone !== "cancelled" && row.statusTone !== "no_show" && row.statusTone !== "seated" && <i />}
-          {row.status}
+          <span className="status-pill-label">{row.status}</span>
         </span>
       </td>
       <td>
