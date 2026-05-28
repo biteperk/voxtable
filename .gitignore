@@ -63,3 +63,8 @@ firebase-admin.json
 
 # Claude Code local session config (per-developer launch.json etc.)
 .claude/
+
+# Top-level scratchpad — source PNGs and brand reference materials that
+# feed scripts/ but are never deployed. Real app assets live under
+# apps/frontend/public/, which is NOT covered by this rule.
+/public/
