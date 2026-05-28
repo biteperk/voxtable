@@ -38,6 +38,17 @@ const allowedEmails = new Set(
     .filter(Boolean)
 );
 
+// Manager allowlist — gates menu CRUD, payment toggles, and order cancellation.
+// The kitchen kiosk account is NOT in this set; kitchen staff can read the
+// menu and update order status but can't edit prices or refund payments.
+// Phase 2 upgrades this to Firebase custom claims (`role: manager`).
+const managerEmails = new Set(
+  (env.DASHBOARD_MANAGER_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+);
+
 export interface AuthenticatedRequest extends Request {
   firebaseUser?: admin.auth.DecodedIdToken;
 }
@@ -93,4 +104,37 @@ export async function requireFirebaseAuth(
     }
     next(new AppError(401, "INVALID_TOKEN", "ID token verification failed."));
   }
+}
+
+/**
+ * Manager gate — apply AFTER `requireFirebaseAuth`. Reads
+ * DASHBOARD_MANAGER_EMAILS; in dev mode (verify auth off) it allows through.
+ */
+export function requireManagerRole(
+  request: AuthenticatedRequest,
+  _response: Response,
+  next: NextFunction
+): void {
+  if (!env.DASHBOARD_VERIFY_AUTH) {
+    next();
+    return;
+  }
+  if (managerEmails.size === 0) {
+    // Production safety: if no manager allowlist is configured, refuse to
+    // gate destructive routes rather than silently allowing everyone.
+    return next(
+      new AppError(503, "MANAGER_ROLE_NOT_CONFIGURED", "Manager role not configured.")
+    );
+  }
+  const email = request.firebaseUser?.email?.toLowerCase();
+  if (!email || !managerEmails.has(email)) {
+    return next(
+      new AppError(403, "MANAGER_ROLE_REQUIRED", "This action requires a manager account.")
+    );
+  }
+  next();
+}
+
+export function actorFor(request: AuthenticatedRequest): string {
+  return request.firebaseUser?.uid ?? request.firebaseUser?.email ?? "anonymous";
 }

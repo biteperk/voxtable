@@ -8,6 +8,8 @@ import { bookingsRouter } from "./routes/bookings";
 import { calRouter } from "./routes/cal";
 import { dashboardRouter } from "./routes/dashboard";
 import { healthRouter } from "./routes/health";
+import { menuRouter } from "./routes/menu";
+import { ordersRouter } from "./routes/orders";
 import { retellRouter } from "./routes/retell";
 import { twilioRouter } from "./routes/twilio";
 import { errorHandler } from "./http/errorHandler";
@@ -28,6 +30,10 @@ export function createApp() {
               // Branded production URLs — canonical surface for customers.
               "https://vocotable.biteperk.com.au",
               "https://biteperk.com.au",
+              // Kitchen Display System — separate Firebase Hosting target.
+              "https://kitchen.vocotable.biteperk.com.au",
+              "https://vocotable-kds.web.app",
+              "https://vocotable-kds.firebaseapp.com",
               // Legacy / fallback Firebase Hosting URLs. Kept so existing
               // bookmarks and the .web.app default keep working without 401s.
               "https://vocotable.web.app",
@@ -90,6 +96,8 @@ export function createApp() {
   app.use(retellRouter);
   app.use(twilioRouter);
   app.use(calRouter);
+  app.use(menuRouter);
+  app.use(ordersRouter);
   app.use(dashboardRouter);
 
   app.use(errorHandler);

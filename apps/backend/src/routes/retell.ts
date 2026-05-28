@@ -70,3 +70,19 @@ retellRouter.post(
     response.json(result);
   })
 );
+
+retellRouter.post(
+  "/retell/tools/menu-lookup",
+  asyncHandler(async (request, response) => {
+    const result = await handleRetellFunction(request.body, "menu_lookup");
+    response.json(result);
+  })
+);
+
+retellRouter.post(
+  "/retell/tools/create-order",
+  asyncHandler(async (request, response) => {
+    const result = await handleRetellFunction(request.body, "create_order");
+    response.json(result);
+  })
+);
