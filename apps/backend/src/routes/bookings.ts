@@ -22,8 +22,13 @@ import { z } from "zod";
 export const bookingsRouter = Router();
 const bookingIdParamSchema = z.string().uuid();
 
+// Dashboard-only mutation. The voice path bypasses HTTP and calls
+// services/bookingService.createBooking directly, so we can safely gate
+// this endpoint behind Firebase auth — protects against anonymous booking
+// spam now that the dashboard explicitly POSTs here for manual entries.
 bookingsRouter.post(
   "/bookings",
+  requireFirebaseAuth,
   asyncHandler(async (request, response) => {
     const body = createBookingRequestSchema.parse(request.body);
     const customerName = body.customer_name ?? body.customerName;

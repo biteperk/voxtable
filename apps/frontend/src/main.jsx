@@ -8,6 +8,7 @@ import {
   completeReservation,
   createMenuCategory,
   createMenuItem,
+  createReservation,
   deleteMenuItem,
   getAnalytics,
   getAnalyticsDailySeries,
@@ -2701,21 +2702,26 @@ function BookingLogPage({ navigate, path }) {
 
   const clearFilters = () => setStatusFilter(new Set());
 
-  const handleCreateBooking = (form) => {
-    // Backend wire-up lands when manual-booking endpoint ships. For now
-    // optimistic-add so the row appears in the list immediately.
-    const synthetic = {
-      id: `manual-${Date.now()}`,
+  const refreshReservations = useCallback(async () => {
+    const res = await listReservations({ limit: 100 });
+    setReservations(res.reservations ?? []);
+  }, []);
+
+  const handleCreateBooking = async (form) => {
+    // POST to /bookings → bookingService.createBooking does the real work
+    // (advisory lock, availability check, Cal.com outbox enqueue). Returns
+    // a real UUID we then use as row.id so every subsequent action
+    // (no-show, cancel, restore) works without a special case.
+    await createReservation({
       customer_name: form.name,
       customer_phone: form.phone,
       party_size: Number(form.partySize),
-      reservation_date: form.date,
-      start_time: form.time,
-      status: "confirmed",
-      notes: form.notes || "Manual entry",
-      source: "manual",
-    };
-    setReservations((prev) => [synthetic, ...prev]);
+      date: form.date,
+      time: form.time,
+      source: "dashboard",
+      notes: form.notes || undefined,
+    });
+    await refreshReservations();
     setNewBookingOpen(false);
   };
 
@@ -3124,6 +3130,7 @@ function NewBookingModal({ onClose, onCreate }) {
     notes: "",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -3156,11 +3163,17 @@ function NewBookingModal({ onClose, onCreate }) {
     }
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (submitting) return;
     setSubmitting(true);
-    onCreate(form);
+    setError(null);
+    try {
+      await onCreate(form);
+    } catch (e) {
+      setError(e.message ?? "Could not save the booking. Please try again.");
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -3193,6 +3206,12 @@ function NewBookingModal({ onClose, onCreate }) {
         </header>
 
         <form className="new-booking-form" onSubmit={handleSubmit} autoComplete="off">
+          {error ? (
+            <div className="nb-error" role="alert">
+              <Icon name="error_outline" />
+              {error}
+            </div>
+          ) : null}
           <label className="nb-field">
             <span>Guest name</span>
             <input

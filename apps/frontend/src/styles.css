@@ -9420,6 +9420,24 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   gap: 14px;
 }
 
+.nb-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 99, 99, 0.45);
+  border-radius: 8px;
+  background: rgba(255, 99, 99, 0.08);
+  color: #ff8585;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.nb-error .material-symbols-outlined {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
 .nb-field {
   display: flex;
   flex-direction: column;

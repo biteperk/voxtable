@@ -80,6 +80,13 @@ export function getAnalyticsDailySeries({ days } = {}) {
 // (requireFirebaseAuth gated by env.DASHBOARD_VERIFY_AUTH). authedFetch below
 // already attaches the Firebase ID token as Bearer.
 
+export function createReservation(payload) {
+  return authedFetch(`/bookings`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function updateReservationStatus(id, status) {
   return authedFetch(`/bookings/${id}`, {
     method: "PATCH",
