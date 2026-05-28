@@ -53,6 +53,11 @@ const envSchema = z
   // dev-only. Production superRefine requires this to be non-empty.
   DASHBOARD_ALLOWED_EMAILS: z.string().optional(),
 
+  // Manager-role allowlist (subset of DASHBOARD_ALLOWED_EMAILS). Gates menu
+  // CRUD, payment status toggles, and order cancellation. Kitchen kiosk
+  // account is intentionally NOT in this list.
+  DASHBOARD_MANAGER_EMAILS: z.string().optional(),
+
   // Cal.com hybrid integration — all optional in dev, conditionally required
   // in production when CALCOM_SYNC_ENABLED=true.
   CALCOM_SYNC_ENABLED: z

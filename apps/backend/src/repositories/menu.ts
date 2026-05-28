@@ -1,0 +1,331 @@
+import { DbClient, pool, readPool } from "../db/pool";
+
+export interface MenuCategoryRow {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MenuItemRow {
+  id: string;
+  restaurant_id: string;
+  category_id: string;
+  name: string;
+  description: string | null;
+  base_price_cents: number;
+  is_available: boolean;
+  image_url: string | null;
+  image_blurhash: string | null;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MenuItemVariantRow {
+  id: string;
+  menu_item_id: string;
+  name: string;
+  price_delta_cents: number;
+  display_order: number;
+}
+
+export interface MenuItemModifierRow {
+  id: string;
+  menu_item_id: string;
+  group_name: string;
+  name: string;
+  price_delta_cents: number;
+  group_min_select: number;
+  group_max_select: number;
+  is_default: boolean;
+  display_order: number;
+}
+
+/**
+ * Full menu tree for a restaurant. Used by dashboard CRUD list, KDS reads,
+ * and the Retell `menu_lookup` tool. Reads from the read pool — never blocks
+ * the booking path.
+ */
+export async function getFullMenu(restaurantId: string) {
+  const [categories, items, variants, modifiers] = await Promise.all([
+    readPool.query<MenuCategoryRow>(
+      `SELECT * FROM menu_categories WHERE restaurant_id = $1 ORDER BY display_order, name`,
+      [restaurantId]
+    ),
+    readPool.query<MenuItemRow>(
+      `SELECT * FROM menu_items WHERE restaurant_id = $1 ORDER BY display_order, name`,
+      [restaurantId]
+    ),
+    readPool.query<MenuItemVariantRow>(
+      `SELECT v.*
+         FROM menu_item_variants v
+         JOIN menu_items i ON i.id = v.menu_item_id
+        WHERE i.restaurant_id = $1
+        ORDER BY v.display_order, v.name`,
+      [restaurantId]
+    ),
+    readPool.query<MenuItemModifierRow>(
+      `SELECT m.*
+         FROM menu_item_modifiers m
+         JOIN menu_items i ON i.id = m.menu_item_id
+        WHERE i.restaurant_id = $1
+        ORDER BY m.group_name, m.display_order, m.name`,
+      [restaurantId]
+    )
+  ]);
+
+  return {
+    categories: categories.rows,
+    items: items.rows,
+    variants: variants.rows,
+    modifiers: modifiers.rows
+  };
+}
+
+export async function createCategory(input: {
+  restaurantId: string;
+  name: string;
+  displayOrder?: number;
+}, db: DbClient = pool): Promise<MenuCategoryRow> {
+  const result = await db.query<MenuCategoryRow>(
+    `
+    INSERT INTO menu_categories (restaurant_id, name, display_order, is_active)
+    VALUES ($1, $2, $3, true)
+    RETURNING *
+    `,
+    [input.restaurantId, input.name, input.displayOrder ?? 0]
+  );
+  return result.rows[0]!;
+}
+
+export async function updateCategory(input: {
+  id: string;
+  restaurantId: string;
+  name?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}, db: DbClient = pool): Promise<MenuCategoryRow | null> {
+  const result = await db.query<MenuCategoryRow>(
+    `
+    UPDATE menu_categories
+       SET name          = COALESCE($3, name),
+           display_order = COALESCE($4, display_order),
+           is_active     = COALESCE($5, is_active)
+     WHERE id = $1 AND restaurant_id = $2
+     RETURNING *
+    `,
+    [input.id, input.restaurantId, input.name ?? null, input.displayOrder ?? null, input.isActive ?? null]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function deleteCategory(id: string, restaurantId: string, db: DbClient = pool): Promise<boolean> {
+  const result = await db.query(
+    `DELETE FROM menu_categories WHERE id = $1 AND restaurant_id = $2`,
+    [id, restaurantId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function createMenuItem(input: {
+  restaurantId: string;
+  categoryId: string;
+  name: string;
+  description?: string;
+  basePriceCents: number;
+  imageUrl?: string;
+  imageBlurhash?: string;
+  displayOrder?: number;
+}, db: DbClient = pool): Promise<MenuItemRow> {
+  const result = await db.query<MenuItemRow>(
+    `
+    INSERT INTO menu_items (
+      restaurant_id, category_id, name, description,
+      base_price_cents, image_url, image_blurhash, display_order, is_available
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+    RETURNING *
+    `,
+    [
+      input.restaurantId,
+      input.categoryId,
+      input.name,
+      input.description ?? null,
+      input.basePriceCents,
+      input.imageUrl ?? null,
+      input.imageBlurhash ?? null,
+      input.displayOrder ?? 0
+    ]
+  );
+  return result.rows[0]!;
+}
+
+export async function updateMenuItem(input: {
+  id: string;
+  restaurantId: string;
+  categoryId?: string;
+  name?: string;
+  description?: string | null;
+  basePriceCents?: number;
+  imageUrl?: string | null;
+  imageBlurhash?: string | null;
+  displayOrder?: number;
+  isAvailable?: boolean;
+}, db: DbClient = pool): Promise<MenuItemRow | null> {
+  const result = await db.query<MenuItemRow>(
+    `
+    UPDATE menu_items
+       SET category_id      = COALESCE($3, category_id),
+           name             = COALESCE($4, name),
+           description      = COALESCE($5, description),
+           base_price_cents = COALESCE($6, base_price_cents),
+           image_url        = COALESCE($7, image_url),
+           image_blurhash   = COALESCE($8, image_blurhash),
+           display_order    = COALESCE($9, display_order),
+           is_available     = COALESCE($10, is_available)
+     WHERE id = $1 AND restaurant_id = $2
+     RETURNING *
+    `,
+    [
+      input.id,
+      input.restaurantId,
+      input.categoryId ?? null,
+      input.name ?? null,
+      input.description ?? null,
+      input.basePriceCents ?? null,
+      input.imageUrl ?? null,
+      input.imageBlurhash ?? null,
+      input.displayOrder ?? null,
+      input.isAvailable ?? null
+    ]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function deleteMenuItem(id: string, restaurantId: string, db: DbClient = pool): Promise<boolean> {
+  const result = await db.query(
+    `DELETE FROM menu_items WHERE id = $1 AND restaurant_id = $2`,
+    [id, restaurantId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function replaceVariants(
+  menuItemId: string,
+  variants: Array<{ name: string; priceDeltaCents: number; displayOrder: number }>,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(`DELETE FROM menu_item_variants WHERE menu_item_id = $1`, [menuItemId]);
+  for (const v of variants) {
+    await db.query(
+      `INSERT INTO menu_item_variants (menu_item_id, name, price_delta_cents, display_order)
+       VALUES ($1, $2, $3, $4)`,
+      [menuItemId, v.name, v.priceDeltaCents, v.displayOrder]
+    );
+  }
+}
+
+export async function replaceModifiers(
+  menuItemId: string,
+  modifiers: Array<{
+    groupName: string;
+    name: string;
+    priceDeltaCents: number;
+    groupMinSelect: number;
+    groupMaxSelect: number;
+    isDefault: boolean;
+    displayOrder: number;
+  }>,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(`DELETE FROM menu_item_modifiers WHERE menu_item_id = $1`, [menuItemId]);
+  for (const m of modifiers) {
+    await db.query(
+      `INSERT INTO menu_item_modifiers (
+         menu_item_id, group_name, name, price_delta_cents,
+         group_min_select, group_max_select, is_default, display_order
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        menuItemId,
+        m.groupName,
+        m.name,
+        m.priceDeltaCents,
+        m.groupMinSelect,
+        m.groupMaxSelect,
+        m.isDefault,
+        m.displayOrder
+      ]
+    );
+  }
+}
+
+/**
+ * Resolve a list of menu_item_ids to their priceable rows (item + optional
+ * variant + zero or more modifiers) INSIDE the caller's txn. Returns enough
+ * to compute snapshotted prices. Locks rows FOR SHARE so a concurrent
+ * UPDATE on `is_available` or price can't race us.
+ */
+export async function loadMenuItemsForOrder(
+  itemIds: string[],
+  restaurantId: string,
+  db: DbClient
+): Promise<MenuItemRow[]> {
+  if (itemIds.length === 0) return [];
+  const result = await db.query<MenuItemRow>(
+    `SELECT * FROM menu_items WHERE restaurant_id = $1 AND id = ANY($2::uuid[]) FOR SHARE`,
+    [restaurantId, itemIds]
+  );
+  return result.rows;
+}
+
+export async function loadVariantsForItems(
+  itemIds: string[],
+  db: DbClient
+): Promise<MenuItemVariantRow[]> {
+  if (itemIds.length === 0) return [];
+  const result = await db.query<MenuItemVariantRow>(
+    `SELECT * FROM menu_item_variants WHERE menu_item_id = ANY($1::uuid[])`,
+    [itemIds]
+  );
+  return result.rows;
+}
+
+export async function loadModifiersForItems(
+  itemIds: string[],
+  db: DbClient
+): Promise<MenuItemModifierRow[]> {
+  if (itemIds.length === 0) return [];
+  const result = await db.query<MenuItemModifierRow>(
+    `SELECT * FROM menu_item_modifiers WHERE menu_item_id = ANY($1::uuid[])`,
+    [itemIds]
+  );
+  return result.rows;
+}
+
+/**
+ * Fuzzy search for the Retell `menu_lookup` tool. pg_trgm similarity against
+ * LOWER(name) using the GIN index from migration 006. Returns top N matches,
+ * available items only.
+ */
+export async function searchMenuItemsByName(
+  restaurantId: string,
+  query: string,
+  limit = 6
+): Promise<Array<MenuItemRow & { similarity: number }>> {
+  const result = await readPool.query<MenuItemRow & { similarity: number }>(
+    `SELECT *, similarity(LOWER(name), LOWER($2)) AS similarity
+       FROM menu_items
+      WHERE restaurant_id = $1
+        AND is_available = true
+        AND similarity(LOWER(name), LOWER($2)) > 0.2
+      ORDER BY similarity DESC
+      LIMIT $3`,
+    [restaurantId, query, limit]
+  );
+  return result.rows;
+}

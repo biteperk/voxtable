@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "vocotable"
+  },
+  "targets": {
+    "vocotable": {
+      "hosting": {
+        "app": ["vocotable"],
+        "kds": ["vocotable-kds"]
+      }
+    }
   }
 }

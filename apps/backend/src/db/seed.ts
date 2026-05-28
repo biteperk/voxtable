@@ -97,7 +97,260 @@ async function seed(): Promise<void> {
     );
   }
 
+  await seedMenu(restaurantId);
+
   console.log(`Seeded Natalia restaurant ${restaurantId}`);
+}
+
+// Idempotent KDS menu seed. Skipped silently if migration 006 hasn't applied
+// (so `db:seed` keeps working on installs that haven't pulled the schema yet).
+async function seedMenu(restaurantId: string): Promise<void> {
+  const menuTablesExist = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = current_schema() AND table_name = 'menu_items'
+     ) AS exists`
+  );
+  if (!menuTablesExist.rows[0]?.exists) {
+    console.log("Skipping menu seed — migration 006 not yet applied");
+    return;
+  }
+
+  type CategorySeed = {
+    name: string;
+    display_order: number;
+    items: ItemSeed[];
+  };
+
+  type ItemSeed = {
+    name: string;
+    description?: string;
+    base_price_cents: number;
+    display_order: number;
+    variants?: Array<{ name: string; price_delta_cents: number; display_order: number }>;
+    modifiers?: Array<{
+      group_name: string;
+      group_min_select: number;
+      group_max_select: number;
+      options: Array<{ name: string; price_delta_cents: number; is_default?: boolean }>;
+    }>;
+  };
+
+  const menu: CategorySeed[] = [
+    {
+      name: "Mains",
+      display_order: 1,
+      items: [
+        {
+          name: "Fish & Chips",
+          description: "Beer-battered flathead with hand-cut chips and tartare.",
+          base_price_cents: 2200,
+          display_order: 1,
+          variants: [
+            { name: "Small", price_delta_cents: -800, display_order: 1 },
+            { name: "Medium", price_delta_cents: 0, display_order: 2 },
+            { name: "Large", price_delta_cents: 400, display_order: 3 }
+          ],
+          modifiers: [
+            {
+              group_name: "Drink",
+              group_min_select: 1,
+              group_max_select: 1,
+              options: [
+                { name: "Coke", price_delta_cents: 0, is_default: true },
+                { name: "Lemonade", price_delta_cents: 0 },
+                { name: "Fanta", price_delta_cents: 0 },
+                { name: "Sparkling Water", price_delta_cents: 0 }
+              ]
+            },
+            {
+              group_name: "Extras",
+              group_min_select: 0,
+              group_max_select: 3,
+              options: [
+                { name: "Extra Tartare", price_delta_cents: 150 },
+                { name: "Lemon Wedges", price_delta_cents: 0 },
+                { name: "Aioli", price_delta_cents: 150 }
+              ]
+            }
+          ]
+        },
+        {
+          name: "Spaghetti Bolognese",
+          description: "Slow-cooked beef ragu, parmesan, fresh basil.",
+          base_price_cents: 2400,
+          display_order: 2,
+          modifiers: [
+            {
+              group_name: "Extras",
+              group_min_select: 0,
+              group_max_select: 2,
+              options: [
+                { name: "Extra Parmesan", price_delta_cents: 200 },
+                { name: "Chilli Flakes", price_delta_cents: 0 }
+              ]
+            }
+          ]
+        },
+        {
+          name: "Margherita Pizza",
+          description: "San Marzano, fior di latte, basil.",
+          base_price_cents: 2200,
+          display_order: 3
+        }
+      ]
+    },
+    {
+      name: "Salads & Sides",
+      display_order: 2,
+      items: [
+        {
+          name: "Caesar Salad",
+          description: "Cos lettuce, anchovies, parmesan, soft-poached egg.",
+          base_price_cents: 1900,
+          display_order: 1,
+          modifiers: [
+            {
+              group_name: "Add",
+              group_min_select: 0,
+              group_max_select: 2,
+              options: [
+                { name: "Grilled Chicken", price_delta_cents: 500 },
+                { name: "Smoked Bacon", price_delta_cents: 300 }
+              ]
+            }
+          ]
+        },
+        {
+          name: "Garden Salad",
+          base_price_cents: 1400,
+          display_order: 2
+        },
+        {
+          name: "Hand-Cut Chips",
+          base_price_cents: 900,
+          display_order: 3
+        }
+      ]
+    },
+    {
+      name: "Kids",
+      display_order: 3,
+      items: [
+        {
+          name: "Kids Fish & Chips",
+          base_price_cents: 1200,
+          display_order: 1
+        }
+      ]
+    },
+    {
+      name: "Drinks",
+      display_order: 4,
+      items: [
+        { name: "Coke", base_price_cents: 500, display_order: 1 },
+        { name: "Lemonade", base_price_cents: 500, display_order: 2 },
+        { name: "Sparkling Water 750ml", base_price_cents: 700, display_order: 3 }
+      ]
+    }
+  ];
+
+  for (const category of menu) {
+    const categoryRow = await pool.query<{ id: string }>(
+      `
+      INSERT INTO menu_categories (restaurant_id, name, display_order, is_active)
+      VALUES ($1, $2, $3, true)
+      ON CONFLICT (restaurant_id, LOWER(name)) DO UPDATE SET
+        display_order = EXCLUDED.display_order,
+        is_active = true
+      RETURNING id
+      `,
+      [restaurantId, category.name, category.display_order]
+    );
+    const categoryId = categoryRow.rows[0]!.id;
+
+    for (const item of category.items) {
+      // No UNIQUE on (restaurant_id, name) for menu_items so we manually
+      // upsert: find-or-update-or-insert. Keeps the seed idempotent.
+      const existing = await pool.query<{ id: string }>(
+        `SELECT id FROM menu_items WHERE restaurant_id = $1 AND category_id = $2 AND LOWER(name) = LOWER($3)`,
+        [restaurantId, categoryId, item.name]
+      );
+      let itemId: string;
+      if (existing.rows[0]) {
+        itemId = existing.rows[0].id;
+        await pool.query(
+          `
+          UPDATE menu_items
+             SET description = $1,
+                 base_price_cents = $2,
+                 display_order = $3,
+                 is_available = true
+           WHERE id = $4
+          `,
+          [item.description ?? null, item.base_price_cents, item.display_order, itemId]
+        );
+      } else {
+        const inserted = await pool.query<{ id: string }>(
+          `
+          INSERT INTO menu_items (
+            restaurant_id, category_id, name, description, base_price_cents, display_order, is_available
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, true)
+          RETURNING id
+          `,
+          [restaurantId, categoryId, item.name, item.description ?? null, item.base_price_cents, item.display_order]
+        );
+        itemId = inserted.rows[0]!.id;
+      }
+
+      for (const variant of item.variants ?? []) {
+        await pool.query(
+          `
+          INSERT INTO menu_item_variants (menu_item_id, name, price_delta_cents, display_order)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (menu_item_id, name) DO UPDATE SET
+            price_delta_cents = EXCLUDED.price_delta_cents,
+            display_order = EXCLUDED.display_order
+          `,
+          [itemId, variant.name, variant.price_delta_cents, variant.display_order]
+        );
+      }
+
+      let modifierIndex = 0;
+      for (const group of item.modifiers ?? []) {
+        for (const option of group.options) {
+          modifierIndex += 1;
+          await pool.query(
+            `
+            INSERT INTO menu_item_modifiers (
+              menu_item_id, group_name, name, price_delta_cents,
+              group_min_select, group_max_select, is_default, display_order
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (menu_item_id, group_name, name) DO UPDATE SET
+              price_delta_cents = EXCLUDED.price_delta_cents,
+              group_min_select = EXCLUDED.group_min_select,
+              group_max_select = EXCLUDED.group_max_select,
+              is_default = EXCLUDED.is_default,
+              display_order = EXCLUDED.display_order
+            `,
+            [
+              itemId,
+              group.group_name,
+              option.name,
+              option.price_delta_cents,
+              group.group_min_select,
+              group.group_max_select,
+              option.is_default ?? false,
+              modifierIndex
+            ]
+          );
+        }
+      }
+    }
+  }
+  console.log("Seeded KDS menu (categories, items, variants, modifiers)");
 }
 
 seed()

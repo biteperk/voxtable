@@ -6,13 +6,21 @@ import { signInWithGoogle, signOutUser } from "./firebase";
 import {
   cancelReservation,
   completeReservation,
+  createMenuCategory,
+  createMenuItem,
+  deleteMenuItem,
   getAnalytics,
   getAnalyticsDailySeries,
   getCallLog,
+  getMenu,
+  listActiveOrders,
   listCallLogs,
   listReservations,
   listTables,
   seatReservation,
+  updateMenuItem,
+  updateOrderPayment,
+  updateOrderStatus,
   updateReservationStatus
 } from "./api";
 import { TIERS, COMPARE_ROWS, FAQ, buildPricingSchema } from "./data/pricing";
@@ -626,6 +634,8 @@ function App() {
       "/": "VocoTable",
       "/live-feed": "Live Feed · VocoTable",
       "/booking-log": "Booking Log · VocoTable",
+      "/manage-menu": "Manage Menu · VocoTable",
+      "/kitchen-overview": "Kitchen Overview · VocoTable",
       "/analytics": "Analytics · VocoTable",
       "/settings": "Settings · VocoTable",
     };
@@ -647,6 +657,8 @@ function App() {
     path === "/live-tables" ||
     path.startsWith("/live-tables/") ||
     path === "/booking-log" ||
+    path === "/manage-menu" ||
+    path === "/kitchen-overview" ||
     path === "/analytics" ||
     path === "/settings" ||
     path === "/manage-plan" ||
@@ -698,6 +710,8 @@ function AppRouter({ path, navigate, isDashboard, paymentCards, setPaymentCards 
   }
   if (path === "/live-tables") return <LiveTablesPage navigate={navigate} path={path} />;
   if (path === "/booking-log") return <BookingLogPage navigate={navigate} path={path} />;
+  if (path === "/manage-menu") return <ManageMenuPage navigate={navigate} path={path} />;
+  if (path === "/kitchen-overview") return <KitchenOverviewPage navigate={navigate} path={path} />;
   if (path === "/analytics") return <AnalyticsPage navigate={navigate} path={path} />;
   if (path === "/settings")
     return (
@@ -1608,6 +1622,8 @@ function DashboardShell({ active, children, navigate, path }) {
     ["Live Tables", "table_restaurant", "/live-tables"],
     ["Live Feed", "graphic_eq", "/live-feed"],
     ["Booking Log", "menu_book", "/booking-log"],
+    ["Manage Menu", "restaurant_menu", "/manage-menu"],
+    ["Kitchen", "soup_kitchen", "/kitchen-overview"],
     ["Analytics", "query_stats", "/analytics"]
   ];
 
@@ -4117,6 +4133,428 @@ function formatRefreshedAgo(date) {
   if (seconds < 60) return `Refreshed ${seconds}s ago`;
   const m = Math.floor(seconds / 60);
   return `Refreshed ${m}m ago`;
+}
+
+function ManageMenuPage({ navigate, path }) {
+  const [menu, setMenu] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await getMenu();
+      setMenu(data);
+      setError(null);
+    } catch (e) {
+      setError(e.message ?? "Failed to load menu");
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const handleToggleAvailability = async (item) => {
+    setBusy(true);
+    try {
+      await updateMenuItem(item.id, { is_available: !item.is_available });
+      await refresh();
+    } catch (e) {
+      setError(e.message ?? "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteItem = async (item) => {
+    if (!window.confirm(`Delete ${item.name}? Order history will be preserved.`)) return;
+    setBusy(true);
+    try {
+      await deleteMenuItem(item.id);
+      await refresh();
+    } catch (e) {
+      setError(e.message ?? "Delete failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddCategory = async () => {
+    const name = window.prompt("Category name");
+    if (!name?.trim()) return;
+    setBusy(true);
+    try {
+      await createMenuCategory({ name: name.trim() });
+      await refresh();
+    } catch (e) {
+      setError(e.message ?? "Create category failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <DashboardShell active="Manage Menu" navigate={navigate} path={path}>
+      <header className="menu-page-header">
+        <div>
+          <h1>Manage Menu</h1>
+          <p className="menu-page-sub">Add, edit, and toggle availability. Changes are live to the kitchen instantly.</p>
+        </div>
+        <div className="menu-page-actions">
+          <button type="button" className="menu-btn" onClick={handleAddCategory} disabled={busy}>
+            + Category
+          </button>
+          <button
+            type="button"
+            className="menu-btn primary"
+            onClick={() => setEditing({ mode: "create" })}
+            disabled={busy || !menu?.categories?.length}
+          >
+            + Menu item
+          </button>
+        </div>
+      </header>
+
+      {error ? <div className="menu-error">{error}</div> : null}
+
+      {!menu ? (
+        <div className="menu-empty">Loading…</div>
+      ) : menu.categories.length === 0 ? (
+        <div className="menu-empty">No categories yet. Add one to begin.</div>
+      ) : (
+        <div className="menu-categories">
+          {menu.categories.map((category) => (
+            <section key={category.id} className="menu-category">
+              <header className="menu-category-head">
+                <h2>{category.name}</h2>
+                <span className="menu-category-count">{category.items.length} item{category.items.length === 1 ? "" : "s"}</span>
+              </header>
+              <div className="menu-items-grid">
+                {category.items.map((item) => (
+                  <article
+                    key={item.id}
+                    className={`menu-item-card ${item.is_available ? "" : "unavailable"}`}
+                  >
+                    <div className="menu-item-top">
+                      <div>
+                        <div className="menu-item-name">{item.name}</div>
+                        {item.description ? <div className="menu-item-desc">{item.description}</div> : null}
+                      </div>
+                      <div className="menu-item-price">${(item.base_price_cents / 100).toFixed(2)}</div>
+                    </div>
+                    {item.variants.length > 0 ? (
+                      <div className="menu-item-variants">
+                        {item.variants.map((v) => (
+                          <span key={v.id} className="menu-item-variant">
+                            {v.name} {v.price_delta_cents >= 0 ? "+" : ""}
+                            ${(v.price_delta_cents / 100).toFixed(2)}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {item.modifier_groups.length > 0 ? (
+                      <div className="menu-item-modifiers">
+                        {item.modifier_groups.map((g) => (
+                          <div key={g.group_name} className="menu-item-modifier-group">
+                            <strong>{g.group_name}</strong> ({g.group_min_select}–{g.group_max_select}):{" "}
+                            {g.options.map((o) => o.name).join(", ")}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="menu-item-actions">
+                      <button
+                        type="button"
+                        className={`menu-btn small ${item.is_available ? "" : "warn"}`}
+                        onClick={() => handleToggleAvailability(item)}
+                        disabled={busy}
+                      >
+                        {item.is_available ? "Sell out" : "Restore"}
+                      </button>
+                      <button
+                        type="button"
+                        className="menu-btn small"
+                        onClick={() => setEditing({ mode: "edit", item, categoryId: category.id })}
+                        disabled={busy}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="menu-btn small danger"
+                        onClick={() => handleDeleteItem(item)}
+                        disabled={busy}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {editing ? (
+        <MenuItemModal
+          mode={editing.mode}
+          item={editing.item}
+          presetCategoryId={editing.categoryId}
+          categories={menu?.categories ?? []}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await refresh();
+          }}
+        />
+      ) : null}
+    </DashboardShell>
+  );
+}
+
+function MenuItemModal({ mode, item, presetCategoryId, categories, onClose, onSaved }) {
+  const [name, setName] = useState(item?.name ?? "");
+  const [description, setDescription] = useState(item?.description ?? "");
+  const [priceDollars, setPriceDollars] = useState(((item?.base_price_cents ?? 0) / 100).toFixed(2));
+  const [categoryId, setCategoryId] = useState(item?.category_id ?? presetCategoryId ?? categories[0]?.id ?? "");
+  const [variants, setVariants] = useState(item?.variants?.map((v) => ({
+    name: v.name,
+    delta: (v.price_delta_cents / 100).toFixed(2)
+  })) ?? []);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const addVariant = () => setVariants((vs) => [...vs, { name: "", delta: "0.00" }]);
+  const removeVariant = (idx) => setVariants((vs) => vs.filter((_, i) => i !== idx));
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        category_id: categoryId,
+        name: name.trim(),
+        description: description.trim() || null,
+        base_price_cents: Math.round(parseFloat(priceDollars) * 100),
+        variants: variants
+          .filter((v) => v.name.trim())
+          .map((v, idx) => ({
+            name: v.name.trim(),
+            price_delta_cents: Math.round(parseFloat(v.delta || "0") * 100),
+            display_order: idx
+          }))
+      };
+      if (mode === "create") {
+        await createMenuItem(payload);
+      } else {
+        await updateMenuItem(item.id, payload);
+      }
+      onSaved();
+    } catch (e) {
+      setError(e.message ?? "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="menu-modal-backdrop" onClick={onClose}>
+      <form className="menu-modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h2>{mode === "create" ? "New menu item" : `Edit ${item?.name}`}</h2>
+        {error ? <div className="menu-error">{error}</div> : null}
+        <label className="menu-field">
+          <span>Name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
+        </label>
+        <label className="menu-field">
+          <span>Category</span>
+          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="menu-field">
+          <span>Description</span>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={500} />
+        </label>
+        <label className="menu-field">
+          <span>Base price ($)</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={priceDollars}
+            onChange={(e) => setPriceDollars(e.target.value)}
+            required
+          />
+        </label>
+        <div className="menu-variants-edit">
+          <div className="menu-variants-head">
+            <strong>Variants (size tiers)</strong>
+            <button type="button" className="menu-btn small" onClick={addVariant}>+ variant</button>
+          </div>
+          {variants.map((v, idx) => (
+            <div key={idx} className="menu-variant-row">
+              <input
+                placeholder="Name (e.g. Large)"
+                value={v.name}
+                onChange={(e) => setVariants((vs) => vs.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Δ$"
+                value={v.delta}
+                onChange={(e) => setVariants((vs) => vs.map((x, i) => i === idx ? { ...x, delta: e.target.value } : x))}
+              />
+              <button type="button" className="menu-btn small danger" onClick={() => removeVariant(idx)}>×</button>
+            </div>
+          ))}
+        </div>
+        <div className="menu-modal-actions">
+          <button type="button" className="menu-btn" onClick={onClose}>Cancel</button>
+          <button type="submit" className="menu-btn primary" disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function KitchenOverviewPage({ navigate, path }) {
+  const [orders, setOrders] = useState([]);
+  const [serverNow, setServerNow] = useState(new Date().toISOString());
+  const [error, setError] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await listActiveOrders();
+      setOrders(data.orders ?? []);
+      setServerNow(data.server_now ?? new Date().toISOString());
+      setError(null);
+    } catch (e) {
+      setError(e.message ?? "Failed to load orders");
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const interval = setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [refresh]);
+
+  const handleCancel = async (order) => {
+    const reason = window.prompt(`Cancel order #${order.order_number}? (Optional reason)`);
+    if (reason === null) return; // user pressed cancel on the prompt itself
+    setBusyId(order.id);
+    try {
+      await updateOrderStatus(order.id, "cancelled", order.version, reason || undefined);
+      await refresh();
+    } catch (e) {
+      setError(e.message ?? "Cancel failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleTogglePaid = async (order) => {
+    setBusyId(order.id);
+    try {
+      await updateOrderPayment(
+        order.id,
+        order.payment_status === "paid" ? "unpaid" : "paid",
+        order.version
+      );
+      await refresh();
+    } catch (e) {
+      setError(e.message ?? "Payment update failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <DashboardShell active="Kitchen" navigate={navigate} path={path}>
+      <header className="kdash-page-header">
+        <div>
+          <h1>Kitchen overview</h1>
+          <p className="menu-page-sub">All active orders. Use this when the wall tablet isn't reachable.</p>
+        </div>
+        <div className="kdash-page-meta">{orders.length} active</div>
+      </header>
+
+      {error ? <div className="menu-error">{error}</div> : null}
+
+      {orders.length === 0 ? (
+        <div className="menu-empty">No active orders.</div>
+      ) : (
+        <div className="kdash-orders">
+          {orders.map((order) => {
+            const orderedAt = new Date(order.ordered_at).getTime();
+            const nowMs = new Date(serverNow).getTime();
+            const ageS = Math.max(0, Math.round((nowMs - orderedAt) / 1000));
+            const mins = Math.floor(ageS / 60);
+            const ageLabel = mins < 1 ? `${ageS}s` : `${mins}m`;
+            return (
+              <article key={order.id} className={`kdash-order kdash-status-${order.status}`}>
+                <div className="kdash-order-head">
+                  <div className="kdash-order-number">#{order.order_number ?? "?"}</div>
+                  <div className="kdash-order-status">{order.status.toUpperCase()}</div>
+                  <div className="kdash-order-age">{ageLabel}</div>
+                </div>
+                <div className="kdash-order-meta">
+                  <span className={`kds-pill ${order.payment_status === "paid" ? "paid" : "unpaid"}`}>
+                    {order.payment_status === "paid" ? "PAID" : "UNPAID"}
+                  </span>
+                  <span className="kds-pill source">{order.source}</span>
+                  <span className="kdash-order-total">${(order.total_cents / 100).toFixed(2)}</span>
+                </div>
+                <ul className="kdash-order-items">
+                  {order.items.map((item) => (
+                    <li key={item.id}>
+                      {item.quantity}× {item.name_snapshot}
+                      {item.variant_name_snapshot ? ` — ${item.variant_name_snapshot}` : ""}
+                      {item.modifiers.length ? (
+                        <span className="kdash-mods">
+                          {" "}({item.modifiers.map((m) => m.name_snapshot).join(", ")})
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+                <div className="kdash-order-actions">
+                  <button
+                    type="button"
+                    className="menu-btn small"
+                    onClick={() => handleTogglePaid(order)}
+                    disabled={busyId === order.id}
+                  >
+                    {order.payment_status === "paid" ? "Mark unpaid" : "Mark paid"}
+                  </button>
+                  <button
+                    type="button"
+                    className="menu-btn small danger"
+                    onClick={() => handleCancel(order)}
+                    disabled={busyId === order.id}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </DashboardShell>
+  );
 }
 
 function AnalyticsPage({ navigate }) {

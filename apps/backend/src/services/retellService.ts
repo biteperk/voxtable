@@ -6,6 +6,8 @@ import { CallStatus } from "../domain/types";
 import {
   availabilityRequestSchema,
   createBookingRequestSchema,
+  createOrderRetellSchema,
+  menuLookupRetellSchema,
   modifyBookingRequestSchema,
   normalizeModifyBookingArgs,
   normalizePartySize
@@ -24,6 +26,8 @@ import {
 } from "../utils/time";
 import { checkAvailability } from "./availabilityService";
 import { createBooking, modifyBooking } from "./bookingService";
+import { getMenu, lookupMenu } from "./menuService";
+import { createOrder } from "./orderService";
 
 type RetellPayload = Record<string, any>;
 
@@ -171,6 +175,164 @@ export async function handleRetellFunction(
       booking_id: result.bookingId,
       status: result.status,
       confirmation_message: result.confirmationMessage
+    };
+  }
+
+  if (name === "menu_lookup" || name === "menulookup") {
+    const parsed = menuLookupRetellSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new AppError(
+        400,
+        "MENU_LOOKUP_INVALID",
+        `menu_lookup args invalid: ${parsed.error.issues.map((i) => i.message).join("; ")}`
+      );
+    }
+    const result = await lookupMenu({
+      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      query: parsed.data.query,
+      category: parsed.data.category
+    });
+    return {
+      matches: result.matches,
+      ambiguous: result.ambiguous,
+      speakable_summary: result.speakable_summary
+    };
+  }
+
+  if (name === "create_order" || name === "createorder") {
+    const parsed = createOrderRetellSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new AppError(
+        400,
+        "CREATE_ORDER_INVALID",
+        `create_order args invalid: ${parsed.error.issues.map((i) => i.message).join("; ")}`
+      );
+    }
+    const reservationId = parsed.data.reservation_id ?? parsed.data.reservationId;
+    if (!reservationId) {
+      throw new AppError(
+        400,
+        "ORDER_REQUIRES_BOOKING",
+        "I can only take a food order after the booking is confirmed. Want me to book your table first?"
+      );
+    }
+    const callId = parsed.data.call_id ?? parsed.data.callId ?? providerCallId;
+
+    // Resolve spoken item names to menu_item_ids inside this handler so the
+    // LLM doesn't need to know UUIDs. Ambiguity returns a structured error
+    // Bella can read out.
+    const resolvedItems: Array<{
+      menuItemId: string;
+      variantId?: string;
+      quantity: number;
+      modifierIds?: string[];
+      specialRequests?: string;
+    }> = [];
+
+    for (const itemInput of parsed.data.items) {
+      const lookup = await lookupMenu({
+        restaurantId: env.DEFAULT_RESTAURANT_ID,
+        query: itemInput.name
+      });
+      if (lookup.matches.length === 0) {
+        throw new AppError(
+          404,
+          "MENU_ITEM_NOT_FOUND",
+          `I can't find "${itemInput.name}" on our menu. Want me to read what we have?`
+        );
+      }
+      if (lookup.ambiguous) {
+        throw new AppError(
+          400,
+          "AMBIGUOUS_ITEM",
+          `Did you mean ${lookup.matches.slice(0, 3).map((m) => m.name).join(" or ")}?`,
+          { candidates: lookup.matches.slice(0, 3).map((m) => m.name) }
+        );
+      }
+      const top = lookup.matches[0]!;
+
+      // Resolve variant by name within this menu item if provided.
+      let variantId: string | undefined;
+      const variantName = (itemInput.variant_name ?? itemInput.variantName ?? "").trim();
+      if (variantName) {
+        const fullMenu = await getMenu(env.DEFAULT_RESTAURANT_ID);
+        const matchedItem = fullMenu.categories
+          .flatMap((c) => c.items)
+          .find((i) => i.id === top.id);
+        const variant = matchedItem?.variants.find(
+          (v) => v.name.toLowerCase() === variantName.toLowerCase()
+        );
+        if (!variant) {
+          throw new AppError(
+            400,
+            "INVALID_VARIANT",
+            `${top.name} doesn't come in ${variantName}. Options are ${matchedItem?.variants.map((v) => v.name).join(", ") || "standard"}.`
+          );
+        }
+        variantId = variant.id;
+      }
+
+      // Resolve modifier choices by group_name + value(s).
+      const modifierIds: string[] = [];
+      const modifierChoices = itemInput.modifier_choices ?? itemInput.modifierChoices ?? {};
+      if (Object.keys(modifierChoices).length > 0) {
+        const fullMenu = await getMenu(env.DEFAULT_RESTAURANT_ID);
+        const matchedItem = fullMenu.categories
+          .flatMap((c) => c.items)
+          .find((i) => i.id === top.id);
+        for (const [groupName, choices] of Object.entries(modifierChoices)) {
+          const group = matchedItem?.modifier_groups.find(
+            (g) => g.group_name.toLowerCase() === groupName.toLowerCase()
+          );
+          if (!group) {
+            throw new AppError(
+              400,
+              "UNKNOWN_MODIFIER_GROUP",
+              `${top.name} doesn't have a ${groupName} option.`
+            );
+          }
+          const choiceList = Array.isArray(choices) ? choices : [choices];
+          for (const choice of choiceList) {
+            const option = group.options.find(
+              (o) => o.name.toLowerCase() === String(choice).toLowerCase()
+            );
+            if (!option) {
+              throw new AppError(
+                400,
+                "UNKNOWN_MODIFIER",
+                `${groupName} options are ${group.options.map((o) => o.name).join(", ")}. Which would you like?`
+              );
+            }
+            modifierIds.push(option.id);
+          }
+        }
+      }
+
+      resolvedItems.push({
+        menuItemId: top.id,
+        variantId,
+        quantity: itemInput.quantity,
+        modifierIds: modifierIds.length ? modifierIds : undefined,
+        specialRequests: itemInput.special_requests ?? itemInput.specialRequests
+      });
+    }
+
+    const result = await createOrder({
+      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      reservationId,
+      source: "voice",
+      items: resolvedItems,
+      specialInstructions: parsed.data.special_instructions ?? parsed.data.specialInstructions,
+      idempotencyKey: callId,
+      createdBy: "voice:retell",
+      createdFromCallLogId: undefined
+    });
+
+    return {
+      order_id: result.order.id,
+      order_number: result.order.order_number,
+      confirmation_message: result.confirmationMessage,
+      is_replay: result.isReplay
     };
   }
 

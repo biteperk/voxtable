@@ -101,3 +101,65 @@ export function seatReservation(id) {
 export function completeReservation(id) {
   return authedFetch(`/bookings/${id}/complete`, { method: "POST" });
 }
+
+// ===== Kitchen / menu / orders =====
+
+export function getMenu() {
+  return authedFetch("/api/menu");
+}
+
+export function createMenuCategory(payload) {
+  return authedFetch("/api/menu/categories", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateMenuCategory(id, payload) {
+  return authedFetch(`/api/menu/categories/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteMenuCategory(id) {
+  return authedFetch(`/api/menu/categories/${id}`, { method: "DELETE" });
+}
+
+export function createMenuItem(payload) {
+  return authedFetch("/api/menu/items", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateMenuItem(id, payload) {
+  return authedFetch(`/api/menu/items/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteMenuItem(id) {
+  return authedFetch(`/api/menu/items/${id}`, { method: "DELETE" });
+}
+
+export function listActiveOrders() {
+  return authedFetch("/api/orders/active");
+}
+
+export function updateOrderStatus(id, status, version, cancellationReason) {
+  return authedFetch(`/api/orders/${id}/status`, {
+    method: "PATCH",
+    headers: { "If-Match": String(version) },
+    body: JSON.stringify(cancellationReason ? { status, cancellation_reason: cancellationReason } : { status })
+  });
+}
+
+export function updateOrderPayment(id, paymentStatus, version) {
+  return authedFetch(`/api/orders/${id}/payment`, {
+    method: "PATCH",
+    headers: { "If-Match": String(version) },
+    body: JSON.stringify({ payment_status: paymentStatus })
+  });
+}

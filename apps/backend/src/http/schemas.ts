@@ -133,3 +133,140 @@ export function normalizeRestaurantId(
   // restaurant. Remove this lockdown when multi-tenant lands.
   return fallbackRestaurantId;
 }
+
+// ===== KDS (Kitchen Display System) schemas =====
+
+const priceCentsSchema = z.coerce.number().int().min(0).max(1_000_000);
+const signedDeltaCentsSchema = z.coerce.number().int().min(-1_000_000).max(1_000_000);
+
+const variantInputSchema = z.object({
+  name: z.string().min(1).max(80),
+  price_delta_cents: signedDeltaCentsSchema.optional(),
+  priceDeltaCents: signedDeltaCentsSchema.optional(),
+  display_order: z.number().int().min(0).max(1000).optional(),
+  displayOrder: z.number().int().min(0).max(1000).optional()
+});
+
+const modifierOptionInputSchema = z.object({
+  name: z.string().min(1).max(80),
+  price_delta_cents: signedDeltaCentsSchema.optional(),
+  priceDeltaCents: signedDeltaCentsSchema.optional(),
+  is_default: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+  display_order: z.number().int().min(0).max(1000).optional(),
+  displayOrder: z.number().int().min(0).max(1000).optional()
+});
+
+const modifierGroupInputSchema = z.object({
+  group_name: z.string().min(1).max(60).optional(),
+  groupName: z.string().min(1).max(60).optional(),
+  group_min_select: z.number().int().min(0).max(20).optional(),
+  groupMinSelect: z.number().int().min(0).max(20).optional(),
+  group_max_select: z.number().int().min(1).max(20).optional(),
+  groupMaxSelect: z.number().int().min(1).max(20).optional(),
+  options: z.array(modifierOptionInputSchema).min(1).max(20)
+}).refine((v) => Boolean(v.group_name ?? v.groupName), {
+  message: "group_name required",
+  path: ["group_name"]
+});
+
+export const menuCategoryRequestSchema = z.object({
+  name: z.string().min(1).max(80),
+  display_order: z.number().int().min(0).max(1000).optional(),
+  displayOrder: z.number().int().min(0).max(1000).optional(),
+  is_active: z.boolean().optional(),
+  isActive: z.boolean().optional()
+});
+
+export const menuItemRequestSchema = z.object({
+  category_id: uuidSchema.optional(),
+  categoryId: uuidSchema.optional(),
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).optional().nullable(),
+  base_price_cents: priceCentsSchema.optional(),
+  basePriceCents: priceCentsSchema.optional(),
+  image_url: z.string().url().max(1000).optional().nullable(),
+  imageUrl: z.string().url().max(1000).optional().nullable(),
+  image_blurhash: z.string().max(200).optional().nullable(),
+  imageBlurhash: z.string().max(200).optional().nullable(),
+  display_order: z.number().int().min(0).max(1000).optional(),
+  displayOrder: z.number().int().min(0).max(1000).optional(),
+  is_available: z.boolean().optional(),
+  isAvailable: z.boolean().optional(),
+  variants: z.array(variantInputSchema).max(10).optional(),
+  modifier_groups: z.array(modifierGroupInputSchema).max(10).optional(),
+  modifierGroups: z.array(modifierGroupInputSchema).max(10).optional()
+});
+
+const orderItemInputSchema = z.object({
+  menu_item_id: uuidSchema.optional(),
+  menuItemId: uuidSchema.optional(),
+  variant_id: uuidSchema.optional(),
+  variantId: uuidSchema.optional(),
+  quantity: z.coerce.number().int().min(1).max(50),
+  modifier_ids: z.array(uuidSchema).max(20).optional(),
+  modifierIds: z.array(uuidSchema).max(20).optional(),
+  special_requests: z.string().max(500).optional(),
+  specialRequests: z.string().max(500).optional()
+}).refine((v) => Boolean(v.menu_item_id ?? v.menuItemId), {
+  message: "menu_item_id required",
+  path: ["menu_item_id"]
+});
+
+export const createOrderRequestSchema = z.object({
+  restaurant_id: uuidSchema.optional(),
+  restaurantId: uuidSchema.optional(),
+  reservation_id: uuidSchema.optional(),
+  reservationId: uuidSchema.optional(),
+  table_id: uuidSchema.optional(),
+  tableId: uuidSchema.optional(),
+  source: z.enum(["voice", "waiter", "qr", "dashboard"]).default("dashboard"),
+  items: z.array(orderItemInputSchema).min(1).max(50),
+  special_instructions: z.string().max(1000).optional(),
+  specialInstructions: z.string().max(1000).optional()
+});
+
+export const updateOrderStatusRequestSchema = z.object({
+  status: z.enum(["pending", "preparing", "ready", "served", "cancelled"]),
+  cancellation_reason: z.string().max(500).optional(),
+  cancellationReason: z.string().max(500).optional()
+});
+
+export const updateOrderItemStatusRequestSchema = z.object({
+  status: z.enum(["queued", "preparing", "ready", "served"])
+});
+
+export const updatePaymentStatusRequestSchema = z.object({
+  payment_status: z.enum(["unpaid", "paid", "refunded"]).optional(),
+  paymentStatus: z.enum(["unpaid", "paid", "refunded"]).optional()
+}).refine((v) => Boolean(v.payment_status ?? v.paymentStatus), {
+  message: "payment_status required",
+  path: ["payment_status"]
+});
+
+export const createOrderRetellSchema = z.object({
+  // Retell sends call_id; we use it as the idempotency key.
+  call_id: z.string().min(1).max(200).optional(),
+  callId: z.string().min(1).max(200).optional(),
+  reservation_id: uuidSchema.optional(),
+  reservationId: uuidSchema.optional(),
+  items: z.array(
+    z.object({
+      name: z.string().min(1).max(120),
+      variant_name: z.string().max(80).optional(),
+      variantName: z.string().max(80).optional(),
+      quantity: z.coerce.number().int().min(1).max(20).default(1),
+      modifier_choices: z.record(z.union([z.string(), z.array(z.string())])).optional(),
+      modifierChoices: z.record(z.union([z.string(), z.array(z.string())])).optional(),
+      special_requests: z.string().max(300).optional(),
+      specialRequests: z.string().max(300).optional()
+    })
+  ).min(1).max(20),
+  special_instructions: z.string().max(500).optional(),
+  specialInstructions: z.string().max(500).optional()
+});
+
+export const menuLookupRetellSchema = z.object({
+  query: z.string().max(100).optional(),
+  category: z.string().max(60).optional()
+});

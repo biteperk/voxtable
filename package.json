@@ -10,10 +10,13 @@
   "scripts": {
     "dev:backend": "tsx watch apps/backend/src/server.ts",
     "dev:frontend": "vite --config apps/frontend/vite.config.ts",
+    "dev:kds": "vite --config apps/kds/vite.config.ts",
     "build:backend": "tsc -p apps/backend/tsconfig.json",
     "build:frontend": "vite build --config apps/frontend/vite.config.ts",
+    "build:kds": "vite build --config apps/kds/vite.config.ts",
     "start:backend": "node apps/backend/dist/server.js",
     "preview:frontend": "vite preview --config apps/frontend/vite.config.ts",
+    "preview:kds": "vite preview --config apps/kds/vite.config.ts",
     "db:migrate": "tsx apps/backend/src/db/migrate.ts",
     "db:seed": "tsx apps/backend/src/db/seed.ts",
     "db:migrate:prod": "node apps/backend/dist/db/migrate.js",
@@ -23,7 +26,7 @@
     "smoke:twilio": "tsx apps/backend/scripts/smoke-twilio.ts",
     "smoke:calcom": "tsx apps/backend/scripts/smoke-calcom.ts",
     "smoke:retell-dates": "tsx apps/backend/scripts/smoke-retell-dates.ts",
-    "check": "npm run build:backend && npm run build:frontend"
+    "check": "npm run build:backend && npm run build:frontend && npm run build:kds"
   },
   "dependencies": {
     "@calcom/embed-react": "^1.5.3",
