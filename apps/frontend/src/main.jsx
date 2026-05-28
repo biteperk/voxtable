@@ -4792,15 +4792,28 @@ function KitchenOrderCard({ order, serverNow, busy, advanceLabel, onAdvance, onC
   );
 }
 
+const ANALYTICS_PERIODS = [
+  { days: 7,  label: "Last 7 days" },
+  { days: 15, label: "Last 15 days" },
+  { days: 30, label: "Last 30 days" },
+  { days: 60, label: "Last 60 days" },
+  { days: 90, label: "Last 90 days" },
+];
+
 function AnalyticsPage({ navigate }) {
+  const [days, setDays] = useState(7);
   const [analytics, setAnalytics] = useState(null);
   const [dailySeries, setDailySeries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [periodOpen, setPeriodOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const periodRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getAnalytics({ days: 7 }), getAnalyticsDailySeries({ days: 7 })])
+    setLoading(true);
+    Promise.all([getAnalytics({ days }), getAnalyticsDailySeries({ days })])
       .then(([statsRes, seriesRes]) => {
         if (cancelled) return;
         setAnalytics(statsRes.analytics);
@@ -4811,7 +4824,25 @@ function AnalyticsPage({ navigate }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [days]);
+
+  useEffect(() => {
+    if (!periodOpen) return;
+    const onClick = (event) => {
+      if (periodRef.current && !periodRef.current.contains(event.target)) {
+        setPeriodOpen(false);
+      }
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") setPeriodOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [periodOpen]);
 
   const totalCalls = analytics?.total_calls ?? 0;
   // Prefer the new analyzer-driven `bookings_confirmed`; fall back to the
@@ -4819,7 +4850,7 @@ function AnalyticsPage({ navigate }) {
   const bookingsCount = analytics?.bookings_confirmed ?? analytics?.bookings_created ?? 0;
   const bookingRate =
     totalCalls > 0 ? `${Math.round((bookingsCount / totalCalls) * 100)}%` : "—";
-  const dailyRevenue = `$${((bookingsCount * 80) / 30).toFixed(0)}`;
+  const dailyRevenue = `$${((bookingsCount * 80) / days).toFixed(0)}`;
   const avgLatency = analytics?.avg_latency_ms
     ? `${(analytics.avg_latency_ms / 1000).toFixed(1)}s`
     : "—";
@@ -4828,34 +4859,90 @@ function AnalyticsPage({ navigate }) {
       ? formatDuration(analytics.avg_duration_seconds)
       : "—";
 
+  const periodLabel = ANALYTICS_PERIODS.find((p) => p.days === days)?.label ?? `Last ${days} days`;
+
+  const handleExport = async () => {
+    if (exporting || loading) return;
+    setExporting(true);
+    try {
+      const { exportAnalyticsPdf } = await import("./pdfExport.js");
+      exportAnalyticsPdf({
+        days,
+        periodLabel,
+        metrics: {
+          totalCalls,
+          bookingsCount,
+          bookingRate,
+          dailyRevenue,
+          avgLatency,
+          avgDuration,
+        },
+        dailySeries,
+        analytics,
+      });
+    } catch (e) {
+      setError(`Export failed: ${e.message ?? e}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <DashboardShell active="Analytics" navigate={navigate} branded>
       <header className="analytics-header">
         <div>
           <h1>Performance Analytics</h1>
-          <p>{error ? `Error: ${error}` : "Last 7 days of VocoTable AI activity."}</p>
+          <p>{error ? `Error: ${error}` : `${periodLabel} of VocoTable AI activity.`}</p>
         </div>
         <div className="analytics-actions">
-          <button>
-            Last 7 Days
-            <Icon name="expand_more" />
-          </button>
-          <button>
-            <Icon name="download" />
-            Export
+          <div className="period-dropdown" ref={periodRef}>
+            <button
+              type="button"
+              className="period-trigger"
+              onClick={() => setPeriodOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={periodOpen}
+            >
+              {periodLabel}
+              <Icon name={periodOpen ? "expand_less" : "expand_more"} />
+            </button>
+            {periodOpen ? (
+              <div className="period-menu" role="menu">
+                {ANALYTICS_PERIODS.map((p) => (
+                  <button
+                    key={p.days}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={days === p.days}
+                    className={`period-menu-item${days === p.days ? " is-active" : ""}`}
+                    onClick={() => {
+                      setDays(p.days);
+                      setPeriodOpen(false);
+                    }}
+                  >
+                    {p.label}
+                    {days === p.days ? <Icon name="check" /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <button type="button" onClick={handleExport} disabled={exporting || loading}>
+            <Icon name={exporting ? "hourglass_top" : "download"} />
+            {exporting ? "Generating…" : "Export"}
           </button>
         </div>
       </header>
 
       <section className="metric-grid">
-        <Metric icon="call" label="Total Calls" value={loading ? "…" : String(totalCalls)} change="last 7d" />
+        <Metric icon="call" label="Total Calls" value={loading ? "…" : String(totalCalls)} change={`last ${days}d`} />
         <Metric icon="event_available" label="Booking Conversion" value={loading ? "…" : bookingRate} change={`${bookingsCount} bookings`} tone="secondary" />
         <Metric icon="payments" label="Daily Avg Revenue" value={loading ? "…" : dailyRevenue} change="$80 / booking" tone="tertiary" />
         <Metric icon="timer" label="Avg Call Duration" value={loading ? "…" : avgDuration} change={analytics?.avg_latency_ms ? `${avgLatency} latency` : ""} />
       </section>
 
       <section className="analytics-lower-grid">
-        <CallVolumeChart series={dailySeries} loading={loading} />
+        <CallVolumeChart series={dailySeries} loading={loading} days={days} />
         <OutcomeBreakdown analytics={analytics} />
       </section>
     </DashboardShell>
@@ -4882,22 +4969,32 @@ function Metric({ icon, label, value, change, tone = "primary", down = false }) 
 
 function decorateDailySeries(rawSeries) {
   const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return rawSeries.map((row) => {
     const [y, m, d] = row.date.split("-").map(Number);
     const date = new Date(Date.UTC(y, m - 1, d));
     return {
       key: row.date,
       label: dayLabels[date.getUTCDay()],
+      shortDate: `${monthLabels[date.getUTCMonth()]} ${date.getUTCDate()}`,
       total: row.total ?? 0,
       confirmed: row.confirmed ?? 0
     };
   });
 }
 
-function CallVolumeChart({ series, loading }) {
+function CallVolumeChart({ series, loading, days = 7 }) {
   const maxTotal = Math.max(1, ...series.map((d) => d.total));
   const niceMax = Math.max(4, Math.ceil(maxTotal / 4) * 4);
   const ticks = [niceMax, Math.round(niceMax * 0.75), Math.round(niceMax * 0.5), Math.round(niceMax * 0.25), 0];
+
+  // For wide ranges (>14 days) sample x-axis labels so they don't overlap, and
+  // use a short date instead of weekday since weekdays repeat.
+  const useShortDate = series.length > 7;
+  const labelStride = series.length <= 14 ? 1 : Math.ceil(series.length / 10);
+
+  const gridCols = `repeat(${Math.max(series.length, 1)}, minmax(0, 1fr))`;
+  const gap = series.length > 14 ? 4 : 18;
 
   return (
     <article className="chart-card">
@@ -4920,12 +5017,16 @@ function CallVolumeChart({ series, loading }) {
             <span key={i}>{t}</span>
           ))}
         </div>
-        <div className="bars">
+        <div className="bars" style={{ gridTemplateColumns: gridCols, gap: `${gap}px` }}>
           {series.map((d) => {
             const totalPct = niceMax > 0 ? (d.total / niceMax) * 100 : 0;
             const confirmedPct = d.total > 0 ? (d.confirmed / d.total) * 100 : 0;
             return (
-              <div className="bar-column" key={d.key} title={`${d.label}: ${d.total} calls, ${d.confirmed} confirmed`}>
+              <div
+                className="bar-column"
+                key={d.key}
+                title={`${useShortDate ? d.shortDate : d.label}: ${d.total} calls, ${d.confirmed} confirmed`}
+              >
                 <div className="bar total" style={{ height: `${totalPct}%` }}>
                   <div className="confirmed" style={{ height: `${confirmedPct}%` }} />
                 </div>
@@ -4934,14 +5035,14 @@ function CallVolumeChart({ series, loading }) {
           })}
         </div>
       </div>
-      <div className="x-axis">
-        {series.map((d) => (
-          <span key={d.key}>{d.label}</span>
+      <div className="x-axis" style={{ gridTemplateColumns: gridCols, gap: `${gap}px` }}>
+        {series.map((d, i) => (
+          <span key={d.key}>{i % labelStride === 0 ? (useShortDate ? d.shortDate : d.label) : ""}</span>
         ))}
       </div>
       {!loading && series.every((d) => d.total === 0) && (
         <p style={{ color: "var(--outline)", fontSize: 12, marginTop: 8, textAlign: "center" }}>
-          No calls in the last 7 days.
+          No calls in the last {days} days.
         </p>
       )}
     </article>

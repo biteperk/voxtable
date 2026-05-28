@@ -2076,6 +2076,78 @@ button {
   font-size: 13px;
   line-height: 18px;
   font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.analytics-actions button:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  border-color: var(--outline);
+}
+
+.analytics-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Period dropdown — opens under the "Last X days" trigger */
+.period-dropdown {
+  position: relative;
+}
+
+.period-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  background: var(--surface-container-low);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: period-menu-in 120ms ease-out;
+}
+
+@keyframes period-menu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.period-menu-item {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px !important;
+  padding: 0 12px !important;
+  border: 1px solid transparent !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: var(--on-surface-variant) !important;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 500 !important;
+  text-align: left;
+  cursor: pointer;
+}
+
+.period-menu-item:hover {
+  background: var(--surface-container-high) !important;
+  color: var(--on-surface) !important;
+}
+
+.period-menu-item.is-active {
+  background: var(--surface-container-high) !important;
+  color: var(--on-surface) !important;
+  border-color: var(--primary) !important;
+}
+
+.period-menu-item .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--primary);
 }
 
 .metric-grid {
