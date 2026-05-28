@@ -36,6 +36,10 @@ async function authedFetch(path, options = {}) {
     throw new Error(`${response.status} ${response.statusText}: ${body}`);
   }
 
+  // 204 No Content (e.g. DELETE endpoints) has an empty body, so response.json()
+  // would throw "Unexpected end of JSON input". Return null instead.
+  if (response.status === 204) return null;
+
   return response.json();
 }
 

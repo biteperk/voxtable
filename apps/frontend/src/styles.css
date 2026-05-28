@@ -10416,6 +10416,12 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   color: var(--on-primary, #0e2243);
 }
 
+.kitchen-btn.primary .material-symbols-outlined {
+  color: #000;
+  font-weight: 700;
+  transform: translateY(-3px);
+}
+
 .kitchen-btn.primary:hover:not(:disabled) {
   background: var(--primary);
   box-shadow: 0 0 12px rgba(173, 198, 255, 0.4);
@@ -10569,6 +10575,22 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   padding-bottom: 14px;
   margin-bottom: 18px;
   border-bottom: 1px solid var(--outline-variant);
+}
+
+.menu-detail-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-modal-hint.menu-modal-warn {
+  border-color: rgba(255, 184, 77, 0.55);
+  background: rgba(255, 184, 77, 0.08);
+  color: var(--on-surface);
+}
+
+.menu-modal-hint.menu-modal-warn strong {
+  color: #ffb84d;
 }
 
 .menu-detail-head h2 {

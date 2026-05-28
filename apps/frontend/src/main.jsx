@@ -8,6 +8,7 @@ import {
   completeReservation,
   createMenuCategory,
   createMenuItem,
+  deleteMenuCategory,
   deleteMenuItem,
   getAnalytics,
   getAnalyticsDailySeries,
@@ -4143,6 +4144,7 @@ function ManageMenuPage({ navigate, path }) {
   const [editing, setEditing] = useState(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [addingCategory, setAddingCategory] = useState(false);
+  const [deletingCategory, setDeletingCategory] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -4280,15 +4282,27 @@ function ManageMenuPage({ navigate, path }) {
                         {visibleCategories[0].items.length} item{visibleCategories[0].items.length === 1 ? "" : "s"}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      className="kitchen-btn primary"
-                      onClick={() => setEditing({ mode: "create", categoryId: visibleCategories[0].id })}
-                      disabled={busy}
-                    >
-                      <Icon name="add" />
-                      New item
-                    </button>
+                    <div className="menu-detail-head-actions">
+                      <button
+                        type="button"
+                        className="kitchen-btn primary"
+                        onClick={() => setEditing({ mode: "create", categoryId: visibleCategories[0].id })}
+                        disabled={busy}
+                      >
+                        <Icon name="add" />
+                        New item
+                      </button>
+                      <button
+                        type="button"
+                        className="kitchen-btn danger"
+                        onClick={() => setDeletingCategory(visibleCategories[0])}
+                        disabled={busy}
+                        title="Delete category"
+                        aria-label="Delete category"
+                      >
+                        <Icon name="delete" />
+                      </button>
+                    </div>
                   </header>
                 ) : null}
                 <div className="menu-categories-stack">
@@ -4410,6 +4424,18 @@ function ManageMenuPage({ navigate, path }) {
           onClose={() => setAddingCategory(false)}
           onSaved={async () => {
             setAddingCategory(false);
+            await refresh();
+          }}
+        />
+      ) : null}
+
+      {deletingCategory ? (
+        <DeleteCategoryModal
+          category={deletingCategory}
+          onClose={() => setDeletingCategory(null)}
+          onDeleted={async () => {
+            setDeletingCategory(null);
+            setSelectedCategoryId("all");
             await refresh();
           }}
         />
@@ -4550,6 +4576,71 @@ function MenuItemModal({ mode, item, presetCategoryId, categories, onClose, onSa
             <Icon name="check" />
             {saving ? "Saving…" : "Save"}
           </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
+function DeleteCategoryModal({ category, onClose, onDeleted }) {
+  const [error, setError] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const hasItems = (category?.items?.length ?? 0) > 0;
+
+  const handleDelete = async () => {
+    if (hasItems) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteMenuCategory(category.id);
+      onDeleted();
+    } catch (e) {
+      setError(e.message ?? "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="menu-modal-backdrop" onClick={onClose}>
+      <form
+        className="menu-modal menu-modal-sm"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => { e.preventDefault(); handleDelete(); }}
+      >
+        <header className="menu-modal-head">
+          <h2>
+            <Icon name="delete" />
+            Delete category
+          </h2>
+          <button type="button" className="menu-modal-close" onClick={onClose} aria-label="Close">
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="menu-modal-body">
+          {error ? <div className="menu-error">{error}</div> : null}
+          {hasItems ? (
+            <p className="menu-modal-hint menu-modal-warn">
+              <strong>“{category.name}” has {category.items.length} item{category.items.length === 1 ? "" : "s"}.</strong>
+              <br />
+              Categories with items can't be deleted. Move or delete the items first, then come back.
+            </p>
+          ) : (
+            <p className="menu-modal-hint">
+              Permanently delete <strong>“{category.name}”</strong>? This can't be undone.
+            </p>
+          )}
+        </div>
+        <footer className="menu-modal-actions">
+          <button type="button" className="kitchen-btn ghost" onClick={onClose}>
+            {hasItems ? "Close" : "Cancel"}
+          </button>
+          {!hasItems ? (
+            <button type="submit" className="kitchen-btn danger" disabled={deleting}>
+              <Icon name="delete" />
+              {deleting ? "Deleting…" : "Delete category"}
+            </button>
+          ) : null}
         </footer>
       </form>
     </div>
