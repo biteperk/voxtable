@@ -1288,25 +1288,17 @@ function LandingPage({ navigate }) {
             </p>
           </div>
 
-          {[
-            { eyebrow: "For your restaurant", tiers: TIERS.filter((t) => t.group === "venue") },
-            { eyebrow: "For restaurant groups", tiers: TIERS.filter((t) => t.group === "groups") },
-          ].map(({ eyebrow, tiers }) => (
-            <div className="lp-price-group" key={eyebrow}>
-              <div className="lp-price-eyebrow">{eyebrow}</div>
-              <div className="lp-price-row lp-price-row-2">
-                {tiers.map((tier) => (
-                  <TierCard
-                    key={tier.id}
-                    tier={tier}
-                    highlighted={highlightedPlan === tier.id}
-                    onCta={handleTierCta(tier)}
-                    ctaRef={tier.custom ? enterpriseCtaRef : undefined}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+          <div className="lp-price-row lp-price-row-4">
+            {TIERS.map((tier) => (
+              <TierCard
+                key={tier.id}
+                tier={tier}
+                highlighted={highlightedPlan === tier.id}
+                onCta={handleTierCta(tier)}
+                ctaRef={tier.custom ? enterpriseCtaRef : undefined}
+              />
+            ))}
+          </div>
 
           <details className="lp-price-compare">
             <summary>Compare all features</summary>
