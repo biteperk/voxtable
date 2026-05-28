@@ -930,25 +930,51 @@ function LandingPage({ navigate }) {
             <figure className="lp-hero-card" aria-label="Bella, the AI phone host">
               <div className="lp-hero-card-halo" aria-hidden="true" />
               <div className="lp-hero-card-stage">
-                <div className="lp-bella-orb">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" className="lp-bella-orb-icon">
-                    <path
-                      fill="currentColor"
-                      d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"
-                    />
-                  </svg>
-                </div>
-                <div className="lp-bella-wave" aria-hidden="true">
-                  {Array.from({ length: 24 }).map((_, i) => (
-                    <span key={i} style={{ animationDelay: `${i * 0.06}s` }} />
-                  ))}
-                </div>
+                <picture className="lp-hero-card-photo">
+                  <source
+                    media="(max-width: 560px)"
+                    type="image/avif"
+                    srcSet="/bella/hero-square.avif 540w, /bella/hero-square@2x.avif 1080w"
+                    sizes="300px"
+                  />
+                  <source
+                    media="(max-width: 560px)"
+                    type="image/webp"
+                    srcSet="/bella/hero-square.webp 540w, /bella/hero-square@2x.webp 1080w"
+                    sizes="300px"
+                  />
+                  <source
+                    type="image/avif"
+                    srcSet="/bella/hero-portrait.avif 720w, /bella/hero-portrait@2x.avif 1080w"
+                    sizes="(max-width: 980px) 360px, 480px"
+                  />
+                  <source
+                    type="image/webp"
+                    srcSet="/bella/hero-portrait.webp 720w, /bella/hero-portrait@2x.webp 1080w"
+                    sizes="(max-width: 980px) 360px, 480px"
+                  />
+                  <img
+                    src="/bella/hero-portrait.jpg"
+                    width="720"
+                    height="900"
+                    alt="Bella, VocoTable's AI phone host, wearing a headset against the Australian flag"
+                    fetchPriority="high"
+                    loading="eager"
+                    decoding="async"
+                  />
+                </picture>
+                <div className="lp-hero-card-grade" aria-hidden="true" />
                 <div className="lp-hero-card-name">
                   Bella<span className="lp-amber">.</span>
                 </div>
               </div>
               <figcaption className="lp-hero-card-caption">
                 <span className="lp-hero-card-dot" aria-hidden="true" />
+                <span className="lp-mini-wave" aria-hidden="true">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <span key={i} style={{ animationDelay: `${i * 0.09}s` }} />
+                  ))}
+                </span>
                 Live · 24/7
               </figcaption>
             </figure>
@@ -1069,21 +1095,29 @@ function LandingPage({ navigate }) {
               </div>
             </div>
             <div className="lp-bella-card" role="img" aria-label="Bella, the AI phone host">
+              <picture className="lp-bella-card-photo">
+                <source
+                  type="image/avif"
+                  srcSet="/bella/meet-portrait.avif"
+                  sizes="(max-width: 720px) 320px, 420px"
+                />
+                <source
+                  type="image/webp"
+                  srcSet="/bella/meet-portrait.webp"
+                  sizes="(max-width: 720px) 320px, 420px"
+                />
+                <img
+                  src="/bella/meet-portrait.jpg"
+                  width="720"
+                  height="720"
+                  alt="Bella, VocoTable's AI phone host, in profile against the Australian flag"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </picture>
+              <div className="lp-bella-card-grade" aria-hidden="true" />
               <div className="lp-bella-tag">
                 <span className="lp-bella-dot" /> Live · Sydney
-              </div>
-              <div className="lp-bella-orb">
-                <svg viewBox="0 0 24 24" aria-hidden="true" className="lp-bella-orb-icon">
-                  <path
-                    fill="currentColor"
-                    d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"
-                  />
-                </svg>
-              </div>
-              <div className="lp-bella-wave" aria-hidden="true">
-                {Array.from({ length: 28 }).map((_, i) => (
-                  <span key={i} style={{ animationDelay: `${i * 0.06}s` }} />
-                ))}
               </div>
               <div className="lp-bella-caption">
                 <div className="lp-bella-caption-name">Bella</div>
