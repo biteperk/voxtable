@@ -2760,18 +2760,22 @@ function BookingLogPage({ navigate, path }) {
   };
 
   const runMutation = async (action, id) => {
+    // Manual entries live only in React state (synthetic "manual-<ts>" id)
+    // until the manual-booking backend endpoint ships, so their status
+    // changes are local-only — the backend would 400 on the non-UUID id.
+    const isLocalOnly = typeof id === "string" && id.startsWith("manual-");
     markPending(id, true);
     setMutationError(null);
     setConfirmBusy(true);
     try {
       if (action === "no-show") {
-        await updateReservationStatus(id, "no_show");
+        if (!isLocalOnly) await updateReservationStatus(id, "no_show");
         applyStatusLocally(id, "no_show");
       } else if (action === "cancel") {
-        await cancelReservation(id);
+        if (!isLocalOnly) await cancelReservation(id);
         applyStatusLocally(id, "cancelled");
       } else if (action === "restore") {
-        await updateReservationStatus(id, "confirmed");
+        if (!isLocalOnly) await updateReservationStatus(id, "confirmed");
         applyStatusLocally(id, "confirmed");
       }
       setConfirmState(null);

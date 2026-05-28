@@ -9552,7 +9552,9 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   flex: 1;
   height: 6px;
   border-radius: 999px;
-  background: var(--surface-container-high);
+  /* surface-container-high matches the .context-note-audio container, making
+     the track invisible. Use a lifted neutral so the bar reads on the card. */
+  background: rgba(255, 255, 255, 0.12);
   position: relative;
   cursor: pointer;
   overflow: hidden;
