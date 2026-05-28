@@ -10593,6 +10593,62 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   color: #ffb84d;
 }
 
+/* Delete-item modal — preview card of the item being deleted */
+.delete-item-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-left: 3px solid #ff6363;
+  border-radius: 8px;
+  background: var(--surface-container);
+}
+
+.delete-item-preview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.delete-item-preview-head strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.delete-item-preview-head span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.delete-item-preview-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+}
+
+.delete-item-preview-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.delete-item-preview-meta .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--primary);
+}
+
 .menu-detail-head h2 {
   margin: 0;
   font-size: 20px;

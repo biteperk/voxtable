@@ -4145,6 +4145,7 @@ function ManageMenuPage({ navigate, path }) {
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [addingCategory, setAddingCategory] = useState(false);
   const [deletingCategory, setDeletingCategory] = useState(null);
+  const [deletingItem, setDeletingItem] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -4179,14 +4180,14 @@ function ManageMenuPage({ navigate, path }) {
     }
   };
 
-  const handleDeleteItem = async (item) => {
-    if (!window.confirm(`Delete ${item.name}? Order history will be preserved.`)) return;
+  const confirmDeleteItem = async (item) => {
     setBusy(true);
     try {
       await deleteMenuItem(item.id);
       await refresh();
+      return true;
     } catch (e) {
-      setError(e.message ?? "Delete failed");
+      throw e;
     } finally {
       setBusy(false);
     }
@@ -4385,7 +4386,7 @@ function ManageMenuPage({ navigate, path }) {
                                 <button
                                   type="button"
                                   className="kitchen-btn danger"
-                                  onClick={() => handleDeleteItem(item)}
+                                  onClick={() => setDeletingItem(item)}
                                   disabled={busy}
                                   title="Delete"
                                 >
@@ -4440,6 +4441,17 @@ function ManageMenuPage({ navigate, path }) {
           }}
         />
       ) : null}
+
+      {deletingItem ? (
+        <DeleteItemModal
+          item={deletingItem}
+          onClose={() => setDeletingItem(null)}
+          onDelete={async () => {
+            await confirmDeleteItem(deletingItem);
+            setDeletingItem(null);
+          }}
+        />
+      ) : null}
     </DashboardShell>
   );
 }
@@ -4464,16 +4476,20 @@ function MenuItemModal({ mode, item, presetCategoryId, categories, onClose, onSa
     setSaving(true);
     setError(null);
     try {
+      const toCents = (raw) => {
+        const n = parseFloat(raw ?? "0");
+        return Number.isFinite(n) ? Math.round(n * 100) : 0;
+      };
       const payload = {
         category_id: categoryId,
         name: name.trim(),
         description: description.trim() || null,
-        base_price_cents: Math.round(parseFloat(priceDollars) * 100),
+        base_price_cents: toCents(priceDollars),
         variants: variants
           .filter((v) => v.name.trim())
           .map((v, idx) => ({
             name: v.name.trim(),
-            price_delta_cents: Math.round(parseFloat(v.delta || "0") * 100),
+            price_delta_cents: toCents(v.delta),
             display_order: idx
           }))
       };
@@ -4532,6 +4548,8 @@ function MenuItemModal({ mode, item, presetCategoryId, categories, onClose, onSa
               type="number"
               step="0.01"
               min="0"
+              lang="en-US"
+              inputMode="decimal"
               value={priceDollars}
               onChange={(e) => setPriceDollars(e.target.value)}
               required
@@ -4558,6 +4576,8 @@ function MenuItemModal({ mode, item, presetCategoryId, categories, onClose, onSa
                   <input
                     type="number"
                     step="0.01"
+                    lang="en-US"
+                    inputMode="decimal"
                     placeholder="Δ$"
                     value={v.delta}
                     onChange={(e) => setVariants((vs) => vs.map((x, i) => i === idx ? { ...x, delta: e.target.value } : x))}
@@ -4575,6 +4595,74 @@ function MenuItemModal({ mode, item, presetCategoryId, categories, onClose, onSa
           <button type="submit" className="kitchen-btn primary" disabled={saving}>
             <Icon name="check" />
             {saving ? "Saving…" : "Save"}
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
+function DeleteItemModal({ item, onClose, onDelete }) {
+  const [error, setError] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleConfirm = async (event) => {
+    event.preventDefault();
+    setDeleting(true);
+    setError(null);
+    try {
+      await onDelete();
+    } catch (e) {
+      setError(e.message ?? "Delete failed");
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="menu-modal-backdrop" onClick={onClose}>
+      <form
+        className="menu-modal menu-modal-sm"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleConfirm}
+      >
+        <header className="menu-modal-head">
+          <h2>
+            <Icon name="delete" />
+            Delete menu item
+          </h2>
+          <button type="button" className="menu-modal-close" onClick={onClose} aria-label="Close">
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="menu-modal-body">
+          {error ? <div className="menu-error">{error}</div> : null}
+          <div className="delete-item-preview">
+            <div className="delete-item-preview-head">
+              <strong>{item.name}</strong>
+              <span>${(item.base_price_cents / 100).toFixed(2)}</span>
+            </div>
+            {item.description ? (
+              <p className="delete-item-preview-desc">{item.description}</p>
+            ) : null}
+            {item.variants?.length > 0 ? (
+              <div className="delete-item-preview-meta">
+                <Icon name="tune" />
+                {item.variants.length} variant{item.variants.length === 1 ? "" : "s"}
+              </div>
+            ) : null}
+          </div>
+          <p className="menu-modal-hint">
+            Permanently delete this item from the menu. Past order history
+            keeps a snapshot, so old receipts and analytics stay correct.
+          </p>
+        </div>
+        <footer className="menu-modal-actions">
+          <button type="button" className="kitchen-btn ghost" onClick={onClose} disabled={deleting}>
+            Cancel
+          </button>
+          <button type="submit" className="kitchen-btn danger" disabled={deleting}>
+            <Icon name="delete" />
+            {deleting ? "Deleting…" : "Delete item"}
           </button>
         </footer>
       </form>

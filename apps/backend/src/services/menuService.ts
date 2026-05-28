@@ -225,22 +225,37 @@ export async function updateMenuItem(input: {
     if (!item) {
       throw new AppError(404, "MENU_ITEM_NOT_FOUND", "Menu item not found.");
     }
-    if (input.variants !== undefined) {
-      await replaceVariants(item.id, input.variants, db);
-    }
-    if (input.modifierGroups !== undefined) {
-      const flat = input.modifierGroups.flatMap((g) =>
-        g.options.map((o) => ({
-          groupName: g.groupName,
-          name: o.name,
-          priceDeltaCents: o.priceDeltaCents,
-          groupMinSelect: g.groupMinSelect,
-          groupMaxSelect: g.groupMaxSelect,
-          isDefault: o.isDefault ?? false,
-          displayOrder: o.displayOrder
-        }))
-      );
-      await replaceModifiers(item.id, flat, db);
+    try {
+      if (input.variants !== undefined) {
+        await replaceVariants(item.id, input.variants, db);
+      }
+      if (input.modifierGroups !== undefined) {
+        const flat = input.modifierGroups.flatMap((g) =>
+          g.options.map((o) => ({
+            groupName: g.groupName,
+            name: o.name,
+            priceDeltaCents: o.priceDeltaCents,
+            groupMinSelect: g.groupMinSelect,
+            groupMaxSelect: g.groupMaxSelect,
+            isDefault: o.isDefault ?? false,
+            displayOrder: o.displayOrder
+          }))
+        );
+        await replaceModifiers(item.id, flat, db);
+      }
+    } catch (error) {
+      // FK violation: replaceVariants does DELETE then INSERT; if any
+      // order_items.variant_id still references a current variant
+      // (ON DELETE RESTRICT), PG throws 23503. Bubble a clear 409 instead
+      // of a generic 500 so the dashboard can show actionable copy.
+      if ((error as { code?: string })?.code === "23503") {
+        throw new AppError(
+          409,
+          "MENU_ITEM_VARIANTS_IN_USE",
+          "One or more variants of this item are tied to past orders. Edit the name/price of the menu item itself, or mark it unavailable instead of changing variants."
+        );
+      }
+      throw error;
     }
     logger.info({ evt: "menu_item_updated", item_id: item.id });
     return item;
