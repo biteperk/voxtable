@@ -9580,12 +9580,17 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   border-radius: 999px;
   border: 0;
   background: var(--primary);
-  color: var(--on-primary);
+  color: #000;
   display: grid;
   place-items: center;
   cursor: pointer;
   flex-shrink: 0;
   transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.audio-play-btn .material-symbols-outlined {
+  color: #000;
+  font-weight: 700;
 }
 
 .audio-play-btn:hover:not(:disabled) {
@@ -9620,7 +9625,9 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   flex: 1;
   height: 6px;
   border-radius: 999px;
-  background: var(--surface-container-high);
+  /* surface-container-high matches the .context-note-audio container, making
+     the track invisible. Use a lifted neutral so the bar reads on the card. */
+  background: rgba(255, 255, 255, 0.12);
   position: relative;
   cursor: pointer;
   overflow: hidden;
@@ -10484,6 +10491,12 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   color: var(--on-primary, #0e2243);
 }
 
+.kitchen-btn.primary .material-symbols-outlined {
+  color: #000;
+  font-weight: 700;
+  transform: translateY(-3px);
+}
+
 .kitchen-btn.primary:hover:not(:disabled) {
   background: var(--primary);
   box-shadow: 0 0 12px rgba(173, 198, 255, 0.4);
@@ -10637,6 +10650,78 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   padding-bottom: 14px;
   margin-bottom: 18px;
   border-bottom: 1px solid var(--outline-variant);
+}
+
+.menu-detail-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-modal-hint.menu-modal-warn {
+  border-color: rgba(255, 184, 77, 0.55);
+  background: rgba(255, 184, 77, 0.08);
+  color: var(--on-surface);
+}
+
+.menu-modal-hint.menu-modal-warn strong {
+  color: #ffb84d;
+}
+
+/* Delete-item modal — preview card of the item being deleted */
+.delete-item-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-left: 3px solid #ff6363;
+  border-radius: 8px;
+  background: var(--surface-container);
+}
+
+.delete-item-preview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.delete-item-preview-head strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.delete-item-preview-head span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.delete-item-preview-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+}
+
+.delete-item-preview-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.delete-item-preview-meta .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--primary);
 }
 
 .menu-detail-head h2 {
