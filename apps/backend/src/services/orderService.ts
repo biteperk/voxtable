@@ -73,17 +73,14 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     throw new AppError(400, "ORDER_TOO_LARGE", "Orders can have at most 50 items.");
   }
 
-  return withTransaction(async (db) => {
+  // Hydrate via the read pool happens AFTER the txn commits — the read pool
+  // can't see uncommitted writes from the write pool's txn.
+  const result = await withTransaction(async (db): Promise<{ orderId: string; isReplay: boolean }> => {
     // 1) Idempotency: return existing order if this key was already used.
     if (input.idempotencyKey) {
       const existing = await findOrderByIdempotencyKey(input.restaurantId, input.idempotencyKey, db);
       if (existing) {
-        const hydrated = await getOrderById(existing.id, input.restaurantId);
-        return {
-          order: hydrated!,
-          isReplay: true,
-          confirmationMessage: buildConfirmationMessage(hydrated!)
-        };
+        return { orderId: existing.id, isReplay: true };
       }
     }
 
@@ -286,13 +283,19 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       subtotal_cents: subtotalCents
     });
 
-    const hydrated = await getOrderById(order.id, input.restaurantId);
-    return {
-      order: hydrated!,
-      isReplay: false,
-      confirmationMessage: buildConfirmationMessage(hydrated!)
-    };
+    return { orderId: order.id, isReplay: false };
   });
+
+  // Now that the txn committed, the read pool can see the new rows.
+  const hydrated = await getOrderById(result.orderId, input.restaurantId);
+  if (!hydrated) {
+    throw new AppError(500, "ORDER_HYDRATION_FAILED", "Order created but couldn't be read back.");
+  }
+  return {
+    order: hydrated,
+    isReplay: result.isReplay,
+    confirmationMessage: buildConfirmationMessage(hydrated)
+  };
 }
 
 function buildConfirmationMessage(order: OrderWithItems): string {
