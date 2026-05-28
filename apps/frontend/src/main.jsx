@@ -605,8 +605,15 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+const INITIAL_PAYMENT_CARDS = [
+  { id: "c_1", brand: "Visa", last4: "4242", expiry: "12/2025", isDefault: true },
+  { id: "c_2", brand: "Mastercard", last4: "5555", expiry: "08/2026", isDefault: false },
+  { id: "c_3", brand: "Amex", last4: "0005", expiry: "03/2027", isDefault: false },
+];
+
 function App() {
   const [path, setPath] = useState(window.location.pathname);
+  const [paymentCards, setPaymentCards] = useState(INITIAL_PAYMENT_CARDS);
 
   useEffect(() => {
     const onPopState = () => setPath(window.location.pathname);
@@ -642,16 +649,23 @@ function App() {
     path === "/analytics" ||
     path === "/settings" ||
     path === "/manage-plan" ||
+    path === "/update-payment-details" ||
     path === "/profile";
 
   return (
     <AuthProvider>
-      <AppRouter path={path} navigate={navigate} isDashboard={isDashboard} />
+      <AppRouter
+        path={path}
+        navigate={navigate}
+        isDashboard={isDashboard}
+        paymentCards={paymentCards}
+        setPaymentCards={setPaymentCards}
+      />
     </AuthProvider>
   );
 }
 
-function AppRouter({ path, navigate, isDashboard }) {
+function AppRouter({ path, navigate, isDashboard, paymentCards, setPaymentCards }) {
   const { user, loading } = useAuth();
 
   if (isDashboard && loading) {
@@ -674,8 +688,20 @@ function AppRouter({ path, navigate, isDashboard }) {
   if (path === "/live-tables") return <LiveTablesPage navigate={navigate} path={path} />;
   if (path === "/booking-log") return <BookingLogPage navigate={navigate} path={path} />;
   if (path === "/analytics") return <AnalyticsPage navigate={navigate} path={path} />;
-  if (path === "/settings") return <BillingPage navigate={navigate} path={path} />;
+  if (path === "/settings")
+    return (
+      <BillingPage navigate={navigate} path={path} paymentCards={paymentCards} />
+    );
   if (path === "/manage-plan") return <ManagePlanPage navigate={navigate} path={path} />;
+  if (path === "/update-payment-details")
+    return (
+      <UpdatePaymentDetailsPage
+        navigate={navigate}
+        path={path}
+        cards={paymentCards}
+        setCards={setPaymentCards}
+      />
+    );
   if (path === "/profile") return <ProfilePage navigate={navigate} path={path} />;
   return <LandingPage navigate={navigate} />;
 }
@@ -3511,7 +3537,9 @@ function ProfilePage({ navigate }) {
   );
 }
 
-function BillingPage({ navigate }) {
+function BillingPage({ navigate, paymentCards = [] }) {
+  const defaultCard =
+    paymentCards.find((c) => c.isDefault) || paymentCards[0] || null;
   return (
     <DashboardShell active="Billing" navigate={navigate}>
       <header className="billing-header">
@@ -3547,18 +3575,30 @@ function BillingPage({ navigate }) {
 
         <article className="payment-card">
           <h2>Payment Method</h2>
-          <div className="card-line">
-            <div className="card-icon">
-              <Icon name="credit_card" />
+          {defaultCard ? (
+            <div className="card-line">
+              <CardBrandIcon brand={defaultCard.brand} />
+              <div className="card-line-meta">
+                <p>
+                  {defaultCard.brand} •••• {defaultCard.last4}
+                </p>
+                <span>Expires {defaultCard.expiry}</span>
+              </div>
+              <Icon name="check_circle" className="check-circle" />
             </div>
-            <div>
-              <p>•••• •••• •••• 4242</p>
-              <span>Expires 12/2025</span>
+          ) : (
+            <div className="card-line payment-card-empty">
+              <div className="card-icon">
+                <Icon name="credit_card_off" />
+              </div>
+              <div className="card-line-meta">
+                <p>No card on file</p>
+                <span>Add a card to keep your subscription active</span>
+              </div>
             </div>
-            <Icon name="check_circle" className="check-circle" />
-          </div>
-          <button>
-            Update Payment Details
+          )}
+          <button onClick={() => navigate("/update-payment-details")}>
+            {defaultCard ? "Update Payment Details" : "Add a card"}
             <Icon name="arrow_forward" />
           </button>
         </article>
@@ -3882,6 +3922,361 @@ function ManagePlanPage({ navigate }) {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+    </DashboardShell>
+  );
+}
+
+function CardBrandIcon({ brand }) {
+  const b = (brand || "").toLowerCase();
+  if (b === "visa") {
+    return (
+      <svg viewBox="0 0 40 24" className="card-brand-mark" aria-label="Visa">
+        <rect width="40" height="24" rx="3" fill="#1a1f71" />
+        <text
+          x="20"
+          y="16.5"
+          textAnchor="middle"
+          fontFamily="Arial Black, Arial, sans-serif"
+          fontSize="11"
+          fontWeight="900"
+          fontStyle="italic"
+          fill="#fff"
+        >
+          VISA
+        </text>
+      </svg>
+    );
+  }
+  if (b === "mastercard") {
+    return (
+      <svg viewBox="0 0 40 24" className="card-brand-mark" aria-label="Mastercard">
+        <rect width="40" height="24" rx="3" fill="#0a0a0a" />
+        <circle cx="16" cy="12" r="6.5" fill="#eb001b" />
+        <circle cx="24" cy="12" r="6.5" fill="#f79e1b" />
+        <path
+          d="M20 7.2a6.5 6.5 0 0 1 0 9.6 6.5 6.5 0 0 1 0-9.6z"
+          fill="#ff5f00"
+        />
+      </svg>
+    );
+  }
+  if (b === "amex" || b === "american express") {
+    return (
+      <svg viewBox="0 0 40 24" className="card-brand-mark" aria-label="American Express">
+        <rect width="40" height="24" rx="3" fill="#2e77bb" />
+        <text
+          x="20"
+          y="15.5"
+          textAnchor="middle"
+          fontFamily="Arial Black, Arial, sans-serif"
+          fontSize="8.5"
+          fontWeight="900"
+          fill="#fff"
+          letterSpacing="0.6"
+        >
+          AMEX
+        </text>
+      </svg>
+    );
+  }
+  return (
+    <div className="card-icon">
+      <Icon name="credit_card" />
+    </div>
+  );
+}
+
+function UpdatePaymentDetailsPage({ navigate, cards, setCards }) {
+  const [form, setForm] = useState({
+    cardNumber: "",
+    expiry: "",
+    cvc: "",
+    cardholder: "",
+    country: "Australia",
+    postcode: "",
+    setDefault: true,
+  });
+  const [saved, setSaved] = useState(false);
+
+  const makeDefault = (id) => {
+    setCards((prev) => prev.map((c) => ({ ...c, isDefault: c.id === id })));
+  };
+
+  const removeCard = (id) => {
+    setCards((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      if (next.length > 0 && !next.some((c) => c.isDefault)) {
+        next[0] = { ...next[0], isDefault: true };
+      }
+      return next;
+    });
+  };
+
+  const update = (field) => (event) => {
+    if (typeof event.target.setCustomValidity === "function") {
+      event.target.setCustomValidity("");
+    }
+    const raw = event.target.value;
+    let value = raw;
+    if (field === "cardNumber") {
+      value = raw.replace(/\D/g, "").slice(0, 19);
+      value = value.replace(/(.{4})/g, "$1 ").trim();
+    } else if (field === "expiry") {
+      const digits = raw.replace(/\D/g, "").slice(0, 4);
+      value = digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+    } else if (field === "cvc") {
+      value = raw.replace(/\D/g, "").slice(0, 4);
+    } else if (field === "postcode") {
+      value = raw.replace(/[^\w\s-]/g, "").slice(0, 12);
+    }
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const englishValidity = (event) => {
+    const el = event.target;
+    if (el.validity.valueMissing) {
+      el.setCustomValidity("Please fill out this field.");
+    } else if (
+      el.validity.typeMismatch ||
+      el.validity.patternMismatch ||
+      el.validity.tooShort ||
+      el.validity.tooLong
+    ) {
+      el.setCustomValidity("Please enter a valid value.");
+    } else {
+      el.setCustomValidity("");
+    }
+  };
+
+  const toggleDefault = (event) => {
+    setForm((prev) => ({ ...prev, setDefault: event.target.checked }));
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    // Stripe wire-up lands when billing integration ships. UI-only for now.
+    setSaved(true);
+  };
+
+  const dismissSaved = () => {
+    setSaved(false);
+    navigate("/settings");
+  };
+
+  return (
+    <DashboardShell active="Billing" navigate={navigate}>
+      <header className="billing-header manage-plan-header">
+        <button
+          type="button"
+          className="back-button"
+          onClick={() => navigate("/settings")}
+          aria-label="Back to billing"
+        >
+          <Icon name="arrow_back" />
+        </button>
+        <div>
+          <h1>Update payment details</h1>
+          <p>Replace the card on file. Charges renew automatically each month.</p>
+        </div>
+      </header>
+
+      <section className="payment-update-grid">
+        <article className="payment-current-card">
+          <div className="payment-current-head">
+            <span className="payment-current-label">
+              Saved cards <span className="payment-count">({cards.length})</span>
+            </span>
+          </div>
+
+          {cards.length === 0 ? (
+            <div className="payment-empty">
+              <Icon name="credit_card_off" />
+              <p>No cards on file yet. Add one using the form.</p>
+            </div>
+          ) : (
+            <ul className="payment-card-list">
+              {cards.map((card) => (
+                <li key={card.id} className={`card-line${card.isDefault ? " is-default" : ""}`}>
+                  <CardBrandIcon brand={card.brand} />
+                  <div className="card-line-meta">
+                    <p>
+                      {card.brand} •••• {card.last4}
+                    </p>
+                    <span>Expires {card.expiry}</span>
+                  </div>
+                  {card.isDefault ? (
+                    <span className="payment-current-pill">Default</span>
+                  ) : (
+                    <div className="card-line-actions">
+                      <button
+                        type="button"
+                        className="card-action-link"
+                        onClick={() => makeDefault(card.id)}
+                      >
+                        Make default
+                      </button>
+                      <button
+                        type="button"
+                        className="card-action-link danger"
+                        onClick={() => removeCard(card.id)}
+                        aria-label={`Remove ${card.brand} ending ${card.last4}`}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="payment-current-hint">
+            Adding a new card below saves it alongside these. We don&apos;t store full card numbers —
+            payments are handled by our PCI-compliant processor.
+          </p>
+        </article>
+
+        <form
+          className="payment-form-card"
+          onSubmit={handleSubmit}
+          autoComplete="off"
+        >
+          <h2>New card details</h2>
+
+          <label className="payment-field">
+            <span>Cardholder name</span>
+            <input
+              type="text"
+              autoComplete="off"
+              placeholder="Name on card"
+              value={form.cardholder}
+              onChange={update("cardholder")}
+              onInvalid={englishValidity}
+              lang="en"
+              required
+            />
+          </label>
+
+          <label className="payment-field">
+            <span>Card number</span>
+            <div className="payment-input-with-icon">
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="1234 1234 1234 1234"
+                value={form.cardNumber}
+                onChange={update("cardNumber")}
+                onInvalid={englishValidity}
+                lang="en"
+                required
+              />
+              <Icon name="credit_card" />
+            </div>
+          </label>
+
+          <div className="payment-field-row">
+            <label className="payment-field">
+              <span>Expiry</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="MM/YY"
+                value={form.expiry}
+                onChange={update("expiry")}
+                onInvalid={englishValidity}
+                lang="en"
+                required
+              />
+            </label>
+            <label className="payment-field">
+              <span>CVC</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="123"
+                value={form.cvc}
+                onChange={update("cvc")}
+                onInvalid={englishValidity}
+                lang="en"
+                required
+              />
+            </label>
+          </div>
+
+          <h3 className="payment-section-title">Billing address</h3>
+
+          <label className="payment-field">
+            <span>Country</span>
+            <select value={form.country} onChange={update("country")} lang="en">
+              <option>Australia</option>
+              <option>New Zealand</option>
+              <option>United Kingdom</option>
+              <option>United States</option>
+              <option>Canada</option>
+              <option>Other</option>
+            </select>
+          </label>
+
+          <label className="payment-field">
+            <span>Postcode</span>
+            <input
+              type="text"
+              autoComplete="postal-code"
+              placeholder="2000"
+              value={form.postcode}
+              onChange={update("postcode")}
+              onInvalid={englishValidity}
+              lang="en"
+              required
+            />
+          </label>
+
+          <label className="payment-checkbox">
+            <input type="checkbox" checked={form.setDefault} onChange={toggleDefault} />
+            <span>Set as default payment method</span>
+          </label>
+
+          <div className="payment-form-actions">
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => navigate("/settings")}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="primary-button">
+              Save card
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {saved && (
+        <div
+          className="plan-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="payment-saved-title"
+          onClick={dismissSaved}
+        >
+          <div className="plan-modal" onClick={(e) => e.stopPropagation()}>
+            <h2 id="payment-saved-title">
+              <Icon name="check_circle" /> Payment method updated
+            </h2>
+            <p>
+              Your new card is now on file. The next invoice on Oct 1 will be charged to this card.
+            </p>
+            <div className="plan-modal-actions">
+              <button type="button" onClick={dismissSaved} className="primary-button">
+                Back to Billing
+              </button>
+            </div>
           </div>
         </div>
       )}
