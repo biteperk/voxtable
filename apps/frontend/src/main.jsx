@@ -2361,12 +2361,6 @@ function LiveFeedDetailPage({ navigate, callId, path }) {
               <TranscriptBubble key={index} message={message} delay={index} />
             ))}
           </div>
-
-          {callLog?.recording_url && (
-            <div className="call-control-bar">
-              <AudioPlayer src={callLog.recording_url} />
-            </div>
-          )}
         </article>
 
         <aside className="call-side-panel">
@@ -2421,6 +2415,14 @@ function LiveFeedDetailPage({ navigate, callId, path }) {
               <div className="context-note">
                 <span>Special requests</span>
                 <p>{callLog.special_requests}</p>
+              </div>
+            )}
+            {callLog?.recording_url && (
+              <div className="context-note">
+                <span>Recording</span>
+                <div className="context-note-audio">
+                  <AudioPlayer src={callLog.recording_url} />
+                </div>
               </div>
             )}
             {callLog?.summary && (
