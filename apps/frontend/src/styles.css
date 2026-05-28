@@ -9512,12 +9512,17 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   border-radius: 999px;
   border: 0;
   background: var(--primary);
-  color: var(--on-primary);
+  color: #000;
   display: grid;
   place-items: center;
   cursor: pointer;
   flex-shrink: 0;
   transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.audio-play-btn .material-symbols-outlined {
+  color: #000;
+  font-weight: 700;
 }
 
 .audio-play-btn:hover:not(:disabled) {
