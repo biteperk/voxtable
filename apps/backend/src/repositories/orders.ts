@@ -293,13 +293,16 @@ export async function updateOrderItemStatusAtVersion(input: {
   // Bump the order's version so concurrent order-level status changes detect
   // the line-item edit. RETURNING both rows lets the service emit a single
   // audit event with both.
+  // $3 is cast to text in the CASE comparisons so Postgres can deduce a single
+  // type; status column gets the enum cast back. Without the cast pg throws
+  // 42P08 "inconsistent types deduced for parameter $3".
   const result = await db.query<OrderItemRow>(
     `
     UPDATE order_items
-       SET status = $3,
-           started_at = CASE WHEN $3 = 'preparing' THEN COALESCE(started_at, now()) ELSE started_at END,
-           ready_at   = CASE WHEN $3 = 'ready'     THEN COALESCE(ready_at, now())   ELSE ready_at END,
-           served_at  = CASE WHEN $3 = 'served'    THEN COALESCE(served_at, now())  ELSE served_at END
+       SET status = $3::order_item_status,
+           started_at = CASE WHEN $3::text = 'preparing' THEN COALESCE(started_at, now()) ELSE started_at END,
+           ready_at   = CASE WHEN $3::text = 'ready'     THEN COALESCE(ready_at, now())   ELSE ready_at END,
+           served_at  = CASE WHEN $3::text = 'served'    THEN COALESCE(served_at, now())  ELSE served_at END
      WHERE id = $1 AND order_id = $2
      RETURNING *
     `,
