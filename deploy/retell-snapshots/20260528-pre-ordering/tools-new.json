@@ -1,0 +1,81 @@
+[
+  {
+    "speak_after_execution": false,
+    "name": "menu_lookup",
+    "description": "Look up menu items by partial name or category. Use this when the caller asks 'what do you have', 'do you serve X', or before suggesting a dish. Returns up to 6 matches with price, plus a speakable_summary string you can read directly to the caller. If `ambiguous` is true, do NOT pick one — ask the caller to clarify between the candidates in `matches`.",
+    "type": "custom",
+    "speak_during_execution": true,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "What the caller said the dish is, e.g. 'fish and chips', 'spag bol', 'something vegetarian'. Use the caller's words verbatim — fuzzy matching handles spelling and partial names."
+        },
+        "category": {
+          "type": "string",
+          "description": "Optional category hint when the caller browses a section, e.g. 'mains', 'drinks', 'kids'."
+        }
+      },
+      "required": []
+    },
+    "url": "https://vocotable.algorythmos.com.au/retell/tools/menu-lookup"
+  },
+  {
+    "speak_after_execution": false,
+    "name": "create_order",
+    "description": "Place a food order for an EXISTING booking. Call this only AFTER create_booking has succeeded and the caller has confirmed every item, variant, and required choice (e.g. drink for fish & chips). Always pass `reservation_id` from the prior create_booking response. Pass the call_id from the Retell `call` object as `call_id` — the backend uses it as an idempotency key so a retry on the same call never creates a second order. Returns confirmation_message you can read back including the order number and total. Errors to handle by re-prompting the caller: AMBIGUOUS_ITEM (clarify size or item), MODIFIER_REQUIRED (ask for the missing group like Drink), MENU_ITEM_UNAVAILABLE (suggest an alternative).",
+    "type": "custom",
+    "speak_during_execution": true,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "call_id": {
+          "type": "string",
+          "description": "The Retell call_id (use {{call_id}} dynamic variable). Used as idempotency key."
+        },
+        "reservation_id": {
+          "type": "string",
+          "description": "The booking_id returned by the most recent successful create_booking call on this conversation."
+        },
+        "items": {
+          "type": "array",
+          "description": "One entry per dish the caller ordered. Confirm each item, variant, and modifier choices BEFORE submitting.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the dish as the caller said it, e.g. 'Fish & Chips'. Fuzzy matched server-side."
+              },
+              "variant_name": {
+                "type": "string",
+                "description": "Size variant when the menu item has one, e.g. 'Small', 'Medium', 'Large'. Omit if the caller didn't specify and the item has no required variant."
+              },
+              "quantity": {
+                "type": "integer",
+                "description": "How many of this item, default 1.",
+                "default": 1
+              },
+              "modifier_choices": {
+                "type": "object",
+                "description": "Map of group_name → choice. E.g. {\"Drink\": \"Coke\", \"Extras\": [\"Extra Tartare\", \"Lemon Wedges\"]}. Use a single string when the caller picked one, an array when they picked several."
+              },
+              "special_requests": {
+                "type": "string",
+                "description": "Free-text notes for this line item, e.g. 'extra crispy', 'no salt', 'allergic to gluten'."
+              }
+            },
+            "required": ["name", "quantity"]
+          }
+        },
+        "special_instructions": {
+          "type": "string",
+          "description": "Free-text instructions that apply to the whole order, e.g. 'kitchen please prep when guests arrive'."
+        }
+      },
+      "required": ["call_id", "reservation_id", "items"]
+    },
+    "url": "https://vocotable.algorythmos.com.au/retell/tools/create-order"
+  }
+]
