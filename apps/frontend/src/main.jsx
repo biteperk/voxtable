@@ -927,16 +927,26 @@ function LandingPage({ navigate }) {
             </div>
           </div>
           <div className="lp-hero-visual">
-            <figure className="lp-hero-card">
+            <figure className="lp-hero-card" aria-label="Bella, the AI phone host">
               <div className="lp-hero-card-halo" aria-hidden="true" />
-              <img
-                src="/bella/portrait.png"
-                alt="Bella, the AI phone host"
-                className="lp-hero-card-img"
-                width="640"
-                height="800"
-                fetchpriority="high"
-              />
+              <div className="lp-hero-card-stage">
+                <div className="lp-bella-orb">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="lp-bella-orb-icon">
+                    <path
+                      fill="currentColor"
+                      d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"
+                    />
+                  </svg>
+                </div>
+                <div className="lp-bella-wave" aria-hidden="true">
+                  {Array.from({ length: 24 }).map((_, i) => (
+                    <span key={i} style={{ animationDelay: `${i * 0.06}s` }} />
+                  ))}
+                </div>
+                <div className="lp-hero-card-name">
+                  Bella<span className="lp-amber">.</span>
+                </div>
+              </div>
               <figcaption className="lp-hero-card-caption">
                 <span className="lp-hero-card-dot" aria-hidden="true" />
                 Live · 24/7
@@ -1058,7 +1068,28 @@ function LandingPage({ navigate }) {
                 </div>
               </div>
             </div>
-            <div className="lp-bella-img" role="img" aria-label="Bella, the AI phone host" />
+            <div className="lp-bella-card" role="img" aria-label="Bella, the AI phone host">
+              <div className="lp-bella-tag">
+                <span className="lp-bella-dot" /> Live · Sydney
+              </div>
+              <div className="lp-bella-orb">
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="lp-bella-orb-icon">
+                  <path
+                    fill="currentColor"
+                    d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"
+                  />
+                </svg>
+              </div>
+              <div className="lp-bella-wave" aria-hidden="true">
+                {Array.from({ length: 28 }).map((_, i) => (
+                  <span key={i} style={{ animationDelay: `${i * 0.06}s` }} />
+                ))}
+              </div>
+              <div className="lp-bella-caption">
+                <div className="lp-bella-caption-name">Bella</div>
+                <div className="lp-bella-caption-role">AI phone host · en-AU</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
