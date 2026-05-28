@@ -6808,23 +6808,13 @@ button {
 
 /* PRICING — tier cards split into two persona sections, plus a compare table
    and an FAQ accordion. Single source of truth lives in src/data/pricing.js. */
-.lp-price-group + .lp-price-group { margin-top: 28px; }
-.lp-price-eyebrow {
-  text-align: center;
-  font-size: 12px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--lp-mist);
-  margin: 56px 0 18px;
-}
 .lp-price-row {
   display: grid;
-  gap: 20px;
-  max-width: 960px;
-  margin: 0 auto;
+  gap: 16px;
+  max-width: 1240px;
+  margin: 56px auto 0;
 }
-.lp-price-row-2 { grid-template-columns: 1fr 1fr; }
+.lp-price-row-4 { grid-template-columns: repeat(4, 1fr); }
 
 .lp-tier {
   position: relative;
@@ -6832,8 +6822,8 @@ button {
   flex-direction: column;
   background: var(--lp-surface);
   border: 1px solid var(--lp-line);
-  border-radius: 22px;
-  padding: 36px 30px;
+  border-radius: 20px;
+  padding: 28px 24px;
   isolation: isolate;
   transition:
     transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
@@ -6851,7 +6841,7 @@ button {
 }
 
 .lp-tier-pick {
-  font-size: 11.5px;
+  font-size: 11px;
   letter-spacing: 1.6px;
   text-transform: uppercase;
   font-weight: 600;
@@ -6859,51 +6849,51 @@ button {
   margin-bottom: 6px;
 }
 .lp-tier-name {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: #fff;
   letter-spacing: -0.3px;
 }
 .lp-tier-tagline {
   margin-top: 6px;
-  font-size: 14.5px;
+  font-size: 13.5px;
   color: var(--lp-mist);
   line-height: 1.5;
-  min-height: 42px;
+  min-height: 60px;
 }
 .lp-tier-price {
-  margin-top: 22px;
-  font-size: 54px;
+  margin-top: 18px;
+  font-size: 44px;
   font-weight: 800;
-  letter-spacing: -2px;
+  letter-spacing: -1.6px;
   color: #fff;
   line-height: 1;
 }
 .lp-tier-price-suffix {
-  font-size: 17px;
+  font-size: 15px;
   color: var(--lp-mist);
   font-weight: 500;
-  letter-spacing: -0.3px;
-  margin-left: 4px;
+  letter-spacing: -0.2px;
+  margin-left: 3px;
 }
 .lp-tier-custom .lp-tier-price {
-  font-size: 36px;
-  letter-spacing: -1.2px;
+  font-size: 28px;
+  letter-spacing: -0.8px;
 }
 
 .lp-tier-features {
   list-style: none;
   padding: 0;
-  margin: 24px 0 28px;
+  margin: 20px 0 24px;
   display: grid;
-  gap: 11px;
+  gap: 10px;
 }
 .lp-tier-features li {
-  font-size: 14.5px;
+  font-size: 13.5px;
   color: #e0e3ea;
-  line-height: 1.5;
+  line-height: 1.45;
   display: flex;
-  gap: 10px;
+  gap: 9px;
   align-items: flex-start;
 }
 .lp-tick {
@@ -6919,9 +6909,14 @@ button {
   justify-content: center;
   text-align: center;
 }
+.lp-tier-cta .lp-btn,
+.lp-tier-cta .lp-btn-ghost {
+  padding: 12px 16px;
+  font-size: 14px;
+}
 .lp-tier-cta-secondary {
   text-align: center;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--lp-mist);
   letter-spacing: 0.2px;
 }
@@ -6936,7 +6931,7 @@ button {
 
 /* Compare table — opt-in detail, hairline rows, amber ticks */
 .lp-price-compare {
-  max-width: 960px;
+  max-width: 1240px;
   margin: 56px auto 0;
   border-top: 1px solid var(--lp-line);
   padding-top: 28px;
@@ -7241,13 +7236,11 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     max-width: 460px;
     margin: 0 auto;
   }
-  .lp-price-row-2 {
-    grid-template-columns: 1fr;
-    gap: 16px;
+  .lp-price-row-4 {
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
   }
-  .lp-tier-featured { order: -1; }
   .lp-tier-tagline { min-height: 0; }
-  .lp-price-eyebrow { margin-top: 40px; }
   .lp-compare-table { font-size: 12.5px; }
   .lp-compare-table th,
   .lp-compare-table td { padding: 11px 8px; }
@@ -7290,6 +7283,11 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     border-radius: 20px;
     max-width: 340px;
   }
+  .lp-price-row-4 {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .lp-tier-featured { order: -1; }
   .lp-bella-tag {
     top: 16px;
     left: 16px;
