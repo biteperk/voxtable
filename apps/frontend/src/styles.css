@@ -9436,6 +9436,56 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 .nb-error .material-symbols-outlined {
   font-size: 18px;
   flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.nb-error > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.nb-error p {
+  margin: 0;
+}
+
+.nb-suggested {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 99, 99, 0.25);
+}
+
+.nb-suggested > span {
+  display: block;
+  margin-bottom: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.nb-suggested-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nb-suggested-chip {
+  padding: 4px 12px;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: rgba(173, 198, 255, 0.1);
+  color: var(--primary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.nb-suggested-chip:hover {
+  background: rgba(173, 198, 255, 0.2);
 }
 
 .nb-field {

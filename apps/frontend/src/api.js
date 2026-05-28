@@ -33,6 +33,24 @@ async function authedFetch(path, options = {}) {
 
   if (!response.ok) {
     const body = await response.text();
+    // Backend errors are `{ error: { code, message, details } }` (AppError
+    // shape). Surface just the human message and attach code/status/details
+    // as properties so component-level catches can render alternatives,
+    // disable buttons by code, etc. Falls back to raw text on non-JSON 5xx
+    // (e.g. nginx HTML pages, network proxies).
+    let parsed = null;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      /* body wasn't JSON */
+    }
+    if (parsed && typeof parsed === "object" && parsed.error?.message) {
+      const err = new Error(parsed.error.message);
+      err.code = parsed.error.code;
+      err.details = parsed.error.details;
+      err.status = response.status;
+      throw err;
+    }
     throw new Error(`${response.status} ${response.statusText}: ${body}`);
   }
 

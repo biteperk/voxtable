@@ -3144,6 +3144,7 @@ function NewBookingModal({ onClose, onCreate }) {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [suggestedTimes, setSuggestedTimes] = useState([]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -3181,12 +3182,25 @@ function NewBookingModal({ onClose, onCreate }) {
     if (submitting) return;
     setSubmitting(true);
     setError(null);
+    setSuggestedTimes([]);
     try {
       await onCreate(form);
     } catch (e) {
       setError(e.message ?? "Could not save the booking. Please try again.");
+      // Backend BOOKING_NOT_AVAILABLE attaches alternative slots — surface
+      // them as one-click chips so the host doesn't have to guess.
+      const alts = Array.isArray(e?.details?.suggestedTimes)
+        ? e.details.suggestedTimes.filter((t) => t && t !== form.time)
+        : [];
+      setSuggestedTimes(alts);
       setSubmitting(false);
     }
+  };
+
+  const applySuggestedTime = (time) => {
+    setForm((prev) => ({ ...prev, time }));
+    setError(null);
+    setSuggestedTimes([]);
   };
 
   return (
@@ -3222,7 +3236,26 @@ function NewBookingModal({ onClose, onCreate }) {
           {error ? (
             <div className="nb-error" role="alert">
               <Icon name="error_outline" />
-              {error}
+              <div>
+                <p>{error}</p>
+                {suggestedTimes.length > 0 ? (
+                  <div className="nb-suggested">
+                    <span>Try one of these instead:</span>
+                    <div className="nb-suggested-chips">
+                      {suggestedTimes.map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          className="nb-suggested-chip"
+                          onClick={() => applySuggestedTime(t)}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
           <label className="nb-field">
