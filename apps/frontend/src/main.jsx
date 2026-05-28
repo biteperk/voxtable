@@ -15,6 +15,8 @@ import {
   seatReservation,
   updateReservationStatus
 } from "./api";
+import { TIERS, COMPARE_ROWS, FAQ, buildPricingSchema } from "./data/pricing";
+import { track } from "./lib/analytics";
 
 const restaurantImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAgvs7qA0qHOd2Nob8Vl9D-gIFHp0BmQY1DOKvAMXDTT6bBAyL8U1lrq-MJV9hWv6MzfT7aNcQk6xL_pujBCXaCuo4ExjvEYGkRayK6-gLpd0Y8DC1Ob8QfyIyg9MMSyRAklEVHlsUdVxYc92Bl2bdKwZNbozxITISxFGSTMm1GFjFgG4jhDIby6jRZKnR_RslKyO96YbopcDOm2xoUgLx4eSTSXZli5KtJYcV_HcCcUo9FGjv2Bxy7pOCxyMYwTdf_kEv41JzNcmE";
@@ -822,6 +824,47 @@ function LandingPage({ navigate }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Enterprise "Book a call" → Cal.com modal. Falls back to mailto when the
+  // VITE_CALCOM_CAL_LINK env var isn't configured (local dev without secrets).
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const enterpriseCtaRef = useRef(null);
+
+  // Deep-link: ?plan=X highlights the matching tier card briefly and scrolls
+  // pricing into view. Lets sales send "here's the Pro plan" links that land
+  // with intent.
+  const [highlightedPlan, setHighlightedPlan] = useState(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const plan = params.get("plan");
+    if (plan && TIERS.some((t) => t.id === plan)) {
+      setHighlightedPlan(plan);
+      setTimeout(() => {
+        document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+      const timer = setTimeout(() => setHighlightedPlan(null), 2200);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, []);
+
+  const handleTierCta = (tier) => () => {
+    track("pricing_cta_click", { plan: tier.id, source: "card" });
+    try {
+      window.history.replaceState({}, "", `?plan=${tier.id}#contact`);
+    } catch {
+      /* harmless in non-browser contexts */
+    }
+    if (tier.custom) {
+      if (isCalcomConfigured()) {
+        setBookingOpen(true);
+      } else {
+        window.location.href = "mailto:hello@biteperk.com.au?subject=VocoTable%20Enterprise%20%C2%B7%20scoping%20call";
+      }
+      return;
+    }
+    document.getElementById("contact")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   // Scroll-reveal — single IntersectionObserver wires up every .lp-reveal in
   // the page, adds .lp-in when it crosses into view. The fade-in styling is
   // gated on html.lp-js-ready so the page stays visible if JS fails or is
@@ -1234,65 +1277,101 @@ function LandingPage({ navigate }) {
         <div className="lp-wrap">
           <div className="lp-center">
             <div className="lp-pill" style={{ marginBottom: 18 }}>
-              Simple pricing
+              Pricing
             </div>
             <h2>
-              One flat price.
-              <br />
-              <span className="lp-amber">No surprises.</span>
+              Pricing that grows with you<span className="lp-amber">.</span>
             </h2>
+            <p className="lp-lead">
+              Try any plan free for 7 days. No card required. Keep every booking Bella makes,
+              even if you don't continue.
+            </p>
           </div>
-          <div className="lp-price-wrap">
-            <div className="lp-price-card lp-feature">
-              <div className="lp-eyebrow" style={{ color: "#ffb463" }}>
-                Everything included
+
+          {[
+            { eyebrow: "For your restaurant", tiers: TIERS.filter((t) => t.group === "venue") },
+            { eyebrow: "For restaurant groups", tiers: TIERS.filter((t) => t.group === "groups") },
+          ].map(({ eyebrow, tiers }) => (
+            <div className="lp-price-group" key={eyebrow}>
+              <div className="lp-price-eyebrow">{eyebrow}</div>
+              <div className="lp-price-row lp-price-row-2">
+                {tiers.map((tier) => (
+                  <TierCard
+                    key={tier.id}
+                    tier={tier}
+                    highlighted={highlightedPlan === tier.id}
+                    onCta={handleTierCta(tier)}
+                    ctaRef={tier.custom ? enterpriseCtaRef : undefined}
+                  />
+                ))}
               </div>
-              <div className="lp-amt">
-                $80
-                <span style={{ fontSize: 20, color: "var(--lp-mist)", fontWeight: 500 }}>/month</span>
-              </div>
-              <div className="lp-mist" style={{ fontSize: 15 }}>
-                Flat rate. No per-cover fees. No lock-in. Cancel anytime.
-              </div>
-              <ul>
-                <li>
-                  <span className="lp-tick">✓</span> Unlimited calls answered, 24/7
-                </li>
-                <li>
-                  <span className="lp-tick">✓</span> Live booking into your dashboard
-                </li>
-                <li>
-                  <span className="lp-tick">✓</span> Transcripts, analytics &amp; no-show tracking
-                </li>
-                <li>
-                  <span className="lp-tick">✓</span> Natural Australian voice (Bella)
-                </li>
-                <li>
-                  <span className="lp-tick">✓</span> Local Sydney support
-                </li>
-              </ul>
             </div>
-            <div className="lp-price-card">
-              <div className="lp-eyebrow">Special launch offer</div>
-              <div className="lp-amt">
-                1 week
-                <br />
-                <span className="lp-amber">free</span>
-              </div>
-              <div className="lp-mist" style={{ fontSize: 15 }}>
-                Try Bella on your own line. No card required. Keep every booking she makes — even
-                if you don't continue.
-              </div>
-              <button
-                type="button"
-                className="lp-btn"
-                style={{ marginTop: 26 }}
-                onClick={scrollTo("contact")}
-              >
-                Start your free week →
-              </button>
+          ))}
+
+          <details className="lp-price-compare">
+            <summary>Compare all features</summary>
+            <div className="lp-compare-scroll">
+              <table className="lp-compare-table">
+                <thead>
+                  <tr>
+                    <th scope="col"></th>
+                    {TIERS.map((t) => (
+                      <th key={t.id} scope="col">
+                        {t.name}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {COMPARE_ROWS.map((row) => (
+                    <tr key={row.label}>
+                      <th scope="row">{row.label}</th>
+                      {TIERS.map((t) => {
+                        const v = row.values[t.id];
+                        const isTick = v === "✓";
+                        const isDash = v === "—";
+                        return (
+                          <td key={t.id}>
+                            {isTick ? (
+                              <span className="lp-tick" aria-label="Included">
+                                ✓
+                              </span>
+                            ) : isDash ? (
+                              <span className="lp-dash" aria-label="Not included">
+                                —
+                              </span>
+                            ) : (
+                              v
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </details>
+
+          <p className="lp-price-footnote">
+            All prices in AUD, excludes GST. Pay annually and save the equivalent of two
+            months — ask us.
+          </p>
+
+          <div className="lp-price-faq">
+            <h3>Frequently asked</h3>
+            {FAQ.map(({ q, a }) => (
+              <details className="lp-faq-item" key={q}>
+                <summary>{q}</summary>
+                <p>{a}</p>
+              </details>
+            ))}
           </div>
+
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(buildPricingSchema()) }}
+          />
         </div>
       </section>
 
@@ -1327,7 +1406,7 @@ function LandingPage({ navigate }) {
         <div className="lp-wrap lp-closing-content">
           <div className="lp-pill" style={{ marginBottom: 20 }}>
             <span className="lp-dot" />
-            Special launch offer
+            7-day free trial
           </div>
           <h2>
             Ready to stop
@@ -1437,7 +1516,54 @@ function LandingPage({ navigate }) {
           </div>
         </div>
       </footer>
+
+      <BookOnlineModal
+        open={bookingOpen}
+        onClose={() => setBookingOpen(false)}
+        triggerRef={enterpriseCtaRef}
+      />
     </div>
+  );
+}
+
+function TierCard({ tier, highlighted, onCta, ctaRef }) {
+  const ctaClass = tier.featured || tier.custom ? "lp-btn" : "lp-btn-ghost";
+  return (
+    <article
+      className={
+        "lp-tier" +
+        (tier.featured ? " lp-tier-featured" : "") +
+        (tier.custom ? " lp-tier-custom" : "") +
+        (highlighted ? " lp-tier-highlighted" : "")
+      }
+      aria-label={tier.featured ? `${tier.name} plan — our pick` : `${tier.name} plan`}
+    >
+      {tier.featured && <div className="lp-tier-pick">Our pick</div>}
+      <div className="lp-tier-name">{tier.name}</div>
+      <div className="lp-tier-tagline">{tier.tagline}</div>
+      <div className="lp-tier-price">
+        {tier.price}
+        {tier.suffix && <span className="lp-tier-price-suffix">{tier.suffix}</span>}
+      </div>
+      <ul className="lp-tier-features">
+        {tier.features.map((feature) => (
+          <li key={feature}>
+            <span className="lp-tick" aria-hidden="true">
+              ✓
+            </span>
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="lp-tier-cta">
+        <button type="button" className={ctaClass} onClick={onCta} ref={ctaRef}>
+          {tier.cta}
+        </button>
+        {tier.ctaSecondary && (
+          <div className="lp-tier-cta-secondary">{tier.ctaSecondary}</div>
+        )}
+      </div>
+    </article>
   );
 }
 
