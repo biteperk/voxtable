@@ -2740,7 +2740,16 @@ button {
 .billing-history {
   grid-column: span 12;
   margin-top: 24px;
+  /* overflow stays visible so the Filter popover can escape downward.
+     The table edges still need clipping for the rounded card corners —
+     done by .billing-history-body below. */
+  overflow: visible;
+}
+
+.billing-history-body {
   overflow: hidden;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
 }
 
 .billing-history-head {
@@ -2814,13 +2823,80 @@ td button {
   color: var(--on-surface-variant);
 }
 
-.paid-dot {
+.paid-dot,
+.invoice-status-dot {
   display: inline-block;
   width: 7px;
   height: 7px;
   margin-right: 7px;
   border-radius: 999px;
   background: var(--primary);
+}
+
+.invoice-status-dot.primary { background: var(--primary); }
+.invoice-status-dot.warn    { background: #ffb84d; }
+.invoice-status-dot.danger  { background: #ff6363; }
+
+.billing-filter-wrap {
+  position: relative;
+}
+
+.billing-filter-wrap > button {
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.billing-filter-wrap > button:hover,
+.billing-filter-wrap > button.is-open {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.billing-filter-wrap .filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-primary, #0e2243);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.billing-filter-wrap .booking-filter-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+}
+
+.billing-history td:nth-child(3) {
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.billing-history td button {
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.billing-history td button:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.billing-history td button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1500px) {
@@ -3166,7 +3242,9 @@ td button {
   background: rgba(30, 30, 30, 0.72);
   backdrop-filter: blur(12px);
   padding: 24px;
-  overflow: hidden;
+  /* overflow stays visible so the Filter popover can escape downward;
+     padding insets the table from the rounded corners, so no clip needed. */
+  overflow: visible;
 }
 
 .feed-activity-header {

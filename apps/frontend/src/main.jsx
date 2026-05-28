@@ -5228,9 +5228,99 @@ function ProfilePage({ navigate }) {
   );
 }
 
+const INVOICE_STATUSES = [
+  { key: "paid",     label: "Paid",     color: "primary" },
+  { key: "refunded", label: "Refunded", color: "warn" },
+  { key: "failed",   label: "Failed",   color: "danger" },
+];
+
+// Mock invoice history. In production this comes from Stripe / billing
+// provider; for now it's a static list tied to the user's saved card.
+function buildInvoices(card) {
+  const fallback = card ?? { brand: "Visa", last4: "4242", expiry: "12/2027" };
+  return [
+    { id: "INV-2026-04-001", issuedAt: "2026-04-01", paidAt: "2026-04-01", amount: 80, status: "paid",     card: fallback },
+    { id: "INV-2026-03-001", issuedAt: "2026-03-01", paidAt: "2026-03-01", amount: 80, status: "paid",     card: fallback },
+    { id: "INV-2026-02-001", issuedAt: "2026-02-01", paidAt: "2026-02-01", amount: 80, status: "paid",     card: fallback },
+    { id: "INV-2026-01-001", issuedAt: "2026-01-01", paidAt: "2026-01-01", amount: 80, status: "paid",     card: fallback },
+    { id: "INV-2025-12-002", issuedAt: "2025-12-15", paidAt: "2025-12-15", amount: 80, status: "refunded", card: fallback, refundedAt: "2025-12-20", refundReason: "Duplicate charge" },
+    { id: "INV-2025-12-001", issuedAt: "2025-12-01", paidAt: "2025-12-01", amount: 80, status: "paid",     card: fallback },
+    { id: "INV-2025-11-001", issuedAt: "2025-11-01", paidAt: "2025-11-01", amount: 80, status: "paid",     card: fallback },
+  ];
+}
+
+function formatInvoiceDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", {
+    day: "numeric", month: "short", year: "numeric"
+  });
+}
+
 function BillingPage({ navigate, paymentCards = [] }) {
+  const { user } = useAuth();
   const defaultCard =
     paymentCards.find((c) => c.isDefault) || paymentCards[0] || null;
+  const invoices = useMemo(() => buildInvoices(defaultCard), [defaultCard]);
+
+  const [statusFilter, setStatusFilter] = useState(() => new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
+  const filterRef = useRef(null);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onClick = (event) => {
+      if (filterRef.current && !filterRef.current.contains(event.target)) {
+        setFilterOpen(false);
+      }
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") setFilterOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [filterOpen]);
+
+  const toggleStatus = (key) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const clearFilters = () => setStatusFilter(new Set());
+
+  const filtered = statusFilter.size === 0
+    ? invoices
+    : invoices.filter((inv) => statusFilter.has(inv.status));
+  const isFiltered = statusFilter.size > 0;
+
+  const handleDownloadReceipt = async (invoice) => {
+    if (downloadingId) return;
+    setDownloadingId(invoice.id);
+    try {
+      const { exportReceiptPdf } = await import("./pdfExport.js");
+      exportReceiptPdf({
+        invoice,
+        customer: {
+          name: user?.displayName ?? user?.email ?? "Customer",
+          email: user?.email ?? "—",
+        },
+        plan: { name: "VocoTable Core Plan", description: "Monthly subscription — unlimited AI agent bookings" },
+      });
+    } catch (e) {
+      // Surface to console; the row stays interactive so the user can retry.
+      console.error("[billing] receipt export failed:", e);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <DashboardShell active="Billing" navigate={navigate}>
       <header className="billing-header">
@@ -5257,7 +5347,7 @@ function BillingPage({ navigate, paymentCards = [] }) {
               </strong>
               <p>
                 <Icon name="calendar_month" />
-                Next billing date: Oct 1, 2023
+                Next billing date: Jun 1, 2026
               </p>
             </div>
             <button onClick={() => navigate("/manage-plan")}>Manage Plan</button>
@@ -5297,38 +5387,92 @@ function BillingPage({ navigate, paymentCards = [] }) {
         <article className="billing-history">
           <div className="billing-history-head">
             <h2>Billing History</h2>
-            <button>
-              <Icon name="filter_list" />
-              Filter
-            </button>
+            <div className="billing-filter-wrap" ref={filterRef}>
+              <button
+                type="button"
+                className={filterOpen ? "is-open" : ""}
+                onClick={() => setFilterOpen((v) => !v)}
+                aria-expanded={filterOpen}
+                aria-haspopup="menu"
+              >
+                <Icon name="filter_list" />
+                Filter
+                {statusFilter.size > 0 && (
+                  <span className="filter-badge">{statusFilter.size}</span>
+                )}
+              </button>
+              {filterOpen && (
+                <div className="booking-filter-popover" role="menu">
+                  <div className="booking-filter-head">
+                    <span>Filter by status</span>
+                    {statusFilter.size > 0 && (
+                      <button type="button" onClick={clearFilters}>Clear</button>
+                    )}
+                  </div>
+                  {INVOICE_STATUSES.map((opt) => {
+                    const checked = statusFilter.has(opt.key);
+                    return (
+                      <label key={opt.key} className="booking-filter-option">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleStatus(opt.key)}
+                        />
+                        <span className={`invoice-status-dot ${opt.color}`} />
+                        {opt.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Invoice Date</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th>Receipt</th>
-              </tr>
-            </thead>
-            <tbody>
-              {["Sep 1, 2023", "Aug 1, 2023", "Jul 1, 2023"].map((date) => (
-                <tr key={date}>
-                  <td>{date}</td>
-                  <td>$80.00</td>
-                  <td>
-                    <span className="paid-dot" />
-                    Paid
-                  </td>
-                  <td>
-                    <button aria-label={`Download ${date} receipt`}>
-                      <Icon name="download" />
-                    </button>
-                  </td>
+          <div className="billing-history-body">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice Date</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Receipt</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: "center", color: "var(--on-surface-variant)" }}>
+                      {isFiltered ? "No invoices match your filters." : "No invoices yet."}
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((inv) => {
+                    const status = INVOICE_STATUSES.find((s) => s.key === inv.status) ?? INVOICE_STATUSES[0];
+                    return (
+                      <tr key={inv.id}>
+                        <td>{formatInvoiceDate(inv.issuedAt)}</td>
+                        <td>${inv.amount.toFixed(2)}</td>
+                        <td>
+                          <span className={`invoice-status-dot ${status.color}`} />
+                          {status.label}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            aria-label={`Download ${inv.id} receipt`}
+                            onClick={() => handleDownloadReceipt(inv)}
+                            disabled={downloadingId === inv.id}
+                            title="Download receipt PDF"
+                          >
+                            <Icon name={downloadingId === inv.id ? "hourglass_top" : "download"} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </article>
       </section>
     </DashboardShell>
