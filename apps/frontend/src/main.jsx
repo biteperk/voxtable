@@ -2465,7 +2465,59 @@ function BookingLogPage({ navigate, path }) {
   const [pendingIds, setPendingIds] = useState(() => new Set());
   const [confirmState, setConfirmState] = useState(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState(() => new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [newBookingOpen, setNewBookingOpen] = useState(false);
+  const filterRef = useRef(null);
   const isPhone = useMediaQuery("(max-width: 767px)");
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onClick = (e) => {
+      if (filterRef.current && !filterRef.current.contains(e.target)) {
+        setFilterOpen(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setFilterOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [filterOpen]);
+
+  const toggleStatus = (key) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const clearFilters = () => setStatusFilter(new Set());
+
+  const handleCreateBooking = (form) => {
+    // Backend wire-up lands when manual-booking endpoint ships. For now
+    // optimistic-add so the row appears in the list immediately.
+    const synthetic = {
+      id: `manual-${Date.now()}`,
+      customer_name: form.name,
+      customer_phone: form.phone,
+      party_size: Number(form.partySize),
+      reservation_date: form.date,
+      start_time: form.time,
+      status: "confirmed",
+      notes: form.notes || "Manual entry",
+      source: "manual",
+    };
+    setReservations((prev) => [synthetic, ...prev]);
+    setNewBookingOpen(false);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -2535,13 +2587,30 @@ function BookingLogPage({ navigate, path }) {
   const handleCancel = (id) => requestConfirm("cancel", id);
   const handleRestore = (id) => runMutation("restore", id);
 
-  const rows = reservations.map((r) => ({
+  const q = searchQuery.trim().toLowerCase();
+  const filteredReservations = reservations.filter((r) => {
+    if (statusFilter.size > 0 && !statusFilter.has(r.status)) return false;
+    if (q.length === 0) return true;
+    const hay = [
+      r.customer_name,
+      r.customer_phone,
+      r.notes,
+      r.source,
+      String(r.party_size ?? ""),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(q);
+  });
+  const rows = filteredReservations.map((r) => ({
     ...mapReservationToRow(r),
     pending: pendingIds.has(r.id)
   }));
   const totalBookings = reservations.length;
   const confirmed = reservations.filter((r) => r.status === "confirmed").length;
   const cancelled = reservations.filter((r) => r.status === "cancelled").length;
+  const isFiltered = statusFilter.size > 0 || q.length > 0;
   const successRate =
     analytics && analytics.total_calls > 0
       ? `${Math.round((analytics.bookings_created / analytics.total_calls) * 100)}%`
@@ -2558,12 +2627,74 @@ function BookingLogPage({ navigate, path }) {
         <div className="booking-actions">
           <label className="booking-search">
             <Icon name="search" />
-            <input placeholder="Search bookings..." />
+            <input
+              type="search"
+              placeholder="Search bookings..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search bookings"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="booking-search-clear"
+                onClick={() => setSearchQuery("")}
+                aria-label="Clear search"
+              >
+                <Icon name="close" />
+              </button>
+            )}
           </label>
-          <button className="square-action" aria-label="Filter bookings">
-            <Icon name="filter_list" />
-          </button>
-          <button className="new-booking-button">
+          <div className="booking-filter-wrap" ref={filterRef}>
+            <button
+              type="button"
+              className={`square-action ${filterOpen ? "is-open" : ""}`}
+              onClick={() => setFilterOpen((v) => !v)}
+              aria-label="Filter bookings"
+              aria-expanded={filterOpen}
+            >
+              <Icon name="filter_list" />
+              {statusFilter.size > 0 && (
+                <span className="filter-badge">{statusFilter.size}</span>
+              )}
+            </button>
+            {filterOpen && (
+              <div className="booking-filter-popover" role="menu">
+                <div className="booking-filter-head">
+                  <span>Filter by status</span>
+                  {statusFilter.size > 0 && (
+                    <button type="button" onClick={clearFilters}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {[
+                  { key: "confirmed", label: "Confirmed" },
+                  { key: "seated", label: "Seated" },
+                  { key: "completed", label: "Completed" },
+                  { key: "cancelled", label: "Cancelled" },
+                  { key: "no_show", label: "No-show" },
+                ].map((opt) => {
+                  const checked = statusFilter.has(opt.key);
+                  return (
+                    <label key={opt.key} className="booking-filter-option">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleStatus(opt.key)}
+                      />
+                      <span className={`status-pill ${opt.key}`}>{opt.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="new-booking-button"
+            onClick={() => setNewBookingOpen(true)}
+          >
             <Icon name="add" />
             New
           </button>
@@ -2599,7 +2730,9 @@ function BookingLogPage({ navigate, path }) {
         {isPhone ? (
           <ul className="booking-card-list" aria-label="Reservations">
             {rows.length === 0 && !loading && (
-              <li className="booking-card-empty">No reservations yet.</li>
+              <li className="booking-card-empty">
+                {isFiltered ? "No bookings match your filters." : "No reservations yet."}
+              </li>
             )}
             {rows.map((row) => (
               <BookingCardItem key={row.id} row={row} />
@@ -2619,6 +2752,13 @@ function BookingLogPage({ navigate, path }) {
                 </tr>
               </thead>
               <tbody>
+                {rows.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={6} className="booking-table-empty">
+                      {isFiltered ? "No bookings match your filters." : "No reservations yet."}
+                    </td>
+                  </tr>
+                )}
                 {rows.map((row) => (
                   <BookingRow
                     key={row.id}
@@ -2639,6 +2779,8 @@ function BookingLogPage({ navigate, path }) {
               ? "Loading…"
               : error
               ? `Error: ${error}`
+              : isFiltered
+              ? `${rows.length} of ${totalBookings} reservation${totalBookings === 1 ? "" : "s"}`
               : `${rows.length} reservation${rows.length === 1 ? "" : "s"}`}
           </span>
         </footer>
@@ -2650,6 +2792,13 @@ function BookingLogPage({ navigate, path }) {
         onCancel={dismissConfirm}
         onConfirm={() => confirmState && runMutation(confirmState.action, confirmState.id)}
       />
+
+      {newBookingOpen && (
+        <NewBookingModal
+          onClose={() => setNewBookingOpen(false)}
+          onCreate={handleCreateBooking}
+        />
+      )}
     </DashboardShell>
   );
 }
@@ -2754,6 +2903,197 @@ function ConfirmModal({ state, busy, onConfirm, onCancel }) {
             )}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function NewBookingModal({ onClose, onCreate }) {
+  const now = new Date();
+  const todayYmd = now.toISOString().slice(0, 10);
+  const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
+  nextHour.setMinutes(0, 0, 0);
+  const defaultTime = `${String(nextHour.getHours()).padStart(2, "0")}:${String(nextHour.getMinutes()).padStart(2, "0")}`;
+
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    partySize: 2,
+    date: todayYmd,
+    time: defaultTime,
+    notes: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape" && !submitting) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose, submitting]);
+
+  const update = (field) => (event) => {
+    if (typeof event.target.setCustomValidity === "function") {
+      event.target.setCustomValidity("");
+    }
+    setForm((prev) => ({ ...prev, [field]: event.target.value }));
+  };
+
+  const englishValidity = (event) => {
+    const el = event.target;
+    if (el.validity.valueMissing) {
+      el.setCustomValidity("Please fill out this field.");
+    } else if (
+      el.validity.typeMismatch ||
+      el.validity.patternMismatch ||
+      el.validity.rangeUnderflow ||
+      el.validity.rangeOverflow
+    ) {
+      el.setCustomValidity("Please enter a valid value.");
+    } else {
+      el.setCustomValidity("");
+    }
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    onCreate(form);
+  };
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-booking-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div className="modal-card new-booking-modal">
+        <header className="new-booking-head">
+          <div>
+            <h2 id="new-booking-title" className="modal-title">New booking</h2>
+            <p className="modal-description">
+              Capture a manual reservation — phone calls, walk-ins, host-stand entries.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="new-booking-close"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close"
+          >
+            <Icon name="close" />
+          </button>
+        </header>
+
+        <form className="new-booking-form" onSubmit={handleSubmit} autoComplete="off">
+          <label className="nb-field">
+            <span>Guest name</span>
+            <input
+              type="text"
+              placeholder="e.g. Maria Rossi"
+              value={form.name}
+              onChange={update("name")}
+              onInvalid={englishValidity}
+              required
+              lang="en"
+            />
+          </label>
+
+          <label className="nb-field">
+            <span>Phone number</span>
+            <input
+              type="tel"
+              inputMode="tel"
+              placeholder="+61 4XX XXX XXX"
+              value={form.phone}
+              onChange={update("phone")}
+              onInvalid={englishValidity}
+              required
+              lang="en"
+            />
+          </label>
+
+          <div className="nb-field-row">
+            <label className="nb-field">
+              <span>Date</span>
+              <input
+                type="date"
+                value={form.date}
+                onChange={update("date")}
+                onInvalid={englishValidity}
+                required
+                lang="en"
+              />
+            </label>
+            <label className="nb-field">
+              <span>Time</span>
+              <input
+                type="time"
+                value={form.time}
+                onChange={update("time")}
+                onInvalid={englishValidity}
+                required
+                lang="en"
+              />
+            </label>
+            <label className="nb-field nb-field-narrow">
+              <span>Party</span>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={form.partySize}
+                onChange={update("partySize")}
+                onInvalid={englishValidity}
+                required
+                lang="en"
+              />
+            </label>
+          </div>
+
+          <label className="nb-field">
+            <span>Notes</span>
+            <textarea
+              rows={3}
+              placeholder="Special requests, allergies, table preferences…"
+              value={form.notes}
+              onChange={update("notes")}
+              lang="en"
+            />
+          </label>
+
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="modal-button ghost"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="modal-button confirm"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <span className="modal-spinner" aria-hidden="true" />
+                  Saving…
+                </>
+              ) : (
+                "Save booking"
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

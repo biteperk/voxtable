@@ -9020,3 +9020,314 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     position: static;
   }
 }
+
+/* ============================================================
+ * Booking Log actions — wired search, status filter popover,
+ * and manual New Booking modal. Reuses .modal-overlay/.modal-card.
+ * ============================================================ */
+.booking-search {
+  position: relative;
+}
+
+.booking-search-clear {
+  border: 0;
+  background: transparent;
+  color: var(--on-surface-variant);
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.booking-search-clear:hover {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.booking-search-clear .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* ---- Filter button + popover ------------------------------------------- */
+.booking-filter-wrap {
+  position: relative;
+}
+
+.square-action {
+  position: relative;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.square-action.is-open {
+  background: var(--surface-container-high);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.filter-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--background);
+}
+
+.booking-filter-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  padding: 8px;
+  background: var(--surface-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.booking-filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--outline-variant);
+  margin-bottom: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.booking-filter-head button {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.booking-filter-head button:hover {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.booking-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.booking-filter-option:hover {
+  background: var(--surface-container-high);
+}
+
+.booking-filter-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+}
+
+.status-pill.confirmed {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
+}
+
+.status-pill.seated {
+  background: color-mix(in srgb, var(--secondary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--secondary-container) 50%, transparent);
+  color: var(--secondary);
+}
+
+.status-pill.completed {
+  background: var(--surface-container-high);
+  border-color: var(--outline-variant);
+  color: var(--on-surface-variant);
+}
+
+.status-pill.cancelled,
+.status-pill.no_show {
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+  color: var(--error);
+}
+
+/* ---- Table empty row --------------------------------------------------- */
+.booking-table-empty {
+  padding: 32px 20px !important;
+  text-align: center;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+  font-style: italic;
+}
+
+/* ---- New Booking modal ------------------------------------------------- */
+.new-booking-modal {
+  width: min(560px, calc(100vw - 32px));
+  padding: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.new-booking-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.new-booking-head .modal-title {
+  margin: 0 0 4px;
+  text-align: left;
+}
+
+.new-booking-head .modal-description {
+  margin: 0;
+  text-align: left;
+}
+
+.new-booking-close {
+  border: 0;
+  background: transparent;
+  color: var(--on-surface-variant);
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.new-booking-close:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.new-booking-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.new-booking-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.nb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nb-field > span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.nb-field input,
+.nb-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.nb-field textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+
+.nb-field input:focus,
+.nb-field textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.nb-field input::placeholder,
+.nb-field textarea::placeholder {
+  color: var(--outline);
+}
+
+.nb-field input[type="date"],
+.nb-field input[type="time"] {
+  color-scheme: dark;
+}
+
+.nb-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 110px;
+  gap: 12px;
+}
+
+.nb-field-narrow input { text-align: center; }
+
+.new-booking-form .modal-actions {
+  margin-top: 8px;
+}
+
+@media (max-width: 560px) {
+  .nb-field-row {
+    grid-template-columns: 1fr;
+  }
+}
