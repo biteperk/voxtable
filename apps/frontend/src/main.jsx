@@ -1816,7 +1816,39 @@ function LiveFeedOverviewPage({ navigate, path }) {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [statusFilter, setStatusFilter] = useState(() => new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef(null);
   const isPhone = useMediaQuery("(max-width: 767px)");
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onClick = (e) => {
+      if (filterRef.current && !filterRef.current.contains(e.target)) {
+        setFilterOpen(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setFilterOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [filterOpen]);
+
+  const toggleStatus = (key) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const clearFilters = () => setStatusFilter(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -1853,7 +1885,7 @@ function LiveFeedOverviewPage({ navigate, path }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const callRows = useMemo(() => {
+  const allCallRows = useMemo(() => {
     const rows = callLogs.map((row, i) => mapCallLogToRow(row, i));
     // Live calls float to the top, then most recent first.
     return rows.sort((a, b) => {
@@ -1862,8 +1894,13 @@ function LiveFeedOverviewPage({ navigate, path }) {
       return 0;
     });
   }, [callLogs]);
+  const callRows = useMemo(() => {
+    if (statusFilter.size === 0) return allCallRows;
+    return allCallRows.filter((r) => statusFilter.has(r.status));
+  }, [allCallRows, statusFilter]);
   const totalCalls = analytics?.total_calls ?? 0;
-  const activeCalls = callRows.filter((r) => r.status === "live").length;
+  const activeCalls = allCallRows.filter((r) => r.status === "live").length;
+  const isFiltered = statusFilter.size > 0;
   const successRate =
     analytics && analytics.total_calls > 0
       ? `${Math.round((analytics.handled / analytics.total_calls) * 100)}%`
@@ -1923,9 +1960,48 @@ function LiveFeedOverviewPage({ navigate, path }) {
         <div className="feed-activity-header">
           <h2>Recent Activity</h2>
           <div className="feed-activity-actions">
-            <button className="feed-action-btn">
-              <Icon name="filter_list" /> Filter
-            </button>
+            <div className="feed-filter-wrap" ref={filterRef}>
+              <button
+                type="button"
+                className={`feed-action-btn ${filterOpen ? "is-open" : ""}`}
+                onClick={() => setFilterOpen((v) => !v)}
+                aria-expanded={filterOpen}
+              >
+                <Icon name="filter_list" /> Filter
+                {statusFilter.size > 0 && (
+                  <span className="filter-badge">{statusFilter.size}</span>
+                )}
+              </button>
+              {filterOpen && (
+                <div className="booking-filter-popover" role="menu">
+                  <div className="booking-filter-head">
+                    <span>Filter by status</span>
+                    {statusFilter.size > 0 && (
+                      <button type="button" onClick={clearFilters}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {[
+                    { key: "live", label: "Live" },
+                    { key: "handled", label: "Handled" },
+                    { key: "transferred", label: "Transferred" },
+                  ].map((opt) => {
+                    const checked = statusFilter.has(opt.key);
+                    return (
+                      <label key={opt.key} className="booking-filter-option">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleStatus(opt.key)}
+                        />
+                        <span className={`status-pill ${opt.key}`}>{opt.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <button className="feed-action-btn">
               <Icon name="download" /> Export
             </button>
@@ -1935,7 +2011,9 @@ function LiveFeedOverviewPage({ navigate, path }) {
         {isPhone ? (
           <ul className="feed-card-list" aria-label="Recent calls">
             {callRows.length === 0 && !loading && (
-              <li className="feed-card-empty">No calls yet.</li>
+              <li className="feed-card-empty">
+                {isFiltered ? "No calls match your filters." : "No calls yet."}
+              </li>
             )}
             {callRows.map((row) => (
               <FeedCardItem
@@ -1959,6 +2037,13 @@ function LiveFeedOverviewPage({ navigate, path }) {
                 </tr>
               </thead>
               <tbody>
+                {callRows.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={6} className="booking-table-empty">
+                      {isFiltered ? "No calls match your filters." : "No calls yet."}
+                    </td>
+                  </tr>
+                )}
                 {callRows.map((row) => (
                   <FeedCallRow
                     key={row.id}
@@ -1977,6 +2062,8 @@ function LiveFeedOverviewPage({ navigate, path }) {
               ? "Loading…"
               : error
               ? `Error: ${error}`
+              : isFiltered
+              ? `${callRows.length} of ${allCallRows.length} call${allCallRows.length === 1 ? "" : "s"}`
               : `${callRows.length} call${callRows.length === 1 ? "" : "s"}`}
           </span>
         </div>
@@ -2261,15 +2348,7 @@ function LiveFeedDetailPage({ navigate, callId, path }) {
 
           {callLog?.recording_url && (
             <div className="call-control-bar">
-              <a
-                href={callLog.recording_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="listen-button"
-              >
-                <Icon name="headphones" />
-                Listen to recording
-              </a>
+              <AudioPlayer src={callLog.recording_url} />
             </div>
           )}
         </article>
@@ -2404,6 +2483,110 @@ function parseTranscript(raw) {
     }
   }
   return out;
+}
+
+function AudioPlayer({ src }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const onMeta = () => {
+      if (Number.isFinite(audio.duration)) setDuration(audio.duration);
+    };
+    const onTime = () => setCurrentTime(audio.currentTime);
+    const onEnd = () => {
+      setPlaying(false);
+      setCurrentTime(0);
+    };
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onErr = () => setError(true);
+
+    audio.addEventListener("loadedmetadata", onMeta);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("ended", onEnd);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("error", onErr);
+
+    return () => {
+      audio.pause();
+      audio.removeEventListener("loadedmetadata", onMeta);
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("ended", onEnd);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("error", onErr);
+    };
+  }, [src]);
+
+  const toggle = () => {
+    const audio = audioRef.current;
+    if (!audio || error) return;
+    if (audio.paused) {
+      audio.play().catch(() => setError(true));
+    } else {
+      audio.pause();
+    }
+  };
+
+  const seek = (event) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    audio.currentTime = ratio * duration;
+    setCurrentTime(audio.currentTime);
+  };
+
+  const fmt = (sec) => {
+    if (!Number.isFinite(sec)) return "0:00";
+    const s = Math.max(0, Math.floor(sec));
+    const m = Math.floor(s / 60);
+    return `${m}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div className={`audio-player${error ? " is-error" : ""}`}>
+      <audio ref={audioRef} src={src} preload="metadata" />
+      <button
+        type="button"
+        className="audio-play-btn"
+        onClick={toggle}
+        disabled={error}
+        aria-label={playing ? "Pause recording" : "Play recording"}
+      >
+        <Icon name={error ? "error" : playing ? "pause" : "play_arrow"} />
+      </button>
+      <div className="audio-player-body">
+        <div
+          className="audio-progress"
+          role="slider"
+          aria-valuemin={0}
+          aria-valuemax={Math.floor(duration)}
+          aria-valuenow={Math.floor(currentTime)}
+          aria-label="Seek"
+          onClick={seek}
+        >
+          <div className="audio-progress-fill" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="audio-times">
+          <span>{fmt(currentTime)}</span>
+          <span className="audio-times-sep">/</span>
+          <span>{error ? "—" : fmt(duration)}</span>
+        </div>
+      </div>
+      {error && <span className="audio-error-msg">Recording unavailable</span>}
+    </div>
+  );
 }
 
 function TranscriptBubble({ message, delay }) {

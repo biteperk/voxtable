@@ -9331,3 +9331,154 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+ * AudioPlayer (call recording playback) + Live Feed filter
+ * popover. Replaces the old 'Listen to recording' link with an
+ * inline play/pause + scrubber.
+ * ============================================================ */
+.call-control-bar:has(.audio-player) {
+  grid-template-columns: 1fr;
+}
+
+.audio-player {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+.audio-play-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--primary);
+  color: var(--on-primary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.audio-play-btn:hover:not(:disabled) {
+  background: var(--primary-container);
+  color: #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.audio-play-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.audio-play-btn:disabled {
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+  cursor: not-allowed;
+}
+
+.audio-play-btn .material-symbols-outlined {
+  font-size: 22px;
+}
+
+.audio-player-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.audio-progress {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-container-high);
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.audio-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--primary);
+  border-radius: inherit;
+  transition: width 120ms linear;
+}
+
+.audio-times {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--on-surface-variant);
+  font-feature-settings: "tnum" 1;
+  white-space: nowrap;
+}
+
+.audio-times-sep {
+  opacity: 0.5;
+}
+
+.audio-player.is-error .audio-progress {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.audio-error-msg {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--error);
+}
+
+/* ---- Live Feed filter wrap (reuses .booking-filter-popover) ---------- */
+.feed-filter-wrap {
+  position: relative;
+}
+
+.feed-action-btn.is-open {
+  background: var(--surface-container-high);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.feed-filter-wrap .filter-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--background);
+}
+
+/* Status pill colours for Live Feed statuses (live / handled / transferred) */
+.status-pill.live {
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+  color: var(--error);
+}
+
+.status-pill.handled {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
+}
+
+.status-pill.transferred {
+  background: color-mix(in srgb, var(--tertiary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--tertiary-container) 50%, transparent);
+  color: var(--tertiary);
+}
