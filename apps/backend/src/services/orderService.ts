@@ -318,6 +318,17 @@ const VALID_ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   cancelled: []
 };
 
+async function hydrateAfterCommit(orderId: string, restaurantId: string): Promise<OrderWithItems> {
+  // Read pool can't see uncommitted writes from the write-pool txn, so every
+  // status mutation hydrates the response AFTER withTransaction commits.
+  // Same pattern as createOrder; see PR #35.
+  const hydrated = await getOrderById(orderId, restaurantId);
+  if (!hydrated) {
+    throw new AppError(500, "ORDER_HYDRATION_FAILED", "Order updated but couldn't be read back.");
+  }
+  return hydrated;
+}
+
 export async function updateOrderStatus(input: {
   id: string;
   restaurantId: string;
@@ -326,7 +337,7 @@ export async function updateOrderStatus(input: {
   actor: string;
   cancellationReason?: string;
 }): Promise<OrderWithItems> {
-  return withTransaction(async (db) => {
+  await withTransaction(async (db) => {
     const current = await getOrderById(input.id, input.restaurantId);
     if (!current) {
       throw new AppError(404, "ORDER_NOT_FOUND", "Order not found.");
@@ -377,8 +388,8 @@ export async function updateOrderStatus(input: {
       to: input.nextStatus,
       actor: input.actor
     });
-    return (await getOrderById(input.id, input.restaurantId))!;
   });
+  return hydrateAfterCommit(input.id, input.restaurantId);
 }
 
 export async function updateOrderItemStatus(input: {
@@ -389,7 +400,7 @@ export async function updateOrderItemStatus(input: {
   nextStatus: OrderItemStatus;
   actor: string;
 }): Promise<OrderWithItems> {
-  return withTransaction(async (db) => {
+  await withTransaction(async (db) => {
     const current = await getOrderById(input.orderId, input.restaurantId);
     if (!current) {
       throw new AppError(404, "ORDER_NOT_FOUND", "Order not found.");
@@ -423,8 +434,8 @@ export async function updateOrderItemStatus(input: {
       actor: input.actor,
       metadata: { item_id: item.id, name: item.name_snapshot }
     }, db);
-    return (await getOrderById(input.orderId, input.restaurantId))!;
   });
+  return hydrateAfterCommit(input.orderId, input.restaurantId);
 }
 
 export async function updatePaymentStatus(input: {
@@ -434,7 +445,7 @@ export async function updatePaymentStatus(input: {
   paymentStatus: PaymentStatus;
   actor: string;
 }): Promise<OrderWithItems> {
-  return withTransaction(async (db) => {
+  await withTransaction(async (db) => {
     const current = await getOrderById(input.id, input.restaurantId);
     if (!current) throw new AppError(404, "ORDER_NOT_FOUND", "Order not found.");
     if (current.version !== input.expectedVersion) {
@@ -456,8 +467,8 @@ export async function updatePaymentStatus(input: {
       toValue: input.paymentStatus,
       actor: input.actor
     }, db);
-    return (await getOrderById(input.id, input.restaurantId))!;
   });
+  return hydrateAfterCommit(input.id, input.restaurantId);
 }
 
 export async function getActiveOrders(restaurantId: string): Promise<OrderWithItems[]> {

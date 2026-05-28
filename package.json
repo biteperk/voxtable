@@ -26,6 +26,8 @@
     "smoke:twilio": "tsx apps/backend/scripts/smoke-twilio.ts",
     "smoke:calcom": "tsx apps/backend/scripts/smoke-calcom.ts",
     "smoke:retell-dates": "tsx apps/backend/scripts/smoke-retell-dates.ts",
+    "smoke:orders": "tsx apps/backend/scripts/smoke-orders.ts",
+    "smoke:retell-orders": "tsx apps/backend/scripts/smoke-retell-orders.ts",
     "check": "npm run build:backend && npm run build:frontend && npm run build:kds"
   },
   "dependencies": {
