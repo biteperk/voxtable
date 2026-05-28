@@ -103,10 +103,15 @@ export async function nextOrderNumber(
   await db.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
     `order_number:${restaurantId}:${today}`
   ]);
+  // Range scan instead of `ordered_at::date = CURRENT_DATE` so the planner can
+  // use idx_orders_active. The cast-equality form is non-sargable AND tripped
+  // the immutability check when we tried to back it with an expression index.
   const result = await db.query<{ next: number }>(
     `SELECT COALESCE(MAX(order_number), 0) + 1 AS next
        FROM orders
-      WHERE restaurant_id = $1 AND ordered_at::date = CURRENT_DATE`,
+      WHERE restaurant_id = $1
+        AND ordered_at >= CURRENT_DATE
+        AND ordered_at <  CURRENT_DATE + INTERVAL '1 day'`,
     [restaurantId]
   );
   return Number(result.rows[0]?.next ?? 1);
