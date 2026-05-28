@@ -99,10 +99,10 @@ CREATE INDEX IF NOT EXISTS idx_menu_items_category
   ON menu_items (category_id, display_order);
 
 -- pg_trgm expression index — voice agent fuzzy-matches "fish and chips" against
--- "Fish & Chips" etc. Expression index avoids the 08P01 risk of a GENERATED
--- column.
+-- "Fish & Chips" etc. Extra parens around LOWER(name) are mandatory: Postgres
+-- requires expression-index inputs to be wrapped so it can verify immutability.
 CREATE INDEX IF NOT EXISTS idx_menu_items_name_trgm
-  ON menu_items USING gin (LOWER(name) gin_trgm_ops);
+  ON menu_items USING gin ((LOWER(name)) gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS menu_item_variants (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -192,9 +192,11 @@ CREATE INDEX IF NOT EXISTS idx_orders_active
   ON orders (restaurant_id, created_at DESC)
   WHERE status NOT IN ('served', 'cancelled');
 
--- Per-day order-number lookup; supports the "order #42 today" display logic.
-CREATE INDEX IF NOT EXISTS idx_orders_order_number_day
-  ON orders (restaurant_id, (ordered_at::date), order_number);
+-- Per-day order-number lookup: the obvious `(ordered_at::date)` expression
+-- index is NOT allowed — `timestamptz::date` depends on session timezone, so
+-- Postgres flags it as non-immutable. The nextOrderNumber query rewritten as
+-- a range scan (`ordered_at >= CURRENT_DATE AND ordered_at < CURRENT_DATE + 1`)
+-- uses idx_orders_active and is fine at MVP volume.
 
 CREATE INDEX IF NOT EXISTS idx_orders_reservation
   ON orders (reservation_id)
