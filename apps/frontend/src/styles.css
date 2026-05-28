@@ -8467,3 +8467,556 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     justify-content: flex-start;
   }
 }
+
+/* ============================================================
+ * Table Order page (/live-tables/<label>)
+ * Full-page detail view replacing the old modal. Two-column
+ * dashboard layout: Active Orders + Activity Timeline on the
+ * left, Invoice Summary on the right.
+ * Follows the Corporate-Modernism + glass spec.
+ * ============================================================ */
+.to-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.to-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 6px;
+  margin-left: -6px;
+  border: 0;
+  background: transparent;
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.to-back:hover {
+  color: var(--on-surface);
+  background: var(--surface-container-high);
+}
+
+.to-back .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.to-loading,
+.to-error {
+  color: var(--on-surface-variant);
+  font-size: 14px;
+}
+
+.to-error {
+  color: var(--error);
+}
+
+/* ---- Hero -------------------------------------------------------------- */
+.to-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.to-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.to-hero-title h1 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--on-surface);
+}
+
+.to-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-container-high);
+  border: 1px solid var(--outline-variant);
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.to-pill .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.to-pill-ai {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
+}
+
+.to-hero-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Buttons ----------------------------------------------------------- */
+.to-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.to-btn .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.to-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--outline-variant);
+  color: var(--on-surface);
+}
+
+.to-btn-ghost:hover {
+  background: var(--surface-container-high);
+  border-color: var(--outline);
+}
+
+.to-btn-primary {
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  color: var(--on-primary);
+}
+
+.to-btn-primary:hover {
+  background: var(--primary-container);
+  color: #fff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+/* ---- Metadata strip ---------------------------------------------------- */
+.to-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 0;
+  color: var(--on-surface-variant);
+}
+
+.to-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.to-meta-chip .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--on-surface-variant);
+}
+
+.to-meta-chip.status-seated { color: var(--primary); }
+.to-meta-chip.status-reserved { color: var(--tertiary); }
+.to-meta-chip.status-available { color: var(--on-surface-variant); }
+
+.to-meta-chip .status-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.to-meta-chip-sub {
+  opacity: 0.7;
+}
+
+/* ---- Two-column grid (responsive) -------------------------------------- */
+.to-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 24px;
+}
+
+.to-orders-card { grid-column: 1; grid-row: 1; }
+.to-invoice-card { grid-column: 2; grid-row: 1 / span 2; }
+.to-timeline-card { grid-column: 1; grid-row: 2; }
+
+@media (max-width: 1100px) {
+  .to-grid {
+    grid-template-columns: 1fr;
+  }
+  .to-orders-card,
+  .to-invoice-card,
+  .to-timeline-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* ---- Cards ------------------------------------------------------------- */
+.to-card {
+  background: var(--surface-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.to-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.to-card-head h2 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--on-surface);
+  letter-spacing: -0.005em;
+}
+
+.to-card-head h2 .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--on-surface-variant);
+}
+
+.to-card-count {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Items table ------------------------------------------------------- */
+.to-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.to-items-table thead th {
+  text-align: left;
+  padding: 8px 12px 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.to-items-table tbody td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--outline-variant);
+  vertical-align: top;
+  color: var(--on-surface);
+}
+
+.to-items-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.to-item-name {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--on-surface);
+}
+
+.to-item-notes {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--on-surface-variant);
+}
+
+.to-num {
+  text-align: right;
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.to-num-strong {
+  color: var(--on-surface);
+  font-weight: 600;
+}
+
+/* Status chips inside the items table */
+.to-status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.to-status-chip.status-fired {
+  background: color-mix(in srgb, var(--secondary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--secondary-container) 55%, transparent);
+  color: var(--secondary);
+}
+
+.to-status-chip.status-served {
+  background: var(--surface-container-high);
+  border-color: var(--outline-variant);
+  color: var(--on-surface-variant);
+}
+
+.to-status-chip.status-pending {
+  background: color-mix(in srgb, var(--tertiary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--tertiary-container) 50%, transparent);
+  color: var(--tertiary);
+}
+
+/* ---- Empty state ------------------------------------------------------- */
+.to-empty {
+  padding: 24px 12px;
+  border: 1px dashed var(--outline-variant);
+  border-radius: 8px;
+  text-align: center;
+  color: var(--on-surface-variant);
+}
+
+.to-empty p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--on-surface);
+}
+
+.to-empty span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* ---- Invoice summary --------------------------------------------------- */
+.to-invoice-card {
+  align-self: start;
+  position: sticky;
+  top: 24px;
+}
+
+.to-invoice-lines {
+  margin: 0;
+  padding: 4px 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.to-invoice-lines div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+  font-feature-settings: "tnum" 1;
+}
+
+.to-invoice-lines dt { margin: 0; }
+.to-invoice-lines dd {
+  margin: 0;
+  color: var(--on-surface);
+  font-weight: 500;
+}
+
+.to-invoice-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-top: 1px solid var(--outline-variant);
+  border-bottom: 1px solid var(--outline-variant);
+  color: var(--on-surface);
+}
+
+.to-invoice-total span {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+.to-invoice-total strong {
+  font-size: 32px;
+  line-height: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
+  font-feature-settings: "tnum" 1;
+}
+
+.to-invoice-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.to-invoice-actions .to-btn {
+  justify-content: center;
+}
+
+/* ---- Activity timeline ------------------------------------------------- */
+.to-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.to-timeline-item {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.to-timeline-marker {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-container-high);
+  border: 1px solid var(--outline-variant);
+  color: var(--on-surface-variant);
+}
+
+.to-timeline-marker .material-symbols-outlined {
+  font-size: 15px;
+}
+
+.to-timeline-body p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface);
+}
+
+.to-timeline-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.to-timeline-time {
+  color: var(--on-surface);
+}
+
+.to-timeline-source {
+  position: relative;
+  padding-left: 12px;
+  color: var(--primary);
+}
+
+.to-timeline-source::before {
+  content: "·";
+  position: absolute;
+  left: 0;
+  color: var(--on-surface-variant);
+  font-weight: 700;
+}
+
+/* ---- Responsive small ------------------------------------------------- */
+@media (max-width: 700px) {
+  .to-hero-title h1 {
+    font-size: 28px;
+    line-height: 36px;
+  }
+  .to-card {
+    padding: 16px 18px;
+  }
+  .to-items-table thead { display: none; }
+  .to-items-table,
+  .to-items-table tbody,
+  .to-items-table tr {
+    display: block;
+    width: 100%;
+  }
+  .to-items-table tr {
+    border-bottom: 1px solid var(--outline-variant);
+    padding: 12px 0;
+  }
+  .to-items-table tr:last-child { border-bottom: 0; }
+  .to-items-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    border-bottom: 0;
+  }
+  .to-items-table td:first-child {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .to-items-table td.to-num { text-align: right; }
+  .to-invoice-card {
+    position: static;
+  }
+}
