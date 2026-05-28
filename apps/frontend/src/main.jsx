@@ -19,7 +19,6 @@ import {
   listTables,
   seatReservation,
   updateMenuItem,
-  updateOrderPayment,
   updateOrderStatus,
   updateReservationStatus
 } from "./api";
@@ -4142,6 +4141,8 @@ function ManageMenuPage({ navigate, path }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("all");
+  const [addingCategory, setAddingCategory] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -4156,6 +4157,13 @@ function ManageMenuPage({ navigate, path }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (selectedCategoryId === "all") return;
+    if (!menu?.categories?.length) return;
+    const stillExists = menu.categories.some((c) => c.id === selectedCategoryId);
+    if (!stillExists) setSelectedCategoryId("all");
+  }, [menu, selectedCategoryId]);
 
   const handleToggleAvailability = async (item) => {
     setBusy(true);
@@ -4182,38 +4190,34 @@ function ManageMenuPage({ navigate, path }) {
     }
   };
 
-  const handleAddCategory = async () => {
-    const name = window.prompt("Category name");
-    if (!name?.trim()) return;
-    setBusy(true);
-    try {
-      await createMenuCategory({ name: name.trim() });
-      await refresh();
-    } catch (e) {
-      setError(e.message ?? "Create category failed");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const visibleCategories = menu?.categories
+    ? selectedCategoryId === "all"
+      ? menu.categories
+      : menu.categories.filter((c) => c.id === selectedCategoryId)
+    : [];
+  const totalItems = menu?.categories?.reduce((sum, c) => sum + c.items.length, 0) ?? 0;
+  const presetCategoryForNew = selectedCategoryId === "all" ? null : selectedCategoryId;
 
   return (
     <DashboardShell active="Manage Menu" navigate={navigate} path={path}>
-      <header className="menu-page-header">
+      <header className="operational-header">
         <div>
           <h1>Manage Menu</h1>
-          <p className="menu-page-sub">Add, edit, and toggle availability. Changes are live to the kitchen instantly.</p>
+          <p>Add, edit, and toggle availability. Changes are live to the kitchen instantly.</p>
         </div>
         <div className="menu-page-actions">
-          <button type="button" className="menu-btn" onClick={handleAddCategory} disabled={busy}>
-            + Category
+          <button type="button" className="kitchen-btn ghost" onClick={() => setAddingCategory(true)} disabled={busy}>
+            <Icon name="add" />
+            Category
           </button>
           <button
             type="button"
-            className="menu-btn primary"
-            onClick={() => setEditing({ mode: "create" })}
+            className="kitchen-btn primary"
+            onClick={() => setEditing({ mode: "create", categoryId: presetCategoryForNew })}
             disabled={busy || !menu?.categories?.length}
           >
-            + Menu item
+            <Icon name="restaurant_menu" />
+            New menu item
           </button>
         </div>
       </header>
@@ -4223,80 +4227,168 @@ function ManageMenuPage({ navigate, path }) {
       {!menu ? (
         <div className="menu-empty">Loading…</div>
       ) : menu.categories.length === 0 ? (
-        <div className="menu-empty">No categories yet. Add one to begin.</div>
-      ) : (
-        <div className="menu-categories">
-          {menu.categories.map((category) => (
-            <section key={category.id} className="menu-category">
-              <header className="menu-category-head">
-                <h2>{category.name}</h2>
-                <span className="menu-category-count">{category.items.length} item{category.items.length === 1 ? "" : "s"}</span>
-              </header>
-              <div className="menu-items-grid">
-                {category.items.map((item) => (
-                  <article
-                    key={item.id}
-                    className={`menu-item-card ${item.is_available ? "" : "unavailable"}`}
-                  >
-                    <div className="menu-item-top">
-                      <div>
-                        <div className="menu-item-name">{item.name}</div>
-                        {item.description ? <div className="menu-item-desc">{item.description}</div> : null}
-                      </div>
-                      <div className="menu-item-price">${(item.base_price_cents / 100).toFixed(2)}</div>
-                    </div>
-                    {item.variants.length > 0 ? (
-                      <div className="menu-item-variants">
-                        {item.variants.map((v) => (
-                          <span key={v.id} className="menu-item-variant">
-                            {v.name} {v.price_delta_cents >= 0 ? "+" : ""}
-                            ${(v.price_delta_cents / 100).toFixed(2)}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                    {item.modifier_groups.length > 0 ? (
-                      <div className="menu-item-modifiers">
-                        {item.modifier_groups.map((g) => (
-                          <div key={g.group_name} className="menu-item-modifier-group">
-                            <strong>{g.group_name}</strong> ({g.group_min_select}–{g.group_max_select}):{" "}
-                            {g.options.map((o) => o.name).join(", ")}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="menu-item-actions">
-                      <button
-                        type="button"
-                        className={`menu-btn small ${item.is_available ? "" : "warn"}`}
-                        onClick={() => handleToggleAvailability(item)}
-                        disabled={busy}
-                      >
-                        {item.is_available ? "Sell out" : "Restore"}
-                      </button>
-                      <button
-                        type="button"
-                        className="menu-btn small"
-                        onClick={() => setEditing({ mode: "edit", item, categoryId: category.id })}
-                        disabled={busy}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="menu-btn small danger"
-                        onClick={() => handleDeleteItem(item)}
-                        disabled={busy}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
+        <div className="menu-empty">
+          <Icon name="restaurant_menu" />
+          <p>No categories yet.</p>
+          <button type="button" className="kitchen-btn primary" onClick={() => setAddingCategory(true)} disabled={busy}>
+            <Icon name="add" />
+            Add your first category
+          </button>
         </div>
+      ) : (
+        <section className="menu-layout">
+          <aside className="menu-sidebar">
+            <div className="menu-sidebar-head">
+              <span>Categories</span>
+              <strong>{menu.categories.length}</strong>
+            </div>
+            <nav className="menu-sidebar-list">
+              <button
+                type="button"
+                className={`menu-sidebar-item${selectedCategoryId === "all" ? " is-active" : ""}`}
+                onClick={() => setSelectedCategoryId("all")}
+              >
+                <span className="menu-sidebar-name">All categories</span>
+                <span className="menu-sidebar-count">{totalItems}</span>
+              </button>
+              {menu.categories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  className={`menu-sidebar-item${category.id === selectedCategoryId ? " is-active" : ""}`}
+                  onClick={() => setSelectedCategoryId(category.id)}
+                >
+                  <span className="menu-sidebar-name">{category.name}</span>
+                  <span className="menu-sidebar-count">{category.items.length}</span>
+                </button>
+              ))}
+            </nav>
+            <footer className="menu-sidebar-foot">
+              <span>Total items</span>
+              <strong>{totalItems}</strong>
+            </footer>
+          </aside>
+
+          <article className="menu-detail">
+            {visibleCategories.length === 0 ? null : (
+              <>
+                {selectedCategoryId !== "all" && visibleCategories[0] ? (
+                  <header className="menu-detail-head">
+                    <div>
+                      <h2>{visibleCategories[0].name}</h2>
+                      <span>
+                        {visibleCategories[0].items.length} item{visibleCategories[0].items.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="kitchen-btn primary"
+                      onClick={() => setEditing({ mode: "create", categoryId: visibleCategories[0].id })}
+                      disabled={busy}
+                    >
+                      <Icon name="add" />
+                      New item
+                    </button>
+                  </header>
+                ) : null}
+                <div className="menu-categories-stack">
+                  {visibleCategories.map((category) => (
+                    <section key={category.id} className="menu-category-block">
+                      {selectedCategoryId === "all" ? (
+                        <header className="menu-category-block-head">
+                          <h3>{category.name}</h3>
+                          <span>
+                            {category.items.length} item{category.items.length === 1 ? "" : "s"}
+                          </span>
+                        </header>
+                      ) : null}
+                      {category.items.length === 0 ? (
+                        <div className="menu-empty inline">
+                          <p>No items in this category yet.</p>
+                        </div>
+                      ) : (
+                        <div className="menu-items-grid">
+                          {category.items.map((item) => (
+                            <article
+                              key={item.id}
+                              className={`menu-item-card${item.is_available ? "" : " unavailable"}`}
+                            >
+                              <header className="menu-item-head">
+                                <div className="menu-item-title">
+                                  <strong>{item.name}</strong>
+                                  <span className={`menu-item-status${item.is_available ? "" : " out"}`}>
+                                    <i />
+                                    {item.is_available ? "Available" : "Sold out"}
+                                  </span>
+                                </div>
+                                <div className="menu-item-price">${(item.base_price_cents / 100).toFixed(2)}</div>
+                              </header>
+                              {item.description ? (
+                                <p className="menu-item-desc">{item.description}</p>
+                              ) : null}
+                              {item.variants.length > 0 ? (
+                                <div className="menu-item-variants">
+                                  {item.variants.map((v) => (
+                                    <span key={v.id} className="menu-item-variant">
+                                      {v.name} {v.price_delta_cents >= 0 ? "+" : ""}
+                                      ${(v.price_delta_cents / 100).toFixed(2)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {item.modifier_groups.length > 0 ? (
+                                <div className="menu-item-modifiers">
+                                  {item.modifier_groups.map((g) => (
+                                    <div key={g.group_name} className="menu-item-modifier-group">
+                                      <strong>{g.group_name}</strong>
+                                      <span>
+                                        ({g.group_min_select}–{g.group_max_select}):{" "}
+                                        {g.options.map((o) => o.name).join(", ")}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                              <footer className="menu-item-actions">
+                                <button
+                                  type="button"
+                                  className={`kitchen-btn ghost${item.is_available ? "" : " warn"}`}
+                                  onClick={() => handleToggleAvailability(item)}
+                                  disabled={busy}
+                                >
+                                  <Icon name={item.is_available ? "remove_shopping_cart" : "check_circle"} />
+                                  {item.is_available ? "Sell out" : "Restore"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="kitchen-btn ghost"
+                                  onClick={() => setEditing({ mode: "edit", item, categoryId: category.id })}
+                                  disabled={busy}
+                                >
+                                  <Icon name="edit" />
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="kitchen-btn danger"
+                                  onClick={() => handleDeleteItem(item)}
+                                  disabled={busy}
+                                  title="Delete"
+                                >
+                                  <Icon name="delete" />
+                                </button>
+                              </footer>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  ))}
+                </div>
+              </>
+            )}
+          </article>
+        </section>
       )}
 
       {editing ? (
@@ -4308,6 +4400,16 @@ function ManageMenuPage({ navigate, path }) {
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
+            await refresh();
+          }}
+        />
+      ) : null}
+
+      {addingCategory ? (
+        <CategoryModal
+          onClose={() => setAddingCategory(false)}
+          onSaved={async () => {
+            setAddingCategory(false);
             await refresh();
           }}
         />
@@ -4365,68 +4467,161 @@ function MenuItemModal({ mode, item, presetCategoryId, categories, onClose, onSa
   return (
     <div className="menu-modal-backdrop" onClick={onClose}>
       <form className="menu-modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
-        <h2>{mode === "create" ? "New menu item" : `Edit ${item?.name}`}</h2>
-        {error ? <div className="menu-error">{error}</div> : null}
-        <label className="menu-field">
-          <span>Name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
-        </label>
-        <label className="menu-field">
-          <span>Category</span>
-          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="menu-field">
-          <span>Description</span>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={500} />
-        </label>
-        <label className="menu-field">
-          <span>Base price ($)</span>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={priceDollars}
-            onChange={(e) => setPriceDollars(e.target.value)}
-            required
-          />
-        </label>
-        <div className="menu-variants-edit">
-          <div className="menu-variants-head">
-            <strong>Variants (size tiers)</strong>
-            <button type="button" className="menu-btn small" onClick={addVariant}>+ variant</button>
-          </div>
-          {variants.map((v, idx) => (
-            <div key={idx} className="menu-variant-row">
-              <input
-                placeholder="Name (e.g. Large)"
-                value={v.name}
-                onChange={(e) => setVariants((vs) => vs.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
-              />
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Δ$"
-                value={v.delta}
-                onChange={(e) => setVariants((vs) => vs.map((x, i) => i === idx ? { ...x, delta: e.target.value } : x))}
-              />
-              <button type="button" className="menu-btn small danger" onClick={() => removeVariant(idx)}>×</button>
+        <header className="menu-modal-head">
+          <h2>
+            <Icon name={mode === "create" ? "restaurant_menu" : "edit"} />
+            {mode === "create" ? "New menu item" : `Edit ${item?.name}`}
+          </h2>
+          <button type="button" className="menu-modal-close" onClick={onClose} aria-label="Close">
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="menu-modal-body">
+          {error ? <div className="menu-error">{error}</div> : null}
+          <label className="menu-field">
+            <span>Name</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} placeholder="e.g. Spaghetti Carbonara" />
+          </label>
+          <label className="menu-field">
+            <span>Category</span>
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="menu-field">
+            <span>Description</span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder="Optional — guests see this on QR menus"
+            />
+          </label>
+          <label className="menu-field">
+            <span>Base price ($)</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={priceDollars}
+              onChange={(e) => setPriceDollars(e.target.value)}
+              required
+            />
+          </label>
+          <div className="menu-variants-edit">
+            <div className="menu-variants-head">
+              <span>Variants (size tiers)</span>
+              <button type="button" className="kitchen-btn ghost" onClick={addVariant}>
+                <Icon name="add" />
+                Variant
+              </button>
             </div>
-          ))}
+            {variants.length === 0 ? (
+              <p className="menu-variants-hint">No variants yet — base price applies.</p>
+            ) : (
+              variants.map((v, idx) => (
+                <div key={idx} className="menu-variant-row">
+                  <input
+                    placeholder="Name (e.g. Large)"
+                    value={v.name}
+                    onChange={(e) => setVariants((vs) => vs.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Δ$"
+                    value={v.delta}
+                    onChange={(e) => setVariants((vs) => vs.map((x, i) => i === idx ? { ...x, delta: e.target.value } : x))}
+                  />
+                  <button type="button" className="kitchen-btn danger" onClick={() => removeVariant(idx)} title="Remove variant">
+                    <Icon name="close" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-        <div className="menu-modal-actions">
-          <button type="button" className="menu-btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="menu-btn primary" disabled={saving}>
+        <footer className="menu-modal-actions">
+          <button type="button" className="kitchen-btn ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="kitchen-btn primary" disabled={saving}>
+            <Icon name="check" />
             {saving ? "Saving…" : "Save"}
           </button>
-        </div>
+        </footer>
       </form>
     </div>
   );
 }
+
+function CategoryModal({ onClose, onSaved }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await createMenuCategory({ name: name.trim() });
+      onSaved();
+    } catch (e) {
+      setError(e.message ?? "Create failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="menu-modal-backdrop" onClick={onClose}>
+      <form className="menu-modal menu-modal-sm" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <header className="menu-modal-head">
+          <h2>
+            <Icon name="add" />
+            New category
+          </h2>
+          <button type="button" className="menu-modal-close" onClick={onClose} aria-label="Close">
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="menu-modal-body">
+          {error ? <div className="menu-error">{error}</div> : null}
+          <label className="menu-field">
+            <span>Category name</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              maxLength={120}
+              autoFocus
+              placeholder="e.g. Mains, Drinks, Specials"
+            />
+          </label>
+          <p className="menu-modal-hint">
+            Categories group items on the kitchen display and guest menus. You can add items right after.
+          </p>
+        </div>
+        <footer className="menu-modal-actions">
+          <button type="button" className="kitchen-btn ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="kitchen-btn primary" disabled={saving || !name.trim()}>
+            <Icon name="check" />
+            {saving ? "Creating…" : "Create category"}
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
+const KITCHEN_COLUMNS = [
+  { status: "pending",   title: "Pending",   icon: "schedule",       advance: "preparing", advanceLabel: "Start" },
+  { status: "preparing", title: "Preparing", icon: "soup_kitchen",   advance: "ready",     advanceLabel: "Mark ready" },
+  { status: "ready",     title: "Ready",     icon: "room_service",   advance: "served",    advanceLabel: "Mark served" },
+];
 
 function KitchenOverviewPage({ navigate, path }) {
   const [orders, setOrders] = useState([]);
@@ -4453,9 +4648,21 @@ function KitchenOverviewPage({ navigate, path }) {
     return () => clearInterval(interval);
   }, [refresh]);
 
+  const handleAdvance = async (order, nextStatus) => {
+    setBusyId(order.id);
+    try {
+      await updateOrderStatus(order.id, nextStatus, order.version);
+      await refresh();
+    } catch (e) {
+      setError(e.message ?? "Status update failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleCancel = async (order) => {
     const reason = window.prompt(`Cancel order #${order.order_number}? (Optional reason)`);
-    if (reason === null) return; // user pressed cancel on the prompt itself
+    if (reason === null) return;
     setBusyId(order.id);
     try {
       await updateOrderStatus(order.id, "cancelled", order.version, reason || undefined);
@@ -4467,95 +4674,121 @@ function KitchenOverviewPage({ navigate, path }) {
     }
   };
 
-  const handleTogglePaid = async (order) => {
-    setBusyId(order.id);
-    try {
-      await updateOrderPayment(
-        order.id,
-        order.payment_status === "paid" ? "unpaid" : "paid",
-        order.version
-      );
-      await refresh();
-    } catch (e) {
-      setError(e.message ?? "Payment update failed");
-    } finally {
-      setBusyId(null);
-    }
-  };
+  const grouped = KITCHEN_COLUMNS.reduce((acc, col) => {
+    acc[col.status] = orders.filter((o) => o.status === col.status);
+    return acc;
+  }, {});
 
   return (
     <DashboardShell active="Kitchen" navigate={navigate} path={path}>
-      <header className="kdash-page-header">
+      <header className="operational-header">
         <div>
           <h1>Kitchen overview</h1>
-          <p className="menu-page-sub">All active orders. Use this when the wall tablet isn't reachable.</p>
+          <p>All active orders, grouped by stage. Advance each ticket with its action button.</p>
         </div>
-        <div className="kdash-page-meta">{orders.length} active</div>
+        <div className="active-call-pill">
+          <Icon name="receipt_long" />
+          <span>{orders.length} active</span>
+        </div>
       </header>
 
       {error ? <div className="menu-error">{error}</div> : null}
 
-      {orders.length === 0 ? (
-        <div className="menu-empty">No active orders.</div>
-      ) : (
-        <div className="kdash-orders">
-          {orders.map((order) => {
-            const orderedAt = new Date(order.ordered_at).getTime();
-            const nowMs = new Date(serverNow).getTime();
-            const ageS = Math.max(0, Math.round((nowMs - orderedAt) / 1000));
-            const mins = Math.floor(ageS / 60);
-            const ageLabel = mins < 1 ? `${ageS}s` : `${mins}m`;
-            return (
-              <article key={order.id} className={`kdash-order kdash-status-${order.status}`}>
-                <div className="kdash-order-head">
-                  <div className="kdash-order-number">#{order.order_number ?? "?"}</div>
-                  <div className="kdash-order-status">{order.status.toUpperCase()}</div>
-                  <div className="kdash-order-age">{ageLabel}</div>
-                </div>
-                <div className="kdash-order-meta">
-                  <span className={`kds-pill ${order.payment_status === "paid" ? "paid" : "unpaid"}`}>
-                    {order.payment_status === "paid" ? "PAID" : "UNPAID"}
-                  </span>
-                  <span className="kds-pill source">{order.source}</span>
-                  <span className="kdash-order-total">${(order.total_cents / 100).toFixed(2)}</span>
-                </div>
-                <ul className="kdash-order-items">
-                  {order.items.map((item) => (
-                    <li key={item.id}>
-                      {item.quantity}× {item.name_snapshot}
-                      {item.variant_name_snapshot ? ` — ${item.variant_name_snapshot}` : ""}
-                      {item.modifiers.length ? (
-                        <span className="kdash-mods">
-                          {" "}({item.modifiers.map((m) => m.name_snapshot).join(", ")})
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-                <div className="kdash-order-actions">
-                  <button
-                    type="button"
-                    className="menu-btn small"
-                    onClick={() => handleTogglePaid(order)}
-                    disabled={busyId === order.id}
-                  >
-                    {order.payment_status === "paid" ? "Mark unpaid" : "Mark paid"}
-                  </button>
-                  <button
-                    type="button"
-                    className="menu-btn small danger"
-                    onClick={() => handleCancel(order)}
-                    disabled={busyId === order.id}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      )}
+      <section className="kitchen-board">
+        {KITCHEN_COLUMNS.map((col) => (
+          <KitchenColumn
+            key={col.status}
+            column={col}
+            orders={grouped[col.status]}
+            serverNow={serverNow}
+            busyId={busyId}
+            onAdvance={handleAdvance}
+            onCancel={handleCancel}
+          />
+        ))}
+      </section>
     </DashboardShell>
+  );
+}
+
+function KitchenColumn({ column, orders, serverNow, busyId, onAdvance, onCancel }) {
+  return (
+    <article className={`kitchen-column kitchen-column-${column.status}`}>
+      <header className="kitchen-column-head">
+        <span className="kitchen-column-title">
+          <Icon name={column.icon} />
+          {column.title}
+        </span>
+        <span className="kitchen-column-count">{orders.length}</span>
+      </header>
+      <div className="kitchen-column-body">
+        {orders.length === 0 ? (
+          <div className="kitchen-column-empty">No tickets</div>
+        ) : (
+          orders.map((order) => (
+            <KitchenOrderCard
+              key={order.id}
+              order={order}
+              serverNow={serverNow}
+              busy={busyId === order.id}
+              advanceLabel={column.advanceLabel}
+              onAdvance={() => onAdvance(order, column.advance)}
+              onCancel={() => onCancel(order)}
+            />
+          ))
+        )}
+      </div>
+    </article>
+  );
+}
+
+function KitchenOrderCard({ order, serverNow, busy, advanceLabel, onAdvance, onCancel }) {
+  const orderedAt = new Date(order.ordered_at).getTime();
+  const nowMs = new Date(serverNow).getTime();
+  const ageS = Math.max(0, Math.round((nowMs - orderedAt) / 1000));
+  const mins = Math.floor(ageS / 60);
+  const ageLabel = mins < 1 ? `${ageS}s` : `${mins}m`;
+  const ageStale = mins >= 10;
+
+  return (
+    <article className={`kitchen-card${ageStale ? " is-stale" : ""}`}>
+      <header className="kitchen-card-head">
+        <span className="kitchen-card-number">#{order.order_number ?? "?"}</span>
+        <span className={`kitchen-card-age${ageStale ? " stale" : ""}`}>
+          <Icon name="schedule" />
+          {ageLabel}
+        </span>
+      </header>
+      <div className="kitchen-card-meta">
+        <span className={`kitchen-pill ${order.payment_status === "paid" ? "paid" : "unpaid"}`}>
+          {order.payment_status === "paid" ? "PAID" : "UNPAID"}
+        </span>
+        <span className="kitchen-pill source">{order.source}</span>
+        <span className="kitchen-card-total">${(order.total_cents / 100).toFixed(2)}</span>
+      </div>
+      <ul className="kitchen-card-items">
+        {order.items.map((item) => (
+          <li key={item.id}>
+            <strong>{item.quantity}×</strong> {item.name_snapshot}
+            {item.variant_name_snapshot ? <em> — {item.variant_name_snapshot}</em> : null}
+            {item.modifiers.length ? (
+              <span className="kitchen-card-mods">
+                ({item.modifiers.map((m) => m.name_snapshot).join(", ")})
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      <div className="kitchen-card-actions">
+        <button type="button" className="kitchen-btn primary" onClick={onAdvance} disabled={busy}>
+          <Icon name="arrow_forward" />
+          {advanceLabel}
+        </button>
+        <button type="button" className="kitchen-btn danger" onClick={onCancel} disabled={busy} title="Cancel order">
+          <Icon name="close" />
+        </button>
+      </div>
+    </article>
   );
 }
 
