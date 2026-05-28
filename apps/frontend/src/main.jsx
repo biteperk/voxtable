@@ -2712,6 +2712,19 @@ function BookingLogPage({ navigate, path }) {
     // (advisory lock, availability check, Cal.com outbox enqueue). Returns
     // a real UUID we then use as row.id so every subsequent action
     // (no-show, cancel, restore) works without a special case.
+    //
+    // Side effect: when CALCOM_SYNC_ENABLED=true (prod default), this also
+    // mirrors the booking to Cal.com via the outbox worker. Manual entries
+    // therefore show up on the restaurant's Cal.com calendar. If a "local
+    // only" mode is needed later, plumb a `sync_calcom: false` flag through
+    // createBookingRequestSchema → createBooking → enqueueCreateForReservation.
+    //
+    // Timezone assumption: form.date and form.time are read from <input
+    // type=date>/<input type=time> in the host's browser local TZ. The
+    // backend stores them as TZ-naive DATE+TIME at the restaurant's TZ
+    // (`restaurants.timezone`). Works only because the dashboard is used
+    // from the same TZ as the restaurant — breaks for cross-TZ multi-venue
+    // hosts (v2 concern: add a TZ picker or display the restaurant TZ).
     await createReservation({
       customer_name: form.name,
       customer_phone: form.phone,

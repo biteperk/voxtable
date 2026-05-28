@@ -2,6 +2,11 @@ const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
 const restaurantId =
   process.env.DEFAULT_RESTAURANT_ID ?? "11111111-1111-4111-8111-111111111111";
 
+// NOTE: this script does not send a Firebase Bearer token. It assumes the
+// target backend has DASHBOARD_VERIFY_AUTH=false (the local default), which
+// makes requireFirebaseAuth a no-op. Production always has it true and will
+// 401 every request — only run smoke against local / disabled-auth envs.
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
