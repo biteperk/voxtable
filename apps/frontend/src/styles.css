@@ -1543,6 +1543,14 @@ button {
   line-height: 22px;
 }
 
+.context-note-audio {
+  margin-top: 7px;
+  padding: 10px 12px;
+  border: 1px solid rgba(65, 71, 85, 0.55);
+  border-radius: 8px;
+  background: var(--surface-container-high);
+}
+
 .pending-chip {
   display: inline-flex;
   align-items: center;
