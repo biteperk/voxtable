@@ -23,6 +23,7 @@
     "db:seed:prod": "node apps/backend/dist/db/seed.js",
     "smoke:backend": "tsx apps/backend/scripts/smoke-local.ts",
     "smoke:retell": "tsx apps/backend/scripts/smoke-retell.ts",
+    "smoke:retell-signed": "tsx apps/backend/scripts/smoke-retell-signed.ts",
     "smoke:twilio": "tsx apps/backend/scripts/smoke-twilio.ts",
     "smoke:calcom": "tsx apps/backend/scripts/smoke-calcom.ts",
     "smoke:retell-dates": "tsx apps/backend/scripts/smoke-retell-dates.ts",
@@ -47,6 +48,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "retell-sdk": "^5.26.1",
+    "stripe": "^18.5.0",
     "twilio": "^6.0.2",
     "zod": "^3.24.1"
   },

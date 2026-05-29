@@ -4,6 +4,7 @@ import admin from "firebase-admin";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { logger } from "../utils/logger";
+import type { TenantContext } from "./tenantContext";
 
 let initialized = false;
 
@@ -49,8 +50,29 @@ const managerEmails = new Set(
     .filter(Boolean)
 );
 
+// Platform admins (VocoTable staff) — gate the cross-tenant provisioning console.
+const adminEmails = new Set(
+  (env.DASHBOARD_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+);
+
 export interface AuthenticatedRequest extends Request {
   firebaseUser?: admin.auth.DecodedIdToken;
+  // Populated by resolveTenant (multi-tenant dashboard routes). Optional because
+  // requireFirebaseAuth runs on routes that don't resolve a tenant (e.g. /api/me
+  // before a restaurant exists, onboarding create).
+  tenant?: TenantContext;
+}
+
+/**
+ * Is this email in the manager allowlist? Used by the multi-tenancy legacy
+ * bridge (tenantContext) to assign a role to pre-backfill allowlisted users.
+ */
+export function isManagerEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return managerEmails.has(email.toLowerCase());
 }
 
 export async function requireFirebaseAuth(
@@ -131,6 +153,30 @@ export function requireManagerRole(
     return next(
       new AppError(403, "MANAGER_ROLE_REQUIRED", "This action requires a manager account.")
     );
+  }
+  next();
+}
+
+/**
+ * Platform-admin gate (VocoTable staff) for the cross-tenant provisioning
+ * console. Apply AFTER requireFirebaseAuth. In dev (verify auth off) it allows
+ * through; in production it refuses if no admin allowlist is configured.
+ */
+export function requireAdminRole(
+  request: AuthenticatedRequest,
+  _response: Response,
+  next: NextFunction
+): void {
+  if (!env.DASHBOARD_VERIFY_AUTH) {
+    next();
+    return;
+  }
+  if (adminEmails.size === 0) {
+    return next(new AppError(503, "ADMIN_ROLE_NOT_CONFIGURED", "Admin role not configured."));
+  }
+  const email = request.firebaseUser?.email?.toLowerCase();
+  if (!email || !adminEmails.has(email)) {
+    return next(new AppError(403, "ADMIN_ROLE_REQUIRED", "This action requires a platform admin."));
   }
   next();
 }

@@ -2,27 +2,43 @@ import React, { Suspense, useCallback, useEffect, useId, useMemo, useRef, useSta
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
-import { signInWithGoogle, signOutUser } from "./firebase";
+import { signInWithGoogle, signOutUser, uploadMenuFile } from "./firebase";
 import {
+  advanceOnboarding,
   cancelReservation,
+  commitMenuDraft,
   completeReservation,
+  createBillingCheckoutSession,
+  createBillingPortalSession,
   createMenuCategory,
   createMenuItem,
   createReservation,
+  createRestaurant,
   deleteMenuCategory,
   deleteMenuItem,
   getAnalytics,
   getAnalyticsDailySeries,
+  getBillingInvoices,
+  getBillingPaymentMethods,
+  getBillingSubscription,
   getCallLog,
   getMenu,
+  getMenuIngestion,
+  getOnboardingStatus,
+  getPhoneSetup,
+  getRestaurantProfile,
   listActiveOrders,
   listCallLogs,
   listReservations,
   listTables,
+  saveMenuDraft,
   seatReservation,
+  startMenuIngestion,
   updateMenuItem,
   updateOrderStatus,
-  updateReservationStatus
+  updateReservationStatus,
+  updateRestaurantProfile,
+  verifyForwarding
 } from "./api";
 import { TIERS, COMPARE_ROWS, FAQ, buildPricingSchema } from "./data/pricing";
 import { track } from "./lib/analytics";
@@ -614,15 +630,8 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-const INITIAL_PAYMENT_CARDS = [
-  { id: "c_1", brand: "Visa", last4: "4242", expiry: "12/2025", isDefault: true },
-  { id: "c_2", brand: "Mastercard", last4: "5555", expiry: "08/2026", isDefault: false },
-  { id: "c_3", brand: "Amex", last4: "0005", expiry: "03/2027", isDefault: false },
-];
-
 function App() {
   const [path, setPath] = useState(window.location.pathname);
-  const [paymentCards, setPaymentCards] = useState(INITIAL_PAYMENT_CARDS);
 
   useEffect(() => {
     const onPopState = () => setPath(window.location.pathname);
@@ -664,7 +673,9 @@ function App() {
     path === "/settings" ||
     path === "/manage-plan" ||
     path === "/update-payment-details" ||
-    path === "/profile";
+    path === "/profile" ||
+    path === "/onboarding" ||
+    path.startsWith("/onboarding/");
 
   return (
     <AuthProvider>
@@ -672,15 +683,73 @@ function App() {
         path={path}
         navigate={navigate}
         isDashboard={isDashboard}
-        paymentCards={paymentCards}
-        setPaymentCards={setPaymentCards}
       />
     </AuthProvider>
   );
 }
 
-function AppRouter({ path, navigate, isDashboard, paymentCards, setPaymentCards }) {
+// Fetches the active restaurant's onboarding status so the router can gate the
+// dashboard. Returns { loading, status }. status is null when the user has no
+// restaurant yet (→ they need to start onboarding). Re-fetches when the user's
+// memberships change (e.g. just after creating their restaurant).
+function useOnboardingGate() {
+  const { user, meLoading, memberships } = useAuth();
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) {
+      setStatus(null);
+      setLoading(false);
+      return;
+    }
+    if (meLoading) {
+      setLoading(true);
+      return;
+    }
+    setLoading(true);
+    getOnboardingStatus()
+      .then((r) => {
+        if (!cancelled) setStatus(r?.onboarding_status ?? null);
+      })
+      .catch(() => {
+        // 403 NO_RESTAURANT_MEMBERSHIP (no restaurant yet) or transient → null.
+        if (!cancelled) setStatus(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, meLoading, memberships]);
+
+  return { loading, status };
+}
+
+function AppRouter({ path, navigate, isDashboard }) {
   const { user, loading } = useAuth();
+  const isOnboarding = path === "/onboarding" || path.startsWith("/onboarding/");
+  const gate = useOnboardingGate();
+
+  // Gate redirects — only after auth + gate are resolved, and only ever toward
+  // the correct surface (no flicker, no loop): an incomplete tenant on a
+  // dashboard route goes to /onboarding; a live tenant sitting on /onboarding
+  // goes to the dashboard.
+  // The menu editor is reachable during onboarding so the owner can build their
+  // menu (the "Add your menu" step links here), then return to the wizard.
+  const allowDuringOnboarding = path === "/manage-menu";
+
+  useEffect(() => {
+    if (!user || loading || !isDashboard || gate.loading) return;
+    const complete = gate.status === "live";
+    if (isOnboarding && complete) {
+      navigate("/live-feed");
+    } else if (!isOnboarding && !complete && !allowDuringOnboarding) {
+      navigate("/onboarding");
+    }
+  }, [user, loading, isDashboard, isOnboarding, gate.loading, gate.status, allowDuringOnboarding, navigate]);
 
   if (isDashboard && loading) {
     return <FullPageMessage title="Loading..." />;
@@ -688,6 +757,22 @@ function AppRouter({ path, navigate, isDashboard, paymentCards, setPaymentCards 
 
   if (isDashboard && !user) {
     return <LoginScreen navigate={navigate} />;
+  }
+
+  // Hold dashboard surfaces until the gate resolves so an incomplete tenant
+  // never flashes the dashboard (and vice-versa).
+  if (isDashboard && gate.loading) {
+    return <FullPageMessage title="Loading..." />;
+  }
+
+  if (isOnboarding) {
+    return <OnboardingWizard navigate={navigate} path={path} />;
+  }
+
+  // Incomplete onboarding on a dashboard route: the effect above is redirecting
+  // to /onboarding — render a neutral loader rather than the locked dashboard.
+  if (isDashboard && gate.status !== "live") {
+    return <FullPageMessage title="Loading..." />;
   }
 
   // /live-feed/<id> — detail page for a single call (id is uuid)
@@ -715,19 +800,10 @@ function AppRouter({ path, navigate, isDashboard, paymentCards, setPaymentCards 
   if (path === "/kitchen-overview") return <KitchenOverviewPage navigate={navigate} path={path} />;
   if (path === "/analytics") return <AnalyticsPage navigate={navigate} path={path} />;
   if (path === "/settings")
-    return (
-      <BillingPage navigate={navigate} path={path} paymentCards={paymentCards} />
-    );
+    return <BillingPage navigate={navigate} path={path} />;
   if (path === "/manage-plan") return <ManagePlanPage navigate={navigate} path={path} />;
   if (path === "/update-payment-details")
-    return (
-      <UpdatePaymentDetailsPage
-        navigate={navigate}
-        path={path}
-        cards={paymentCards}
-        setCards={setPaymentCards}
-      />
-    );
+    return <UpdatePaymentDetailsPage navigate={navigate} path={path} />;
   if (path === "/profile") return <ProfilePage navigate={navigate} path={path} />;
   return <LandingPage navigate={navigate} />;
 }
@@ -737,6 +813,771 @@ function FullPageMessage({ title }) {
     <div style={{ display: "grid", placeItems: "center", minHeight: "100vh", color: "#cbd5e1" }}>
       <p style={{ fontSize: 20 }}>{title}</p>
     </div>
+  );
+}
+
+// ===== Onboarding wizard (Phase 1) =====
+
+const ONBOARDING_CUISINES = [
+  "Italian", "Chinese", "Japanese", "Thai", "Indian", "Vietnamese", "Greek",
+  "Lebanese", "Mexican", "French", "Modern Australian", "Cafe", "Steakhouse",
+  "Seafood", "Pizza", "Burgers", "Vegan", "Other"
+];
+const ONBOARDING_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"];
+
+function OnboardingShell({ checklist, children, onSignOut }) {
+  return (
+    <div className="onboarding-shell">
+      <header className="onboarding-top">
+        <div className="onboarding-brand">
+          <img src="/brand/mark-light-on-dark.svg" alt="" width="32" height="32" />
+          <strong>VocoTable</strong>
+        </div>
+        <button type="button" className="onboarding-signout" onClick={onSignOut}>
+          Sign out
+        </button>
+      </header>
+      <div className="onboarding-body">
+        {checklist && checklist.length > 0 && (
+          <ol className="onboarding-steps" aria-label="Setup progress">
+            {checklist.map((step, i) => (
+              <li key={step.key} className={`onboarding-step is-${step.status}`}>
+                <span className="onboarding-step-dot">
+                  {step.status === "done" ? <Icon name="check" /> : i + 1}
+                </span>
+                <span className="onboarding-step-label">{step.label}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+        <main className="onboarding-main">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+function CreateRestaurantStep({ onCreated }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createRestaurant({ name: name.trim() });
+      await onCreated();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="onboarding-card">
+      <h1>Welcome to VocoTable 👋</h1>
+      <p className="onboarding-lead">Let's set up your AI phone host. First, what's your restaurant called?</p>
+      <form onSubmit={submit} className="onboarding-form">
+        <label className="onboarding-field">
+          <span>Restaurant name</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Natalia's Bistro"
+            autoFocus
+            maxLength={120}
+            required
+          />
+        </label>
+        {error && <p className="onboarding-error">{error}</p>}
+        <button type="submit" className="primary-button" disabled={busy || !name.trim()}>
+          {busy ? "Creating…" : "Create & continue"}
+          <Icon name="arrow_forward" />
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ProfileStep({ onSaved }) {
+  const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getRestaurantProfile()
+      .then((r) => {
+        if (cancelled) return;
+        const p = r?.profile ?? {};
+        setForm({
+          name: p.name ?? "",
+          owner_name: p.owner_name ?? "",
+          contact_email: p.contact_email ?? "",
+          existing_phone_number: p.existing_phone_number ?? "",
+          address: p.address ?? "",
+          suburb: p.suburb ?? "",
+          state: p.state ?? "",
+          postcode: p.postcode ?? "",
+          cuisine_type: Array.isArray(p.cuisine_type) ? p.cuisine_type : [],
+          timezone: p.timezone ?? "Australia/Sydney"
+        });
+      })
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!form) {
+    return (
+      <div className="onboarding-card">
+        <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error}` : "Loading…"}</p>
+      </div>
+    );
+  }
+
+  const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  const toggleCuisine = (c) =>
+    setForm((prev) => ({
+      ...prev,
+      cuisine_type: prev.cuisine_type.includes(c)
+        ? prev.cuisine_type.filter((x) => x !== c)
+        : prev.cuisine_type.length < 5
+          ? [...prev.cuisine_type, c]
+          : prev.cuisine_type
+    }));
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    // Send only filled fields (all optional server-side); cuisine only if chosen.
+    const payload = {
+      name: form.name.trim() || undefined,
+      owner_name: form.owner_name.trim() || undefined,
+      contact_email: form.contact_email.trim() || undefined,
+      existing_phone_number: form.existing_phone_number.trim() || undefined,
+      address: form.address.trim() || undefined,
+      suburb: form.suburb.trim() || undefined,
+      state: form.state || undefined,
+      postcode: form.postcode.trim() || undefined,
+      cuisine_type: form.cuisine_type.length ? form.cuisine_type : undefined,
+      timezone: form.timezone || undefined
+    };
+    try {
+      await updateRestaurantProfile(payload);
+      await onSaved();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="onboarding-card">
+      <h1>Tell us about your restaurant</h1>
+      <p className="onboarding-lead">This is what Bella uses to answer your calls.</p>
+      <form onSubmit={submit} className="onboarding-form">
+        <label className="onboarding-field">
+          <span>Restaurant name</span>
+          <input type="text" value={form.name} onChange={set("name")} maxLength={120} required />
+        </label>
+        <div className="onboarding-field-row">
+          <label className="onboarding-field">
+            <span>Your name</span>
+            <input type="text" value={form.owner_name} onChange={set("owner_name")} maxLength={120} />
+          </label>
+          <label className="onboarding-field">
+            <span>Contact email</span>
+            <input type="email" value={form.contact_email} onChange={set("contact_email")} maxLength={160} />
+          </label>
+        </div>
+        <label className="onboarding-field">
+          <span>Your current phone number <em>(the one customers call today)</em></span>
+          <input
+            type="tel"
+            value={form.existing_phone_number}
+            onChange={set("existing_phone_number")}
+            placeholder="(02) 1234 5678"
+            maxLength={32}
+          />
+        </label>
+        <label className="onboarding-field">
+          <span>Street address</span>
+          <input type="text" value={form.address} onChange={set("address")} maxLength={200} />
+        </label>
+        <div className="onboarding-field-row">
+          <label className="onboarding-field">
+            <span>Suburb</span>
+            <input type="text" value={form.suburb} onChange={set("suburb")} maxLength={80} />
+          </label>
+          <label className="onboarding-field onboarding-field-sm">
+            <span>State</span>
+            <select value={form.state} onChange={set("state")}>
+              <option value="">—</option>
+              {ONBOARDING_STATES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+          <label className="onboarding-field onboarding-field-sm">
+            <span>Postcode</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={form.postcode}
+              onChange={(e) => setForm((prev) => ({ ...prev, postcode: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+              maxLength={4}
+            />
+          </label>
+        </div>
+        <div className="onboarding-field">
+          <span>Cuisine <em>(pick up to 5)</em></span>
+          <div className="onboarding-chips">
+            {ONBOARDING_CUISINES.map((c) => (
+              <button
+                type="button"
+                key={c}
+                className={`onboarding-chip${form.cuisine_type.includes(c) ? " is-on" : ""}`}
+                onClick={() => toggleCuisine(c)}
+                aria-pressed={form.cuisine_type.includes(c)}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+        {error && <p className="onboarding-error">{error}</p>}
+        <button type="submit" className="primary-button" disabled={busy}>
+          {busy ? "Saving…" : "Save & continue"}
+          <Icon name="arrow_forward" />
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function centsToDollars(cents) {
+  return (Number(cents || 0) / 100).toFixed(2);
+}
+function dollarsToCents(value) {
+  const n = Math.round(parseFloat(value) * 100);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+// Editable review of the OCR'd draft. Owner fixes names/prices and removes
+// junk rows before committing. Variants/modifiers (if any) pass through
+// untouched and are editable later in the full menu editor.
+function MenuDraftReview({ draft, onCommit, onCancel, committing }) {
+  const [cats, setCats] = useState(() =>
+    (draft.categories ?? []).map((c) => ({
+      ...c,
+      items: (c.items ?? []).map((it) => ({ ...it }))
+    }))
+  );
+
+  const setItem = (ci, ii, patch) =>
+    setCats((prev) =>
+      prev.map((c, i) =>
+        i !== ci ? c : { ...c, items: c.items.map((it, j) => (j !== ii ? it : { ...it, ...patch })) }
+      )
+    );
+  const removeItem = (ci, ii) =>
+    setCats((prev) => prev.map((c, i) => (i !== ci ? c : { ...c, items: c.items.filter((_, j) => j !== ii) })));
+  const setCatName = (ci, name) => setCats((prev) => prev.map((c, i) => (i !== ci ? c : { ...c, name })));
+
+  const itemCount = cats.reduce((n, c) => n + c.items.length, 0);
+  const lowConfidence = cats.some((c) => c.items.some((it) => typeof it.confidence === "number" && it.confidence < 0.5));
+
+  return (
+    <div className="onboarding-card onboarding-card-wide">
+      <h1>Review your menu</h1>
+      <p className="onboarding-lead">
+        We read {itemCount} item{itemCount === 1 ? "" : "s"} from your menu. Check the names and prices —
+        {lowConfidence ? " rows we weren't sure about are flagged." : " everything looked clear."}
+      </p>
+      <div className="menu-review">
+        {cats.map((c, ci) => (
+          <div key={ci} className="menu-review-cat">
+            <input
+              className="menu-review-catname"
+              value={c.name}
+              onChange={(e) => setCatName(ci, e.target.value)}
+            />
+            {c.items.map((it, ii) => {
+              const unsure = typeof it.confidence === "number" && it.confidence < 0.5;
+              return (
+                <div key={ii} className={`menu-review-row${unsure ? " is-unsure" : ""}`}>
+                  <input
+                    className="menu-review-name"
+                    value={it.name}
+                    onChange={(e) => setItem(ci, ii, { name: e.target.value })}
+                  />
+                  <div className="menu-review-price">
+                    <span>$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      defaultValue={centsToDollars(it.price_cents)}
+                      onChange={(e) => setItem(ci, ii, { price_cents: dollarsToCents(e.target.value) })}
+                    />
+                  </div>
+                  {unsure && <span className="menu-review-flag" title="Low confidence — please check">⚠</span>}
+                  <button type="button" className="menu-review-del" onClick={() => removeItem(ci, ii)} aria-label="Remove item">
+                    <Icon name="close" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div className="onboarding-actions">
+        <button type="button" className="ghost-button" onClick={onCancel} disabled={committing}>
+          Start over
+        </button>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => onCommit({ categories: cats })}
+          disabled={committing || itemCount === 0}
+        >
+          {committing ? "Saving…" : `Looks good — import ${itemCount} item${itemCount === 1 ? "" : "s"}`}
+          <Icon name="arrow_forward" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MenuStep({ onContinue, navigate }) {
+  const { activeRestaurantId } = useAuth();
+  // phase: choose | uploading | parsing | review | committing
+  const [phase, setPhase] = useState("choose");
+  const [jobId, setJobId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [ocrUnavailable, setOcrUnavailable] = useState(false);
+  const pollRef = useRef(null);
+
+  useEffect(() => () => clearInterval(pollRef.current), []);
+
+  const pollJob = (id) => {
+    clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await getMenuIngestion(id);
+        if (r.status === "parsed") {
+          clearInterval(pollRef.current);
+          setDraft(r.draft ?? { categories: [] });
+          setPhase("review");
+        } else if (r.status === "failed") {
+          clearInterval(pollRef.current);
+          setError(r.last_error || "We couldn't read that menu. Try a clearer photo, or add items manually.");
+          setPhase("choose");
+        }
+      } catch (e) {
+        clearInterval(pollRef.current);
+        setError(e.message);
+        setPhase("choose");
+      }
+    }, 2500);
+  };
+
+  const handleFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-selecting the same file
+    if (!file || !activeRestaurantId) return;
+    setError(null);
+    setPhase("uploading");
+    try {
+      const { url, sha256, sourceKind } = await uploadMenuFile(activeRestaurantId, file);
+      const job = await startMenuIngestion({ source_url: url, source_kind: sourceKind, sha256 });
+      setJobId(job.job_id);
+      setPhase("parsing");
+      pollJob(job.job_id);
+    } catch (e) {
+      if (e.code === "MENU_OCR_DISABLED") {
+        setOcrUnavailable(true);
+        setPhase("choose");
+      } else {
+        setError(e.message);
+        setPhase("choose");
+      }
+    }
+  };
+
+  const handleCommit = async (editedDraft) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setPhase("committing");
+    try {
+      await saveMenuDraft(jobId, editedDraft);
+      await commitMenuDraft(jobId);
+      await advanceOnboarding("menu_completed");
+      await onContinue();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+      setPhase("review");
+    }
+  };
+
+  const handleManualContinue = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await advanceOnboarding("menu_completed");
+      await onContinue();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  if (phase === "review" && draft) {
+    return (
+      <MenuDraftReview
+        draft={draft}
+        committing={phase === "committing" || busy}
+        onCommit={handleCommit}
+        onCancel={() => {
+          setDraft(null);
+          setJobId(null);
+          setPhase("choose");
+        }}
+      />
+    );
+  }
+
+  const working = phase === "uploading" || phase === "parsing" || phase === "committing";
+
+  return (
+    <div className="onboarding-card">
+      <h1>Add your menu</h1>
+      <p className="onboarding-lead">
+        Snap a photo or upload a PDF of your menu and we'll build it for you — or add items by hand in
+        the editor.
+      </p>
+
+      {ocrUnavailable && (
+        <p className="onboarding-note">
+          <Icon name="info" /> Photo import isn't switched on yet — please add your menu in the editor
+          for now.
+        </p>
+      )}
+      {error && <p className="onboarding-error">{error}</p>}
+
+      {working ? (
+        <p className="onboarding-note">
+          <Icon name="hourglass_top" />{" "}
+          {phase === "uploading" ? "Uploading your menu…" : phase === "parsing" ? "Reading your menu… this takes a few seconds." : "Saving…"}
+        </p>
+      ) : (
+        <div className="onboarding-actions">
+          <label className="primary-button" style={{ cursor: "pointer" }}>
+            <Icon name="photo_camera" /> Upload menu photo / PDF
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={handleFile}
+              style={{ display: "none" }}
+            />
+          </label>
+          <button type="button" className="ghost-button" onClick={() => navigate("/manage-menu")}>
+            <Icon name="restaurant_menu" /> Add manually
+          </button>
+        </div>
+      )}
+
+      {!working && (
+        <div className="onboarding-actions" style={{ marginTop: 18 }}>
+          <button type="button" className="ghost-button" onClick={handleManualContinue} disabled={busy}>
+            {busy ? "Checking…" : "I've already added my menu — continue"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrialStep({ onRefresh }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const pollsRef = useRef(0);
+
+  // After returning from Stripe Checkout the webhook may lag a few seconds
+  // before advancing the status, so poll a bounded number of times.
+  useEffect(() => {
+    const id = setInterval(() => {
+      pollsRef.current += 1;
+      if (pollsRef.current > 8) {
+        clearInterval(id);
+        return;
+      }
+      onRefresh?.();
+    }, 4000);
+    return () => clearInterval(id);
+  }, [onRefresh]);
+
+  const startTrial = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { url } = await createBillingCheckoutSession();
+      if (url) window.location.href = url;
+      else setBusy(false);
+    } catch (e) {
+      if (e.code === "BILLING_NOT_CONFIGURED") setUnavailable(true);
+      else setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="onboarding-card">
+      <h1>Start your free trial</h1>
+      <p className="onboarding-lead">
+        Try VocoTable free for 14 days. We'll set up your AI phone host now — your card isn't charged
+        until the trial ends, and you can cancel anytime.
+      </p>
+      <div className="trial-plan">
+        <div>
+          <strong>VocoTable Starter</strong>
+          <span>Unlimited AI-answered calls, bookings &amp; orders</span>
+        </div>
+        <div className="trial-price">
+          <strong>$80</strong>
+          <span>/ month after trial</span>
+        </div>
+      </div>
+      {unavailable && (
+        <p className="onboarding-note">
+          <Icon name="info" /> Billing isn't switched on yet — your progress is saved and we'll email
+          you when you can start your trial.
+        </p>
+      )}
+      {error && <p className="onboarding-error">{error}</p>}
+      {!unavailable && (
+        <div className="onboarding-actions">
+          <button type="button" className="primary-button" onClick={startTrial} disabled={busy}>
+            {busy ? "Opening secure checkout…" : "Start 14-day free trial"}
+            <Icon name="arrow_forward" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhoneStep({ onRefresh }) {
+  const [setup, setSetup] = useState(null);
+  const [error, setError] = useState(null);
+  const [verifying, setVerifying] = useState(false);
+  const pollRef = useRef(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await getPhoneSetup();
+      setSetup(r);
+      if (r.forwarding_verified) onRefresh?.();
+    } catch (e) {
+      setError(e.message);
+    }
+  }, [onRefresh]);
+
+  useEffect(() => {
+    load();
+    // Poll while the number is being provisioned by an admin.
+    pollRef.current = setInterval(load, 6000);
+    return () => clearInterval(pollRef.current);
+  }, [load]);
+
+  const verify = async () => {
+    if (verifying) return;
+    setVerifying(true);
+    setError(null);
+    try {
+      const r = await verifyForwarding();
+      if (r.verified) onRefresh?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  if (!setup) {
+    return (
+      <div className="onboarding-card">
+        <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error}` : "Loading…"}</p>
+      </div>
+    );
+  }
+
+  if (!setup.number_ready) {
+    return (
+      <div className="onboarding-card">
+        <h1>We're setting up your phone line</h1>
+        <p className="onboarding-lead">
+          Our team is provisioning your dedicated VocoTable number and configuring Bella with your
+          menu. This usually takes a short while — we'll email you the moment it's ready, and this page
+          will update automatically.
+        </p>
+        <p className="onboarding-note">
+          <Icon name="hourglass_top" /> Provisioning in progress…
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="onboarding-card">
+      <h1>Connect your phone</h1>
+      <p className="onboarding-lead">
+        Your VocoTable number is ready. Forward your restaurant's calls to it so Bella can answer.
+      </p>
+      <div className="phone-number-box">
+        <span>Your VocoTable number</span>
+        <strong>{setup.vocotable_number}</strong>
+      </div>
+      <ol className="phone-steps">
+        <li>
+          On the phone that customers call, set up <strong>call forwarding</strong> to{" "}
+          <strong>{setup.vocotable_number}</strong>. Most AU carriers use a code from the handset:
+          <ul>
+            <li>All calls: <code>*21*{setup.vocotable_number}#</code></li>
+            <li>When busy / no answer: <code>*61*{setup.vocotable_number}#</code></li>
+          </ul>
+          (Exact steps vary by carrier — Telstra, Optus and Vodafone all support these GSM codes.)
+        </li>
+        <li>From a different phone, call your restaurant's normal number to test it.</li>
+        <li>Click verify below — we'll confirm the call reached Bella.</li>
+      </ol>
+      {error && <p className="onboarding-error">{error}</p>}
+      <div className="onboarding-actions">
+        <button type="button" className="primary-button" onClick={verify} disabled={verifying}>
+          {verifying ? "Checking for your test call…" : "I've forwarded my number — verify"}
+          <Icon name="arrow_forward" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ComingSoonStep({ title, body }) {
+  return (
+    <div className="onboarding-card">
+      <h1>{title}</h1>
+      <p className="onboarding-lead">{body}</p>
+      <p className="onboarding-note">
+        <Icon name="info" /> Your progress is saved — you can pick up here when this step ships.
+      </p>
+    </div>
+  );
+}
+
+function OnboardingWizard({ navigate }) {
+  const { memberships, refreshMe } = useAuth();
+  const [status, setStatus] = useState(null);
+  const [checklist, setChecklist] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const hasRestaurant = (memberships?.length ?? 0) > 0;
+
+  const load = useCallback(async () => {
+    if (!hasRestaurant) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await getOnboardingStatus();
+      setStatus(r.onboarding_status);
+      setChecklist(r.checklist);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [hasRestaurant]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    navigate("/");
+  };
+
+  if (loading) {
+    return (
+      <OnboardingShell onSignOut={handleSignOut}>
+        <div className="onboarding-card">
+          <p style={{ color: "var(--on-surface-variant)" }}>Loading…</p>
+        </div>
+      </OnboardingShell>
+    );
+  }
+
+  if (!hasRestaurant) {
+    return (
+      <OnboardingShell onSignOut={handleSignOut}>
+        <CreateRestaurantStep onCreated={refreshMe} />
+      </OnboardingShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <OnboardingShell onSignOut={handleSignOut}>
+        <div className="onboarding-card">
+          <p className="onboarding-error">Couldn't load your setup: {error}</p>
+        </div>
+      </OnboardingShell>
+    );
+  }
+
+  const current = checklist?.find((s) => s.status === "current")?.key ?? null;
+
+  let content;
+  if (current === "profile") {
+    content = <ProfileStep onSaved={load} />;
+  } else if (current === "menu") {
+    content = <MenuStep onContinue={load} navigate={navigate} />;
+  } else if (current === "trial") {
+    content = <TrialStep onRefresh={load} />;
+  } else if (current === "phone") {
+    content = <PhoneStep onRefresh={load} />;
+  } else {
+    content = (
+      <div className="onboarding-card">
+        <h1>You're all set 🎉</h1>
+        <p className="onboarding-lead">Your restaurant is live.</p>
+        <button type="button" className="primary-button" onClick={() => navigate("/live-feed")}>
+          Go to dashboard <Icon name="arrow_forward" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <OnboardingShell checklist={checklist} onSignOut={handleSignOut}>
+      {content}
+    </OnboardingShell>
   );
 }
 
@@ -1611,6 +2452,38 @@ function TierCard({ tier, highlighted, onCta, ctaRef }) {
   );
 }
 
+// Restaurant switcher — only shown when the signed-in user belongs to more than
+// one restaurant. Changing the active restaurant persists the choice (so
+// X-Restaurant-Id flips) and reloads so every page refetches scoped to it.
+function RestaurantSwitcher() {
+  const { memberships, activeRestaurantId, setActiveRestaurant } = useAuth();
+  if (!Array.isArray(memberships) || memberships.length <= 1) return null;
+  const onChange = (event) => {
+    const id = event.target.value;
+    if (!id || id === activeRestaurantId) return;
+    setActiveRestaurant(id);
+    window.location.reload();
+  };
+  return (
+    <div className="restaurant-switcher">
+      <label className="sr-only" htmlFor="restaurant-switcher-select">
+        Active restaurant
+      </label>
+      <select
+        id="restaurant-switcher-select"
+        value={activeRestaurantId ?? ""}
+        onChange={onChange}
+      >
+        {memberships.map((m) => (
+          <option key={m.restaurant_id} value={m.restaurant_id}>
+            {m.name || m.restaurant_id}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function DashboardShell({ active, children, navigate, path }) {
   const { user } = useAuth();
   const isPhone = useMediaQuery("(max-width: 767px)");
@@ -1661,6 +2534,7 @@ function DashboardShell({ active, children, navigate, path }) {
             <span>Restaurant AI Hub</span>
           </span>
         </button>
+        <RestaurantSwitcher />
       </div>
 
       <nav className="side-links" aria-label="Primary">
@@ -5478,38 +6352,51 @@ const INVOICE_STATUSES = [
   { key: "failed",   label: "Failed",   color: "danger" },
 ];
 
-// Mock invoice history. In production this comes from Stripe / billing
-// provider; for now it's a static list tied to the user's saved card.
-function buildInvoices(card) {
-  const fallback = card ?? { brand: "Visa", last4: "4242", expiry: "12/2027" };
-  return [
-    { id: "INV-2026-04-001", issuedAt: "2026-04-01", paidAt: "2026-04-01", amount: 80, status: "paid",     card: fallback },
-    { id: "INV-2026-03-001", issuedAt: "2026-03-01", paidAt: "2026-03-01", amount: 80, status: "paid",     card: fallback },
-    { id: "INV-2026-02-001", issuedAt: "2026-02-01", paidAt: "2026-02-01", amount: 80, status: "paid",     card: fallback },
-    { id: "INV-2026-01-001", issuedAt: "2026-01-01", paidAt: "2026-01-01", amount: 80, status: "paid",     card: fallback },
-    { id: "INV-2025-12-002", issuedAt: "2025-12-15", paidAt: "2025-12-15", amount: 80, status: "refunded", card: fallback, refundedAt: "2025-12-20", refundReason: "Duplicate charge" },
-    { id: "INV-2025-12-001", issuedAt: "2025-12-01", paidAt: "2025-12-01", amount: 80, status: "paid",     card: fallback },
-    { id: "INV-2025-11-001", issuedAt: "2025-11-01", paidAt: "2025-11-01", amount: 80, status: "paid",     card: fallback },
-  ];
-}
-
 function formatInvoiceDate(iso) {
+  if (!iso) return "—";
   const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return "—";
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", {
     day: "numeric", month: "short", year: "numeric"
   });
 }
 
-function BillingPage({ navigate, paymentCards = [] }) {
+function BillingPage({ navigate }) {
   const { user } = useAuth();
-  const defaultCard =
-    paymentCards.find((c) => c.isDefault) || paymentCards[0] || null;
-  const invoices = useMemo(() => buildInvoices(defaultCard), [defaultCard]);
+
+  const [invoices, setInvoices] = useState([]);
+  const [subscription, setSubscription] = useState(null);
+  const [defaultCard, setDefaultCard] = useState(null);
+  const [enabled, setEnabled] = useState(true);
+  const [mode, setMode] = useState("live");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const [statusFilter, setStatusFilter] = useState(() => new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
   const filterRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    Promise.all([getBillingInvoices(), getBillingSubscription(), getBillingPaymentMethods()])
+      .then(([inv, sub, pm]) => {
+        if (cancelled) return;
+        setEnabled(Boolean(inv?.enabled));
+        setMode(inv?.mode ?? "live");
+        setInvoices(Array.isArray(inv?.invoices) ? inv.invoices : []);
+        setSubscription(sub?.subscription ?? null);
+        const cards = Array.isArray(pm?.payment_methods) ? pm.payment_methods : [];
+        setDefaultCard(cards.find((c) => c.is_default) ?? cards[0] ?? null);
+      })
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -5555,7 +6442,10 @@ function BillingPage({ navigate, paymentCards = [] }) {
           name: user?.displayName ?? user?.email ?? "Customer",
           email: user?.email ?? "—",
         },
-        plan: { name: "VocoTable Core Plan", description: "Monthly subscription — unlimited AI agent bookings" },
+        plan: {
+          name: subscription?.plan_name ?? "VocoTable Core Plan",
+          description: "Monthly subscription — unlimited AI agent bookings",
+        },
       });
     } catch (e) {
       // Surface to console; the row stays interactive so the user can retry.
@@ -5565,6 +6455,39 @@ function BillingPage({ navigate, paymentCards = [] }) {
     }
   };
 
+  if (loading) {
+    return (
+      <DashboardShell active="Billing" navigate={navigate}>
+        <header className="billing-header">
+          <h1>Billing &amp; Subscription</h1>
+          <p>Manage your payment methods and view past invoices.</p>
+        </header>
+        <p style={{ color: "var(--on-surface-variant)" }}>Loading billing…</p>
+      </DashboardShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardShell active="Billing" navigate={navigate}>
+        <header className="billing-header">
+          <h1>Billing &amp; Subscription</h1>
+          <p>Manage your payment methods and view past invoices.</p>
+        </header>
+        <p style={{ color: "var(--danger, #c00)" }}>
+          Couldn’t load billing: {error}
+        </p>
+      </DashboardShell>
+    );
+  }
+
+  const planName = subscription?.plan_name ?? "VocoTable Core Plan";
+  const planAmount = subscription?.amount_display ?? "$80.00";
+  const planInterval = subscription?.interval ?? "month";
+  const nextBilling = subscription?.current_period_end
+    ? formatInvoiceDate(subscription.current_period_end)
+    : "—";
+
   return (
     <DashboardShell active="Billing" navigate={navigate}>
       <header className="billing-header">
@@ -5572,13 +6495,30 @@ function BillingPage({ navigate, paymentCards = [] }) {
         <p>Manage your payment methods and view past invoices.</p>
       </header>
 
+      {enabled && mode === "test" && (
+        <div className="billing-banner billing-banner-test" role="status">
+          <Icon name="science" />
+          <span>
+            <strong>TEST MODE</strong> — these are Stripe test invoices, not real charges.
+          </span>
+        </div>
+      )}
+      {!enabled && (
+        <div className="billing-banner billing-banner-info" role="status">
+          <Icon name="info" />
+          <span>
+            Billing isn’t connected yet. Showing placeholder details until Stripe is enabled.
+          </span>
+        </div>
+      )}
+
       <section className="billing-grid">
         <article className="plan-card">
           <div className="plan-glow" />
           <div className="plan-head">
             <div>
               <h2>
-                VocoTable Core Plan <span>Active</span>
+                {planName} <span>{subscription?.status ? capitalize(subscription.status) : "Active"}</span>
               </h2>
               <p>Flat rate monthly subscription for unlimited AI agent bookings.</p>
             </div>
@@ -5587,11 +6527,11 @@ function BillingPage({ navigate, paymentCards = [] }) {
           <div className="plan-bottom">
             <div>
               <strong>
-                $80.00 <span>/ month</span>
+                {planAmount} <span>/ {planInterval}</span>
               </strong>
               <p>
                 <Icon name="calendar_month" />
-                Next billing date: Jun 1, 2026
+                Next billing date: {nextBilling}
               </p>
             </div>
             <button onClick={() => navigate("/manage-plan")}>Manage Plan</button>
@@ -5607,7 +6547,7 @@ function BillingPage({ navigate, paymentCards = [] }) {
                 <p>
                   {defaultCard.brand} •••• {defaultCard.last4}
                 </p>
-                <span>Expires {defaultCard.expiry}</span>
+                {defaultCard.expiry && <span>Expires {defaultCard.expiry}</span>}
               </div>
               <Icon name="check_circle" className="check-circle" />
             </div>
@@ -5623,7 +6563,7 @@ function BillingPage({ navigate, paymentCards = [] }) {
             </div>
           )}
           <button onClick={() => navigate("/update-payment-details")}>
-            {defaultCard ? "Update Payment Details" : "Add a card"}
+            {defaultCard ? "Manage Payment Methods" : "Add a card"}
             <Icon name="arrow_forward" />
           </button>
         </article>
@@ -5693,8 +6633,8 @@ function BillingPage({ navigate, paymentCards = [] }) {
                     const status = INVOICE_STATUSES.find((s) => s.key === inv.status) ?? INVOICE_STATUSES[0];
                     return (
                       <tr key={inv.id}>
-                        <td>{formatInvoiceDate(inv.issuedAt)}</td>
-                        <td>${inv.amount.toFixed(2)}</td>
+                        <td>{formatInvoiceDate(inv.issued_at)}</td>
+                        <td>{inv.total_display ?? "—"}</td>
                         <td>
                           <span className={`invoice-status-dot ${status.color}`} />
                           {status.label}
@@ -6068,81 +7008,47 @@ function CardBrandIcon({ brand }) {
   );
 }
 
-function UpdatePaymentDetailsPage({ navigate, cards, setCards }) {
-  const [form, setForm] = useState({
-    cardNumber: "",
-    expiry: "",
-    cvc: "",
-    cardholder: "",
-    country: "Australia",
-    postcode: "",
-    setDefault: true,
-  });
-  const [saved, setSaved] = useState(false);
+function UpdatePaymentDetailsPage({ navigate }) {
+  const [cards, setCards] = useState([]);
+  const [defaultId, setDefaultId] = useState(null);
+  const [enabled, setEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [portalLoading, setPortalLoading] = useState(false);
 
-  const makeDefault = (id) => {
-    setCards((prev) => prev.map((c) => ({ ...c, isDefault: c.id === id })));
-  };
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getBillingPaymentMethods()
+      .then((pm) => {
+        if (cancelled) return;
+        setEnabled(Boolean(pm?.enabled));
+        setCards(Array.isArray(pm?.payment_methods) ? pm.payment_methods : []);
+        setDefaultId(pm?.default_payment_method_id ?? null);
+      })
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const removeCard = (id) => {
-    setCards((prev) => {
-      const next = prev.filter((c) => c.id !== id);
-      if (next.length > 0 && !next.some((c) => c.isDefault)) {
-        next[0] = { ...next[0], isDefault: true };
-      }
-      return next;
-    });
-  };
-
-  const update = (field) => (event) => {
-    if (typeof event.target.setCustomValidity === "function") {
-      event.target.setCustomValidity("");
+  // Add / remove / set-default is delegated entirely to Stripe's hosted Customer
+  // Portal — no raw card data ever touches our backend (PCI SAQ-A). This page is
+  // a read-only mirror of the cards on file plus a redirect into the portal.
+  const handleManagePayment = async () => {
+    if (portalLoading) return;
+    setPortalLoading(true);
+    try {
+      const { url } = await createBillingPortalSession();
+      if (url) window.location.href = url;
+      else setPortalLoading(false);
+    } catch (e) {
+      console.error("[billing] portal session failed:", e);
+      setError(e.message);
+      setPortalLoading(false);
     }
-    const raw = event.target.value;
-    let value = raw;
-    if (field === "cardNumber") {
-      value = raw.replace(/\D/g, "").slice(0, 19);
-      value = value.replace(/(.{4})/g, "$1 ").trim();
-    } else if (field === "expiry") {
-      const digits = raw.replace(/\D/g, "").slice(0, 4);
-      value = digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
-    } else if (field === "cvc") {
-      value = raw.replace(/\D/g, "").slice(0, 4);
-    } else if (field === "postcode") {
-      value = raw.replace(/[^\w\s-]/g, "").slice(0, 12);
-    }
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const englishValidity = (event) => {
-    const el = event.target;
-    if (el.validity.valueMissing) {
-      el.setCustomValidity("Please fill out this field.");
-    } else if (
-      el.validity.typeMismatch ||
-      el.validity.patternMismatch ||
-      el.validity.tooShort ||
-      el.validity.tooLong
-    ) {
-      el.setCustomValidity("Please enter a valid value.");
-    } else {
-      el.setCustomValidity("");
-    }
-  };
-
-  const toggleDefault = (event) => {
-    setForm((prev) => ({ ...prev, setDefault: event.target.checked }));
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    // Stripe wire-up lands when billing integration ships. UI-only for now.
-    setSaved(true);
-  };
-
-  const dismissSaved = () => {
-    setSaved(false);
-    navigate("/settings");
   };
 
   return (
@@ -6157,8 +7063,8 @@ function UpdatePaymentDetailsPage({ navigate, cards, setCards }) {
           <Icon name="arrow_back" />
         </button>
         <div>
-          <h1>Update payment details</h1>
-          <p>Replace the card on file. Charges renew automatically each month.</p>
+          <h1>Payment methods</h1>
+          <p>Cards on file are managed securely through Stripe.</p>
         </div>
       </header>
 
@@ -6170,156 +7076,44 @@ function UpdatePaymentDetailsPage({ navigate, cards, setCards }) {
             </span>
           </div>
 
-          {cards.length === 0 ? (
+          {loading ? (
+            <p style={{ color: "var(--on-surface-variant)" }}>Loading cards…</p>
+          ) : error ? (
+            <p style={{ color: "var(--danger, #c00)" }}>Couldn’t load cards: {error}</p>
+          ) : !enabled ? (
+            <div className="payment-empty">
+              <Icon name="info" />
+              <p>Billing isn’t connected yet.</p>
+            </div>
+          ) : cards.length === 0 ? (
             <div className="payment-empty">
               <Icon name="credit_card_off" />
-              <p>No cards on file yet. Add one using the form.</p>
+              <p>No cards on file yet. Add one in the Stripe portal.</p>
             </div>
           ) : (
             <ul className="payment-card-list">
-              {cards.map((card) => (
-                <li key={card.id} className={`card-line${card.isDefault ? " is-default" : ""}`}>
-                  <CardBrandIcon brand={card.brand} />
-                  <div className="card-line-meta">
-                    <p>
-                      {card.brand} •••• {card.last4}
-                    </p>
-                    <span>Expires {card.expiry}</span>
-                  </div>
-                  {card.isDefault ? (
-                    <span className="payment-current-pill">Default</span>
-                  ) : (
-                    <div className="card-line-actions">
-                      <button
-                        type="button"
-                        className="card-action-link"
-                        onClick={() => makeDefault(card.id)}
-                      >
-                        Make default
-                      </button>
-                      <button
-                        type="button"
-                        className="card-action-link danger"
-                        onClick={() => removeCard(card.id)}
-                        aria-label={`Remove ${card.brand} ending ${card.last4}`}
-                      >
-                        Remove
-                      </button>
+              {cards.map((card) => {
+                const isDefault = card.is_default || card.id === defaultId;
+                return (
+                  <li key={card.id} className={`card-line${isDefault ? " is-default" : ""}`}>
+                    <CardBrandIcon brand={card.brand} />
+                    <div className="card-line-meta">
+                      <p>
+                        {card.brand} •••• {card.last4}
+                      </p>
+                      {card.expiry && <span>Expires {card.expiry}</span>}
                     </div>
-                  )}
-                </li>
-              ))}
+                    {isDefault && <span className="payment-current-pill">Default</span>}
+                  </li>
+                );
+              })}
             </ul>
           )}
 
           <p className="payment-current-hint">
-            Adding a new card below saves it alongside these. We don&apos;t store full card numbers —
-            payments are handled by our PCI-compliant processor.
+            Add, remove, or change your default card in Stripe&apos;s secure portal. We never
+            store full card numbers — payments are handled by our PCI-compliant processor.
           </p>
-        </article>
-
-        <form
-          className="payment-form-card"
-          onSubmit={handleSubmit}
-          autoComplete="off"
-        >
-          <h2>New card details</h2>
-
-          <label className="payment-field">
-            <span>Cardholder name</span>
-            <input
-              type="text"
-              autoComplete="off"
-              placeholder="Name on card"
-              value={form.cardholder}
-              onChange={update("cardholder")}
-              onInvalid={englishValidity}
-              lang="en"
-              required
-            />
-          </label>
-
-          <label className="payment-field">
-            <span>Card number</span>
-            <div className="payment-input-with-icon">
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="1234 1234 1234 1234"
-                value={form.cardNumber}
-                onChange={update("cardNumber")}
-                onInvalid={englishValidity}
-                lang="en"
-                required
-              />
-              <Icon name="credit_card" />
-            </div>
-          </label>
-
-          <div className="payment-field-row">
-            <label className="payment-field">
-              <span>Expiry</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="MM/YY"
-                value={form.expiry}
-                onChange={update("expiry")}
-                onInvalid={englishValidity}
-                lang="en"
-                required
-              />
-            </label>
-            <label className="payment-field">
-              <span>CVC</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="123"
-                value={form.cvc}
-                onChange={update("cvc")}
-                onInvalid={englishValidity}
-                lang="en"
-                required
-              />
-            </label>
-          </div>
-
-          <h3 className="payment-section-title">Billing address</h3>
-
-          <label className="payment-field">
-            <span>Country</span>
-            <select value={form.country} onChange={update("country")} lang="en">
-              <option>Australia</option>
-              <option>New Zealand</option>
-              <option>United Kingdom</option>
-              <option>United States</option>
-              <option>Canada</option>
-              <option>Other</option>
-            </select>
-          </label>
-
-          <label className="payment-field">
-            <span>Postcode</span>
-            <input
-              type="text"
-              autoComplete="postal-code"
-              placeholder="2000"
-              value={form.postcode}
-              onChange={update("postcode")}
-              onInvalid={englishValidity}
-              lang="en"
-              required
-            />
-          </label>
-
-          <label className="payment-checkbox">
-            <input type="checkbox" checked={form.setDefault} onChange={toggleDefault} />
-            <span>Set as default payment method</span>
-          </label>
 
           <div className="payment-form-actions">
             <button
@@ -6327,38 +7121,20 @@ function UpdatePaymentDetailsPage({ navigate, cards, setCards }) {
               className="ghost-button"
               onClick={() => navigate("/settings")}
             >
-              Cancel
+              Back to Billing
             </button>
-            <button type="submit" className="primary-button">
-              Save card
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleManagePayment}
+              disabled={!enabled || portalLoading}
+            >
+              {portalLoading ? "Opening Stripe…" : "Manage payment methods"}
+              <Icon name="open_in_new" />
             </button>
           </div>
-        </form>
+        </article>
       </section>
-
-      {saved && (
-        <div
-          className="plan-modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="payment-saved-title"
-          onClick={dismissSaved}
-        >
-          <div className="plan-modal" onClick={(e) => e.stopPropagation()}>
-            <h2 id="payment-saved-title">
-              <Icon name="check_circle" /> Payment method updated
-            </h2>
-            <p>
-              Your new card is now on file. The next invoice on Oct 1 will be charged to this card.
-            </p>
-            <div className="plan-modal-actions">
-              <button type="button" onClick={dismissSaved} className="primary-button">
-                Back to Billing
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </DashboardShell>
   );
 }

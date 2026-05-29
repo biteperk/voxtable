@@ -2,13 +2,39 @@ import { ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 
 import { isAppError } from "../domain/errors";
+import { recordRetellAuthFailure } from "../services/retellAuthHealth";
 import { logger } from "../utils/logger";
 import { captureException } from "../utils/sentry";
 
 export const errorHandler: ErrorRequestHandler = (error, request, response, _next) => {
+  const fromRetell = request.path?.startsWith("/retell/");
   const fromRetellTool = request.path?.startsWith("/retell/tools/");
 
   if (isAppError(error)) {
+    // Observability: handled AppErrors used to return here WITHOUT a log line,
+    // so a flood of Retell 401s (signature failures that silently drop every
+    // booking) was invisible in stdout. Log them — PII-safe via `logger`, which
+    // never serialises the body. 5xx is a real server fault → error level.
+    const logFields = {
+      evt: "handled_error",
+      code: error.code,
+      statusCode: error.statusCode,
+      method: request.method,
+      path: request.path
+    };
+    if (error.statusCode >= 500) {
+      logger.error(logFields);
+    } else {
+      logger.warn(logFields);
+    }
+
+    // Recurrence guard: feed the Retell auth-failure counter so healthAlerter
+    // can page when a wrong/stale RETELL_API_KEY starts 401ing the signed
+    // surface. Covers tool calls, the inbound webhook, and the post-call hook.
+    if (fromRetell && (error.statusCode === 401 || error.statusCode === 403)) {
+      recordRetellAuthFailure();
+    }
+
     response.status(error.statusCode).json({
       error: {
         code: error.code,

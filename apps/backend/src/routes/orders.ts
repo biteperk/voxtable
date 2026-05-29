@@ -3,9 +3,9 @@ import { Router } from "express";
 import {
   actorFor,
   AuthenticatedRequest,
-  requireFirebaseAuth,
-  requireManagerRole
+  requireFirebaseAuth
 } from "../auth/firebaseAuth";
+import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
@@ -31,8 +31,9 @@ export const ordersRouter = Router();
 ordersRouter.get(
   "/api/orders/active",
   requireFirebaseAuth,
-  asyncHandler(async (_request, response) => {
-    const orders = await getActiveOrders(env.DEFAULT_RESTAURANT_ID);
+  resolveTenant,
+  asyncHandler(async (request, response) => {
+    const orders = await getActiveOrders(tenantId(request));
     // Provide server-now so clients can compute "time since ordered" without
     // trusting their local clock (kitchen tablet drift mitigation).
     response.json({
@@ -45,8 +46,9 @@ ordersRouter.get(
 ordersRouter.get(
   "/api/orders/:id",
   requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request, response) => {
-    const order = await getOrderDetail(request.params.id!, env.DEFAULT_RESTAURANT_ID);
+    const order = await getOrderDetail(request.params.id!, tenantId(request));
     response.json(order);
   })
 );
@@ -55,12 +57,13 @@ ordersRouter.get(
 ordersRouter.post(
   "/api/orders",
   requireFirebaseAuth,
-  requireManagerRole,
+  resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request: AuthenticatedRequest, response) => {
     const body = createOrderRequestSchema.parse(request.body);
     const idempotencyKey = request.header("idempotency-key") ?? undefined;
     const result = await createOrder({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       reservationId: body.reservation_id ?? body.reservationId,
       tableId: body.table_id ?? body.tableId,
       source: body.source,
@@ -102,6 +105,7 @@ function parseExpectedVersion(header: string | undefined): number {
 ordersRouter.patch(
   "/api/orders/:id/status",
   requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request: AuthenticatedRequest, response) => {
     const body = updateOrderStatusRequestSchema.parse(request.body);
     const expectedVersion = parseExpectedVersion(request.header("if-match"));
@@ -109,12 +113,12 @@ ordersRouter.patch(
     // route, so kitchen staff can still mark preparing/ready/served.
     if (body.status === "cancelled") {
       await new Promise<void>((resolve, reject) =>
-        requireManagerRole(request, response, (err?: unknown) => (err ? reject(err) : resolve()))
+        requireMemberRole("manager")(request, response, (err?: unknown) => (err ? reject(err) : resolve()))
       );
     }
     const updated = await updateOrderStatus({
       id: request.params.id!,
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       expectedVersion,
       nextStatus: body.status,
       actor: actorFor(request),
@@ -127,13 +131,14 @@ ordersRouter.patch(
 ordersRouter.patch(
   "/api/orders/:id/items/:itemId/status",
   requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request: AuthenticatedRequest, response) => {
     const body = updateOrderItemStatusRequestSchema.parse(request.body);
     const expectedVersion = parseExpectedVersion(request.header("if-match"));
     const updated = await updateOrderItemStatus({
       orderId: request.params.id!,
       itemId: request.params.itemId!,
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       expectedOrderVersion: expectedVersion,
       nextStatus: body.status,
       actor: actorFor(request)
@@ -145,14 +150,15 @@ ordersRouter.patch(
 ordersRouter.patch(
   "/api/orders/:id/payment",
   requireFirebaseAuth,
-  requireManagerRole,
+  resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request: AuthenticatedRequest, response) => {
     const body = updatePaymentStatusRequestSchema.parse(request.body);
     const expectedVersion = parseExpectedVersion(request.header("if-match"));
     const paymentStatus = (body.payment_status ?? body.paymentStatus)!;
     const updated = await updatePaymentStatus({
       id: request.params.id!,
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       expectedVersion,
       paymentStatus,
       actor: actorFor(request)

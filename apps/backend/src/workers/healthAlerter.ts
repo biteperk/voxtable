@@ -30,6 +30,7 @@ import { getOutboxStats } from "../repositories/outbox";
 import { getBreakerState } from "../services/calcomClient";
 import { quotaSnapshot, shouldFireQuotaAlert } from "../services/calcomQuotaTracker";
 import { kdsHealthSnapshot } from "../services/orderService";
+import { retellAuthSnapshot } from "../services/retellAuthHealth";
 import { getKdsHeartbeats } from "../routes/orders";
 
 const CHECK_INTERVAL_MS = 60_000; // every minute
@@ -48,6 +49,12 @@ const KDS_OLDEST_PENDING_SECONDS = 10 * 60;
 // or the wifi is down. Either way, the kitchen is flying blind.
 const KDS_TABLET_SILENCE_MS = 5 * 60 * 1000;
 
+// Retell signed-surface auth failures. A wrong / stale / non-webhook-badged
+// RETELL_API_KEY 401s every tool call — the agent picks up and talks, but no
+// booking is ever written. 3 failures in the 5-min window = a real outage, not
+// a one-off. Edge-triggered with a recovery message.
+const RETELL_AUTH_FAILURE_THRESHOLD = 3;
+
 interface AlertState {
   outboxDepthBreaches: number;
   outboxDepthAlerted: boolean;
@@ -61,6 +68,8 @@ interface AlertState {
   // outage, not "the kiosk was never installed". Survives across ticks, resets
   // only on process restart.
   kdsHasSeenAnyHeartbeat: boolean;
+  // Retell signed-surface 401/403 storm (wrong/stale RETELL_API_KEY).
+  retellAuthAlerted: boolean;
 }
 
 const state: AlertState = {
@@ -72,7 +81,8 @@ const state: AlertState = {
   outboxDeadLetterAlerted: false,
   kdsOldestPendingAlerted: false,
   kdsTabletOfflineAlerted: false,
-  kdsHasSeenAnyHeartbeat: false
+  kdsHasSeenAnyHeartbeat: false,
+  retellAuthAlerted: false
 };
 
 let intervalHandle: NodeJS.Timeout | null = null;
@@ -235,9 +245,37 @@ async function checkCalcom(): Promise<void> {
   }
 }
 
+async function checkRetellAuth(): Promise<void> {
+  try {
+    const snap = retellAuthSnapshot();
+
+    // 8) Retell auth-failure storm. The voice agent answers normally but every
+    //    tool call 401s at the signature gate, so bookings silently vanish.
+    //    This is the exact failure mode that hid the "number busy / no booking"
+    //    incident. Page immediately once the threshold trips.
+    if (snap.failures_last_5min >= RETELL_AUTH_FAILURE_THRESHOLD) {
+      if (!state.retellAuthAlerted) {
+        await postToSlack(
+          `:rotating_light: Retell tool calls failing auth — ${snap.failures_last_5min} × 401/403 on /retell/* in the last 5 min. The agent answers but NO booking is being written. Check RETELL_API_KEY (must be the webhook-badged key) and the number's webhook/agent binding in Retell.`
+        );
+        state.retellAuthAlerted = true;
+      }
+    } else if (state.retellAuthAlerted && snap.failures_last_5min === 0) {
+      await postToSlack(
+        `:white_check_mark: Retell tool-call auth recovered — no 401/403 on /retell/* in the last 5 min.`
+      );
+      state.retellAuthAlerted = false;
+    }
+  } catch (error) {
+    console.warn("[health-alerter] retell auth check failed:", (error as Error).message);
+  }
+}
+
 async function checkOnce(): Promise<void> {
-  // KDS always runs when slack is configured. Cal.com gated by its env flag.
+  // KDS + Retell auth always run when slack is configured. Cal.com gated by its
+  // env flag.
   await checkKds();
+  await checkRetellAuth();
   if (env.CALCOM_SYNC_ENABLED) {
     await checkCalcom();
   }

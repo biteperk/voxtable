@@ -209,6 +209,40 @@ export async function getCallLogById(id: string): Promise<CallLogRow | null> {
   return result.rows[0] ?? null;
 }
 
+/**
+ * How many calls landed for a restaurant since `sinceIso`. Used to verify
+ * call-forwarding during onboarding: a test call forwarded to the restaurant's
+ * VocoTable number resolves the tenant by dialed number and writes a call_log,
+ * so a non-zero count proves forwarding works.
+ */
+export async function countCallsSince(restaurantId: string, sinceIso: string): Promise<number> {
+  const result = await pool.query<{ n: string }>(
+    "SELECT COUNT(*)::text AS n FROM call_logs WHERE restaurant_id = $1 AND created_at >= $2",
+    [restaurantId, sinceIso]
+  );
+  return Number(result.rows[0]?.n ?? "0");
+}
+
+/**
+ * Resolve the restaurant_id for an in-progress call from its provider call id.
+ * This is the TRUSTED tenant handle for Retell tool calls: at /retell/inbound
+ * we resolve the restaurant from the dialed number and persist it on this row
+ * (unique on (provider, provider_call_id)), so later tool invocations recover
+ * the tenant from here rather than trusting any LLM-supplied value. Returns
+ * null if no row exists yet (caller falls back to server-set call metadata).
+ */
+export async function getRestaurantIdByProviderCallId(
+  provider: string,
+  providerCallId: string,
+  db: DbClient = pool
+): Promise<string | null> {
+  const result = await db.query<{ restaurant_id: string }>(
+    "SELECT restaurant_id FROM call_logs WHERE provider = $1 AND provider_call_id = $2 LIMIT 1",
+    [provider, providerCallId]
+  );
+  return result.rows[0]?.restaurant_id ?? null;
+}
+
 export interface CallLogStats {
   total_calls: number;
   handled: number;
