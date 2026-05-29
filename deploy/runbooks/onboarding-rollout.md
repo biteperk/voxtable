@@ -17,6 +17,47 @@ frontend-only or backend-only half-deploy.
   `~/vocotable-ops/vm-snapshot-20260529/…`.)
 - Maintenance window / Sam watching; a phone ready for the live test call.
 
+## Step 0 — one-time VM git remediation (do ONCE, before first deploy)
+
+The VM is 81 commits behind, file-copy-deployed (AppleDouble `._*` junk), and has
+no GitHub creds so it can't `git pull` (see `onboarding-vm-assessment.md`). The
+config audit proved the box holds **nothing to salvage except `.env` and
+`docker-compose.override.yml`**. Fix the box to a clean `git pull` deploy:
+
+**0a. Give the VM read access to the repo (deploy key — recommended).**
+```
+# On the VM:
+ssh-keygen -t ed25519 -C "core-central-vm deploy" -f ~/.ssh/vocotable_deploy -N ""
+cat ~/.ssh/vocotable_deploy.pub      # add this in GitHub → repo Settings → Deploy keys (read-only)
+cat >> ~/.ssh/config <<'EOF'
+Host github.com
+  IdentityFile ~/.ssh/vocotable_deploy
+  IdentitiesOnly yes
+EOF
+# Point the repo at SSH (was HTTPS, which had no creds):
+sudo git -C /opt/vocotable remote set-url origin git@github.com:biteperk/vocotable.git
+sudo git -C /opt/vocotable ls-remote origin -h refs/heads/main   # verify access
+```
+
+**0b. Resync the working tree to a clean `origin/main` (safe — audit confirmed no
+novel source on the box).** Back up the two VM-only files first:
+```
+sudo cp /opt/vocotable/.env /opt/vocotable.env.bak
+sudo cp /opt/vocotable/docker-compose.override.yml /opt/dco.override.bak
+sudo git -C /opt/vocotable fetch origin
+sudo git -C /opt/vocotable reset --hard origin/main     # discards the stale file-copy drift
+sudo find /opt/vocotable -name '._*' -delete            # remove AppleDouble junk
+# .env, node_modules (gitignored) and the untracked override file survive reset; verify:
+ls -la /opt/vocotable/.env /opt/vocotable/docker-compose.override.yml
+sudo git -C /opt/vocotable log --oneline -1             # should be the PR #41 merge (ebbd892)
+sudo git -C /opt/vocotable status --short | grep -v '^??' ; echo "(clean tracked tree expected)"
+```
+From here on, deploys are a clean `sudo git -C /opt/vocotable pull` — no file copies.
+
+> Future hardening (recommended, not required now): build the image in CI on merge
+> to `main`, push to Artifact Registry, and have the VM `docker compose pull && up -d`
+> — removes building/git from prod entirely. Out of scope for this first rollout.
+
 ## Step 1 — env (VM `/opt/vocotable/.env`), feature flags OFF
 ```
 MULTITENANCY_LEGACY_FALLBACK=true   # existing allowlisted users keep working pre-backfill
