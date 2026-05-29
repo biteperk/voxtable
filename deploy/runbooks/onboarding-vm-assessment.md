@@ -27,11 +27,25 @@ The VM was last updated by **copying files from a Mac** (scp/tar — hence the
 resolved: the apparent WIP is just main's own code surfaced by the broken git
 pointer. The real issue is **deploy hygiene**, not lost work.
 
-Caveat: because the VM can't fetch latest `main`, we could not produce a 100%
-authoritative "VM-only local edits" diff from the box. Before cutover, do a
-targeted diff of **config files only** (`firebase.json`, `docker-compose*.yml`,
-`deploy/nginx/*`, `.env`) against `origin/main` to catch any hand-edits made
-directly on the VM.
+### Config audit (done 2026-05-29) — RESULT
+Pulled the VM's actual config files down and diffed vs `origin/main` (`.env`
+deliberately NOT pulled — verify it by hand on the box):
+- `deploy/nginx/vocotable.conf`, `docker-compose.yml`, `docker-compose.prod.yml`,
+  `firebase.json`, `.firebaserc`, `.gitignore` → **IDENTICAL to origin/main**.
+- `package.json` → only delta is the VM is **missing `jspdf`** (behind main, not
+  hand-edited).
+- `docker-compose.override.yml` → **VM-only** (not in repo), trivial content:
+  ```
+  services:
+    postgres:
+      ports: ["5432:5432"]
+  ```
+  (exposes Postgres to the host — a debug convenience). **Must be recreated** on a
+  clean checkout, or it's lost. Consider committing it to the repo.
+
+**Verdict:** no meaningful novel source or config on the VM — it's a stale copy
+of `main`. Remediation is purely deploy-hygiene; nothing to salvage except the
+one trivial override file. Still verify `.env` on the box by hand before cutover.
 
 ## Safe actions already taken (read-only / reversible)
 - **Prod DB backup**: `pg_dump` of `vocotable` → gzip, verified (17 tables, clean
