@@ -7,6 +7,7 @@ import {
   signInWithRedirect,
   signOut
 } from "firebase/auth";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD1NZt3Ov0Esu-krdijIKzlQZ8qtgG6pcg",
@@ -20,6 +21,34 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const storage = getStorage(app);
+
+/** Hex SHA-256 of a File/Blob — used to dedupe menu re-uploads server-side. */
+export async function sha256Hex(file) {
+  const buf = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Upload a menu photo/PDF straight to Firebase Storage (keeps large binaries
+ * off our API). Returns the download URL + file hash + inferred kind for the
+ * OCR ingestion job.
+ */
+export async function uploadMenuFile(restaurantId, file) {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  const path = `menu-imports/${restaurantId}/${Date.now()}-${safeName}`;
+  const snap = await uploadBytes(ref(storage, path), file, {
+    contentType: file.type || "application/octet-stream"
+  });
+  const url = await getDownloadURL(snap.ref);
+  const sha256 = await sha256Hex(file);
+  const sourceKind =
+    (file.type || "").includes("pdf") || /\.pdf$/i.test(file.name) ? "pdf" : "image";
+  return { url, sha256, sourceKind };
+}
 
 const provider = new GoogleAuthProvider();
 

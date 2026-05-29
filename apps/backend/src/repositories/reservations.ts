@@ -90,6 +90,23 @@ export async function getReservationById(
   return result.rows[0] ?? null;
 }
 
+/**
+ * Tenant-scoped lookup: returns the reservation only if it belongs to the given
+ * restaurant. Use this on dashboard id-based routes so a cross-tenant UUID
+ * resolves to null (404) rather than leaking another tenant's row.
+ */
+export async function getReservationForTenant(
+  id: string,
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<ReservationRow | null> {
+  const result = await db.query<ReservationRow>(
+    "SELECT * FROM reservations WHERE id = $1 AND restaurant_id = $2",
+    [id, restaurantId]
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function getReservationByCallLogId(callLogId: string): Promise<ReservationRow | null> {
   const result = await pool.query<ReservationRow>(
     `SELECT * FROM reservations
@@ -153,10 +170,15 @@ export async function updateReservation(
     partySize?: number;
     notes?: string | null;
     status?: ReservationStatus;
+    // When set, the lookup AND update are scoped to this restaurant so a
+    // cross-tenant id can never be modified. Dashboard/voice callers pass it.
+    restaurantId?: string;
   },
   db: DbClient = pool
 ): Promise<ReservationRow> {
-  const current = await getReservationById(input.id, db);
+  const current = input.restaurantId
+    ? await getReservationForTenant(input.id, input.restaurantId, db)
+    : await getReservationById(input.id, db);
 
   if (!current) {
     throw new Error("Reservation not found.");
@@ -164,6 +186,21 @@ export async function updateReservation(
 
   const nextStatus = input.status ?? current.status;
   const cancelledAtSql = nextStatus === "cancelled" ? "now()" : "cancelled_at";
+
+  const params: unknown[] = [
+    input.id,
+    input.tableId ?? null,
+    input.date ?? null,
+    input.time ?? null,
+    input.partySize ?? null,
+    input.notes ?? null,
+    input.status ?? null
+  ];
+  let tenantClause = "";
+  if (input.restaurantId) {
+    params.push(input.restaurantId);
+    tenantClause = `AND restaurant_id = $${params.length}`;
+  }
 
   const result = await db.query<ReservationRow>(
     `
@@ -176,21 +213,16 @@ export async function updateReservation(
       notes = COALESCE($6, notes),
       status = COALESCE($7::reservation_status, status),
       cancelled_at = ${cancelledAtSql}
-    WHERE id = $1
+    WHERE id = $1 ${tenantClause}
     RETURNING *
     `,
-    [
-      input.id,
-      input.tableId ?? null,
-      input.date ?? null,
-      input.time ?? null,
-      input.partySize ?? null,
-      input.notes ?? null,
-      input.status ?? null
-    ]
+    params
   );
 
-  return result.rows[0]!;
+  if (!result.rows[0]) {
+    throw new Error("Reservation not found.");
+  }
+  return result.rows[0];
 }
 
 /**
@@ -244,9 +276,19 @@ export async function cancelReservation(
   input: {
     id: string;
     reason?: string;
+    // Optional tenant guard — dashboard/voice callers pass it so a cross-tenant
+    // id is a no-op (null) rather than cancelling another restaurant's booking.
+    restaurantId?: string;
   },
   db: DbClient = pool
 ): Promise<ReservationRow | null> {
+  const params: unknown[] = [input.id, input.reason ?? null];
+  let tenantClause = "";
+  if (input.restaurantId) {
+    params.push(input.restaurantId);
+    tenantClause = `AND restaurant_id = $${params.length}`;
+  }
+
   const result = await db.query<ReservationRow>(
     `
     UPDATE reservations
@@ -256,9 +298,10 @@ export async function cancelReservation(
       cancelled_at = now()
     WHERE id = $1
       AND status <> 'cancelled'
+      ${tenantClause}
     RETURNING *
     `,
-    [input.id, input.reason ?? null]
+    params
   );
 
   return result.rows[0] ?? null;
@@ -272,8 +315,15 @@ export async function cancelReservation(
 
 export async function seatReservation(
   id: string,
+  restaurantId?: string,
   db: DbClient = pool
 ): Promise<ReservationRow | null> {
+  const params: unknown[] = [id];
+  let tenantClause = "";
+  if (restaurantId) {
+    params.push(restaurantId);
+    tenantClause = `AND restaurant_id = $${params.length}`;
+  }
   const result = await db.query<ReservationRow>(
     `
     UPDATE reservations
@@ -282,9 +332,10 @@ export async function seatReservation(
       AND status = 'confirmed'
       AND seated_at IS NULL
       AND completed_at IS NULL
+      ${tenantClause}
     RETURNING *
     `,
-    [id]
+    params
   );
 
   return result.rows[0] ?? null;
@@ -292,8 +343,15 @@ export async function seatReservation(
 
 export async function completeReservation(
   id: string,
+  restaurantId?: string,
   db: DbClient = pool
 ): Promise<ReservationRow | null> {
+  const params: unknown[] = [id];
+  let tenantClause = "";
+  if (restaurantId) {
+    params.push(restaurantId);
+    tenantClause = `AND restaurant_id = $${params.length}`;
+  }
   const result = await db.query<ReservationRow>(
     `
     UPDATE reservations
@@ -302,9 +360,10 @@ export async function completeReservation(
     WHERE id = $1
       AND status = 'confirmed'
       AND completed_at IS NULL
+      ${tenantClause}
     RETURNING *
     `,
-    [id]
+    params
   );
 
   return result.rows[0] ?? null;

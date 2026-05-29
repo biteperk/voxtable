@@ -1,4 +1,7 @@
+import admin from "firebase-admin";
+
 import { env } from "../config/env";
+import { normalizePhone } from "../utils/phone";
 import { closePool, pool } from "./pool";
 
 const openingHours = {
@@ -29,22 +32,34 @@ const voiceConfig = {
 async function seed(): Promise<void> {
   const restaurantId = env.DEFAULT_RESTAURANT_ID;
 
+  // Voice-routing numbers (migration 007) are stored normalized to E.164 so the
+  // dialed-number → restaurant lookup matches regardless of input format.
+  const twilioNumber = normalizePhone(env.TWILIO_PHONE_NUMBER) ?? env.TWILIO_PHONE_NUMBER ?? null;
+  const retellNumber = normalizePhone(env.RETELL_PHONE_NUMBER) ?? env.RETELL_PHONE_NUMBER ?? null;
+
   await pool.query(
     `
-    INSERT INTO restaurants (id, name, timezone, phone_number, transfer_phone_number)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO restaurants (
+      id, name, timezone, phone_number, transfer_phone_number,
+      twilio_phone_number, retell_phone_number
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
       timezone = EXCLUDED.timezone,
       phone_number = EXCLUDED.phone_number,
-      transfer_phone_number = EXCLUDED.transfer_phone_number;
+      transfer_phone_number = EXCLUDED.transfer_phone_number,
+      twilio_phone_number = EXCLUDED.twilio_phone_number,
+      retell_phone_number = EXCLUDED.retell_phone_number;
     `,
     [
       restaurantId,
       "Natalia's Bistro",
       "Australia/Sydney",
-      env.TWILIO_PHONE_NUMBER ?? env.RETELL_PHONE_NUMBER ?? null,
-      null
+      twilioNumber ?? retellNumber,
+      null,
+      twilioNumber,
+      retellNumber
     ]
   );
 
@@ -98,8 +113,91 @@ async function seed(): Promise<void> {
   }
 
   await seedMenu(restaurantId);
+  await backfillMultitenancy(restaurantId);
 
   console.log(`Seeded Natalia restaurant ${restaurantId}`);
+}
+
+/**
+ * Translate the legacy email allowlist into the new tenancy tables: create a
+ * `users` row + an owner/manager/staff `restaurant_members` row for each
+ * allowlisted email, mapped to the default restaurant. Idempotent.
+ *
+ * Degrades gracefully:
+ *   - skips silently if migration 007 hasn't applied (tables absent),
+ *   - skips if no allowlist is configured (dev = any verified account),
+ *   - skips an email if Firebase Admin can't resolve its uid (no service
+ *     account locally, or the user hasn't signed in yet). The
+ *     MULTITENANCY_LEGACY_FALLBACK bridge keeps those users working until then.
+ */
+async function backfillMultitenancy(restaurantId: string): Promise<void> {
+  const tablesExist = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = current_schema() AND table_name = 'restaurant_members'
+     ) AS exists`
+  );
+  if (!tablesExist.rows[0]?.exists) {
+    console.log("Skipping multitenancy backfill — migration 007 not yet applied");
+    return;
+  }
+
+  const allowed = (env.DASHBOARD_ALLOWED_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const managers = new Set(
+    (env.DASHBOARD_MANAGER_EMAILS ?? "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  if (allowed.length === 0) {
+    console.log("Skipping multitenancy backfill — no DASHBOARD_ALLOWED_EMAILS configured");
+    return;
+  }
+
+  if (!env.FIREBASE_PROJECT_ID) {
+    console.log("Skipping multitenancy backfill — FIREBASE_PROJECT_ID not set (legacy fallback covers access)");
+    return;
+  }
+
+  try {
+    if (admin.apps.length === 0) {
+      admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        projectId: env.FIREBASE_PROJECT_ID
+      });
+    }
+  } catch (error) {
+    console.log("Skipping multitenancy backfill — Firebase Admin init failed:", (error as Error).message);
+    return;
+  }
+
+  let created = 0;
+  for (const email of allowed) {
+    try {
+      const fbUser = await admin.auth().getUserByEmail(email);
+      const role = managers.has(email) ? "manager" : "staff";
+      await pool.query(
+        `INSERT INTO users (id, email, name, email_verified)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, updated_at = now()`,
+        [fbUser.uid, email, fbUser.displayName ?? null, fbUser.emailVerified === true]
+      );
+      await pool.query(
+        `INSERT INTO restaurant_members (user_id, restaurant_id, role)
+         VALUES ($1, $2, $3::member_role)
+         ON CONFLICT (user_id, restaurant_id) DO UPDATE SET role = EXCLUDED.role, updated_at = now()`,
+        [fbUser.uid, restaurantId, role]
+      );
+      created += 1;
+    } catch (error) {
+      console.log(`  · skipped ${email}: ${(error as Error).message}`);
+    }
+  }
+  console.log(`Multitenancy backfill: linked ${created}/${allowed.length} allowlisted user(s) to ${restaurantId}`);
 }
 
 // Idempotent KDS menu seed. Skipped silently if migration 006 hasn't applied

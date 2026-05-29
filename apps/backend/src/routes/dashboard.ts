@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { requireFirebaseAuth } from "../auth/firebaseAuth";
+import { resolveTenant, tenantId } from "../auth/tenantContext";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
@@ -24,6 +25,7 @@ import { pool } from "../db/pool";
 export const dashboardRouter = Router();
 
 dashboardRouter.use(requireFirebaseAuth);
+dashboardRouter.use(resolveTenant);
 
 const listReservationsQuery = z.object({
   date: z
@@ -38,7 +40,7 @@ dashboardRouter.get(
   asyncHandler(async (request, response) => {
     const query = listReservationsQuery.parse(request.query);
     const rows = await listReservations({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       date: query.date,
       limit: query.limit
     });
@@ -48,10 +50,11 @@ dashboardRouter.get(
 
 dashboardRouter.get(
   "/api/tables",
-  asyncHandler(async (_request, response) => {
-    const tz = await getRestaurantTimezone(env.DEFAULT_RESTAURANT_ID);
+  asyncHandler(async (request, response) => {
+    const restaurantId = tenantId(request);
+    const tz = await getRestaurantTimezone(restaurantId);
     const today = todayInTz(tz);
-    const rows = await listTables(env.DEFAULT_RESTAURANT_ID, today);
+    const rows = await listTables(restaurantId, today);
     response.json({ tables: rows });
   })
 );
@@ -65,7 +68,7 @@ dashboardRouter.get(
   asyncHandler(async (request, response) => {
     const query = listCallLogsQuery.parse(request.query);
     const rows = await listCallLogs({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       limit: query.limit
     });
     response.json({ call_logs: rows });
@@ -80,7 +83,7 @@ dashboardRouter.get(
     const id = callLogIdParam.parse(request.params.id);
     const row = await getCallLogById(id);
 
-    if (!row || row.restaurant_id !== env.DEFAULT_RESTAURANT_ID) {
+    if (!row || row.restaurant_id !== tenantId(request)) {
       throw new AppError(404, "CALL_LOG_NOT_FOUND", "Call log not found.");
     }
 
@@ -97,7 +100,7 @@ dashboardRouter.get(
   asyncHandler(async (request, response) => {
     const query = analyticsQuery.parse(request.query);
     const stats = await getCallLogStats({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       sinceDays: query.days ?? 7
     });
     response.json({ analytics: stats, period_days: query.days ?? 7 });
@@ -110,7 +113,7 @@ dashboardRouter.get(
     const query = analyticsQuery.parse(request.query);
     const days = query.days ?? 7;
     const series = await getCallLogDailySeries({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       days
     });
     response.json({ series, period_days: days });
@@ -126,10 +129,13 @@ dashboardRouter.get(
 // proxy: Retell bills per minute, so we estimate from call_logs.duration.
 dashboardRouter.get(
   "/api/ops/calcom-health",
-  asyncHandler(async (_request, response) => {
+  asyncHandler(async (request, response) => {
+    const restaurantId = tenantId(request);
     const [outbox, inbox, costRow] = await Promise.all([
+      // outbox/inbox/breaker/quota are platform-wide Cal.com integration state.
       getOutboxStats(),
       getInboxStats(),
+      // voice_today is per-restaurant (the tenant's own call cost view).
       pool.query<{
         calls_today: string;
         bookings_today: string;
@@ -145,7 +151,9 @@ dashboardRouter.get(
           COALESCE(SUM(duration_seconds)
             FILTER (WHERE started_at >= date_trunc('day', now())), 0)::text     AS duration_seconds_today
         FROM call_logs
-        `
+        WHERE restaurant_id = $1
+        `,
+        [restaurantId]
       )
     ]);
     const breaker = getBreakerState();

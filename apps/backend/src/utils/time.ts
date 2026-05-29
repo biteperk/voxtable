@@ -124,6 +124,13 @@ export function todayInTz(timeZone: string, now: Date = new Date()): string {
   return ymdInTz(now, timeZone);
 }
 
+// Stripe hands back Unix epoch SECONDS. Format as YYYY-MM-DD in the restaurant's
+// tz so a late-night-UTC paid_at doesn't render as the wrong calendar day on a
+// tax invoice (avoids the naive `.toISOString().slice(0,10)` off-by-one).
+export function unixSecondsToYmd(seconds: number, timeZone: string): string {
+  return ymdInTz(new Date(seconds * 1000), timeZone);
+}
+
 export function tomorrowInTz(timeZone: string, now: Date = new Date()): string {
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   return ymdInTz(tomorrow, timeZone);

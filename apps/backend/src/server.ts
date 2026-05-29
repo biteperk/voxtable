@@ -8,6 +8,9 @@ import { initSentry } from "./utils/sentry";
 import { startOutboxWorker, stopOutboxWorker } from "./workers/calcomOutboxWorker";
 import { startCleanupWorker, stopCleanupWorker } from "./workers/cleanupWorker";
 import { startHealthAlerter, stopHealthAlerter } from "./workers/healthAlerter";
+import { startMenuOcrWorker, stopMenuOcrWorker } from "./workers/menuOcrWorker";
+import { startNotificationWorker, stopNotificationWorker } from "./workers/notificationWorker";
+import { startProvisioningWorker, stopProvisioningWorker } from "./workers/provisioningWorker";
 
 // Workers register their shutdown hooks here so server.ts doesn't have to know
 // the full set. PR 1 leaves the array empty; PR 2 adds the Cal.com outbox
@@ -60,14 +63,26 @@ async function main(): Promise<void> {
   startOutboxWorker();
   startHealthAlerter();
   startCleanupWorker();
+  startMenuOcrWorker();
+  startNotificationWorker();
+  startProvisioningWorker();
   registerShutdownHook(async () => {
     await stopOutboxWorker();
+  });
+  registerShutdownHook(async () => {
+    await stopNotificationWorker();
+  });
+  registerShutdownHook(async () => {
+    await stopProvisioningWorker();
   });
   registerShutdownHook(async () => {
     await stopHealthAlerter();
   });
   registerShutdownHook(async () => {
     await stopCleanupWorker();
+  });
+  registerShutdownHook(async () => {
+    await stopMenuOcrWorker();
   });
 
   let shuttingDown = false;

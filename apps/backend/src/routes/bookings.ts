@@ -1,20 +1,19 @@
 import { Router } from "express";
 
 import { requireFirebaseAuth } from "../auth/firebaseAuth";
-import { env } from "../config/env";
+import { resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
 import {
   cancelBookingRequestSchema,
   createBookingRequestSchema,
   normalizePartySize,
-  normalizeRestaurantId,
   updateBookingRequestSchema
 } from "../http/schemas";
 import { cancelBooking, createBooking, modifyBooking } from "../services/bookingService";
 import {
   completeReservation,
-  getReservationById,
+  getReservationForTenant,
   seatReservation
 } from "../repositories/reservations";
 import { z } from "zod";
@@ -29,6 +28,7 @@ const bookingIdParamSchema = z.string().uuid();
 bookingsRouter.post(
   "/bookings",
   requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request, response) => {
     const body = createBookingRequestSchema.parse(request.body);
     const customerName = body.customer_name ?? body.customerName;
@@ -48,7 +48,7 @@ bookingsRouter.post(
     }
 
     const result = await createBooking({
-      restaurantId: normalizeRestaurantId(body, env.DEFAULT_RESTAURANT_ID),
+      restaurantId: tenantId(request),
       customerName,
       customerPhone,
       date: body.date,
@@ -75,6 +75,7 @@ bookingsRouter.post(
 bookingsRouter.patch(
   "/bookings/:id",
   requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request, response) => {
     const body = updateBookingRequestSchema.parse(request.body);
     const bookingId = bookingIdParamSchema.parse(request.params.id);
@@ -85,7 +86,8 @@ bookingsRouter.patch(
       time: body.time,
       partySize: body.party_size ?? body.partySize,
       notes: body.notes,
-      status: body.status
+      status: body.status,
+      restaurantId: tenantId(request)
     });
 
     response.json({
@@ -99,12 +101,14 @@ bookingsRouter.patch(
 bookingsRouter.post(
   "/bookings/:id/cancel",
   requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request, response) => {
     const body = cancelBookingRequestSchema.parse(request.body);
     const bookingId = bookingIdParamSchema.parse(request.params.id);
     const result = await cancelBooking({
       bookingId,
-      reason: body.reason
+      reason: body.reason,
+      restaurantId: tenantId(request)
     });
 
     response.json({
@@ -121,12 +125,14 @@ bookingsRouter.post(
 bookingsRouter.post(
   "/bookings/:id/seat",
   requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request, response) => {
     const bookingId = bookingIdParamSchema.parse(request.params.id);
-    const updated = await seatReservation(bookingId);
+    const restaurantId = tenantId(request);
+    const updated = await seatReservation(bookingId, restaurantId);
 
     if (!updated) {
-      const existing = await getReservationById(bookingId);
+      const existing = await getReservationForTenant(bookingId, restaurantId);
       if (!existing) {
         throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
       }
@@ -144,12 +150,14 @@ bookingsRouter.post(
 bookingsRouter.post(
   "/bookings/:id/complete",
   requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request, response) => {
     const bookingId = bookingIdParamSchema.parse(request.params.id);
-    const updated = await completeReservation(bookingId);
+    const restaurantId = tenantId(request);
+    const updated = await completeReservation(bookingId, restaurantId);
 
     if (!updated) {
-      const existing = await getReservationById(bookingId);
+      const existing = await getReservationForTenant(bookingId, restaurantId);
       if (!existing) {
         throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
       }

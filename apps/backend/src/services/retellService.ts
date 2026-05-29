@@ -12,12 +12,15 @@ import {
   normalizeModifyBookingArgs,
   normalizePartySize
 } from "../http/schemas";
-import { upsertCallLog } from "../repositories/callLogs";
+import { getRestaurantIdByProviderCallId, upsertCallLog } from "../repositories/callLogs";
 import {
+  getRestaurantIdByDialedNumber,
   getRestaurantName,
-  getRestaurantTimezone
+  getRestaurantTimezone,
+  getRetellAgentId
 } from "../repositories/restaurants";
 import { normalizePhone } from "../utils/phone";
+import { logger } from "../utils/logger";
 import {
   dayNameInTz,
   nowTimeInTz,
@@ -90,14 +93,36 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
     throw new AppError(400, "INVALID_RETELL_INBOUND", "Retell call_inbound payload is required.");
   }
 
-  const restaurantId = env.DEFAULT_RESTAURANT_ID;
+  // Resolve the tenant from the TRUSTED dialed number (the number the caller
+  // rang). Never from LLM-supplied data. Fail safe: an unmapped number in
+  // production must NOT bind to a default tenant (cross-tenant booking risk) —
+  // we return without a restaurant so Bella has no booking context, rather than
+  // booking at the wrong restaurant. Dev keeps the default for local testing.
+  const restaurantId = withDevDefault(await getRestaurantIdByDialedNumber(inbound.to_number));
+  if (!restaurantId) {
+    logger.warn({ evt: "retell_inbound_unmapped_number", to_number: inbound.to_number ?? null });
+    return {
+      call_inbound: {
+        metadata: {
+          source: "vocotable",
+          restaurant_unconfigured: "true",
+          inbound_to_number: inbound.to_number ?? ""
+        }
+      }
+    };
+  }
+
   const callerPhoneRaw = inbound.from_number ?? null;
   const callerPhone = normalizePhone(callerPhoneRaw) ?? callerPhoneRaw;
 
-  const [tz, restaurantName] = await Promise.all([
+  const [tz, restaurantName, perRestaurantAgentId] = await Promise.all([
     getRestaurantTimezone(restaurantId),
-    getRestaurantName(restaurantId)
+    getRestaurantName(restaurantId),
+    getRetellAgentId(restaurantId)
   ]);
+  // Route to the restaurant's own agent when provisioned; fall back to the
+  // single env agent (pre-multi-tenant default) otherwise.
+  const overrideAgentId = perRestaurantAgentId ?? env.RETELL_AGENT_ID;
 
   await upsertCallLog({
     restaurantId,
@@ -111,7 +136,7 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
   const now = new Date();
   return {
     call_inbound: {
-      ...(env.RETELL_AGENT_ID ? { override_agent_id: env.RETELL_AGENT_ID } : {}),
+      ...(overrideAgentId ? { override_agent_id: overrideAgentId } : {}),
       dynamic_variables: {
         restaurant_id: restaurantId,
         restaurant_name: restaurantName,
@@ -146,12 +171,26 @@ export async function handleRetellFunction(
     await persistRetellCall("function_call", call, { event: "function_call" });
   }
 
+  // Resolve the tenant from the trusted call (dialed number / persisted call_log
+  // row), never from LLM-supplied args. Fail safe in production if unresolved.
+  const restaurantId = withDevDefault(await resolveRestaurantIdForCall(call));
+  if (!restaurantId) {
+    throw new AppError(
+      409,
+      "RESTAURANT_NOT_CONFIGURED",
+      "Sorry, this phone line isn't fully set up yet. Please try again later."
+    );
+  }
+
   if (name === "check_availability" || name === "checkavailability") {
     const result = await checkAvailability(
-      normalizeAvailabilityArgs({
-        ...args,
-        provider_call_id: providerCallId
-      })
+      normalizeAvailabilityArgs(
+        {
+          ...args,
+          provider_call_id: providerCallId
+        },
+        restaurantId
+      )
     );
     return {
       available: result.available,
@@ -166,10 +205,13 @@ export async function handleRetellFunction(
 
   if (name === "create_booking" || name === "createbooking") {
     const result = await createBooking(
-      normalizeBookingArgs({
-        ...args,
-        provider_call_id: providerCallId
-      })
+      normalizeBookingArgs(
+        {
+          ...args,
+          provider_call_id: providerCallId
+        },
+        restaurantId
+      )
     );
     return {
       booking_id: result.bookingId,
@@ -188,7 +230,7 @@ export async function handleRetellFunction(
       );
     }
     const result = await lookupMenu({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId,
       query: parsed.data.query,
       category: parsed.data.category
     });
@@ -231,7 +273,7 @@ export async function handleRetellFunction(
 
     for (const itemInput of parsed.data.items) {
       const lookup = await lookupMenu({
-        restaurantId: env.DEFAULT_RESTAURANT_ID,
+        restaurantId,
         query: itemInput.name
       });
       if (lookup.matches.length === 0) {
@@ -255,7 +297,7 @@ export async function handleRetellFunction(
       let variantId: string | undefined;
       const variantName = (itemInput.variant_name ?? itemInput.variantName ?? "").trim();
       if (variantName) {
-        const fullMenu = await getMenu(env.DEFAULT_RESTAURANT_ID);
+        const fullMenu = await getMenu(restaurantId);
         const matchedItem = fullMenu.categories
           .flatMap((c) => c.items)
           .find((i) => i.id === top.id);
@@ -276,7 +318,7 @@ export async function handleRetellFunction(
       const modifierIds: string[] = [];
       const modifierChoices = itemInput.modifier_choices ?? itemInput.modifierChoices ?? {};
       if (Object.keys(modifierChoices).length > 0) {
-        const fullMenu = await getMenu(env.DEFAULT_RESTAURANT_ID);
+        const fullMenu = await getMenu(restaurantId);
         const matchedItem = fullMenu.categories
           .flatMap((c) => c.items)
           .find((i) => i.id === top.id);
@@ -318,7 +360,7 @@ export async function handleRetellFunction(
     }
 
     const result = await createOrder({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId,
       reservationId,
       source: "voice",
       items: resolvedItems,
@@ -352,7 +394,7 @@ export async function handleRetellFunction(
           .join("; ")}`
       );
     }
-    const result = await modifyBooking(normalizeModifyBookingArgs(parsed.data));
+    const result = await modifyBooking({ ...normalizeModifyBookingArgs(parsed.data), restaurantId });
     return {
       booking_id: result.bookingId,
       status: result.status,
@@ -374,10 +416,20 @@ async function persistRetellCall(
     return;
   }
 
+  // Resolve the tenant from the trusted call. The upsert overwrites
+  // restaurant_id on conflict, so using a default here would CLOBBER the
+  // correct tenant on every function_call/webhook — resolve it instead. If
+  // unresolved in production, skip persisting rather than mislabel the row.
+  const restaurantId = withDevDefault(await resolveRestaurantIdForCall(call));
+  if (!restaurantId) {
+    logger.warn({ evt: "retell_call_unresolved_tenant", provider_call_id: providerCallId });
+    return;
+  }
+
   const analysis = extractCallAnalysis(call);
 
   await upsertCallLog({
-    restaurantId: env.DEFAULT_RESTAURANT_ID,
+    restaurantId,
     provider: RETELL_PROVIDER,
     providerCallId,
     callerPhone: getCallerPhone(call),
@@ -532,10 +584,10 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
   return {};
 }
 
-function normalizeAvailabilityArgs(args: Record<string, unknown>) {
-  // SECURITY: single-tenant v1 — LLM-supplied restaurant_id is ignored. Always
-  // use env.DEFAULT_RESTAURANT_ID so a crafted prompt can't book at another
-  // restaurant.
+function normalizeAvailabilityArgs(args: Record<string, unknown>, restaurantId: string) {
+  // SECURITY: LLM-supplied restaurant_id is ignored. The restaurantId is the
+  // trusted value resolved from the dialed number / persisted call_log row, so
+  // a crafted prompt can't redirect a booking to another restaurant.
   const parsed = availabilityRequestSchema.parse({
     date: args.date,
     time: args.time,
@@ -549,15 +601,16 @@ function normalizeAvailabilityArgs(args: Record<string, unknown>) {
   }
 
   return {
-    restaurantId: env.DEFAULT_RESTAURANT_ID,
+    restaurantId,
     date: parsed.date,
     time: parsed.time,
     partySize
   };
 }
 
-function normalizeBookingArgs(args: Record<string, unknown>) {
-  // SECURITY: single-tenant v1 — LLM-supplied restaurant_id ignored.
+function normalizeBookingArgs(args: Record<string, unknown>, restaurantId: string) {
+  // SECURITY: LLM-supplied restaurant_id ignored; restaurantId is the trusted
+  // resolved tenant (see normalizeAvailabilityArgs).
   const parsed = createBookingRequestSchema.parse({
     customer_name: args.customer_name,
     customerName: args.customerName,
@@ -591,7 +644,7 @@ function normalizeBookingArgs(args: Record<string, unknown>) {
   }
 
   return {
-    restaurantId: env.DEFAULT_RESTAURANT_ID,
+    restaurantId,
     customerName,
     customerPhone,
     date: parsed.date,
@@ -605,14 +658,41 @@ function normalizeBookingArgs(args: Record<string, unknown>) {
   };
 }
 
-function getRestaurantId(call: RetellPayload): string {
-  return (
-    call.metadata?.restaurant_id ??
-    call.metadata?.restaurantId ??
-    call.retell_llm_dynamic_variables?.restaurant_id ??
-    call.retell_llm_dynamic_variables?.restaurantId ??
-    env.DEFAULT_RESTAURANT_ID
-  );
+/**
+ * Resolve the tenant for an in-call Retell event from TRUSTED sources only,
+ * in priority order:
+ *   1. the persisted call_logs row (written at inbound / first event from the
+ *      dialed number),
+ *   2. the dialed number on the call object (`to_number`) — works even when
+ *      /retell/inbound never fired (static inbound_agent_id config),
+ *   3. server-set call.metadata.restaurant_id (we wrote it; not LLM-influenced).
+ *
+ * Deliberately does NOT read retell_llm_dynamic_variables — those can be shaped
+ * by prompt content and would reopen the cross-tenant injection vector. Returns
+ * null when unresolved; callers apply withDevDefault + fail safe.
+ */
+async function resolveRestaurantIdForCall(call: RetellPayload | undefined): Promise<string | null> {
+  const providerCallId = getProviderCallId(call);
+  if (providerCallId) {
+    const fromLog = await getRestaurantIdByProviderCallId(RETELL_PROVIDER, providerCallId);
+    if (fromLog) return fromLog;
+  }
+  const toNumber = call?.to_number ?? call?.metadata?.inbound_to_number ?? null;
+  const fromDialed = await getRestaurantIdByDialedNumber(toNumber);
+  if (fromDialed) return fromDialed;
+  const fromMeta = call?.metadata?.restaurant_id ?? call?.metadata?.restaurantId;
+  if (typeof fromMeta === "string" && fromMeta) return fromMeta;
+  return null;
+}
+
+/**
+ * Apply the dev-only default-tenant fallback. In production an unresolved id
+ * stays null so callers fail safe (a misconfigured call must never book at the
+ * default restaurant); in dev it falls back so local testing works.
+ */
+function withDevDefault(resolved: string | null): string | null {
+  if (resolved) return resolved;
+  return env.APP_ENV !== "production" ? env.DEFAULT_RESTAURANT_ID : null;
 }
 
 function getProviderCallId(call: RetellPayload | undefined): string | undefined {

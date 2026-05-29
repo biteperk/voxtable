@@ -3,14 +3,20 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 
 import { env } from "./config/env";
+import { adminRouter } from "./routes/admin";
 import { availabilityRouter } from "./routes/availability";
+import { billingRouter } from "./routes/billing";
 import { bookingsRouter } from "./routes/bookings";
 import { calRouter } from "./routes/cal";
 import { dashboardRouter } from "./routes/dashboard";
 import { healthRouter } from "./routes/health";
+import { meRouter } from "./routes/me";
 import { menuRouter } from "./routes/menu";
+import { onboardingRouter } from "./routes/onboarding";
 import { ordersRouter } from "./routes/orders";
+import { restaurantRouter } from "./routes/restaurant";
 import { retellRouter } from "./routes/retell";
+import { stripeWebhookRouter } from "./routes/stripeWebhook";
 import { twilioRouter } from "./routes/twilio";
 import { errorHandler } from "./http/errorHandler";
 import { requestLogger } from "./http/requestLogger";
@@ -39,7 +45,18 @@ export function createApp() {
               "https://vocotable.web.app",
               "https://vocotable.algorythmos.com.au"
             ]
-          : true
+          : true,
+      // Setting allowedHeaders explicitly REPLACES cors's default reflection of
+      // Access-Control-Request-Headers, so this list must be exhaustive: missing
+      // If-Match / Idempotency-Key would silently break order mutations.
+      // X-Restaurant-Id carries the active tenant for the multi-tenant dashboard.
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "If-Match",
+        "Idempotency-Key",
+        "X-Restaurant-Id"
+      ]
     })
   );
   // Limit bumped from 1mb → 2mb to accommodate Retell `call_analyzed` payloads
@@ -84,7 +101,8 @@ export function createApp() {
           path === "/health" ||
           path.startsWith("/retell/") ||
           path.startsWith("/twilio/") ||
-          path.startsWith("/cal/")
+          path.startsWith("/cal/") ||
+          path.startsWith("/stripe/")
         );
       }
     })
@@ -99,6 +117,12 @@ export function createApp() {
   app.use(menuRouter);
   app.use(ordersRouter);
   app.use(dashboardRouter);
+  app.use(billingRouter);
+  app.use(meRouter);
+  app.use(onboardingRouter);
+  app.use(restaurantRouter);
+  app.use(adminRouter);
+  app.use(stripeWebhookRouter);
 
   app.use(errorHandler);
 

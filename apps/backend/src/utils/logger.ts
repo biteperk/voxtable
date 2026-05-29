@@ -59,6 +59,9 @@ const SENSITIVE_KEY_PATTERN =
 // Patterns that look like real secrets/PII in free-form text.
 // - Cal.com API keys: cal_live_<32 hex>
 // - Retell API keys:  key_<base62 mix, ~30+ chars>
+// - Stripe API keys:  sk_live_/sk_test_/rk_live_/rk_test_<24+ base62>. Must
+//   never reach stdout — a leaked secret key is full account access. A
+//   StripeAuthenticationError can echo the key it was called with.
 // - Bearer tokens:    "Bearer <anything>" (greedy until whitespace/quote)
 // - E.164 phones:     +<10-15 digits>, or raw 10-15 digit strings with country prefix
 // - AU local phones:  0<digit>XXXXXXXX — mobile (04..) and landline (02/03/07/08..).
@@ -67,6 +70,10 @@ const SENSITIVE_KEY_PATTERN =
 const REDACTION_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
   { regex: /cal_live_[a-zA-Z0-9]{16,}/g, replacement: "cal_live_[REDACTED]" },
   { regex: /\bkey_[a-zA-Z0-9]{16,}\b/g, replacement: "key_[REDACTED]" },
+  {
+    regex: /\b(sk|rk)_(live|test)_[a-zA-Z0-9]{16,}\b/g,
+    replacement: "$1_$2_[REDACTED]"
+  },
   { regex: /Bearer\s+[A-Za-z0-9._\-]+/g, replacement: "Bearer [REDACTED]" },
   { regex: /\+\d{10,15}\b/g, replacement: "+[REDACTED-PHONE]" },
   { regex: /\b0[234578]\d{8}\b/g, replacement: "[REDACTED-PHONE]" }

@@ -7,6 +7,7 @@ import {
   createReservation,
   getReservationById,
   getReservationByCallLogId,
+  getReservationForTenant,
   updateReservation,
   upsertCustomer
 } from "../repositories/reservations";
@@ -174,6 +175,10 @@ export async function modifyBooking(input: {
   partySize?: number;
   notes?: string;
   status?: ReservationStatus;
+  // Tenant guard: when set, the booking is looked up + updated scoped to this
+  // restaurant, so a cross-tenant booking id resolves to 404. Dashboard and
+  // voice callers pass it; omitted only by trusted internal callers.
+  restaurantId?: string;
 }): Promise<BookingResult> {
   // Audit Sweep B fix: the previous implementation ran updateReservation and
   // the customers UPDATE on TWO separate pool connections — a race window
@@ -192,7 +197,9 @@ export async function modifyBooking(input: {
   // raw 500 from modifyBooking).
   try {
     return await withTransaction(async (db) => {
-      const current = await getReservationById(input.bookingId, db);
+      const current = input.restaurantId
+        ? await getReservationForTenant(input.bookingId, input.restaurantId, db)
+        : await getReservationById(input.bookingId, db);
 
       if (!current) {
         throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
@@ -237,7 +244,8 @@ export async function modifyBooking(input: {
           time: input.time,
           partySize: input.partySize,
           notes: input.notes,
-          status: input.status
+          status: input.status,
+          restaurantId: input.restaurantId
         },
         db
       );
@@ -284,6 +292,8 @@ export async function modifyBooking(input: {
 export async function cancelBooking(input: {
   bookingId: string;
   reason?: string;
+  // Tenant guard — see modifyBooking. A cross-tenant id becomes a 404.
+  restaurantId?: string;
 }): Promise<BookingResult> {
   // Cancel and Cal.com-outbox-enqueue in one transaction so a row is never
   // marked cancelled in our DB while the calendar mirror remains "confirmed".
@@ -291,11 +301,22 @@ export async function cancelBooking(input: {
   try {
     await client.query("BEGIN");
 
-    const current = await client.query<{
-      id: string;
-      status: string;
-      calcom_booking_uid: string | null;
-    }>("SELECT id, status, calcom_booking_uid FROM reservations WHERE id = $1", [input.bookingId]);
+    const current = input.restaurantId
+      ? await client.query<{
+          id: string;
+          status: string;
+          calcom_booking_uid: string | null;
+        }>(
+          "SELECT id, status, calcom_booking_uid FROM reservations WHERE id = $1 AND restaurant_id = $2",
+          [input.bookingId, input.restaurantId]
+        )
+      : await client.query<{
+          id: string;
+          status: string;
+          calcom_booking_uid: string | null;
+        }>("SELECT id, status, calcom_booking_uid FROM reservations WHERE id = $1", [
+          input.bookingId
+        ]);
     if (current.rowCount === 0) {
       await client.query("ROLLBACK");
       throw new AppError(404, "BOOKING_NOT_FOUND", "Booking was not found.");
@@ -306,7 +327,10 @@ export async function cancelBooking(input: {
     // cancelled (atomic `WHERE status <> 'cancelled'`). Two concurrent cancel
     // calls — only the winner enqueues Cal.com; the loser is a silent no-op
     // returning the already-cancelled state.
-    const reservation = await cancelReservation({ id: input.bookingId, reason: input.reason }, client);
+    const reservation = await cancelReservation(
+      { id: input.bookingId, reason: input.reason, restaurantId: input.restaurantId },
+      client
+    );
 
     if (reservation) {
       await enqueueCancelForReservation(reservation.id, calcomUid, input.reason, client);

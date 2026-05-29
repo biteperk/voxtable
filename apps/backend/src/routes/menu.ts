@@ -1,10 +1,16 @@
 import { Router } from "express";
 
-import { requireFirebaseAuth, requireManagerRole } from "../auth/firebaseAuth";
+import { requireFirebaseAuth } from "../auth/firebaseAuth";
+import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import { menuCategoryRequestSchema, menuItemRequestSchema } from "../http/schemas";
+import {
+  menuCategoryRequestSchema,
+  menuDraftSchema,
+  menuItemRequestSchema,
+  startIngestionSchema
+} from "../http/schemas";
 import {
   createCategory,
   createMenuItem,
@@ -14,6 +20,12 @@ import {
   updateCategory,
   updateMenuItem
 } from "../services/menuService";
+import {
+  commitDraft,
+  getIngestionResult,
+  saveDraft,
+  startIngestion
+} from "../services/menuIngestionService";
 
 export const menuRouter = Router();
 
@@ -22,18 +34,27 @@ export const menuRouter = Router();
 menuRouter.get(
   "/api/menu",
   requireFirebaseAuth,
-  asyncHandler(async (_request, response) => {
-    const menu = await getMenu(env.DEFAULT_RESTAURANT_ID);
+  resolveTenant,
+  asyncHandler(async (request, response) => {
+    const menu = await getMenu(tenantId(request));
     response.json(menu);
   })
 );
 
 // Anonymous public read — only available items, no internal IDs leaked beyond
-// what a QR self-order page would need. Phase 3 will use this.
+// what a QR self-order page would need. No auth/tenant context, so the
+// restaurant must be named explicitly via ?restaurant_id=. Falls back to the
+// default tenant only in non-production (dev/demo). Phase 3 (QR self-order)
+// wires this to a per-restaurant public URL.
 menuRouter.get(
   "/api/menu/public",
-  asyncHandler(async (_request, response) => {
-    const menu = await getMenu(env.DEFAULT_RESTAURANT_ID);
+  asyncHandler(async (request, response) => {
+    const requested = typeof request.query.restaurant_id === "string" ? request.query.restaurant_id : null;
+    if (!requested && env.APP_ENV === "production") {
+      throw new AppError(400, "RESTAURANT_REQUIRED", "restaurant_id is required.");
+    }
+    const restaurantId = requested ?? env.DEFAULT_RESTAURANT_ID;
+    const menu = await getMenu(restaurantId);
     response.json({
       categories: menu.categories.map((category) => ({
         id: category.id,
@@ -56,11 +77,12 @@ menuRouter.get(
 menuRouter.post(
   "/api/menu/categories",
   requireFirebaseAuth,
-  requireManagerRole,
+  resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request, response) => {
     const body = menuCategoryRequestSchema.parse(request.body);
     const created = await createCategory({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       name: body.name,
       displayOrder: body.display_order ?? body.displayOrder
     });
@@ -71,12 +93,13 @@ menuRouter.post(
 menuRouter.patch(
   "/api/menu/categories/:id",
   requireFirebaseAuth,
-  requireManagerRole,
+  resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request, response) => {
     const body = menuCategoryRequestSchema.partial().parse(request.body);
     const updated = await updateCategory({
       id: request.params.id!,
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       name: body.name,
       displayOrder: body.display_order ?? body.displayOrder,
       isActive: body.is_active ?? body.isActive
@@ -88,9 +111,10 @@ menuRouter.patch(
 menuRouter.delete(
   "/api/menu/categories/:id",
   requireFirebaseAuth,
-  requireManagerRole,
+  resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request, response) => {
-    await deleteCategory(request.params.id!, env.DEFAULT_RESTAURANT_ID);
+    await deleteCategory(request.params.id!, tenantId(request));
     response.status(204).end();
   })
 );
@@ -98,7 +122,8 @@ menuRouter.delete(
 menuRouter.post(
   "/api/menu/items",
   requireFirebaseAuth,
-  requireManagerRole,
+  resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request, response) => {
     const body = menuItemRequestSchema.parse(request.body);
     const categoryId = body.category_id ?? body.categoryId;
@@ -124,7 +149,7 @@ menuRouter.post(
       displayOrder: v.display_order ?? v.displayOrder ?? idx
     }));
     const created = await createMenuItem({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       categoryId,
       name: body.name,
       description: body.description ?? undefined,
@@ -142,7 +167,8 @@ menuRouter.post(
 menuRouter.patch(
   "/api/menu/items/:id",
   requireFirebaseAuth,
-  requireManagerRole,
+  resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request, response) => {
     const body = menuItemRequestSchema.partial().parse(request.body);
     const variants = body.variants?.map((v, idx) => ({
@@ -163,7 +189,7 @@ menuRouter.patch(
     }));
     const updated = await updateMenuItem({
       id: request.params.id!,
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: tenantId(request),
       categoryId: body.category_id ?? body.categoryId,
       name: body.name,
       description: body.description,
@@ -182,9 +208,69 @@ menuRouter.patch(
 menuRouter.delete(
   "/api/menu/items/:id",
   requireFirebaseAuth,
-  requireManagerRole,
+  resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request, response) => {
-    await deleteMenuItem(request.params.id!, env.DEFAULT_RESTAURANT_ID);
+    await deleteMenuItem(request.params.id!, tenantId(request));
     response.status(204).end();
+  })
+);
+
+// --- Menu OCR ingestion (Phase 2) ------------------------------------------
+// The file is uploaded to storage client-side; we receive its URL + hash.
+
+menuRouter.post(
+  "/api/menu/ingest",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const body = startIngestionSchema.parse(request.body);
+    const job = await startIngestion({
+      restaurantId: tenantId(request),
+      sourceUrl: body.source_url,
+      sourceKind: body.source_kind,
+      sha256: body.sha256
+    });
+    response.status(202).json({ job_id: job.id, status: job.status });
+  })
+);
+
+menuRouter.get(
+  "/api/menu/ingest/:jobId",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const job = await getIngestionResult(request.params.jobId!, tenantId(request));
+    response.json({
+      job_id: job.id,
+      status: job.status,
+      draft: job.parsed_draft,
+      last_error: job.last_error
+    });
+  })
+);
+
+menuRouter.patch(
+  "/api/menu/ingest/:jobId/draft",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const draft = menuDraftSchema.parse(request.body);
+    const job = await saveDraft(request.params.jobId!, tenantId(request), draft);
+    response.json({ job_id: job.id, status: job.status, draft: job.parsed_draft });
+  })
+);
+
+menuRouter.post(
+  "/api/menu/ingest/:jobId/commit",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const result = await commitDraft(request.params.jobId!, tenantId(request));
+    response.json({ committed: true, ...result });
   })
 );

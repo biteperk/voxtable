@@ -270,3 +270,141 @@ export const menuLookupRetellSchema = z.object({
   query: z.string().max(100).optional(),
   category: z.string().max(60).optional()
 });
+
+// --- Onboarding & restaurant profile (Phase 1) -----------------------------
+
+export const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
+
+// Controlled cuisine list so the value is categorisable (drives future search /
+// agent prompt hints). "Other" is the escape hatch.
+export const CUISINE_OPTIONS = [
+  "Italian",
+  "Chinese",
+  "Japanese",
+  "Thai",
+  "Indian",
+  "Vietnamese",
+  "Greek",
+  "Lebanese",
+  "Mexican",
+  "French",
+  "Modern Australian",
+  "Cafe",
+  "Steakhouse",
+  "Seafood",
+  "Pizza",
+  "Burgers",
+  "Vegan",
+  "Other"
+] as const;
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// day -> intervals. Overnight (close < open) is allowed (e.g. 18:00–02:00), so
+// only the HH:MM format is validated, not ordering.
+const openingHoursSchema = z
+  .record(
+    z.string(),
+    z
+      .array(
+        z.object({
+          open: z.string().regex(HHMM, "open must be HH:MM"),
+          close: z.string().regex(HHMM, "close must be HH:MM")
+        })
+      )
+      .max(4)
+  )
+  .optional();
+
+export const createRestaurantSchema = z.object({
+  name: z.string().trim().min(2).max(120)
+});
+
+export const restaurantProfileSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  timezone: z.string().trim().min(3).max(64).optional(),
+  address: z.string().trim().max(200).optional(),
+  suburb: z.string().trim().max(80).optional(),
+  state: z.enum(AU_STATES).optional(),
+  postcode: z
+    .string()
+    .regex(/^\d{4}$/, "postcode must be 4 digits")
+    .optional(),
+  cuisine_type: z.array(z.enum(CUISINE_OPTIONS)).min(1).max(5).optional(),
+  contact_email: z.string().email().max(160).optional(),
+  owner_name: z.string().trim().max(120).optional(),
+  logo_url: z.string().url().max(500).optional(),
+  existing_phone_number: z.string().trim().max(32).optional(),
+  booking_duration_minutes: z.coerce.number().int().min(15).max(360).optional(),
+  opening_hours: openingHoursSchema
+});
+
+// Owner-driven onboarding transitions only. Subscription/provisioning events
+// are server-internal (Stripe webhook / admin) and are not accepted here.
+export const onboardingAdvanceSchema = z.object({
+  event: z.enum(["profile_completed", "menu_completed", "trial_started"])
+});
+
+// Admin provisioning bind (Phase 4a) — all optional so an admin can fill in
+// pieces as they're provisioned.
+export const adminProvisioningSchema = z.object({
+  twilio_phone_number: z.string().min(3).max(32).optional(),
+  retell_phone_number: z.string().min(3).max(32).optional(),
+  retell_agent_id: z.string().min(3).max(120).optional()
+});
+
+// --- Menu OCR ingestion (Phase 2) ------------------------------------------
+
+// Prices are integer cents (never floats). Cap at $10,000 to reject obvious
+// parse blunders (e.g. a phone number read as a price).
+const draftPriceCentsSchema = z.number().int().min(0).max(1_000_000);
+
+const draftVariantSchema = z.object({
+  name: z.string().min(1).max(80),
+  price_delta_cents: draftPriceCentsSchema.default(0)
+});
+
+const draftModifierOptionSchema = z.object({
+  name: z.string().min(1).max(80),
+  price_delta_cents: draftPriceCentsSchema.default(0),
+  is_default: z.boolean().optional()
+});
+
+const draftModifierGroupSchema = z.object({
+  group_name: z.string().min(1).max(80),
+  min_select: z.number().int().min(0).max(20).default(0),
+  max_select: z.number().int().min(1).max(20).default(1),
+  options: z.array(draftModifierOptionSchema).max(40)
+});
+
+const draftItemSchema = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).optional(),
+  price_cents: draftPriceCentsSchema,
+  // Per-item OCR confidence (0–1) so the review UI can flag uncertain rows.
+  confidence: z.number().min(0).max(1).optional(),
+  variants: z.array(draftVariantSchema).max(20).optional(),
+  modifier_groups: z.array(draftModifierGroupSchema).max(10).optional()
+});
+
+const draftCategorySchema = z.object({
+  name: z.string().min(1).max(80),
+  items: z.array(draftItemSchema).max(120)
+});
+
+// The structured menu draft — produced by the vision LLM, edited by the owner,
+// then committed to menu_items. Same shape end-to-end.
+export const menuDraftSchema = z.object({
+  categories: z.array(draftCategorySchema).max(40)
+});
+
+export type MenuDraft = z.infer<typeof menuDraftSchema>;
+
+export const startIngestionSchema = z.object({
+  source_url: z.string().url().max(2000),
+  source_kind: z.enum(["image", "pdf"]),
+  sha256: z
+    .string()
+    .regex(/^[a-fA-F0-9]{64}$/, "sha256 must be 64 hex chars")
+    .optional()
+});

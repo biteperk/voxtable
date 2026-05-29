@@ -15,9 +15,9 @@
  * Skipped entirely when CALCOM_SYNC_ENABLED=false (nothing to clean up).
  */
 
-import { env } from "../config/env";
 import { pool } from "../db/pool";
 import { logger } from "../utils/logger";
+import { cancelAbandonedOnboarding } from "../repositories/restaurants";
 
 const TICK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
 const INITIAL_DELAY_MS = 60 * 60 * 1000;     // 1h after boot
@@ -52,10 +52,34 @@ async function tick(): Promise<void> {
       SELECT count(*)::int AS deleted FROM deleted
       `
     );
+    // Phase 5: purge old sent notifications + cancel abandoned onboardings.
+    // Guarded with IF-table-exists so this is safe before migration 012 applies.
+    let notificationsDeleted = 0;
+    let abandonedCancelled = 0;
+    try {
+      const notif = await pool.query<{ deleted: number }>(
+        `
+        WITH deleted AS (
+          DELETE FROM notifications_outbox
+           WHERE status = 'sent' AND sent_at < now() - interval '${RETENTION_INTERVAL_SQL}'
+           RETURNING 1
+        )
+        SELECT count(*)::int AS deleted FROM deleted
+        `
+      );
+      notificationsDeleted = notif.rows[0]?.deleted ?? 0;
+      abandonedCancelled = await cancelAbandonedOnboarding(30);
+    } catch (error) {
+      // Tables/columns may not exist yet on an un-migrated DB — non-fatal.
+      logger.warn({ evt: "cleanup_worker_phase5_skipped", error });
+    }
+
     logger.info({
       evt: "cleanup_worker_tick",
       outbox_deleted: outbox.rows[0]?.deleted ?? 0,
-      inbox_deleted: inbox.rows[0]?.deleted ?? 0
+      inbox_deleted: inbox.rows[0]?.deleted ?? 0,
+      notifications_deleted: notificationsDeleted,
+      abandoned_cancelled: abandonedCancelled
     });
   } catch (error) {
     logger.warn({ evt: "cleanup_worker_failed", error });
@@ -65,10 +89,9 @@ async function tick(): Promise<void> {
 }
 
 export function startCleanupWorker(): void {
-  if (!env.CALCOM_SYNC_ENABLED) {
-    logger.info({ evt: "cleanup_worker_disabled", reason: "calcom_sync_off" });
-    return;
-  }
+  // Always runs — it's the general daily janitor now (Cal.com outbox/inbox,
+  // sent notifications, abandoned onboardings). Every DELETE is WHERE-scoped so
+  // it's a harmless no-op when a given feature is unused.
   if (intervalHandle !== null) return;
   logger.info({
     evt: "cleanup_worker_starting",

@@ -1,0 +1,156 @@
+/**
+ * Signed Retell smoke test — exercises the FULL signature path that the plain
+ * `smoke:retell` script skips.
+ *
+ * `smoke:retell` sends no `x-retell-signature` header and only works when the
+ * server runs with `RETELL_VERIFY_SIGNATURE=false`. That left the production
+ * signature gate (`assertRetellSignature` → `Retell.verify`) completely
+ * unexercised — which is how a wrong `RETELL_API_KEY` silently 401'd every
+ * tool call in prod and dropped every booking with no test catching it.
+ *
+ * This script signs each request body with `Retell.sign(body, RETELL_API_KEY)`
+ * — the exact scheme Retell uses (`v={ts},d=hmac_sha256_hex(body+ts)`) — so we
+ * can prove the verify / raw-body / header wiring end-to-end WITHOUT a phone
+ * call. It also fires one deliberately-tampered request and asserts a 401, so
+ * the test can't false-pass against a server that has verification turned off.
+ *
+ * Run against a server started with verification ON and a MATCHING key, e.g.:
+ *
+ *   RETELL_VERIFY_SIGNATURE=true RETELL_API_KEY=smoke-test-key npm run dev:backend
+ *   RETELL_API_KEY=smoke-test-key npm run smoke:retell-signed
+ *
+ * The key is only a shared secret for the local round-trip — it does NOT need
+ * to be a real Retell key. (Validating that the *production* .env key matches
+ * Retell's account key is Layer 2: a real test call. Only Retell can produce a
+ * signature with the real account key.)
+ */
+
+import { Retell } from "retell-sdk";
+
+const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+const restaurantId =
+  process.env.DEFAULT_RESTAURANT_ID ?? "11111111-1111-4111-8111-111111111111";
+const signingKey = process.env.RETELL_API_KEY;
+
+if (!signingKey) {
+  console.error(
+    [
+      "smoke:retell-signed requires RETELL_API_KEY — the SAME value the server verifies with.",
+      "Start the server with verification on and a matching key, then run this:",
+      "",
+      "  RETELL_VERIFY_SIGNATURE=true RETELL_API_KEY=smoke-test-key npm run dev:backend",
+      "  RETELL_API_KEY=smoke-test-key npm run smoke:retell-signed"
+    ].join("\n")
+  );
+  process.exit(1);
+}
+
+const key = signingKey;
+
+/** POST with a valid Retell signature over the exact body bytes sent. */
+async function signedRequest<T>(path: string, payload: unknown): Promise<T> {
+  const body = JSON.stringify(payload);
+  const signature = await Retell.sign(body, key);
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-retell-signature": signature
+    },
+    body
+  });
+
+  const text = await response.text();
+  const parsed = text ? (JSON.parse(text) as T) : ({} as T);
+
+  if (!response.ok) {
+    throw new Error(
+      `SIGNED ${path} unexpectedly failed (${response.status}): ${JSON.stringify(parsed)}` +
+        ` — is the server running with RETELL_VERIFY_SIGNATURE=true and the SAME RETELL_API_KEY?`
+    );
+  }
+  return parsed;
+}
+
+/** Negative control: a tampered signature MUST be rejected with 401. */
+async function expectRejected(path: string, payload: unknown): Promise<void> {
+  const body = JSON.stringify(payload);
+  const goodSig = await Retell.sign(body, key);
+  // Corrupt the digest so the HMAC no longer matches the body.
+  const badSig = goodSig.replace(/d=.*/, "d=deadbeefdeadbeefdeadbeefdeadbeef");
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-retell-signature": badSig },
+    body
+  });
+  if (response.status !== 401) {
+    throw new Error(
+      `NEGATIVE ${path}: expected 401 for a tampered signature, got ${response.status}. ` +
+        `Verification may be OFF — this smoke would false-pass. Set RETELL_VERIFY_SIGNATURE=true.`
+    );
+  }
+  console.log(`negative-control ${path} → 401 (tampered signature rejected) ✓`);
+}
+
+function getSmokeDate(): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + 31);
+  return date.toISOString().slice(0, 10);
+}
+
+async function main(): Promise<void> {
+  const date = getSmokeDate();
+  const callId = `retell-signed-smoke-${Date.now()}`;
+
+  // 0) Negative control FIRST — prove the gate actually rejects bad signatures.
+  await expectRejected("/retell/tools/check-availability", {
+    name: "check_availability",
+    call: { call_id: callId, metadata: { restaurant_id: restaurantId } },
+    args: { restaurant_id: restaurantId, date, time: "19:00", party_size: 2 }
+  });
+
+  // 1) Inbound webhook — binds the agent + injects fresh dynamic variables.
+  const inbound = await signedRequest<unknown>("/retell/inbound", {
+    event: "call_inbound",
+    call_inbound: {
+      from_number: "+61400000001",
+      to_number: process.env.RETELL_PHONE_NUMBER ?? "+61200000000"
+    }
+  });
+  console.log("signed inbound ✓", JSON.stringify(inbound).slice(0, 120));
+
+  // 2) check_availability — the tool that 401'd in production.
+  const availability = await signedRequest<unknown>("/retell/tools/check-availability", {
+    name: "check_availability",
+    call: { call_id: callId, metadata: { restaurant_id: restaurantId } },
+    args: { restaurant_id: restaurantId, date, time: "19:00", party_size: 2 }
+  });
+  console.log("signed check-availability ✓", JSON.stringify(availability).slice(0, 160));
+
+  // 3) create_booking — the write that never happened on the failed call.
+  const booking = await signedRequest<unknown>("/retell/tools/create-booking", {
+    name: "create_booking",
+    call: {
+      call_id: callId,
+      from_number: "+61400000001",
+      metadata: { restaurant_id: restaurantId }
+    },
+    args: {
+      restaurant_id: restaurantId,
+      customer_name: "Retell Signed Smoke",
+      customer_phone: "+61400000001",
+      date,
+      time: "19:00",
+      party_size: 2,
+      notes: "Created by npm run smoke:retell-signed"
+    }
+  });
+  console.log("signed create-booking ✓", JSON.stringify(booking).slice(0, 160));
+
+  console.log("\n✅ signature path verified end-to-end (gate rejects bad sigs, accepts good ones).");
+}
+
+main().catch((error) => {
+  console.error("\n❌ smoke:retell-signed failed:", error instanceof Error ? error.message : error);
+  process.exit(1);
+});

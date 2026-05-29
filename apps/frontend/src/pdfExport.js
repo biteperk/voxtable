@@ -233,7 +233,13 @@ function formatLongDate(iso) {
   });
 }
 
-function formatMoney(n) { return `$${Number(n).toFixed(2)}`; }
+// Australian tax-invoice issuer identity, used in both the letterhead and the
+// footer (single source of truth). The ABN is a PLACEHOLDER and MUST be set to
+// VocoTable Pty Ltd's real ABN before any live invoice is issued — a tax invoice
+// with a wrong ABN is a compliance problem. Billing ships disabled and in test
+// mode first, so no real tax invoice leaves the system until this is filled in.
+const RECEIPT_ENTITY = "VocoTable Pty Ltd";
+const RECEIPT_ABN = "12 345 678 901"; // TODO(billing): replace with real ABN from Sam before go-live
 
 export function exportReceiptPdf({ invoice, customer, plan }) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -242,10 +248,16 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   const M = 48;
   const contentW = W - M * 2;
 
-  const taxRate = 0.10; // Australian GST
-  const totalInc = Number(invoice.amount);
-  const subtotal = totalInc / (1 + taxRate);
-  const gst = totalInc - subtotal;
+  // Money comes straight from Stripe via the backend mirror — integer cents
+  // formatted into `*_display` strings at the edge. We render those verbatim so
+  // the PDF can never diverge from the dashboard or Stripe. GST is Stripe's real
+  // tax line (invoice.tax_cents), never total ÷ 1.1.
+  const currencyLabel = (invoice.currency ?? "aud").toUpperCase();
+  const subtotalDisplay = invoice.subtotal_display ?? "—";
+  const gstDisplay = invoice.tax_display ?? "—";
+  const totalDisplay = invoice.total_display ?? "—";
+  const isRefunded = invoice.status === "refunded";
+  const isPartialRefund = isRefunded && invoice.refund_type === "partial";
   const status = STATUS_STYLE[invoice.status] ?? STATUS_STYLE.paid;
 
   // ─── Letterhead ────────────────────────────────────────────────────────
@@ -259,7 +271,7 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   setText(doc, COLOR.muted);
   doc.text("Voice-AI booking for restaurants", M, M + 20);
   doc.text("vocotable.algorythmos.com.au", M, M + 32);
-  doc.text("ABN 12 345 678 901", M, M + 44);
+  doc.text(`ABN ${RECEIPT_ABN}`, M, M + 44);
 
   // Title (right aligned)
   doc.setFont("helvetica", "bold");
@@ -270,8 +282,8 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   setText(doc, COLOR.muted);
-  doc.text(`Invoice #${invoice.id}`, W - M, M + 22, { align: "right" });
-  doc.text(`Issued ${formatLongDate(invoice.issuedAt)}`, W - M, M + 36, { align: "right" });
+  doc.text(`Invoice #${invoice.number ?? invoice.id}`, W - M, M + 22, { align: "right" });
+  doc.text(`Issued ${formatLongDate(invoice.issued_at)}`, W - M, M + 36, { align: "right" });
 
   // ─── Status stamp ──────────────────────────────────────────────────────
   const stampW = 110, stampH = 30;
@@ -317,14 +329,17 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   setText(doc, COLOR.text);
-  doc.text(`${invoice.card.brand} •••• ${invoice.card.last4}`, rx, y + 16);
+  const cardLabel = invoice.card
+    ? `${invoice.card.brand} •••• ${invoice.card.last4}`
+    : "Card on file";
+  doc.text(cardLabel, rx, y + 16);
   doc.setFontSize(10);
   setText(doc, COLOR.muted);
-  const payLabel = invoice.status === "refunded"
-    ? `Refunded ${formatLongDate(invoice.refundedAt)}`
+  const payLabel = isRefunded
+    ? `Refunded ${formatLongDate(invoice.refunded_at)}`
     : invoice.status === "paid"
-      ? `Charged ${formatLongDate(invoice.paidAt)}`
-      : `Attempted ${formatLongDate(invoice.issuedAt)}`;
+      ? `Charged ${formatLongDate(invoice.paid_at)}`
+      : `Attempted ${formatLongDate(invoice.issued_at)}`;
   doc.text(payLabel, rx, y + 30);
 
   y += 60;
@@ -362,8 +377,8 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   doc.setFontSize(11);
   setText(doc, COLOR.text);
   doc.text("1", M + 280, rowY + 22, { align: "right" });
-  doc.text(formatMoney(subtotal), M + 380, rowY + 22, { align: "right" });
-  doc.text(formatMoney(subtotal), W - M - 12, rowY + 22, { align: "right" });
+  doc.text(subtotalDisplay, M + 380, rowY + 22, { align: "right" });
+  doc.text(subtotalDisplay, W - M - 12, rowY + 22, { align: "right" });
 
   const rowH = 60;
   doc.line(M, tableY + 24 + rowH, W - M, tableY + 24 + rowH);
@@ -383,32 +398,42 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
     doc.text(value, totalsX + totalsW, y, { align: "right" });
     y += bold ? 22 : 18;
   };
-  drawTotalRow("Subtotal", formatMoney(subtotal));
-  drawTotalRow(`GST (${(taxRate * 100).toFixed(0)}%)`, formatMoney(gst));
+  drawTotalRow("Subtotal", subtotalDisplay);
+  drawTotalRow(invoice.tax_behavior === "inclusive" ? "GST (incl.)" : "GST", gstDisplay);
   // Divider above total
   setStroke(doc, COLOR.border);
   doc.setLineWidth(0.6);
   doc.line(totalsX, y - 6, totalsX + totalsW, y - 6);
   y += 6;
-  drawTotalRow("Total (AUD)", formatMoney(totalInc), true);
+  drawTotalRow(`Total (${currencyLabel})`, totalDisplay, true);
 
   // ─── Refund note if applicable ────────────────────────────────────────
-  if (invoice.status === "refunded") {
+  if (isRefunded) {
+    const noteLines = [];
+    if (invoice.refunded_at) noteLines.push(`Refunded ${formatLongDate(invoice.refunded_at)}`);
+    if (invoice.refund_reason) noteLines.push(`Reason: ${invoice.refund_reason}`);
+    const boxH = 24 + (noteLines.length ? noteLines.length * 14 + 2 : 6);
+
     y += 12;
     setFill(doc, [255, 244, 222]);
     setStroke(doc, [255, 184, 77]);
     doc.setLineWidth(0.6);
-    doc.roundedRect(M, y, contentW, 38, 4, 4, "FD");
+    doc.roundedRect(M, y, contentW, boxH, 4, 4, "FD");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     setText(doc, [120, 80, 10]);
-    doc.text("This charge was refunded", M + 14, y + 16);
-    if (invoice.refundReason) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.text(`Reason: ${invoice.refundReason}`, M + 14, y + 30);
+    const headline = isPartialRefund
+      ? `Partially refunded — ${invoice.amount_refunded_display ?? ""} of ${totalDisplay}`.trim()
+      : "This charge was fully refunded";
+    doc.text(headline, M + 14, y + 16);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    let noteY = y + 30;
+    for (const line of noteLines) {
+      doc.text(line, M + 14, noteY);
+      noteY += 14;
     }
-    y += 50;
+    y += boxH + 12;
   }
 
   // ─── Footer ────────────────────────────────────────────────────────────
@@ -422,7 +447,7 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
     { align: "center" }
   );
   doc.text(
-    "VocoTable Pty Ltd · ABN 12 345 678 901 · vocotable.algorythmos.com.au",
+    `${RECEIPT_ENTITY} · ABN ${RECEIPT_ABN} · vocotable.algorythmos.com.au`,
     W / 2,
     H - 32,
     { align: "center" }

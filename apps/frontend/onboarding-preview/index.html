@@ -1,0 +1,214 @@
+<!doctype html>
+<!--
+  Standalone, NON-FUNCTIONAL visual preview of the VocoTable onboarding wizard.
+  No backend / DB / auth required — open directly in a browser to click through
+  the screens and review the look-and-feel. The markup + classes mirror the real
+  components in apps/frontend/src/main.jsx; styles are copied from styles.css.
+  This file is a design artifact, not part of the app build.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VocoTable · Onboarding preview</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&family=Inter:wght@400;600;700&display=swap"
+    />
+    <style>
+      :root {
+        --surface: #131313;
+        --surface-2: #1c1b1b;
+        --on-surface: #e5e2e1;
+        --on-surface-variant: #c1c6d7;
+        --outline: #8b90a0;
+        --primary-container: #4b8eff;
+        --danger: #ff6b6b;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; }
+      .material-symbols-rounded { font-family: "Material Symbols Rounded"; font-size: 20px; line-height: 1; vertical-align: middle; }
+      button { font-family: inherit; }
+      .primary-button {
+        display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+        padding: 11px 18px; border-radius: 10px; border: none; cursor: pointer;
+        background: var(--primary-container); color: #fff; font-weight: 600; font-size: 15px;
+      }
+      .primary-button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .ghost-button {
+        display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+        padding: 11px 18px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 15px;
+        background: none; color: var(--on-surface); border: 1px solid var(--outline);
+      }
+
+      /* ---- copied from styles.css (.onboarding-*) ---- */
+      .onboarding-shell { min-height: 100vh; background: var(--surface); color: var(--on-surface); display: flex; flex-direction: column; }
+      .onboarding-top { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+      .onboarding-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
+      .onboarding-brand .mark { width: 30px; height: 30px; border-radius: 8px; background: var(--primary-container); display: grid; place-items: center; color: #fff; }
+      .onboarding-signout { background: none; border: 1px solid var(--outline); color: inherit; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+      .onboarding-body { flex: 1; width: 100%; max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: 240px 1fr; gap: 32px; padding: 32px 24px 64px; }
+      .onboarding-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+      .onboarding-step { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; color: var(--on-surface-variant); }
+      .onboarding-step.is-current { background: var(--surface-2); color: var(--on-surface); font-weight: 600; }
+      .onboarding-step.is-done { color: var(--on-surface); }
+      .onboarding-step-dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; border: 1px solid rgba(255,255,255,0.2); flex-shrink: 0; }
+      .onboarding-step.is-current .onboarding-step-dot, .onboarding-step.is-done .onboarding-step-dot { background: var(--primary-container); border-color: transparent; color: #fff; }
+      .onboarding-main { min-width: 0; }
+      .onboarding-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 32px; max-width: 640px; }
+      .onboarding-card h1 { margin: 0 0 8px; font-size: 26px; }
+      .onboarding-lead { margin: 0 0 20px; color: var(--on-surface-variant); }
+      .onboarding-note { display: flex; align-items: center; gap: 8px; color: var(--on-surface-variant); font-size: 14px; margin: 16px 0; }
+      .onboarding-form { display: flex; flex-direction: column; gap: 16px; }
+      .onboarding-field { display: flex; flex-direction: column; gap: 6px; }
+      .onboarding-field > span { font-size: 14px; font-weight: 600; }
+      .onboarding-field > span em { font-weight: 400; font-style: normal; color: var(--on-surface-variant); }
+      .onboarding-field input, .onboarding-field select { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--outline); background: rgba(0,0,0,0.2); color: inherit; font: inherit; }
+      .onboarding-field-row { display: flex; gap: 12px; }
+      .onboarding-field-row .onboarding-field { flex: 1; }
+      .onboarding-field-sm { max-width: 110px; }
+      .onboarding-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+      .onboarding-chip { padding: 7px 13px; border-radius: 999px; border: 1px solid var(--outline); background: none; color: inherit; cursor: pointer; font: inherit; font-size: 14px; }
+      .onboarding-chip.is-on { background: var(--primary-container); border-color: transparent; color: #fff; }
+      .onboarding-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+      .onboarding-error { color: var(--danger); font-size: 14px; margin: 0; }
+      .preview-tag { position: fixed; bottom: 12px; right: 12px; background: #000; color: #ffd84d; border: 1px solid #ffd84d; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+      @media (max-width: 767px) {
+        .onboarding-body { grid-template-columns: 1fr; align-content: start; gap: 20px; padding: 20px 16px 48px; }
+        .onboarding-steps { flex-direction: row; align-items: center; overflow-x: auto; }
+        .onboarding-step { padding: 8px 10px; }
+        .onboarding-step-label { display: none; }
+        .onboarding-card { padding: 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="onboarding-shell">
+      <header class="onboarding-top">
+        <div class="onboarding-brand"><span class="mark">V</span> VocoTable</div>
+        <button class="onboarding-signout">Sign out</button>
+      </header>
+      <div class="onboarding-body">
+        <ol class="onboarding-steps" id="steps"></ol>
+        <main class="onboarding-main" id="main"></main>
+      </div>
+    </div>
+    <div class="preview-tag">STATIC PREVIEW — non-functional mock</div>
+
+    <script>
+      const CUISINES = ["Italian","Chinese","Japanese","Thai","Indian","Vietnamese","Greek","Lebanese","Mexican","French","Modern Australian","Cafe","Steakhouse","Seafood","Pizza","Burgers","Vegan","Other"];
+      const STATES = ["NSW","VIC","QLD","WA","SA","TAS","ACT","NT"];
+      const STEPS = [
+        { key: "profile", label: "Restaurant profile" },
+        { key: "menu", label: "Add your menu" },
+        { key: "trial", label: "Start free trial" },
+        { key: "phone", label: "Connect your phone" }
+      ];
+      // Screens in order: create (pre-restaurant) then the 4 wizard steps.
+      const SCREENS = ["create", "profile", "menu", "trial", "phone"];
+      let screen = "create";
+      const chosenCuisines = new Set(["Italian"]);
+
+      function icon(name) { return `<span class="material-symbols-rounded">${name}</span>`; }
+
+      function renderSteps() {
+        // For the create screen there's no checklist (mirrors the real wizard).
+        const stepsEl = document.getElementById("steps");
+        if (screen === "create") { stepsEl.innerHTML = ""; return; }
+        const idx = STEPS.findIndex((s) => s.key === screen);
+        stepsEl.innerHTML = STEPS.map((s, i) => {
+          let state = "todo";
+          if (i < idx) state = "done";
+          else if (i === idx) state = "current";
+          const dot = state === "done" ? icon("check") : i + 1;
+          return `<li class="onboarding-step is-${state}"><span class="onboarding-step-dot">${dot}</span><span class="onboarding-step-label">${s.label}</span></li>`;
+        }).join("");
+      }
+
+      function nextBtn(label) {
+        return `<button class="primary-button" onclick="go()">${label} ${icon("arrow_forward")}</button>`;
+      }
+
+      function renderMain() {
+        const el = document.getElementById("main");
+        if (screen === "create") {
+          el.innerHTML = `
+            <div class="onboarding-card">
+              <h1>Welcome to VocoTable 👋</h1>
+              <p class="onboarding-lead">Let's set up your AI phone host. First, what's your restaurant called?</p>
+              <div class="onboarding-form">
+                <label class="onboarding-field"><span>Restaurant name</span>
+                  <input type="text" value="Natalia's Bistro" /></label>
+                ${nextBtn("Create &amp; continue")}
+              </div>
+            </div>`;
+        } else if (screen === "profile") {
+          el.innerHTML = `
+            <div class="onboarding-card">
+              <h1>Tell us about your restaurant</h1>
+              <p class="onboarding-lead">This is what Bella uses to answer your calls.</p>
+              <div class="onboarding-form">
+                <label class="onboarding-field"><span>Restaurant name</span><input value="Natalia's Bistro" /></label>
+                <div class="onboarding-field-row">
+                  <label class="onboarding-field"><span>Your name</span><input value="Natalia R." /></label>
+                  <label class="onboarding-field"><span>Contact email</span><input value="hello@natalias.com.au" /></label>
+                </div>
+                <label class="onboarding-field"><span>Your current phone number <em>(the one customers call today)</em></span><input value="(02) 9555 1234" /></label>
+                <label class="onboarding-field"><span>Street address</span><input value="14 Norton St" /></label>
+                <div class="onboarding-field-row">
+                  <label class="onboarding-field"><span>Suburb</span><input value="Leichhardt" /></label>
+                  <label class="onboarding-field onboarding-field-sm"><span>State</span><select>${STATES.map((s) => `<option ${s === "NSW" ? "selected" : ""}>${s}</option>`).join("")}</select></label>
+                  <label class="onboarding-field onboarding-field-sm"><span>Postcode</span><input value="2040" /></label>
+                </div>
+                <div class="onboarding-field"><span>Cuisine <em>(pick up to 5)</em></span>
+                  <div class="onboarding-chips">${CUISINES.map((c) => `<button class="onboarding-chip${chosenCuisines.has(c) ? " is-on" : ""}" onclick="toggleCuisine('${c.replace(/'/g, "\\'")}')">${c}</button>`).join("")}</div>
+                </div>
+                ${nextBtn("Save &amp; continue")}
+              </div>
+            </div>`;
+        } else if (screen === "menu") {
+          el.innerHTML = `
+            <div class="onboarding-card">
+              <h1>Add your menu</h1>
+              <p class="onboarding-lead">Build your menu so Bella can take orders and answer questions. Open the menu editor, add your categories and dishes, then come back here to continue.</p>
+              <p class="onboarding-note">${icon("auto_awesome")} Coming soon: snap a photo of your menu and we'll build it for you automatically.</p>
+              <div class="onboarding-actions">
+                <button class="ghost-button">${icon("restaurant_menu")} Open menu editor</button>
+                <button class="primary-button" onclick="go()">I've added my menu — continue ${icon("arrow_forward")}</button>
+              </div>
+            </div>`;
+        } else if (screen === "trial") {
+          el.innerHTML = `
+            <div class="onboarding-card">
+              <h1>Start your free trial</h1>
+              <p class="onboarding-lead">Secure checkout with a 14-day free trial lands in the next release. After that, you'll be able to talk to Bella instantly while we set up your phone line.</p>
+              <p class="onboarding-note">${icon("info")} Your progress is saved — you can pick up here when this step ships.</p>
+              ${nextBtn("Preview next step")}
+            </div>`;
+        } else if (screen === "phone") {
+          el.innerHTML = `
+            <div class="onboarding-card">
+              <h1>Connect your phone</h1>
+              <p class="onboarding-lead">We'll give you a VocoTable number, show you exactly how to forward your calls, and verify it with a test call — coming soon.</p>
+              <p class="onboarding-note">${icon("info")} Your progress is saved — you can pick up here when this step ships.</p>
+              <button class="ghost-button" onclick="screen='create'; render()">${icon("restart_alt")} Restart preview</button>
+            </div>`;
+        }
+      }
+
+      function go() {
+        const i = SCREENS.indexOf(screen);
+        screen = SCREENS[Math.min(i + 1, SCREENS.length - 1)];
+        render();
+      }
+      function toggleCuisine(c) {
+        if (chosenCuisines.has(c)) chosenCuisines.delete(c);
+        else if (chosenCuisines.size < 5) chosenCuisines.add(c);
+        renderMain();
+      }
+      function render() { renderSteps(); renderMain(); window.scrollTo(0, 0); }
+      window.go = go; window.toggleCuisine = toggleCuisine; window.render = render; window.screen = screen;
+      render();
+    </script>
+  </body>
+</html>

@@ -1,19 +1,21 @@
 import { Router } from "express";
 
-import { env } from "../config/env";
+import { requireFirebaseAuth } from "../auth/firebaseAuth";
+import { resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import {
-  availabilityRequestSchema,
-  normalizePartySize,
-  normalizeRestaurantId
-} from "../http/schemas";
+import { availabilityRequestSchema, normalizePartySize } from "../http/schemas";
 import { checkAvailability } from "../services/availabilityService";
 
 export const availabilityRouter = Router();
 
+// Dashboard-only availability probe (manual booking UI). The voice path calls
+// the availabilityService directly, so this HTTP route is auth + tenant gated —
+// it must never check/book against the default tenant for an anonymous caller.
 availabilityRouter.post(
   "/availability/check",
+  requireFirebaseAuth,
+  resolveTenant,
   asyncHandler(async (request, response) => {
     const body = availabilityRequestSchema.parse(request.body);
     const partySize = normalizePartySize(body);
@@ -23,7 +25,7 @@ availabilityRouter.post(
     }
 
     const result = await checkAvailability({
-      restaurantId: normalizeRestaurantId(body, env.DEFAULT_RESTAURANT_ID),
+      restaurantId: tenantId(request),
       date: body.date,
       time: body.time,
       partySize
