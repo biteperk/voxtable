@@ -315,8 +315,15 @@ export async function upsertRestaurantSettings(
 
 /**
  * Create a restaurant and its owner membership + a default settings row in one
- * transaction. Returns the new restaurant id. Status starts at
- * 'account_created' so the wizard routes the owner through onboarding.
+ * transaction. Returns the new restaurant id (+ whether it already existed).
+ * Status starts at 'account_created' so the wizard routes the owner through
+ * onboarding.
+ *
+ * Idempotent under concurrency: takes a per-owner transaction-scoped advisory
+ * lock and re-checks membership INSIDE the transaction before inserting, so two
+ * simultaneous create submits from one owner can never create two tenants (v1 =
+ * one restaurant per owner). A raced duplicate returns the existing tenant with
+ * `existing: true`.
  */
 export async function createRestaurantWithOwner(input: {
   name: string;
@@ -324,8 +331,27 @@ export async function createRestaurantWithOwner(input: {
   ownerName?: string | null;
   contactEmail?: string | null;
   timezone?: string;
-}): Promise<{ restaurantId: string }> {
+}): Promise<{ restaurantId: string; existing: boolean }> {
   return withTransaction(async (db) => {
+    // Serialize concurrent creates for the SAME owner (lock key derived from
+    // the uid; other owners proceed freely).
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+      `onboard:${input.ownerUserId}`
+    ]);
+
+    // Re-check inside the lock: if this owner already has a membership, return
+    // it rather than creating a second tenant.
+    const prior = await db.query<{ restaurant_id: string }>(
+      `SELECT restaurant_id FROM restaurant_members
+        WHERE user_id = $1
+        ORDER BY created_at ASC
+        LIMIT 1`,
+      [input.ownerUserId]
+    );
+    if (prior.rows[0]) {
+      return { restaurantId: prior.rows[0].restaurant_id, existing: true };
+    }
+
     const restaurant = await db.query<{ id: string }>(
       `INSERT INTO restaurants (name, timezone, owner_name, contact_email, onboarding_status)
        VALUES ($1, $2, $3, $4, 'account_created')
@@ -347,7 +373,7 @@ export async function createRestaurantWithOwner(input: {
       [restaurantId]
     );
 
-    return { restaurantId };
+    return { restaurantId, existing: false };
   });
 }
 

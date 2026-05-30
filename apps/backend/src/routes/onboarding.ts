@@ -8,7 +8,7 @@ import { asyncHandler } from "../http/asyncHandler";
 import { createRestaurantSchema, onboardingAdvanceSchema } from "../http/schemas";
 import { pool, withTransaction } from "../db/pool";
 import { countCallsSince } from "../repositories/callLogs";
-import { upsertUser } from "../repositories/members";
+import { getUserMemberships, upsertUser } from "../repositories/members";
 import {
   createRestaurantWithOwner,
   getOnboardingStatus,
