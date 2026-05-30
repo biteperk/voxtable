@@ -5,6 +5,7 @@ import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContex
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
+import { menuIngestLimiter } from "../http/rateLimiters";
 import {
   menuCategoryRequestSchema,
   menuDraftSchema,
