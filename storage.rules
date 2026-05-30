@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// VocoTable Firebase Storage rules.
+//
+// Menu photo/PDF uploads land at  menu-imports/{restaurantId}/{file}.
+// Firebase Storage rules can't query Postgres (where restaurant_members lives),
+// so authorization here is the COARSE first gate: the uploader must be a
+// signed-in, email-verified Firebase user, and uploads are constrained to
+// images/PDFs under a size cap. The AUTHORITATIVE per-tenant check happens
+// server-side: the client sends the download URL to POST /api/menu/ingest,
+// which runs requireFirebaseAuth + resolveTenant + requireMemberRole("manager")
+// and the menuOcr path only ever reads files for the caller's own tenant.
+//
+// Net: a verified user can only WRITE menu-import files (not read others'
+// dashboards/data), the API enforces tenant ownership before doing anything
+// with the file, and everything else in the bucket is denied by default.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Menu imports: authenticated + verified users may upload bounded media.
+    match /menu-imports/{restaurantId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.token.email_verified == true
+                   && request.resource.size < 15 * 1024 * 1024
+                   && (
+                        request.resource.contentType.matches('image/.*')
+                        || request.resource.contentType == 'application/pdf'
+                      );
+    }
+
+    // Everything else: deny. No implicit public buckets.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
