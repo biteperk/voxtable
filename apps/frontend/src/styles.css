@@ -601,115 +601,296 @@ button {
 }
 
 /* ===== Onboarding wizard ===== */
+/* ===================================================================
+   Layered onboarding tokens — add AFTER the existing :root block.
+   Compose existing tokens only; do not edit existing token values.
+   =================================================================== */
+:root {
+  --ob-radius-card: 18px;
+  --ob-radius-input: 10px;
+  --ob-radius-chip: 999px;
+
+  --ob-card-bg: rgba(28, 27, 27, 0.85);
+  --ob-card-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --ob-card-top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  --ob-focus-ring: 0 0 0 3px rgba(173, 198, 255, 0.28);
+
+  --ob-glow-primary-opacity: 0.30;
+  --ob-glow-secondary-opacity: 0.16;
+  --ob-glow-welcome-opacity: 0.42;
+
+  --ob-well-bg: var(--surface-container-lowest, #0e0e0e);
+
+  --ob-accent-active: var(--primary, #adc6ff);
+  --ob-accent-success: var(--secondary-container, #00eefc);
+  --ob-accent-warn: var(--tertiary-container, #ef6719);
+
+  --ob-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===================================================================
+   VocoTable Onboarding — "Focused Spotlight"
+   REPLACES the entire existing .onboarding-* + .menu-review-* + .trial-*
+   + .phone-* block (styles.css ~lines 604–900). Mobile-first; reduced-
+   motion safe. Self-contained button styles (no reliance on a global
+   .primary-button / .ghost-button base — none exists in current source).
+   =================================================================== */
+
+/* ---- Shell + ambient glow (echoes .login-bg-glow) ---- */
 .onboarding-shell {
+  position: relative;
   min-height: 100vh;
-  background: var(--surface, #0f1115);
-  color: var(--on-surface, #e8eaed);
+  overflow: hidden;
+  background: var(--background, #131313);
+  color: var(--on-surface, #e5e2e1);
   display: flex;
   flex-direction: column;
 }
+.onboarding-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 0;
+  animation: onboardingGlowIn 600ms ease-out both;
+}
+.onboarding-glow-1 {
+  top: -160px;
+  left: -140px;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, var(--primary, #adc6ff) 0%, transparent 70%);
+  opacity: var(--ob-glow-primary-opacity);
+}
+.onboarding-glow-2 {
+  bottom: -180px;
+  right: -160px;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, var(--secondary-container, #00eefc) 0%, transparent 70%);
+  opacity: var(--ob-glow-secondary-opacity);
+}
+.onboarding-shell.is-welcome .onboarding-glow-1 {
+  opacity: var(--ob-glow-welcome-opacity);
+  width: 620px;
+  height: 620px;
+}
+
+/* ---- Top bar ---- */
 .onboarding-top {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px;
-  border-bottom: 1px solid var(--outline, rgba(255, 255, 255, 0.1));
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--outline-variant, #414755);
 }
 .onboarding-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 18px;
+  font: 600 18px/1 "Geist", system-ui, sans-serif;
+  color: var(--on-surface, #e5e2e1);
 }
 .onboarding-signout {
+  min-height: 44px;
+  padding: 8px 16px;
   background: none;
-  border: 1px solid var(--outline, rgba(255, 255, 255, 0.18));
   color: inherit;
-  border-radius: 8px;
-  padding: 8px 14px;
-  cursor: pointer;
   font: inherit;
+  border: 1px solid var(--outline-variant, #414755);
+  border-radius: var(--ob-radius-input);
+  cursor: pointer;
+  transition: border-color 120ms var(--ob-ease), background 120ms var(--ob-ease);
 }
+.onboarding-signout:hover {
+  border-color: var(--outline, #8b90a0);
+  background: var(--surface-container-low, #1c1b1b);
+}
+.onboarding-signout:focus-visible {
+  outline: none;
+  box-shadow: var(--ob-focus-ring);
+  border-color: var(--primary, #adc6ff);
+}
+
+/* ---- Single centered column (no rail) ---- */
 .onboarding-body {
+  position: relative;
+  z-index: 1;
   flex: 1;
   width: 100%;
-  max-width: 1040px;
+  max-width: 560px;
   margin: 0 auto;
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 32px;
-  padding: 32px 24px 64px;
-}
-.onboarding-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 22px;
+  padding: 28px 24px 64px;
 }
-.onboarding-step {
+
+/* ---- Segmented progress + caption + context strip ---- */
+.onboarding-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.onboarding-progress-caption {
+  margin: 0;
+  font-size: 13px;
+  color: var(--on-surface-variant, #c1c6d7);
+}
+.onboarding-progress-caption .step-count {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--primary, #adc6ff);
+}
+.onboarding-progress-caption .step-label {
+  font-weight: 600;
+  color: var(--on-surface, #e5e2e1);
+}
+.onboarding-progress-track {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.onboarding-progress-seg {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--outline-variant, #414755);
+  overflow: hidden;
+  position: relative;
+}
+.onboarding-progress-seg.is-done {
+  background: var(--primary-container, #4b8eff);
+}
+.onboarding-progress-seg.is-current::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: var(--primary-container, #4b8eff);
+  border-radius: 999px;
+  animation: onboardingSegFill 480ms var(--ob-ease) forwards;
+}
+.onboarding-progress-cap {
+  display: inline-grid;
+  place-items: center;
+  color: var(--secondary-container, #00eefc);
+  font-size: 18px;
+}
+.onboarding-progress-context {
+  margin: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  color: var(--on-surface-variant, #9aa0a6);
+  gap: 6px;
+  font: 400 12.5px/1.4 "Inter", system-ui, sans-serif;
+  color: var(--on-surface-variant, #c1c6d7);
 }
-.onboarding-step.is-current {
-  background: var(--surface-2, rgba(255, 255, 255, 0.06));
-  color: var(--on-surface, #e8eaed);
-  font-weight: 600;
+.onboarding-progress-context .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--secondary-container, #00eefc);
 }
-.onboarding-step.is-done {
-  color: var(--on-surface, #e8eaed);
-}
-.onboarding-step-dot {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  border: 1px solid var(--outline, rgba(255, 255, 255, 0.2));
-  flex-shrink: 0;
-}
-.onboarding-step.is-current .onboarding-step-dot {
-  background: var(--primary-container, #4b8eff);
-  border-color: transparent;
-  color: #fff;
-}
-.onboarding-step.is-done .onboarding-step-dot {
-  background: var(--primary-container, #4b8eff);
-  border-color: transparent;
-  color: #fff;
-}
+
+/* ---- The spotlit card ---- */
 .onboarding-main {
   min-width: 0;
 }
 .onboarding-card {
-  background: var(--surface-2, rgba(255, 255, 255, 0.04));
-  border: 1px solid var(--outline, rgba(255, 255, 255, 0.1));
-  border-radius: 16px;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  background: var(--ob-card-bg);
+  border: 1px solid var(--card-border, rgba(65, 71, 85, 0.92));
+  border-radius: var(--ob-radius-card);
   padding: 32px;
-  max-width: 640px;
+  box-shadow: var(--ob-card-shadow), var(--ob-card-top-highlight);
+  backdrop-filter: blur(20px);
+  animation: onboardingCardIn 320ms ease-out both;
+}
+/* Interim loading cards (ProfileStep !form, PhoneStep !setup) must NOT
+   re-fire the rise on the loader->content swap within a single step. */
+.onboarding-card.is-loading {
+  animation: none;
+}
+.onboarding-card-wide {
+  max-width: 720px;
 }
 .onboarding-card h1 {
   margin: 0 0 8px;
-  font-size: 26px;
+  font: 600 26px/1.25 "Geist", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  color: var(--on-surface, #e5e2e1);
 }
 .onboarding-lead {
-  margin: 0 0 20px;
-  color: var(--on-surface-variant, #9aa0a6);
+  margin: 0 0 22px;
+  color: var(--on-surface-variant, #c1c6d7);
+  line-height: 1.5;
 }
 .onboarding-note {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--on-surface-variant, #9aa0a6);
-  font-size: 14px;
   margin: 16px 0;
+  font-size: 14px;
+  color: var(--on-surface-variant, #c1c6d7);
 }
+.onboarding-note .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--primary, #adc6ff);
+}
+/* FIX: use --error (defined) not --danger (undefined). #ffb4ab passes AA on dark card. */
+.onboarding-error {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: var(--error, #ffb4ab);
+}
+
+/* ---- Welcome (CreateRestaurant) hero mark ---- */
+.onboarding-welcome-mark {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+  filter: drop-shadow(0 0 24px rgba(173, 198, 255, 0.45));
+}
+
+/* ---- "Bella says" conversational row ---- */
+.onboarding-bella {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.onboarding-bella-avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--on-primary, #002e69);
+  background: radial-gradient(120% 120% at 30% 25%, var(--primary, #adc6ff), var(--primary-container, #4b8eff));
+}
+.onboarding-bella-avatar .material-symbols-outlined {
+  font-size: 18px;
+}
+.onboarding-bella p {
+  margin: 0;
+  padding: 9px 13px;
+  font: 400 15px/1.5 "Inter", system-ui, sans-serif;
+  color: var(--on-surface-variant, #c1c6d7);
+  background: var(--surface-container-low, #1c1b1b);
+  border: 1px solid var(--outline-variant, #414755);
+  border-radius: 4px 14px 14px 14px;
+}
+.onboarding-bella strong {
+  color: var(--on-surface, #e5e2e1);
+  font-weight: 600;
+}
+
+/* ---- Forms / fields ---- */
 .onboarding-form {
   display: flex;
   flex-direction: column;
@@ -723,20 +904,49 @@ button {
 .onboarding-field > span {
   font-size: 14px;
   font-weight: 600;
+  color: var(--on-surface, #e5e2e1);
 }
 .onboarding-field > span em {
   font-weight: 400;
   font-style: normal;
-  color: var(--on-surface-variant, #9aa0a6);
+  color: var(--on-surface-variant, #c1c6d7);
+}
+.onboarding-field > span .ob-counter {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 400;
+  color: var(--primary, #adc6ff);
+  margin-left: 6px;
 }
 .onboarding-field input,
 .onboarding-field select {
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--outline, rgba(255, 255, 255, 0.18));
-  background: var(--surface, rgba(0, 0, 0, 0.2));
+  min-height: 44px;
+  padding: 11px 13px;
+  border-radius: var(--ob-radius-input);
+  border: 1px solid var(--outline-variant, #414755);
+  background: var(--ob-well-bg);
   color: inherit;
-  font: inherit;
+  font: 16px/1.2 "Geist", system-ui, sans-serif; /* 16px prevents iOS zoom */
+  transition: border-color 120ms var(--ob-ease), box-shadow 120ms var(--ob-ease);
+}
+.onboarding-field input::placeholder {
+  color: var(--outline, #8b90a0);
+}
+.onboarding-field input:focus,
+.onboarding-field select:focus {
+  outline: none;
+  border-color: var(--primary, #adc6ff);
+  box-shadow: var(--ob-focus-ring);
+}
+.onboarding-field-help {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 400 12.5px/1.4 "Inter", system-ui, sans-serif;
+  color: var(--on-surface-variant, #c1c6d7);
+}
+.onboarding-field-help .material-symbols-outlined {
+  font-size: 15px;
+  color: var(--primary, #adc6ff);
 }
 .onboarding-field-row {
   display: flex;
@@ -746,39 +956,273 @@ button {
   flex: 1;
 }
 .onboarding-field-sm {
-  max-width: 110px;
+  max-width: 120px;
 }
+
+/* ---- Cuisine chips ---- */
 .onboarding-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 .onboarding-chip {
-  padding: 7px 13px;
-  border-radius: 999px;
-  border: 1px solid var(--outline, rgba(255, 255, 255, 0.18));
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: var(--ob-radius-chip);
+  border: 1px solid var(--outline-variant, #414755);
   background: none;
   color: inherit;
   cursor: pointer;
-  font: inherit;
-  font-size: 14px;
+  font: 14px/1 "Geist", system-ui, sans-serif;
+  transition: transform 90ms var(--ob-ease), background 120ms var(--ob-ease), border-color 120ms var(--ob-ease);
 }
+.onboarding-chip:hover {
+  border-color: var(--outline, #8b90a0);
+}
+.onboarding-chip:active {
+  transform: scale(0.96);
+}
+.onboarding-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--ob-focus-ring);
+  border-color: var(--primary, #adc6ff);
+}
+/* FIX (AA): dark navy text on the vivid blue, not #fff (#fff ~3.0:1 fails). */
 .onboarding-chip.is-on {
   background: var(--primary-container, #4b8eff);
   border-color: transparent;
-  color: #fff;
+  color: var(--on-primary-container, #00285c);
+  font-weight: 600;
 }
+
+/* ---- Live greeting preview ---- */
+.onboarding-preview {
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid var(--outline-variant, #414755);
+  border-radius: 14px;
+  background: var(--surface-container-lowest, #0e0e0e);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.onboarding-preview-label {
+  font: 600 11px/1 "Geist", system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant, #c1c6d7);
+}
+.onboarding-callcard {
+  border: 1px solid var(--card-border, rgba(65, 71, 85, 0.92));
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--surface-container-low, #1c1b1b);
+  transition: box-shadow 200ms var(--ob-ease);
+}
+.onboarding-callcard.is-live {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--secondary-container, #00eefc) 45%, transparent),
+              0 0 24px color-mix(in srgb, var(--secondary-container, #00eefc) 16%, transparent);
+}
+.onboarding-callcard-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 11px/1 "Geist", system-ui, sans-serif;
+  color: var(--secondary-container, #00eefc);
+}
+.onboarding-callcard-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--secondary-container, #00eefc);
+  box-shadow: 0 0 6px var(--secondary-container, #00eefc);
+}
+.onboarding-callcard-greeting {
+  margin: 8px 0 0;
+  font: 400 14px/1.5 "Inter", system-ui, sans-serif;
+  color: var(--on-surface, #e5e2e1);
+}
+.onboarding-callcard-greeting strong {
+  color: var(--primary, #adc6ff);
+  font-weight: 600;
+}
+
+/* ---- Buttons — SELF-CONTAINED base (no global .primary/.ghost base in source) ---- */
+.onboarding-card .primary-button,
+.onboarding-card label.primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 22px;
+  border: 1px solid transparent;
+  border-radius: var(--ob-radius-input);
+  background: var(--primary-container, #4b8eff);
+  color: #fff; /* #fff on #4b8eff passes AA (4.5:1) at >=16px/600 */
+  font: 600 15px/1.2 "Geist", system-ui, sans-serif;
+  cursor: pointer;
+  transition: transform 120ms var(--ob-ease), filter 120ms var(--ob-ease), box-shadow 120ms var(--ob-ease);
+}
+.onboarding-card .ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 20px;
+  border: 1px solid var(--outline, #8b90a0);
+  border-radius: var(--ob-radius-input);
+  background: transparent;
+  color: var(--on-surface, #e5e2e1);
+  font: 600 15px/1.2 "Geist", system-ui, sans-serif;
+  cursor: pointer;
+  transition: transform 120ms var(--ob-ease), background 120ms var(--ob-ease), border-color 120ms var(--ob-ease);
+}
+.onboarding-card .primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+.onboarding-card .ghost-button:hover:not(:disabled) {
+  background: var(--surface-container-high, #2a2a2a);
+  border-color: var(--on-surface, #e5e2e1);
+}
+.onboarding-card .primary-button:disabled,
+.onboarding-card .ghost-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.onboarding-card .primary-button:focus-visible,
+.onboarding-card .ghost-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ob-focus-ring);
+}
+.onboarding-card .primary-button .material-symbols-outlined,
+.onboarding-card .ghost-button .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* ---- Actions ---- */
 .onboarding-actions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  margin-top: 4px;
 }
-.onboarding-error {
-  color: var(--danger, #ff6b6b);
+
+/* ---- Trial plan panel ---- */
+.trial-plan {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--card-border, rgba(65, 71, 85, 0.92));
+  border-top: 2px solid var(--primary-container, #4b8eff);
+  border-radius: 14px;
+  margin: 6px 0 18px;
+  background: var(--surface-container-low, #1c1b1b);
+}
+.trial-plan > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.trial-plan > div:first-child > strong {
+  font: 600 16px/1.2 "Geist", system-ui, sans-serif;
+  color: var(--on-surface, #e5e2e1);
+}
+.trial-plan > div:first-child > span {
+  color: var(--on-surface-variant, #c1c6d7);
   font-size: 14px;
-  margin: 0;
 }
-.onboarding-card-wide { max-width: 760px; }
+.trial-price {
+  text-align: right;
+  white-space: nowrap;
+}
+.trial-price strong {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 24px;
+  color: var(--on-surface, #e5e2e1);
+}
+.trial-price span {
+  color: var(--on-surface-variant, #c1c6d7);
+  font-size: 13px;
+  margin-left: 4px;
+}
+.trial-reassure {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.trial-reassure li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 400 14px/1.4 "Inter", system-ui, sans-serif;
+  color: var(--on-surface-variant, #c1c6d7);
+}
+.trial-reassure li .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--secondary-container, #00eefc);
+}
+
+/* ---- Phone step ---- */
+.phone-number-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px;
+  border: 1px solid var(--primary, #adc6ff);
+  border-radius: 14px;
+  margin: 6px 0 18px;
+  background: var(--surface-container-lowest, #0e0e0e);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--primary, #adc6ff) 12%, transparent);
+}
+.phone-number-box > span {
+  color: var(--on-surface-variant, #c1c6d7);
+  font-size: 13px;
+}
+.phone-number-box > strong {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 26px;
+  letter-spacing: 0.5px;
+  color: var(--on-surface, #e5e2e1);
+}
+.phone-steps {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--on-surface, #e5e2e1);
+  line-height: 1.5;
+}
+.phone-steps ul {
+  margin: 6px 0 0;
+}
+.phone-steps code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  letter-spacing: 0.3px;
+  background: var(--surface-container-lowest, #0e0e0e);
+  border: 1px solid var(--outline-variant, #414755);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+.phone-provisioning-icon {
+  font-size: 40px;
+  color: var(--primary, #adc6ff);
+  display: block;
+  margin: 4px 0 14px;
+  animation: onboardingPulse 2s ease-in-out infinite;
+}
+
+/* ---- Menu review ---- */
 .menu-review {
   display: flex;
   flex-direction: column;
@@ -791,11 +1235,15 @@ button {
   width: 100%;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--outline, rgba(255, 255, 255, 0.18));
+  border-bottom: 1px solid var(--outline-variant, #414755);
   color: inherit;
-  font: 600 15px/1.4 inherit;
+  font: 600 15px/1.4 "Geist", system-ui, sans-serif;
   padding: 4px 2px;
   margin-bottom: 6px;
+}
+.menu-review-catname:focus {
+  outline: none;
+  border-bottom-color: var(--primary, #adc6ff);
 }
 .menu-review-row {
   display: flex;
@@ -805,97 +1253,175 @@ button {
   border-radius: 8px;
 }
 .menu-review-row.is-unsure {
-  background: rgba(255, 184, 77, 0.12);
+  background: color-mix(in srgb, var(--tertiary-container, #ef6719) 12%, transparent);
 }
 .menu-review-name {
   flex: 1;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--outline, rgba(255, 255, 255, 0.18));
-  border-radius: 6px;
+  min-height: 40px;
+  background: var(--ob-well-bg);
+  border: 1px solid var(--outline-variant, #414755);
+  border-radius: 8px;
   color: inherit;
-  font: inherit;
-  padding: 7px 9px;
+  font: 14px/1.2 "Geist", system-ui, sans-serif;
+  padding: 8px 10px;
+}
+.menu-review-name:focus {
+  outline: none;
+  border-color: var(--primary, #adc6ff);
+  box-shadow: var(--ob-focus-ring);
 }
 .menu-review-price {
   display: flex;
   align-items: center;
   gap: 2px;
 }
+.menu-review-price span {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--on-surface-variant, #c1c6d7);
+}
 .menu-review-price input {
-  width: 72px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--outline, rgba(255, 255, 255, 0.18));
-  border-radius: 6px;
+  width: 76px;
+  min-height: 40px;
+  background: var(--ob-well-bg);
+  border: 1px solid var(--outline-variant, #414755);
+  border-radius: 8px;
   color: inherit;
-  font: inherit;
-  padding: 7px 9px;
+  font: 14px/1.2 "JetBrains Mono", monospace;
+  padding: 8px 9px;
 }
-.trial-plan {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px;
-  border: 1px solid var(--outline, rgba(255, 255, 255, 0.18));
-  border-radius: 12px;
-  margin: 6px 0 20px;
+.menu-review-price input:focus {
+  outline: none;
+  border-color: var(--primary, #adc6ff);
+  box-shadow: var(--ob-focus-ring);
 }
-.trial-plan > div:first-child { display: flex; flex-direction: column; gap: 3px; }
-.trial-plan > div:first-child > span { color: var(--on-surface-variant, #9aa0a6); font-size: 14px; }
-.trial-price { text-align: right; white-space: nowrap; }
-.trial-price strong { font-size: 22px; }
-.trial-price span { color: var(--on-surface-variant, #9aa0a6); font-size: 13px; margin-left: 4px; }
-.phone-number-box {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 16px 18px;
-  border: 1px solid var(--primary-container, #4b8eff);
-  border-radius: 12px;
-  margin: 6px 0 18px;
+.menu-review-flag {
+  color: var(--tertiary-container, #ef6719);
+  cursor: help;
 }
-.phone-number-box > span { color: var(--on-surface-variant, #9aa0a6); font-size: 13px; }
-.phone-number-box > strong { font-size: 24px; letter-spacing: 0.5px; }
-.phone-steps { margin: 0 0 18px; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; color: var(--on-surface, #e5e2e1); }
-.phone-steps ul { margin: 6px 0 0; }
-.phone-steps code {
-  background: rgba(0, 0, 0, 0.25);
-  padding: 1px 6px;
-  border-radius: 5px;
-  font-size: 13px;
-}
-.menu-review-flag { color: #ffb84d; }
 .menu-review-del {
+  min-width: 44px;
+  min-height: 44px;
   background: none;
   border: none;
-  color: var(--on-surface-variant, #9aa0a6);
+  color: var(--on-surface-variant, #c1c6d7);
   cursor: pointer;
   display: grid;
   place-items: center;
+  border-radius: 8px;
 }
-@media (max-width: 767px) {
-  .onboarding-body {
-    grid-template-columns: 1fr;
-    align-content: start;
-    gap: 20px;
-    padding: 20px 16px 48px;
+.menu-review-del:hover {
+  color: var(--on-surface, #e5e2e1);
+  background: var(--surface-container-high, #2a2a2a);
+}
+
+/* ---- Menu dropzone ---- */
+.onboarding-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 28px 20px;
+  border: 1.5px dashed var(--outline, #8b90a0);
+  border-radius: 14px;
+  background: var(--surface-container-lowest, #0e0e0e);
+  color: var(--on-surface, #e5e2e1);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 120ms var(--ob-ease), background 120ms var(--ob-ease);
+}
+.onboarding-dropzone:hover {
+  border-color: var(--primary, #adc6ff);
+  background: var(--surface-container-low, #1c1b1b);
+}
+.onboarding-dropzone:focus-within {
+  outline: none;
+  border-color: var(--primary, #adc6ff);
+  box-shadow: var(--ob-focus-ring);
+}
+.onboarding-dropzone .material-symbols-outlined {
+  font-size: 28px;
+  color: var(--primary, #adc6ff);
+}
+.onboarding-dropzone .dz-title {
+  font: 600 15px/1.2 "Geist", system-ui, sans-serif;
+}
+.onboarding-dropzone .dz-sub {
+  font-size: 13px;
+  color: var(--on-surface-variant, #c1c6d7);
+}
+
+/* ---- Done success ---- */
+.onboarding-done-check {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  color: var(--on-primary, #002e69);
+  background: var(--secondary-container, #00eefc);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--secondary-container, #00eefc) 35%, transparent);
+  animation: onboardingSuccessPop 320ms var(--ob-ease) both;
+}
+.onboarding-done-check .material-symbols-outlined {
+  font-size: 30px;
+}
+
+/* ---- Keyframes ---- */
+@keyframes onboardingGlowIn {
+  from { opacity: 0; transform: scale(0.92); }
+}
+@keyframes onboardingCardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes onboardingSegFill {
+  to { width: 55%; }
+}
+@keyframes onboardingPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+@keyframes onboardingSuccessPop {
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ---- Mobile (<=680px) — covers large phones + landscape (was 600) ---- */
+@media (max-width: 680px) {
+  .onboarding-top { padding: 14px 16px; }
+  .onboarding-body { max-width: none; gap: 18px; padding: 18px 16px 48px; }
+  .onboarding-card { padding: 22px; border-radius: 16px; max-width: none; }
+  .onboarding-card-wide { max-width: none; }
+  .onboarding-card h1 { font-size: 22px; }
+  .onboarding-glow-1, .onboarding-glow-2 { width: 320px; height: 320px; opacity: 0.20; }
+  .onboarding-field-row { flex-wrap: wrap; }
+  .onboarding-actions .primary-button,
+  .onboarding-actions .ghost-button { flex: 1; justify-content: center; }
+  .phone-number-box > strong { font-size: 22px; }
+  .phone-steps code { font-size: 13px; }
+  .menu-review { max-height: none; }
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-card,
+  .onboarding-glow,
+  .onboarding-done-check,
+  .phone-provisioning-icon,
+  .onboarding-progress-seg.is-current::after {
+    animation: none;
   }
-  .onboarding-steps {
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
-  }
-  .onboarding-step {
-    padding: 8px 10px;
-  }
-  .onboarding-step-label {
-    display: none;
-  }
-  .onboarding-card {
-    padding: 22px;
-  }
-  .onboarding-field-row {
-    flex-wrap: wrap;
+  .onboarding-progress-seg.is-current::after { width: 55%; }
+  .onboarding-field input,
+  .onboarding-field select,
+  .onboarding-chip,
+  .onboarding-signout,
+  .onboarding-callcard,
+  .onboarding-card .primary-button,
+  .onboarding-card .ghost-button {
+    transition: none;
   }
 }
 

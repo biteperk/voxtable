@@ -825,12 +825,26 @@ const ONBOARDING_CUISINES = [
 ];
 const ONBOARDING_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"];
 
-function OnboardingShell({ checklist, children, onSignOut }) {
+function OnboardingShell({ checklist, children, onSignOut, welcome = false, currentKey = null }) {
+  const total = checklist?.length ?? 0;
+  const currentIndex = checklist ? checklist.findIndex((s) => s.status === "current") : -1;
+  const current = currentIndex >= 0 ? checklist[currentIndex] : null;
+  const doneCount = checklist ? checklist.filter((s) => s.status === "done").length : 0;
+  const allDone = total > 0 && doneCount === total;
+  const ONBOARDING_CONTEXT = {
+    profile: "Used by Bella on every call — change it anytime",
+    menu: "Lets Bella answer “how much is…” questions",
+    trial: "Card not charged for 14 days · cancel anytime",
+    phone: "Works with Telstra, Optus & Vodafone"
+  };
+  const contextLine = ONBOARDING_CONTEXT[currentKey] ?? null;
   return (
-    <div className="onboarding-shell">
+    <div className={`onboarding-shell${welcome ? " is-welcome" : ""}`}>
+      <div className="onboarding-glow onboarding-glow-1" aria-hidden="true" />
+      <div className="onboarding-glow onboarding-glow-2" aria-hidden="true" />
       <header className="onboarding-top">
         <div className="onboarding-brand">
-          <img src="/brand/mark-light-on-dark.svg" alt="" width="32" height="32" />
+          <img src="/brand/mark-light-on-dark.svg" alt="" width="30" height="30" />
           <strong>VocoTable</strong>
         </div>
         <button type="button" className="onboarding-signout" onClick={onSignOut}>
@@ -838,19 +852,51 @@ function OnboardingShell({ checklist, children, onSignOut }) {
         </button>
       </header>
       <div className="onboarding-body">
-        {checklist && checklist.length > 0 && (
-          <ol className="onboarding-steps" aria-label="Setup progress">
-            {checklist.map((step, i) => (
-              <li key={step.key} className={`onboarding-step is-${step.status}`}>
-                <span className="onboarding-step-dot">
-                  {step.status === "done" ? <Icon name="check" /> : i + 1}
+        {total > 0 && (
+          <div className="onboarding-progress">
+            <p className="onboarding-progress-caption" aria-live="polite">
+              {current ? (
+                <>
+                  <span className="step-count">Step {currentIndex + 1} of {total}</span>
+                  {" · "}
+                  <span className="step-label">{current.label}</span>
+                </>
+              ) : (
+                <span className="step-label">Setup complete</span>
+              )}
+            </p>
+            <div
+              className="onboarding-progress-track"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={doneCount}
+              aria-label="Setup progress"
+            >
+              {checklist.map((s) => (
+                <span
+                  key={s.key}
+                  className={`onboarding-progress-seg is-${s.status}`}
+                  aria-label={`${s.label} — ${s.status === "done" ? "completed" : s.status === "current" ? "in progress" : "not started"}`}
+                />
+              ))}
+              {allDone && (
+                <span className="onboarding-progress-cap" aria-hidden="true">
+                  <Icon name="check" />
                 </span>
-                <span className="onboarding-step-label">{step.label}</span>
-              </li>
-            ))}
-          </ol>
+              )}
+            </div>
+            {contextLine && (
+              <p className="onboarding-progress-context">
+                <Icon name="check" />
+                {contextLine}
+              </p>
+            )}
+          </div>
         )}
-        <main className="onboarding-main">{children}</main>
+        <main className="onboarding-main" key={current?.key ?? (welcome ? "welcome" : "done")}>
+          {children}
+        </main>
       </div>
     </div>
   );
@@ -875,10 +921,15 @@ function CreateRestaurantStep({ onCreated }) {
     }
   };
 
+  const shown = name.trim() || "your restaurant";
+
   return (
     <div className="onboarding-card">
-      <h1>Welcome to VocoTable 👋</h1>
-      <p className="onboarding-lead">Let's set up your AI phone host. First, what's your restaurant called?</p>
+      <img className="onboarding-welcome-mark" src="/brand/mark-light-on-dark.svg" alt="" />
+      <h1>Welcome to VocoTable</h1>
+      <p className="onboarding-lead">
+        Let's set up Bella, your AI phone host. First — what's your restaurant called?
+      </p>
       <form onSubmit={submit} className="onboarding-form">
         <label className="onboarding-field">
           <span>Restaurant name</span>
@@ -892,6 +943,17 @@ function CreateRestaurantStep({ onCreated }) {
             required
           />
         </label>
+        <div className="onboarding-preview" aria-live="polite">
+          <span className="onboarding-preview-label">How Bella answers</span>
+          <div className={`onboarding-callcard${name.trim() ? " is-live" : ""}`}>
+            <span className="onboarding-callcard-status">
+              {name.trim() ? "Incoming call" : "Waiting for the name"}
+            </span>
+            <p className="onboarding-callcard-greeting">
+              “Good evening, you've reached <strong>{shown}</strong>. This is Bella — how can I help?”
+            </p>
+          </div>
+        </div>
         {error && <p className="onboarding-error">{error}</p>}
         <button type="submit" className="primary-button" disabled={busy || !name.trim()}>
           {busy ? "Creating…" : "Create & continue"}
@@ -934,7 +996,7 @@ function ProfileStep({ onSaved }) {
 
   if (!form) {
     return (
-      <div className="onboarding-card">
+      <div className="onboarding-card is-loading">
         <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error}` : "Loading…"}</p>
       </div>
     );
@@ -980,6 +1042,10 @@ function ProfileStep({ onSaved }) {
 
   return (
     <div className="onboarding-card">
+      <div className="onboarding-bella">
+        <span className="onboarding-bella-avatar" aria-hidden="true"><Icon name="headset_mic" /></span>
+        <p>Hi, I'm <strong>Bella</strong>. Tell me about your place and I'll use it to greet every caller.</p>
+      </div>
       <h1>Tell us about your restaurant</h1>
       <p className="onboarding-lead">This is what Bella uses to answer your calls.</p>
       <form onSubmit={submit} className="onboarding-form">
@@ -1006,6 +1072,9 @@ function ProfileStep({ onSaved }) {
             placeholder="(02) 1234 5678"
             maxLength={32}
           />
+          <span className="onboarding-field-help">
+            <Icon name="info" /> Later you'll forward this number to Bella — nothing changes for your callers.
+          </span>
         </label>
         <label className="onboarding-field">
           <span>Street address</span>
@@ -1037,7 +1106,10 @@ function ProfileStep({ onSaved }) {
           </label>
         </div>
         <div className="onboarding-field">
-          <span>Cuisine <em>(pick up to 5)</em></span>
+          <span>
+            Cuisine <em>(pick up to 5)</em>
+            <span className="ob-counter">{form.cuisine_type.length}/5</span>
+          </span>
           <div className="onboarding-chips">
             {ONBOARDING_CUISINES.map((c) => (
               <button
@@ -1050,6 +1122,22 @@ function ProfileStep({ onSaved }) {
                 {c}
               </button>
             ))}
+          </div>
+        </div>
+        <div className="onboarding-preview" aria-live="polite">
+          <span className="onboarding-preview-label">How Bella answers</span>
+          <div className={`onboarding-callcard${form.name.trim() ? " is-live" : ""}`}>
+            <span className="onboarding-callcard-status">
+              {form.name.trim() ? "Incoming call" : "Waiting for details"}
+            </span>
+            <p className="onboarding-callcard-greeting">
+              “Good evening, you've reached <strong>{form.name.trim() || "your restaurant"}</strong>. This is Bella — how can I help?”
+            </p>
+            {form.cuisine_type.length > 0 && (
+              <p className="onboarding-field-help" style={{ marginTop: 8 }}>
+                <Icon name="restaurant_menu" /> I'll mention you serve {form.cuisine_type.slice(0, 3).join(", ").toLowerCase()}.
+              </p>
+            )}
           </div>
         </div>
         {error && <p className="onboarding-error">{error}</p>}
@@ -1098,9 +1186,15 @@ function MenuDraftReview({ draft, onCommit, onCancel, committing }) {
     <div className="onboarding-card onboarding-card-wide">
       <h1>Review your menu</h1>
       <p className="onboarding-lead">
-        We read {itemCount} item{itemCount === 1 ? "" : "s"} from your menu. Check the names and prices —
-        {lowConfidence ? " rows we weren't sure about are flagged." : " everything looked clear."}
+        I read {itemCount} item{itemCount === 1 ? "" : "s"} from your menu. Check the names and prices —
+        {lowConfidence ? " I've flagged a few I wasn't sure about." : " everything looked clear."}
       </p>
+      {lowConfidence && (
+        <div className="onboarding-bella">
+          <span className="onboarding-bella-avatar" aria-hidden="true"><Icon name="headset_mic" /></span>
+          <p>Give the highlighted rows a quick double-check — I wasn't 100% sure on those prices.</p>
+        </div>
+      )}
       <div className="menu-review">
         {cats.map((c, ci) => (
           <div key={ci} className="menu-review-cat">
@@ -1127,7 +1221,7 @@ function MenuDraftReview({ draft, onCommit, onCancel, committing }) {
                       onChange={(e) => setItem(ci, ii, { price_cents: dollarsToCents(e.target.value) })}
                     />
                   </div>
-                  {unsure && <span className="menu-review-flag" title="Low confidence — please check">⚠</span>}
+                  {unsure && <span className="menu-review-flag" title="Double-check this price">⚠</span>}
                   <button type="button" className="menu-review-del" onClick={() => removeItem(ci, ii)} aria-label="Remove item">
                     <Icon name="close" />
                   </button>
@@ -1262,10 +1356,13 @@ function MenuStep({ onContinue, navigate }) {
 
   return (
     <div className="onboarding-card">
+      <div className="onboarding-bella">
+        <span className="onboarding-bella-avatar" aria-hidden="true"><Icon name="headset_mic" /></span>
+        <p>Share your menu and I'll learn every dish and price — so I can answer “how much is…” on a call.</p>
+      </div>
       <h1>Add your menu</h1>
       <p className="onboarding-lead">
-        Snap a photo or upload a PDF of your menu and we'll build it for you — or add items by hand in
-        the editor.
+        Snap a photo or upload a PDF and I'll type it up for you — or add items by hand in the editor.
       </p>
 
       {ocrUnavailable && (
@@ -1282,9 +1379,11 @@ function MenuStep({ onContinue, navigate }) {
           {phase === "uploading" ? "Uploading your menu…" : phase === "parsing" ? "Reading your menu… this takes a few seconds." : "Saving…"}
         </p>
       ) : (
-        <div className="onboarding-actions">
-          <label className="primary-button" style={{ cursor: "pointer" }}>
-            <Icon name="photo_camera" /> Upload menu photo / PDF
+        <>
+          <label className="onboarding-dropzone">
+            <Icon name="photo_camera" />
+            <span className="dz-title">Snap or upload your menu</span>
+            <span className="dz-sub">JPG, PNG or PDF — Bella reads it for you</span>
             <input
               type="file"
               accept="image/*,application/pdf"
@@ -1292,18 +1391,15 @@ function MenuStep({ onContinue, navigate }) {
               style={{ display: "none" }}
             />
           </label>
-          <button type="button" className="ghost-button" onClick={() => navigate("/manage-menu")}>
-            <Icon name="restaurant_menu" /> Add manually
-          </button>
-        </div>
-      )}
-
-      {!working && (
-        <div className="onboarding-actions" style={{ marginTop: 18 }}>
-          <button type="button" className="ghost-button" onClick={handleManualContinue} disabled={busy}>
-            {busy ? "Checking…" : "I've already added my menu — continue"}
-          </button>
-        </div>
+          <div className="onboarding-actions" style={{ marginTop: 14 }}>
+            <button type="button" className="ghost-button" onClick={() => navigate("/manage-menu")}>
+              <Icon name="restaurant_menu" /> Add manually
+            </button>
+            <button type="button" className="ghost-button" onClick={handleManualContinue} disabled={busy}>
+              {busy ? "Checking…" : "I've already added my menu — continue"}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -1346,10 +1442,13 @@ function TrialStep({ onRefresh }) {
 
   return (
     <div className="onboarding-card">
+      <div className="onboarding-bella">
+        <span className="onboarding-bella-avatar" aria-hidden="true"><Icon name="headset_mic" /></span>
+        <p>Try me free for 14 days. I'll start answering your calls now — your card isn't charged until the trial ends.</p>
+      </div>
       <h1>Start your free trial</h1>
       <p className="onboarding-lead">
-        Try VocoTable free for 14 days. We'll set up your AI phone host now — your card isn't charged
-        until the trial ends, and you can cancel anytime.
+        Try VocoTable free for 14 days. We'll set up your AI phone host now — cancel anytime.
       </p>
       <div className="trial-plan">
         <div>
@@ -1361,6 +1460,11 @@ function TrialStep({ onRefresh }) {
           <span>/ month after trial</span>
         </div>
       </div>
+      <ul className="trial-reassure">
+        <li><Icon name="check" /> 14-day free trial</li>
+        <li><Icon name="check" /> Card not charged until the trial ends</li>
+        <li><Icon name="check" /> Cancel anytime</li>
+      </ul>
       {unavailable && (
         <p className="onboarding-note">
           <Icon name="info" /> Billing isn't switched on yet — your progress is saved and we'll email
@@ -1419,7 +1523,7 @@ function PhoneStep({ onRefresh }) {
 
   if (!setup) {
     return (
-      <div className="onboarding-card">
+      <div className="onboarding-card is-loading">
         <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error}` : "Loading…"}</p>
       </div>
     );
@@ -1428,6 +1532,7 @@ function PhoneStep({ onRefresh }) {
   if (!setup.number_ready) {
     return (
       <div className="onboarding-card">
+        <Icon name="hourglass_top" className="phone-provisioning-icon" />
         <h1>We're setting up your phone line</h1>
         <p className="onboarding-lead">
           Our team is provisioning your dedicated VocoTable number and configuring Bella with your
@@ -1435,7 +1540,7 @@ function PhoneStep({ onRefresh }) {
           will update automatically.
         </p>
         <p className="onboarding-note">
-          <Icon name="hourglass_top" /> Provisioning in progress…
+          <Icon name="info" /> Provisioning in progress…
         </p>
       </div>
     );
@@ -1462,7 +1567,7 @@ function PhoneStep({ onRefresh }) {
           (Exact steps vary by carrier — Telstra, Optus and Vodafone all support these GSM codes.)
         </li>
         <li>From a different phone, call your restaurant's normal number to test it.</li>
-        <li>Click verify below — we'll confirm the call reached Bella.</li>
+        <li>Tap verify below — we'll confirm the call reached Bella.</li>
       </ol>
       {error && <p className="onboarding-error">{error}</p>}
       <div className="onboarding-actions">
@@ -1535,7 +1640,7 @@ function OnboardingWizard({ navigate }) {
 
   if (!hasRestaurant) {
     return (
-      <OnboardingShell onSignOut={handleSignOut}>
+      <OnboardingShell onSignOut={handleSignOut} welcome>
         <CreateRestaurantStep onCreated={refreshMe} />
       </OnboardingShell>
     );
@@ -1565,17 +1670,20 @@ function OnboardingWizard({ navigate }) {
   } else {
     content = (
       <div className="onboarding-card">
-        <h1>You're all set 🎉</h1>
-        <p className="onboarding-lead">Your restaurant is live.</p>
-        <button type="button" className="primary-button" onClick={() => navigate("/live-feed")}>
-          Go to dashboard <Icon name="arrow_forward" />
-        </button>
+        <div className="onboarding-done-check" aria-hidden="true"><Icon name="check" /></div>
+        <h1>You're all set</h1>
+        <p className="onboarding-lead">Bella is answering your calls now. Watch them land live in your dashboard.</p>
+        <div className="onboarding-actions">
+          <button type="button" className="primary-button" onClick={() => navigate("/live-feed")}>
+            Go to dashboard <Icon name="arrow_forward" />
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <OnboardingShell checklist={checklist} onSignOut={handleSignOut}>
+    <OnboardingShell checklist={checklist} currentKey={current} onSignOut={handleSignOut}>
       {content}
     </OnboardingShell>
   );
