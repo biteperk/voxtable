@@ -88,6 +88,7 @@ function extractJson(text: string): unknown {
 export async function parseMenu(input: {
   sourceUrl: string;
   sourceKind: "image" | "pdf";
+  restaurantId?: string;
 }): Promise<MenuDraft> {
   if (!isMenuOcrEnabled()) {
     throw new AppError(503, "MENU_OCR_DISABLED", "Menu OCR is not enabled.");
@@ -135,7 +136,20 @@ export async function parseMenu(input: {
       );
     }
 
-    const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    const json = (await res.json()) as {
+      content?: Array<{ type: string; text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    // Cost attribution: log token usage per call so vision spend can be tracked
+    // per restaurant (B2). Tokens, not dollars, to stay provider-price-agnostic.
+    logger.info({
+      evt: "menu_ocr_call",
+      restaurant_id: input.restaurantId ?? null,
+      source_kind: input.sourceKind,
+      file_bytes: Math.round((file.base64.length * 3) / 4),
+      input_tokens: json.usage?.input_tokens ?? null,
+      output_tokens: json.usage?.output_tokens ?? null
+    });
     responseText = (json.content ?? [])
       .filter((b) => b.type === "text")
       .map((b) => b.text ?? "")
