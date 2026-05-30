@@ -27,6 +27,7 @@
 import { env } from "../config/env";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
+import { getOnboardingFunnel } from "../repositories/restaurants";
 import { getBreakerState } from "../services/calcomClient";
 import { quotaSnapshot, shouldFireQuotaAlert } from "../services/calcomQuotaTracker";
 import { kdsHealthSnapshot } from "../services/orderService";
@@ -70,6 +71,9 @@ interface AlertState {
   kdsHasSeenAnyHeartbeat: boolean;
   // Retell signed-surface 401/403 storm (wrong/stale RETELL_API_KEY).
   retellAuthAlerted: boolean;
+  // D1: UTC day-key of the last onboarding-funnel summary posted, so it fires
+  // at most once per day (the alerter ticks every minute).
+  funnelSummaryDayKey: string | null;
 }
 
 const state: AlertState = {
@@ -82,8 +86,27 @@ const state: AlertState = {
   kdsOldestPendingAlerted: false,
   kdsTabletOfflineAlerted: false,
   kdsHasSeenAnyHeartbeat: false,
-  retellAuthAlerted: false
+  retellAuthAlerted: false,
+  funnelSummaryDayKey: null
 };
+
+// D1: how the onboarding funnel reads in the daily summary. Ordered by the
+// real signup sequence so a glance shows where signups pile up / drop off.
+const FUNNEL_ORDER = [
+  "account_created",
+  "profile",
+  "menu",
+  "trial",
+  "provisioning",
+  "live",
+  "suspended",
+  "cancelled"
+] as const;
+// Only count the live operational restaurant(s) toward "noise" — fire the
+// summary once we send it for the day, regardless of counts, so a stall at a
+// given step is always visible. Skips the report entirely if there are no
+// in-progress signups (every restaurant is live), to avoid daily no-op spam.
+const FUNNEL_IN_PROGRESS = ["account_created", "profile", "menu", "trial", "provisioning"] as const;
 
 let intervalHandle: NodeJS.Timeout | null = null;
 let tickInFlight = false;
@@ -271,11 +294,39 @@ async function checkRetellAuth(): Promise<void> {
   }
 }
 
+// D1: once-per-UTC-day onboarding funnel summary. Posts a per-status snapshot so
+// stalls/drop-off are visible without opening the admin console. Edge-gated on
+// the UTC day-key so it fires at most once per day even though the alerter ticks
+// every minute. Skips entirely when no signups are in progress (every
+// restaurant is live) to avoid a daily no-op message.
+async function checkOnboardingFunnel(): Promise<void> {
+  try {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (state.funnelSummaryDayKey === todayKey) return;
+
+    const funnel = await getOnboardingFunnel();
+    const inProgress = FUNNEL_IN_PROGRESS.reduce((sum, k) => sum + (funnel[k] ?? 0), 0);
+    // Mark the day done even when we skip, so we don't re-query every minute.
+    state.funnelSummaryDayKey = todayKey;
+    if (inProgress === 0) return;
+
+    const line = FUNNEL_ORDER.filter((k) => (funnel[k] ?? 0) > 0)
+      .map((k) => `${k}: ${funnel[k]}`)
+      .join(" · ");
+    await postToSlack(
+      `:bar_chart: Onboarding funnel (${todayKey} UTC): ${line}. ${inProgress} restaurant(s) mid-signup.`
+    );
+  } catch (error) {
+    console.warn("[health-alerter] funnel summary failed:", (error as Error).message);
+  }
+}
+
 async function checkOnce(): Promise<void> {
   // KDS + Retell auth always run when slack is configured. Cal.com gated by its
   // env flag.
   await checkKds();
   await checkRetellAuth();
+  await checkOnboardingFunnel();
   if (env.CALCOM_SYNC_ENABLED) {
     await checkCalcom();
   }
