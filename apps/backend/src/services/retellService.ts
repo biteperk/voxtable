@@ -50,11 +50,15 @@ export async function assertRetellSignature(
     return;
   }
 
-  if (!env.RETELL_API_KEY) {
+  // Retell signs webhooks with the dedicated dashboard "Secret Key (Webhook)",
+  // which is distinct from the REST API key. Prefer RETELL_WEBHOOK_SECRET; fall
+  // back to RETELL_API_KEY for older single-key accounts.
+  const signingSecret = env.RETELL_WEBHOOK_SECRET ?? env.RETELL_API_KEY;
+  if (!signingSecret) {
     throw new AppError(
       500,
       "RETELL_SIGNATURE_CONFIG_MISSING",
-      "RETELL_API_KEY is required when RETELL_VERIFY_SIGNATURE=true."
+      "RETELL_WEBHOOK_SECRET (or RETELL_API_KEY) is required when RETELL_VERIFY_SIGNATURE=true."
     );
   }
 
@@ -62,7 +66,7 @@ export async function assertRetellSignature(
     throw new AppError(401, "RETELL_SIGNATURE_MISSING", "Retell signature is required.");
   }
 
-  const isValid = await Retell.verify(rawBody ?? "", env.RETELL_API_KEY, headerValue);
+  const isValid = await Retell.verify(rawBody ?? "", signingSecret, headerValue);
 
   if (!isValid) {
     throw new AppError(401, "RETELL_SIGNATURE_INVALID", "Invalid Retell signature.");

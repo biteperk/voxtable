@@ -21,6 +21,12 @@ const envSchema = z
     .uuid()
     .default(LOCAL_DEFAULT_RESTAURANT_ID),
   RETELL_API_KEY: z.string().optional(),
+  // Retell signs webhooks (x-retell-signature) with the dedicated "Secret Key
+  // (Webhook)" from the dashboard, NOT the REST API key. Keep them separate:
+  // RETELL_API_KEY authenticates outbound REST calls; RETELL_WEBHOOK_SECRET
+  // verifies inbound webhook signatures. Falls back to RETELL_API_KEY if unset
+  // (older single-key accounts).
+  RETELL_WEBHOOK_SECRET: z.string().optional(),
   RETELL_AGENT_ID: z.string().optional(),
   RETELL_PHONE_NUMBER: z.string().optional(),
   RETELL_VERIFY_SIGNATURE: z
