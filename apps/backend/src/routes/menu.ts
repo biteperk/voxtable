@@ -224,6 +224,7 @@ menuRouter.post(
   requireFirebaseAuth,
   resolveTenant,
   requireMemberRole("manager"),
+  menuIngestLimiter,
   asyncHandler(async (request, response) => {
     const body = startIngestionSchema.parse(request.body);
     const job = await startIngestion({

@@ -22,6 +22,7 @@ import {
   type OnboardingEvent
 } from "../services/onboardingService";
 import { notifyRestaurant } from "../services/notificationService";
+import { createRestaurantLimiter } from "../http/rateLimiters";
 
 export const onboardingRouter = Router();
 
@@ -45,6 +46,7 @@ function actingUser(request: AuthenticatedRequest): { uid: string; email: string
 onboardingRouter.post(
   "/api/onboarding/restaurant",
   requireFirebaseAuth,
+  createRestaurantLimiter,
   asyncHandler(async (request: AuthenticatedRequest, response) => {
     const user = actingUser(request);
     const body = createRestaurantSchema.parse(request.body);
