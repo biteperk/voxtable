@@ -37,13 +37,28 @@ export async function sha256Hex(file) {
  * off our API). Returns the download URL + file hash + inferred kind for the
  * OCR ingestion job.
  */
+// Firebase Storage calls hang indefinitely when the bucket/CORS isn't reachable
+// (e.g. the Storage bucket isn't provisioned). Bound them so the menu step fails
+// fast and the owner can fall back to the manual editor instead of spinning on
+// "Uploading…" forever.
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export async function uploadMenuFile(restaurantId, file) {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
   const path = `menu-imports/${restaurantId}/${Date.now()}-${safeName}`;
-  const snap = await uploadBytes(ref(storage, path), file, {
-    contentType: file.type || "application/octet-stream"
-  });
-  const url = await getDownloadURL(snap.ref);
+  const failMsg = "Photo import isn't available right now — please add your menu manually below.";
+  const snap = await withTimeout(
+    uploadBytes(ref(storage, path), file, { contentType: file.type || "application/octet-stream" }),
+    20000,
+    failMsg
+  );
+  const url = await withTimeout(getDownloadURL(snap.ref), 10000, failMsg);
   const sha256 = await sha256Hex(file);
   const sourceKind =
     (file.type || "").includes("pdf") || /\.pdf$/i.test(file.name) ? "pdf" : "image";
