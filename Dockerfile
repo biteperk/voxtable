@@ -12,7 +12,11 @@ RUN npm ci
 # Copy all source code
 COPY . .
 
-# Build the backend (TypeScript -> JavaScript)
+# Build the backend (TypeScript -> JavaScript).
+# Raise the V8 heap for tsc: the production VM is memory-constrained (~1GB RAM)
+# and the default old-space limit OOMs (SIGABRT) while compiling the full
+# backend. This only affects the throwaway builder stage, not the runtime image.
+ENV NODE_OPTIONS=--max-old-space-size=2048
 RUN npm run build:backend
 
 # ---- Stage 2: Runner ----
