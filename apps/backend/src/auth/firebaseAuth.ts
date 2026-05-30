@@ -100,18 +100,31 @@ export async function requireFirebaseAuth(
     const app = ensureInitialized();
     const decoded = await app.auth().verifyIdToken(match[1]!);
 
+    // A verified email is required for EVERY authenticated request, regardless
+    // of the allowlist. This must sit ABOVE the allowlist branch: with open
+    // signup (empty allowlist) the allowlist check is skipped entirely, so
+    // without this an unverified email/password account would pass auth and
+    // reach cost-bearing actions (OCR, provisioning). Google sign-ins are
+    // pre-verified, so this is transparent for them.
+    if (!decoded.email || decoded.email_verified !== true) {
+      logger.warn({
+        evt: "auth_email_not_verified",
+        uid: decoded.uid,
+        email_verified: decoded.email_verified === true
+      });
+      return next(
+        new AppError(403, "EMAIL_NOT_VERIFIED", "Please verify your email address to continue.")
+      );
+    }
+
     // Email allowlist — defence-in-depth on top of Firebase project audience
     // check (which verifyIdToken already enforces via the projectId passed to
     // initializeApp). Empty allowlist = allow any verified account (dev only;
     // production env.ts superRefine forbids the empty case).
     if (allowedEmails.size > 0) {
-      const email = decoded.email?.toLowerCase();
-      if (!email || !decoded.email_verified || !allowedEmails.has(email)) {
-        logger.warn({
-          evt: "auth_email_not_allowlisted",
-          uid: decoded.uid,
-          email_verified: decoded.email_verified === true
-        });
+      const email = decoded.email.toLowerCase();
+      if (!allowedEmails.has(email)) {
+        logger.warn({ evt: "auth_email_not_allowlisted", uid: decoded.uid });
         return next(
           new AppError(403, "EMAIL_NOT_ALLOWLISTED", "This account is not authorised.")
         );

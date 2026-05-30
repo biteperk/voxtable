@@ -6,9 +6,9 @@ import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContex
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
 import { createRestaurantSchema, onboardingAdvanceSchema } from "../http/schemas";
-import { pool } from "../db/pool";
+import { pool, withTransaction } from "../db/pool";
 import { countCallsSince } from "../repositories/callLogs";
-import { getUserMemberships, upsertUser } from "../repositories/members";
+import { upsertUser } from "../repositories/members";
 import {
   createRestaurantWithOwner,
   getOnboardingStatus,
@@ -68,12 +68,25 @@ onboardingRouter.post(
       return;
     }
 
-    const { restaurantId } = await createRestaurantWithOwner({
+    // createRestaurantWithOwner is idempotent (per-owner advisory lock +
+    // in-txn re-check), so a double-submit that slips past the read above
+    // returns the same restaurant with existing=true instead of a 2nd tenant.
+    const { restaurantId, existing: alreadyExisted } = await createRestaurantWithOwner({
       name: body.name,
       ownerUserId: user.uid,
       ownerName: user.name,
       contactEmail: user.email || null
     });
+
+    if (alreadyExisted) {
+      const status = await getOnboardingStatus(restaurantId);
+      response.status(200).json({
+        restaurant_id: restaurantId,
+        onboarding_status: status,
+        idempotent: true
+      });
+      return;
+    }
 
     void notifyRestaurant("welcome", restaurantId);
 
@@ -120,27 +133,39 @@ onboardingRouter.post(
     const body = onboardingAdvanceSchema.parse(request.body);
     const event = body.event as OnboardingEvent;
 
-    const current = await getOnboardingStatus(restaurantId);
-    if (!current) {
-      throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
-    }
+    // Read status, validate the event, and write the new status atomically in
+    // one transaction, serialized per-restaurant via an advisory lock. Without
+    // this, the menu_completed COUNT(*) check and the status write are separate
+    // queries — a concurrent menu delete between them could strand the tenant
+    // in `trial` with zero menu items.
+    const next = await withTransaction(async (db) => {
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        `onboard-advance:${restaurantId}`
+      ]);
 
-    if (event === "menu_completed") {
-      const count = await pool.query<{ n: string }>(
-        "SELECT COUNT(*)::text AS n FROM menu_items WHERE restaurant_id = $1",
-        [restaurantId]
-      );
-      if (Number(count.rows[0]?.n ?? "0") === 0) {
-        throw new AppError(
-          400,
-          "MENU_EMPTY",
-          "Add at least one menu item before continuing."
-        );
+      const current = await getOnboardingStatus(restaurantId, db);
+      if (!current) {
+        throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
       }
-    }
 
-    const next = nextOnboardingStatus(current, event);
-    if (next !== current) await setOnboardingStatus(restaurantId, next);
+      if (event === "menu_completed") {
+        const count = await db.query<{ n: string }>(
+          "SELECT COUNT(*)::text AS n FROM menu_items WHERE restaurant_id = $1",
+          [restaurantId]
+        );
+        if (Number(count.rows[0]?.n ?? "0") === 0) {
+          throw new AppError(
+            400,
+            "MENU_EMPTY",
+            "Add at least one menu item before continuing."
+          );
+        }
+      }
+
+      const target = nextOnboardingStatus(current, event);
+      if (target !== current) await setOnboardingStatus(restaurantId, target, db);
+      return target;
+    });
 
     response.json({ onboarding_status: next, checklist: computeChecklist(next) });
   })
