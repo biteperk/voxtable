@@ -19,8 +19,11 @@ import { isBillingConfigured, legacyCustomerId, stripeMode } from "../services/s
 // tenant gated. When billing is disabled, GETs return a graceful empty state.
 export const billingRouter = Router();
 
-billingRouter.use(requireFirebaseAuth);
-billingRouter.use(resolveTenant);
+// Path-scoped so these gates run ONLY for /api/billing/* — a bare
+// router.use(mw) leaks onto every fall-through request (e.g. /api/me,
+// /stripe/webhook) because the router is mounted at "/".
+billingRouter.use("/api/billing", requireFirebaseAuth);
+billingRouter.use("/api/billing", resolveTenant);
 
 // The restaurant's own Stripe customer, falling back to the legacy single-tenant
 // env id during transition. null → this restaurant hasn't started billing yet.

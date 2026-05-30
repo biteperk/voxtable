@@ -24,8 +24,16 @@ import { pool } from "../db/pool";
 
 export const dashboardRouter = Router();
 
-dashboardRouter.use(requireFirebaseAuth);
-dashboardRouter.use(resolveTenant);
+// Path-scoped to the dashboard's own routes. A bare router.use(mw) leaks onto
+// every fall-through request (this router is mounted at "/" and ahead of
+// meRouter/onboardingRouter), so a multi-restaurant account would get
+// 409 RESTAURANT_SELECTION_REQUIRED on /api/me before it could ever load its
+// memberships — a bootstrap deadlock. These prefixes cover every route below
+// (/api/call-logs also matches /api/call-logs/:id; /api/analytics also matches
+// /api/analytics/daily-series).
+const DASHBOARD_PATHS = ["/api/reservations", "/api/tables", "/api/call-logs", "/api/analytics", "/api/ops"];
+dashboardRouter.use(DASHBOARD_PATHS, requireFirebaseAuth);
+dashboardRouter.use(DASHBOARD_PATHS, resolveTenant);
 
 const listReservationsQuery = z.object({
   date: z

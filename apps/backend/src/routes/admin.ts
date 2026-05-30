@@ -20,8 +20,11 @@ import { normalizePhone } from "../utils/phone";
 // by requireAdminRole rather than per-restaurant membership.
 export const adminRouter = Router();
 
-adminRouter.use(requireFirebaseAuth);
-adminRouter.use(requireAdminRole);
+// Path-scoped so these gates run ONLY for /api/admin/* — a bare router.use(mw)
+// leaks onto every fall-through request (the router is mounted at "/"), which
+// would 401/403 unrelated endpoints like /api/me and /stripe/webhook.
+adminRouter.use("/api/admin", requireFirebaseAuth);
+adminRouter.use("/api/admin", requireAdminRole);
 
 // Onboarding funnel snapshot — counts per status for drop-off analysis.
 adminRouter.get(
