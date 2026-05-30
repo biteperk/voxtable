@@ -16,7 +16,7 @@ import {
   markProvisioningRetry,
   type ProvisioningJob
 } from "../repositories/provisioning";
-import { getRestaurantProfile, setProvisioningBindings } from "../repositories/restaurants";
+import { getOnboardingStatus, getRestaurantProfile, setProvisioningBindings } from "../repositories/restaurants";
 import { notifyRestaurant } from "../services/notificationService";
 import { buyAuNumber, configureVoiceWebhook } from "../services/twilioProvisioning";
 import { createAgentForRestaurant, importNumberToRetell } from "../services/retellProvisioning";
@@ -39,6 +39,20 @@ async function runStep(job: ProvisioningJob): Promise<void> {
       if (job.payload.twilio_number) {
         await advanceProvisioningStep(job.id, "configure_voice", {});
         return;
+      }
+      // B3 cost gate: buying a Twilio number costs real money. The enqueue only
+      // happens from the Stripe webhook on a trialing|active subscription, but a
+      // subscription can lapse/cancel between enqueue and this (possibly
+      // retried/backed-off) step. Re-check the restaurant is STILL in
+      // `provisioning` immediately before the purchase; if it regressed
+      // (suspended/cancelled), fail the job rather than buy a number for a
+      // tenant that's no longer paying. This is the only step that spends money,
+      // so it's the only one that needs the guard.
+      const status = await getOnboardingStatus(job.restaurant_id);
+      if (status !== "provisioning") {
+        throw new Error(
+          `Provisioning aborted: restaurant ${job.restaurant_id} is '${status}', not 'provisioning' (subscription likely lapsed). Not buying a number.`
+        );
       }
       const { phoneNumber, sid } = await buyAuNumber();
       await advanceProvisioningStep(job.id, "configure_voice", { twilio_number: phoneNumber, twilio_sid: sid });
