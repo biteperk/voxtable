@@ -148,6 +148,18 @@ const envSchema = z
     .default("false")
     .transform((value) => value === "true"),
   MENU_OCR_API_KEY: z.string().optional(),
+  // Which vision API dialect to speak. "anthropic" = Anthropic Messages API;
+  // "openai" = any OpenAI-compatible /chat/completions host (OpenRouter,
+  // Together, Fireworks, DeepInfra, Gemini's OpenAI shim, local Ollama, …),
+  // which is how open-weight VLMs (Qwen2.5-VL, Llama-3.2-Vision, Pixtral) are
+  // served. Lets us run an open model without code changes — just env.
+  MENU_OCR_PROVIDER: z.enum(["anthropic", "openai"]).default("anthropic"),
+  // Base URL for the "openai" provider (ignored for anthropic). E.g.
+  // https://openrouter.ai/api/v1 , https://api.together.xyz/v1 ,
+  // https://generativelanguage.googleapis.com/v1beta/openai .
+  MENU_OCR_BASE_URL: z.string().url().optional(),
+  // Default model is Anthropic's; override per provider, e.g.
+  // "qwen/qwen-2.5-vl-72b-instruct" (OpenRouter) or "gemini-2.0-flash".
   MENU_OCR_MODEL: z.string().default("claude-3-5-sonnet-latest"),
   MENU_OCR_MAX_FILE_MB: z.coerce.number().int().positive().default(10),
   MENU_OCR_MAX_JOBS_PER_DAY: z.coerce.number().int().positive().default(25),
@@ -331,6 +343,16 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ["MENU_OCR_API_KEY"],
         message: "MENU_OCR_API_KEY is required when MENU_OCR_ENABLED=true."
+      });
+    }
+
+    // The OpenAI-compatible provider (open-weight VLM hosts) needs a base URL —
+    // there's no single default endpoint the way Anthropic has one.
+    if (value.MENU_OCR_ENABLED && value.MENU_OCR_PROVIDER === "openai" && !value.MENU_OCR_BASE_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MENU_OCR_BASE_URL"],
+        message: "MENU_OCR_BASE_URL is required when MENU_OCR_PROVIDER=openai."
       });
     }
 

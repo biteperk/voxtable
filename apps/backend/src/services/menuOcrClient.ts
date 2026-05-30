@@ -67,11 +67,118 @@ function guessMediaType(url: string): string {
   return "image/jpeg";
 }
 
-function contentBlockFor(file: FetchedFile, sourceKind: "image" | "pdf"): unknown {
+// --- Anthropic-native (Messages API) content block ---
+function anthropicContentBlock(file: FetchedFile, sourceKind: "image" | "pdf"): unknown {
   if (sourceKind === "pdf" || file.mediaType === "application/pdf") {
     return { type: "document", source: { type: "base64", media_type: "application/pdf", data: file.base64 } };
   }
   return { type: "image", source: { type: "base64", media_type: file.mediaType, data: file.base64 } };
+}
+
+// --- OpenAI-compatible (/chat/completions) content block ---
+// Used for open-weight VLM hosts (OpenRouter, Together, Fireworks, DeepInfra,
+// Gemini's OpenAI shim, local Ollama). Images go as a data: URL under
+// image_url; PDFs are not universally supported on this shape, so we send them
+// via the `file` block that OpenRouter/Gemini accept, falling back to image_url
+// for image sources.
+function openaiContentBlocks(file: FetchedFile, sourceKind: "image" | "pdf"): unknown[] {
+  const text = { type: "text", text: "Digitise this menu. Output only the JSON object." };
+  if (sourceKind === "pdf" || file.mediaType === "application/pdf") {
+    return [
+      {
+        type: "file",
+        file: { filename: "menu.pdf", file_data: `data:application/pdf;base64,${file.base64}` }
+      },
+      text
+    ];
+  }
+  return [
+    { type: "image_url", image_url: { url: `data:${file.mediaType};base64,${file.base64}` } },
+    text
+  ];
+}
+
+interface OcrResponse {
+  text: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
+
+async function callAnthropic(file: FetchedFile, sourceKind: "image" | "pdf", signal: AbortSignal): Promise<OcrResponse> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    signal,
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.MENU_OCR_API_KEY!,
+      "anthropic-version": "2023-06-01"
+    },
+    body: JSON.stringify({
+      model: env.MENU_OCR_MODEL,
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: [
+            anthropicContentBlock(file, sourceKind),
+            { type: "text", text: "Digitise this menu. Output only the JSON object." }
+          ]
+        }
+      ]
+    })
+  });
+  if (!res.ok) throw await upstreamError(res);
+  const json = (await res.json()) as {
+    content?: Array<{ type: string; text?: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  return {
+    text: (json.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n"),
+    inputTokens: json.usage?.input_tokens ?? null,
+    outputTokens: json.usage?.output_tokens ?? null
+  };
+}
+
+async function callOpenAiCompatible(file: FetchedFile, sourceKind: "image" | "pdf", signal: AbortSignal): Promise<OcrResponse> {
+  const base = env.MENU_OCR_BASE_URL!.replace(/\/$/, "");
+  const res = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    signal,
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${env.MENU_OCR_API_KEY!}`
+    },
+    body: JSON.stringify({
+      model: env.MENU_OCR_MODEL,
+      max_tokens: 4096,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: openaiContentBlocks(file, sourceKind) }
+      ]
+    })
+  });
+  if (!res.ok) throw await upstreamError(res);
+  const json = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  return {
+    text: json.choices?.[0]?.message?.content ?? "",
+    inputTokens: json.usage?.prompt_tokens ?? null,
+    outputTokens: json.usage?.completion_tokens ?? null
+  };
+}
+
+async function upstreamError(res: Response): Promise<AppError> {
+  const body = await res.text().catch(() => "");
+  logger.error({ evt: "menu_ocr_upstream_error", status: res.status, body: body.slice(0, 300) });
+  const transient = res.status === 429 || res.status >= 500;
+  return new AppError(
+    transient ? 503 : 502,
+    "MENU_OCR_UPSTREAM_ERROR",
+    "The menu parser is temporarily unavailable."
+  );
 }
 
 function extractJson(text: string): unknown {
@@ -100,60 +207,26 @@ export async function parseMenu(input: {
   const timer = setTimeout(() => controller.abort(), env.MENU_OCR_REQUEST_TIMEOUT_MS);
   let responseText: string;
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": env.MENU_OCR_API_KEY!,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: env.MENU_OCR_MODEL,
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: [
-              contentBlockFor(file, input.sourceKind),
-              { type: "text", text: "Digitise this menu. Output only the JSON object." }
-            ]
-          }
-        ]
-      })
-    });
+    // Dispatch on the configured provider dialect — Anthropic-native or any
+    // OpenAI-compatible host (open-weight VLMs). Both return a uniform shape.
+    const result =
+      env.MENU_OCR_PROVIDER === "openai"
+        ? await callOpenAiCompatible(file, input.sourceKind, controller.signal)
+        : await callAnthropic(file, input.sourceKind, controller.signal);
 
-    if (!res.ok) {
-      const body = await res.text();
-      // Log status + a short body snippet (no API key — it's only in the header).
-      logger.error({ evt: "menu_ocr_upstream_error", status: res.status, body: body.slice(0, 300) });
-      const transient = res.status === 429 || res.status >= 500;
-      throw new AppError(
-        transient ? 503 : 502,
-        "MENU_OCR_UPSTREAM_ERROR",
-        "The menu parser is temporarily unavailable."
-      );
-    }
-
-    const json = (await res.json()) as {
-      content?: Array<{ type: string; text?: string }>;
-      usage?: { input_tokens?: number; output_tokens?: number };
-    };
     // Cost attribution: log token usage per call so vision spend can be tracked
     // per restaurant (B2). Tokens, not dollars, to stay provider-price-agnostic.
     logger.info({
       evt: "menu_ocr_call",
+      provider: env.MENU_OCR_PROVIDER,
+      model: env.MENU_OCR_MODEL,
       restaurant_id: input.restaurantId ?? null,
       source_kind: input.sourceKind,
       file_bytes: Math.round((file.base64.length * 3) / 4),
-      input_tokens: json.usage?.input_tokens ?? null,
-      output_tokens: json.usage?.output_tokens ?? null
+      input_tokens: result.inputTokens,
+      output_tokens: result.outputTokens
     });
-    responseText = (json.content ?? [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("\n");
+    responseText = result.text;
   } catch (error) {
     if (error instanceof AppError) throw error;
     if (error instanceof Error && error.name === "AbortError") {
