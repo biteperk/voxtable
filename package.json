@@ -29,6 +29,7 @@
     "smoke:retell-dates": "tsx apps/backend/scripts/smoke-retell-dates.ts",
     "smoke:orders": "tsx apps/backend/scripts/smoke-orders.ts",
     "smoke:retell-orders": "tsx apps/backend/scripts/smoke-retell-orders.ts",
+    "smoke:isolation": "tsx apps/backend/scripts/smoke-onboarding-isolation.ts",
     "check": "npm run build:backend && npm run build:frontend && npm run build:kds"
   },
   "dependencies": {
