@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import { requireAdminRole, requireFirebaseAuth } from "../auth/firebaseAuth";
+import { pool } from "../db/pool";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
 import { adminProvisioningSchema } from "../http/schemas";
@@ -32,6 +33,48 @@ adminRouter.get(
   asyncHandler(async (_request, response) => {
     const funnel = await getOnboardingFunnel();
     response.json({ funnel });
+  })
+);
+
+// D2/S2: cross-tenant onboarding + OCR-cost health for the ops view. Combines
+// the funnel counts with today's menu-OCR ingestion activity (jobs are the
+// paid-vision signal: `attempts` ≈ vision calls made). Admin-gated + read-only.
+adminRouter.get(
+  "/api/admin/onboarding-health",
+  asyncHandler(async (_request, response) => {
+    const [funnel, ocrRow] = await Promise.all([
+      getOnboardingFunnel(),
+      pool.query<{
+        jobs_today: string;
+        committed_today: string;
+        failed_today: string;
+        attempts_today: string;
+        restaurants_today: string;
+      }>(
+        `
+        SELECT
+          COUNT(*)::text                                              AS jobs_today,
+          COUNT(*) FILTER (WHERE status = 'committed')::text          AS committed_today,
+          COUNT(*) FILTER (WHERE status = 'failed')::text             AS failed_today,
+          COALESCE(SUM(attempts), 0)::text                            AS attempts_today,
+          COUNT(DISTINCT restaurant_id)::text                         AS restaurants_today
+        FROM menu_ingestion_jobs
+        WHERE created_at >= date_trunc('day', now())
+        `
+      )
+    ]);
+    const o = ocrRow.rows[0];
+    response.json({
+      funnel,
+      menu_ocr_today: {
+        jobs: Number(o?.jobs_today ?? "0"),
+        committed: Number(o?.committed_today ?? "0"),
+        failed: Number(o?.failed_today ?? "0"),
+        // attempts ≈ vision-LLM calls made today (each retry is another call).
+        vision_calls_est: Number(o?.attempts_today ?? "0"),
+        restaurants: Number(o?.restaurants_today ?? "0")
+      }
+    });
   })
 );
 
