@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
 import { signInWithGoogle, signOutUser, uploadMenuFile } from "./firebase";
-import { loadGoogleMaps, isPlacesEnabled, parsePlace } from "./places";
+import { loadPlacesLibrary, isPlacesEnabled, parsePlaceNew } from "./places";
 import {
   advanceOnboarding,
   cancelReservation,
@@ -970,39 +970,44 @@ function ProfileStep({ onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const placesReady = isPlacesEnabled();
-  const autocompleteRef = useRef(null);
+  const [placesMounted, setPlacesMounted] = useState(false);
 
-  // Google Places autocomplete on the street-address field (powered by Google),
-  // wired via a CALLBACK ref so it attaches the moment the input actually mounts
-  // — robust against the interim loading card (the input doesn't exist until
-  // `form` loads, so a plain useRef+effect on first render saw a null node).
-  // Progressive enhancement: missing key / failed script → plain input, manual
-  // suburb/state/postcode still work.
-  const addressInputRef = useCallback(
-    (node) => {
-      // Tear down a previous instance if React swaps the node.
-      if (autocompleteRef.current && window.google?.maps?.event) {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
-        autocompleteRef.current = null;
-      }
-      if (!node || !placesReady) return;
-      loadGoogleMaps().then((maps) => {
-        if (!maps?.places) return;
-        const ac = new maps.places.Autocomplete(node, {
-          componentRestrictions: { country: "au" },
-          fields: ["address_components"],
+  // Google Places address autocomplete (powered by Google) via the new
+  // PlaceAutocompleteElement web component — the legacy `Autocomplete`
+  // constructor is disabled for Cloud projects created after 2025-03-01.
+  // A CALLBACK ref mounts the element into a container the moment it appears,
+  // so it survives the interim loading card. On select we fetch the address
+  // components and fill the form. Progressive enhancement: if Places is off or
+  // the library fails to load, `placesMounted` stays false and the plain manual
+  // street-address input is shown instead.
+  const placesHostRef = useCallback(
+    (host) => {
+      if (!host || !placesReady || host.dataset.mounted === "1") return;
+      host.dataset.mounted = "1";
+      loadPlacesLibrary().then((lib) => {
+        if (!lib?.PlaceAutocompleteElement) return;
+        const el = new lib.PlaceAutocompleteElement({
+          includedRegionCodes: ["au"],
           types: ["address"]
         });
-        autocompleteRef.current = ac;
-        ac.addListener("place_changed", () => {
-          const parsed = parsePlace(ac.getPlace());
-          setForm((prev) => ({
-            ...prev,
-            address: parsed.address || prev.address,
-            suburb: parsed.suburb || prev.suburb,
-            state: parsed.state || prev.state,
-            postcode: parsed.postcode || prev.postcode
-          }));
+        el.className = "onboarding-places-el";
+        host.appendChild(el);
+        setPlacesMounted(true);
+        el.addEventListener("gmp-select", async ({ placePrediction }) => {
+          try {
+            const place = placePrediction.toPlace();
+            await place.fetchFields({ fields: ["addressComponents", "formattedAddress"] });
+            const parsed = parsePlaceNew(place);
+            setForm((prev) => ({
+              ...prev,
+              address: parsed.address || prev.address,
+              suburb: parsed.suburb || prev.suburb,
+              state: parsed.state || prev.state,
+              postcode: parsed.postcode || prev.postcode
+            }));
+          } catch {
+            /* fetchFields failed — leave fields as-is, manual edit still works */
+          }
         });
       });
     },
@@ -1118,18 +1123,20 @@ function ProfileStep({ onSaved }) {
         </label>
         <label className="onboarding-field">
           <span>Street address</span>
+          {/* Google Places element mounts here when enabled. */}
+          {placesReady && <div ref={placesHostRef} className="onboarding-places-host" />}
+          {/* Fallback / manual input — hidden once the Places element mounts. */}
           <input
-            ref={addressInputRef}
             type="text"
             value={form.address}
             onChange={set("address")}
             maxLength={200}
-            placeholder={placesReady ? "Start typing your address…" : undefined}
             autoComplete="off"
+            style={placesReady && placesMounted ? { display: "none" } : undefined}
           />
-          {placesReady && (
+          {placesReady && placesMounted && (
             <span className="onboarding-field-help">
-              <Icon name="search" /> Start typing and pick your address — suburb, state &amp; postcode fill in automatically.
+              <Icon name="search" /> Pick your address — suburb, state &amp; postcode fill in automatically.
             </span>
           )}
         </label>

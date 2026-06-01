@@ -949,32 +949,25 @@ button {
   color: var(--primary, #adc6ff);
 }
 
-/* Google Places autocomplete dropdown — dark-theme it to match the wizard.
-   The widget renders .pac-container at <body> level with default light styling. */
-.pac-container {
-  background: var(--surface-container-high, #2a2a2a);
-  border: 1px solid var(--card-border, rgba(65, 71, 85, 0.92));
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  margin-top: 4px;
-  font-family: "Inter", system-ui, sans-serif;
-  overflow: hidden;
+/* Google Places — new PlaceAutocompleteElement web component. It exposes a set
+   of CSS custom properties for theming; style the host + the element to match
+   the dark wizard. The dropdown is in shadow DOM and follows these vars. */
+.onboarding-places-host {
+  width: 100%;
 }
-.pac-item {
-  padding: 9px 12px;
-  border-top: 1px solid var(--outline-variant, #414755);
-  color: var(--on-surface-variant, #c1c6d7);
-  cursor: pointer;
+.onboarding-places-el,
+gmp-place-autocomplete {
+  width: 100%;
+  /* Documented theming custom properties for the element + its dropdown. */
+  --gmp-mat-color-surface: var(--surface-container-high, #2a2a2a);
+  --gmp-mat-color-on-surface: var(--on-surface, #e5e2e1);
+  --gmp-mat-color-on-surface-variant: var(--on-surface-variant, #c1c6d7);
+  --gmp-mat-color-primary: var(--primary, #adc6ff);
+  --gmp-mat-color-outline: var(--outline-variant, #414755);
+  --gmp-mat-color-surface-container-highest: var(--surface-container-highest, #353534);
+  --gmp-mat-font-family: "Inter", system-ui, sans-serif;
+  border-radius: var(--ob-radius-input, 10px);
 }
-.pac-item:first-child { border-top: 0; }
-.pac-item:hover,
-.pac-item-selected {
-  background: var(--surface-container-highest, #353534);
-}
-.pac-item-query { color: var(--on-surface, #e5e2e1); }
-.pac-matched { color: var(--primary, #adc6ff); }
-.pac-icon { display: none; }
-.pac-logo::after { /* keep Google attribution visible (required) */ filter: invert(0.85); }
 
 .onboarding-field-row {
   display: flex;
