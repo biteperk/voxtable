@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
 import { signInWithGoogle, signOutUser, uploadMenuFile } from "./firebase";
+import { loadGoogleMaps, isPlacesEnabled, parsePlace } from "./places";
 import {
   advanceOnboarding,
   cancelReservation,
@@ -968,6 +969,49 @@ function ProfileStep({ onSaved }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const addressInputRef = useRef(null);
+  const placesReady = isPlacesEnabled();
+
+  // Google Places autocomplete on the street-address field (powered by Google).
+  // Progressive enhancement: if the key is missing or the script fails to load,
+  // the field stays a normal text input and the manual suburb/state/postcode
+  // inputs work as before. We attach once the form has loaded (the input is in
+  // the DOM) and Google's library is ready.
+  useEffect(() => {
+    if (!form || !placesReady || !addressInputRef.current) return;
+    let autocomplete = null;
+    let listener = null;
+    let cancelled = false;
+    loadGoogleMaps().then((maps) => {
+      if (cancelled || !maps?.places || !addressInputRef.current) return;
+      autocomplete = new maps.places.Autocomplete(addressInputRef.current, {
+        componentRestrictions: { country: "au" },
+        fields: ["address_components"],
+        types: ["address"]
+      });
+      listener = autocomplete.addListener("place_changed", () => {
+        const parsed = parsePlace(autocomplete.getPlace());
+        // Only overwrite fields Google actually returned; keep the typed street
+        // line if it found nothing parseable.
+        setForm((prev) => ({
+          ...prev,
+          address: parsed.address || prev.address,
+          suburb: parsed.suburb || prev.suburb,
+          state: parsed.state || prev.state,
+          postcode: parsed.postcode || prev.postcode
+        }));
+      });
+    });
+    return () => {
+      cancelled = true;
+      if (listener && window.google?.maps?.event) window.google.maps.event.removeListener(listener);
+      if (autocomplete && window.google?.maps?.event) {
+        window.google.maps.event.clearInstanceListeners(autocomplete);
+      }
+    };
+    // Re-run only when the form transitions from null→loaded (not on every keystroke).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form !== null, placesReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1078,7 +1122,20 @@ function ProfileStep({ onSaved }) {
         </label>
         <label className="onboarding-field">
           <span>Street address</span>
-          <input type="text" value={form.address} onChange={set("address")} maxLength={200} />
+          <input
+            ref={addressInputRef}
+            type="text"
+            value={form.address}
+            onChange={set("address")}
+            maxLength={200}
+            placeholder={placesReady ? "Start typing your address…" : undefined}
+            autoComplete="off"
+          />
+          {placesReady && (
+            <span className="onboarding-field-help">
+              <Icon name="search" /> Start typing and pick your address — suburb, state &amp; postcode fill in automatically.
+            </span>
+          )}
         </label>
         <div className="onboarding-field-row">
           <label className="onboarding-field">
