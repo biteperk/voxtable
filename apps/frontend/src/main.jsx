@@ -1,3 +1,6 @@
+// Sentry instrumentation must initialise before anything else mounts, so it is
+// imported first (the module runs Sentry.init as an import side-effect).
+import { captureException } from "./sentry";
 import React, { Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -595,7 +598,7 @@ class ErrorBoundary extends React.Component {
       componentStack: info?.componentStack?.split("\n").slice(0, 6).join("\n")
     });
     // Forward to Sentry. No-op when VITE_SENTRY_DSN is unset.
-    sentryCapture(error, { componentStack: info?.componentStack });
+    captureException(error, { componentStack: info?.componentStack });
   }
 
   reset = () => {
