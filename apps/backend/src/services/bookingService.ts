@@ -20,6 +20,20 @@ import {
 import { formatVoiceTime, todayInTz } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 
+// The DB-level safety-net unique index (migration 003) catches double-booking
+// races that bypass application logic. Surface as a clean availability message
+// rather than a generic 500; pass anything else through.
+function rethrowAsDoubleBookConflict(error: unknown): never {
+  if (error instanceof Error && /idx_reservations_no_double_book/.test(error.message)) {
+    throw new AppError(
+      409,
+      "TABLE_JUST_TAKEN",
+      "That time just got booked by another caller. Please pick another time."
+    );
+  }
+  throw error;
+}
+
 export async function createBooking(input: CreateBookingInput): Promise<BookingResult> {
   // Idempotency: if Retell retries the create_booking tool call, return the
   // already-created reservation rather than inserting a duplicate.
@@ -152,16 +166,7 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     };
   } catch (error) {
     await lockClient.query("ROLLBACK");
-    // The DB-level safety-net unique index (migration 003) catches double-booking races
-    // that bypass application logic. Surface as a clean availability message.
-    if (error instanceof Error && /idx_reservations_no_double_book/.test(error.message)) {
-      throw new AppError(
-        409,
-        "TABLE_JUST_TAKEN",
-        "That time just got booked by another caller. Please pick another time."
-      );
-    }
-    throw error;
+    rethrowAsDoubleBookConflict(error);
   } finally {
     lockClient.release();
   }
@@ -278,14 +283,7 @@ export async function modifyBooking(input: {
       };
     });
   } catch (error) {
-    if (error instanceof Error && /idx_reservations_no_double_book/.test(error.message)) {
-      throw new AppError(
-        409,
-        "TABLE_JUST_TAKEN",
-        "That time just got booked by another caller. Please pick another time."
-      );
-    }
-    throw error;
+    rethrowAsDoubleBookConflict(error);
   }
 }
 

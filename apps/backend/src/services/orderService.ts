@@ -26,6 +26,9 @@ import {
 } from "../repositories/menu";
 import { logger } from "../utils/logger";
 
+// Guard against an LLM (or a buggy client) submitting an unbounded order.
+const MAX_ORDER_ITEMS = 50;
+
 export interface CreateOrderItemInput {
   menuItemId: string;
   variantId?: string;
@@ -69,8 +72,8 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   if (input.items.length === 0) {
     throw new AppError(400, "ORDER_EMPTY", "An order needs at least one item.");
   }
-  if (input.items.length > 50) {
-    throw new AppError(400, "ORDER_TOO_LARGE", "Orders can have at most 50 items.");
+  if (input.items.length > MAX_ORDER_ITEMS) {
+    throw new AppError(400, "ORDER_TOO_LARGE", `Orders can have at most ${MAX_ORDER_ITEMS} items.`);
   }
 
   // Hydrate via the read pool happens AFTER the txn commits — the read pool

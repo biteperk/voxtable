@@ -17,6 +17,9 @@ export function isMenuOcrEnabled(): boolean {
   return env.MENU_OCR_ENABLED && Boolean(env.MENU_OCR_API_KEY);
 }
 
+// Vision-LLM output cap — generous enough for a full menu's structured JSON.
+const OCR_MAX_TOKENS = 4096;
+
 const SYSTEM_PROMPT = [
   "You are a precise menu digitiser for a restaurant booking platform.",
   "You receive an image or PDF of a restaurant menu and must extract its",
@@ -115,7 +118,7 @@ async function callAnthropic(file: FetchedFile, sourceKind: "image" | "pdf", sig
     },
     body: JSON.stringify({
       model: env.MENU_OCR_MODEL,
-      max_tokens: 4096,
+      max_tokens: OCR_MAX_TOKENS,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -151,7 +154,7 @@ async function callOpenAiCompatible(file: FetchedFile, sourceKind: "image" | "pd
     },
     body: JSON.stringify({
       model: env.MENU_OCR_MODEL,
-      max_tokens: 4096,
+      max_tokens: OCR_MAX_TOKENS,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: openaiContentBlocks(file, sourceKind) }

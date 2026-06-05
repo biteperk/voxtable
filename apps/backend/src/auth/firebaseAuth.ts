@@ -29,34 +29,22 @@ function ensureInitialized(): admin.app.App {
   return admin.app();
 }
 
-// Parsed once at module load: lowercase, trimmed, deduped via Set for O(1)
-// lookup. Empty in dev (allow-anyone behaviour), required-non-empty in
+// Parse a comma-separated allowlist into a lowercase, trimmed, deduped Set for
+// O(1) lookup. Empty in dev (allow-anyone behaviour), required-non-empty in
 // production (enforced by env.ts superRefine).
-const allowedEmails = new Set(
-  (env.DASHBOARD_ALLOWED_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
-);
+const parseEmailSet = (csv: string | undefined): Set<string> =>
+  new Set((csv ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+
+const allowedEmails = parseEmailSet(env.DASHBOARD_ALLOWED_EMAILS);
 
 // Manager allowlist — gates menu CRUD, payment toggles, and order cancellation.
 // The kitchen kiosk account is NOT in this set; kitchen staff can read the
 // menu and update order status but can't edit prices or refund payments.
 // Phase 2 upgrades this to Firebase custom claims (`role: manager`).
-const managerEmails = new Set(
-  (env.DASHBOARD_MANAGER_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
-);
+const managerEmails = parseEmailSet(env.DASHBOARD_MANAGER_EMAILS);
 
 // Platform admins (VocoTable staff) — gate the cross-tenant provisioning console.
-const adminEmails = new Set(
-  (env.DASHBOARD_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
-);
+const adminEmails = parseEmailSet(env.DASHBOARD_ADMIN_EMAILS);
 
 export interface AuthenticatedRequest extends Request {
   firebaseUser?: admin.auth.DecodedIdToken;

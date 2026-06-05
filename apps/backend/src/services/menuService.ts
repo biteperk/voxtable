@@ -141,6 +141,17 @@ export async function updateCategory(input: {
   return result;
 }
 
+const PG_FK_VIOLATION = "23503";
+
+// Postgres FK-violation (ON DELETE/UPDATE RESTRICT). Rethrow as a 409 with
+// actionable copy instead of leaking a generic 500; pass anything else through.
+function rethrowFkViolationAs(error: unknown, code: string, message: string): never {
+  if ((error as { code?: string })?.code === PG_FK_VIOLATION) {
+    throw new AppError(409, code, message);
+  }
+  throw error;
+}
+
 export async function deleteCategory(id: string, restaurantId: string): Promise<void> {
   try {
     const removed = await repoDeleteCategory(id, restaurantId);
@@ -149,14 +160,11 @@ export async function deleteCategory(id: string, restaurantId: string): Promise<
     }
   } catch (error) {
     // FK violation: items still reference this category.
-    if ((error as { code?: string })?.code === "23503") {
-      throw new AppError(
-        409,
-        "CATEGORY_HAS_ITEMS",
-        "This category still has menu items. Move or remove them first."
-      );
-    }
-    throw error;
+    rethrowFkViolationAs(
+      error,
+      "CATEGORY_HAS_ITEMS",
+      "This category still has menu items. Move or remove them first."
+    );
   }
 }
 
@@ -248,14 +256,11 @@ export async function updateMenuItem(input: {
       // order_items.variant_id still references a current variant
       // (ON DELETE RESTRICT), PG throws 23503. Bubble a clear 409 instead
       // of a generic 500 so the dashboard can show actionable copy.
-      if ((error as { code?: string })?.code === "23503") {
-        throw new AppError(
-          409,
-          "MENU_ITEM_VARIANTS_IN_USE",
-          "One or more variants of this item are tied to past orders. Edit the name/price of the menu item itself, or mark it unavailable instead of changing variants."
-        );
-      }
-      throw error;
+      rethrowFkViolationAs(
+        error,
+        "MENU_ITEM_VARIANTS_IN_USE",
+        "One or more variants of this item are tied to past orders. Edit the name/price of the menu item itself, or mark it unavailable instead of changing variants."
+      );
     }
     logger.info({ evt: "menu_item_updated", item_id: item.id });
     return item;
@@ -270,14 +275,11 @@ export async function deleteMenuItem(id: string, restaurantId: string): Promise<
     }
   } catch (error) {
     // FK violation: order_items still reference this menu item.
-    if ((error as { code?: string })?.code === "23503") {
-      throw new AppError(
-        409,
-        "MENU_ITEM_IN_USE",
-        "This item has order history and can't be deleted. Mark it unavailable instead."
-      );
-    }
-    throw error;
+    rethrowFkViolationAs(
+      error,
+      "MENU_ITEM_IN_USE",
+      "This item has order history and can't be deleted. Mark it unavailable instead."
+    );
   }
 }
 

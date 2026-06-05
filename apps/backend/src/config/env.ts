@@ -5,6 +5,11 @@ dotenv.config();
 
 const LOCAL_DEFAULT_RESTAURANT_ID = "11111111-1111-4111-8111-111111111111";
 
+// Every boolean env var is a "true"/"false" string that defaults to false and
+// is coerced to a real boolean — kill-switches, signature gates, feature flags.
+const boolFlag = () =>
+  z.enum(["true", "false"]).default("false").transform((value) => value === "true");
+
 const envSchema = z
   .object({
   APP_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -12,10 +17,7 @@ const envSchema = z
   PORT: z.coerce.number().int().positive().default(3050),
   PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:3050"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  DATABASE_SSL: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  DATABASE_SSL: boolFlag(),
   DEFAULT_RESTAURANT_ID: z
     .string()
     .uuid()
@@ -29,19 +31,13 @@ const envSchema = z
   RETELL_WEBHOOK_SECRET: z.string().optional(),
   RETELL_AGENT_ID: z.string().optional(),
   RETELL_PHONE_NUMBER: z.string().optional(),
-  RETELL_VERIFY_SIGNATURE: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  RETELL_VERIFY_SIGNATURE: boolFlag(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
   TWILIO_TERMINATION_URI: z.string().optional(),
   TWILIO_RETELL_SIP_URI: z.string().default("sip:sip.retellai.com"),
-  TWILIO_VALIDATE_SIGNATURE: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  TWILIO_VALIDATE_SIGNATURE: boolFlag(),
   FIREBASE_PROJECT_ID: z.string().optional(),
   GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
 
@@ -49,10 +45,7 @@ const envSchema = z
   // curl probes work without minting a Firebase ID token (mirrors the
   // RETELL_VERIFY_SIGNATURE / TWILIO_VALIDATE_SIGNATURE pattern). Production
   // is forced ON by superRefine below.
-  DASHBOARD_VERIFY_AUTH: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  DASHBOARD_VERIFY_AUTH: boolFlag(),
 
   // Comma-separated list of email addresses allowed to hit the dashboard /
   // booking-mutation endpoints. Empty means "any verified Google account" —
@@ -74,17 +67,11 @@ const envSchema = z
   // This keeps existing allowlisted users working between deploying the
   // multi-tenant code and running the membership backfill. Remove once the
   // backfill is verified. Mirrors the CALCOM_SYNC_ENABLED enum→bool pattern.
-  MULTITENANCY_LEGACY_FALLBACK: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  MULTITENANCY_LEGACY_FALLBACK: boolFlag(),
 
   // Cal.com hybrid integration — all optional in dev, conditionally required
   // in production when CALCOM_SYNC_ENABLED=true.
-  CALCOM_SYNC_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  CALCOM_SYNC_ENABLED: boolFlag(),
   CALCOM_API_KEY: z.string().optional(),
   CALCOM_EVENT_TYPE_ID: z.coerce.number().int().positive().optional(),
   CALCOM_BASE_URL: z.string().url().default("https://api.cal.com/v2"),
@@ -111,10 +98,7 @@ const envSchema = z
   // management. Mirrors the CALCOM_SYNC_ENABLED kill-switch pattern: deploy
   // the scaffolding OFF (GETs return { enabled:false, … }), flip ON once keys
   // are verified. superRefine below forces keys when enabled in production.
-  STRIPE_BILLING_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  STRIPE_BILLING_ENABLED: boolFlag(),
   STRIPE_SECRET_KEY: z.string().optional(),
   // Legacy single-tenant fallback customer. With self-serve billing (Phase 3),
   // each restaurant gets its own customer (restaurants.stripe_customer_id); this
@@ -143,10 +127,7 @@ const envSchema = z
   // structured categories/items/prices. Kill-switch pattern: ships OFF; the
   // worker is a no-op and /api/menu/ingest returns 503 until enabled. Prices
   // are parsed to integer cents (same money discipline as Stripe).
-  MENU_OCR_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  MENU_OCR_ENABLED: boolFlag(),
   MENU_OCR_API_KEY: z.string().optional(),
   // Which vision API dialect to speak. "anthropic" = Anthropic Messages API;
   // "openai" = any OpenAI-compatible /chat/completions host (OpenRouter,
@@ -168,20 +149,14 @@ const envSchema = z
   // Notifications (Phase 5). Email via SendGrid REST (no SDK dep — fetch), SMS
   // via the installed Twilio SDK. Kill-switch: ships OFF; the worker is a no-op
   // and notifications silently queue without sending until enabled.
-  NOTIFICATIONS_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  NOTIFICATIONS_ENABLED: boolFlag(),
   SENDGRID_API_KEY: z.string().optional(),
   NOTIFICATIONS_FROM_EMAIL: z.string().email().default("hello@biteperk.com.au"),
   NOTIFICATIONS_SMS_FROM: z.string().optional(),
 
   // Automated provisioning (Phase 4b). Kill-switch: ships OFF; the worker is a
   // no-op and provisioning stays admin-assisted (Phase 4a) until enabled.
-  PROVISIONING_AUTO_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  PROVISIONING_AUTO_ENABLED: boolFlag(),
   // Template Retell agent to clone per restaurant.
   RETELL_TEMPLATE_AGENT_ID: z.string().optional(),
   // Area code to prefer when buying AU numbers (e.g. "2" for Sydney).
@@ -191,6 +166,14 @@ const envSchema = z
     if (value.APP_ENV !== "production") {
       return;
     }
+
+    // Flag a field that must be present (or true) in production. `!value[key]`
+    // covers both an undefined string and a false boolean flag uniformly.
+    const requireInProd = (key: keyof typeof value, message: string): void => {
+      if (!value[key]) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message });
+      }
+    };
 
     const publicUrl = new URL(value.PUBLIC_API_BASE_URL);
 
@@ -202,69 +185,14 @@ const envSchema = z
       });
     }
 
-    if (!value.RETELL_API_KEY) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["RETELL_API_KEY"],
-        message: "RETELL_API_KEY is required in production."
-      });
-    }
-
-    if (!value.RETELL_AGENT_ID) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["RETELL_AGENT_ID"],
-        message: "RETELL_AGENT_ID is required in production."
-      });
-    }
-
-    if (!value.RETELL_VERIFY_SIGNATURE) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["RETELL_VERIFY_SIGNATURE"],
-        message: "RETELL_VERIFY_SIGNATURE must be true in production."
-      });
-    }
-
-    if (!value.TWILIO_ACCOUNT_SID) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["TWILIO_ACCOUNT_SID"],
-        message: "TWILIO_ACCOUNT_SID is required in production."
-      });
-    }
-
-    if (!value.TWILIO_AUTH_TOKEN) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["TWILIO_AUTH_TOKEN"],
-        message: "TWILIO_AUTH_TOKEN is required in production."
-      });
-    }
-
-    if (!value.TWILIO_PHONE_NUMBER) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["TWILIO_PHONE_NUMBER"],
-        message: "TWILIO_PHONE_NUMBER is required in production."
-      });
-    }
-
-    if (!value.TWILIO_VALIDATE_SIGNATURE) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["TWILIO_VALIDATE_SIGNATURE"],
-        message: "TWILIO_VALIDATE_SIGNATURE must be true in production."
-      });
-    }
-
-    if (!value.DASHBOARD_VERIFY_AUTH) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["DASHBOARD_VERIFY_AUTH"],
-        message: "DASHBOARD_VERIFY_AUTH must be true in production."
-      });
-    }
+    requireInProd("RETELL_API_KEY", "RETELL_API_KEY is required in production.");
+    requireInProd("RETELL_AGENT_ID", "RETELL_AGENT_ID is required in production.");
+    requireInProd("RETELL_VERIFY_SIGNATURE", "RETELL_VERIFY_SIGNATURE must be true in production.");
+    requireInProd("TWILIO_ACCOUNT_SID", "TWILIO_ACCOUNT_SID is required in production.");
+    requireInProd("TWILIO_AUTH_TOKEN", "TWILIO_AUTH_TOKEN is required in production.");
+    requireInProd("TWILIO_PHONE_NUMBER", "TWILIO_PHONE_NUMBER is required in production.");
+    requireInProd("TWILIO_VALIDATE_SIGNATURE", "TWILIO_VALIDATE_SIGNATURE must be true in production.");
+    requireInProd("DASHBOARD_VERIFY_AUTH", "DASHBOARD_VERIFY_AUTH must be true in production.");
 
     const allowlist = (value.DASHBOARD_ALLOWED_EMAILS ?? "")
       .split(",")
@@ -283,59 +211,31 @@ const envSchema = z
     // Lets us deploy the scaffolding to production with the flag OFF for one
     // observation window, then flip on with credentials ready.
     if (value.CALCOM_SYNC_ENABLED) {
-      if (!value.CALCOM_API_KEY) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["CALCOM_API_KEY"],
-          message: "CALCOM_API_KEY is required when CALCOM_SYNC_ENABLED=true."
-        });
-      }
-      if (!value.CALCOM_EVENT_TYPE_ID) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["CALCOM_EVENT_TYPE_ID"],
-          message: "CALCOM_EVENT_TYPE_ID is required when CALCOM_SYNC_ENABLED=true."
-        });
-      }
-      if (!value.CALCOM_WEBHOOK_SECRET) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["CALCOM_WEBHOOK_SECRET"],
-          message:
-            "CALCOM_WEBHOOK_SECRET is required when CALCOM_SYNC_ENABLED=true " +
-            "(used to verify Cal.com webhook HMAC signatures)."
-        });
-      }
+      requireInProd("CALCOM_API_KEY", "CALCOM_API_KEY is required when CALCOM_SYNC_ENABLED=true.");
+      requireInProd(
+        "CALCOM_EVENT_TYPE_ID",
+        "CALCOM_EVENT_TYPE_ID is required when CALCOM_SYNC_ENABLED=true."
+      );
+      requireInProd(
+        "CALCOM_WEBHOOK_SECRET",
+        "CALCOM_WEBHOOK_SECRET is required when CALCOM_SYNC_ENABLED=true " +
+          "(used to verify Cal.com webhook HMAC signatures)."
+      );
     }
 
     // Stripe billing — only enforce credential presence when the flag is on,
     // so the scaffolding can ship to production with the flag OFF for an
     // observation window, then flip on with keys ready (mirrors Cal.com).
     if (value.STRIPE_BILLING_ENABLED) {
-      if (!value.STRIPE_SECRET_KEY) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["STRIPE_SECRET_KEY"],
-          message: "STRIPE_SECRET_KEY is required when STRIPE_BILLING_ENABLED=true."
-        });
-      }
+      requireInProd("STRIPE_SECRET_KEY", "STRIPE_SECRET_KEY is required when STRIPE_BILLING_ENABLED=true.");
       // Self-serve billing needs a Price to subscribe to and a webhook secret to
       // verify subscription events. Per-tenant customers are created on demand,
       // so STRIPE_CUSTOMER_ID is no longer required.
-      if (!value.STRIPE_PRICE_ID) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["STRIPE_PRICE_ID"],
-          message: "STRIPE_PRICE_ID is required when STRIPE_BILLING_ENABLED=true."
-        });
-      }
-      if (!value.STRIPE_WEBHOOK_SECRET) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["STRIPE_WEBHOOK_SECRET"],
-          message: "STRIPE_WEBHOOK_SECRET is required when STRIPE_BILLING_ENABLED=true."
-        });
-      }
+      requireInProd("STRIPE_PRICE_ID", "STRIPE_PRICE_ID is required when STRIPE_BILLING_ENABLED=true.");
+      requireInProd(
+        "STRIPE_WEBHOOK_SECRET",
+        "STRIPE_WEBHOOK_SECRET is required when STRIPE_BILLING_ENABLED=true."
+      );
     }
 
     if (value.MENU_OCR_ENABLED && !value.MENU_OCR_API_KEY) {
