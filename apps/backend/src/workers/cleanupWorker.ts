@@ -1,18 +1,21 @@
 /**
- * Daily cleanup worker — purges old outbox + inbox rows so the tables don't
- * grow unbounded.
+ * Daily cleanup worker — the general housekeeping janitor. Purges old rows so
+ * the operational tables don't grow unbounded, and cancels stale onboardings.
  *
  *   * Outbox: rows with succeeded_at < now() - 30 days. We keep failed_at
  *     rows for ops investigation indefinitely — they're rare and small.
  *   * Inbox: rows with received_at < now() - 30 days, regardless of state.
  *     The 5-min replay window is the dedup horizon; anything older is just
  *     audit history.
+ *   * Notifications: sent rows older than 30 days.
+ *   * Onboarding: restaurants abandoned mid-signup for 30 days.
  *
  * Runs every 6 hours after the first tick at +1 hour after boot (so a
  * fresh container doesn't spike the DB the moment it comes up). Counts are
  * structured-logged so ops can see how much the cleanup is touching.
  *
- * Skipped entirely when CALCOM_SYNC_ENABLED=false (nothing to clean up).
+ * Always runs — every DELETE is WHERE-scoped, so it's a harmless no-op for
+ * any feature that isn't in use (Cal.com sync, notifications, etc.).
  */
 
 import { pool } from "../db/pool";

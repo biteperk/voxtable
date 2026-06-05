@@ -142,35 +142,6 @@ export async function requireFirebaseAuth(
 }
 
 /**
- * Manager gate — apply AFTER `requireFirebaseAuth`. Reads
- * DASHBOARD_MANAGER_EMAILS; in dev mode (verify auth off) it allows through.
- */
-export function requireManagerRole(
-  request: AuthenticatedRequest,
-  _response: Response,
-  next: NextFunction
-): void {
-  if (!env.DASHBOARD_VERIFY_AUTH) {
-    next();
-    return;
-  }
-  if (managerEmails.size === 0) {
-    // Production safety: if no manager allowlist is configured, refuse to
-    // gate destructive routes rather than silently allowing everyone.
-    return next(
-      new AppError(503, "MANAGER_ROLE_NOT_CONFIGURED", "Manager role not configured.")
-    );
-  }
-  const email = request.firebaseUser?.email?.toLowerCase();
-  if (!email || !managerEmails.has(email)) {
-    return next(
-      new AppError(403, "MANAGER_ROLE_REQUIRED", "This action requires a manager account.")
-    );
-  }
-  next();
-}
-
-/**
  * Platform-admin gate (VocoTable staff) for the cross-tenant provisioning
  * console. Apply AFTER requireFirebaseAuth. In dev (verify auth off) it allows
  * through; in production it refuses if no admin allowlist is configured.

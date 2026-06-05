@@ -1,14 +1,14 @@
 /**
  * Outbox worker — drains `outbox_calcom` into Cal.com.
  *
- * PR 1 scope (this file in its current form):
- *   - Lifecycle hooks (start, stop, graceful drain) are wired.
- *   - Worker is a NO-OP when `CALCOM_SYNC_ENABLED=false` — `start` returns
- *     immediately without scheduling an interval. This is the safe default
- *     for production until PR 2 turns the flag on.
+ * The push logic itself lives in calcomService and is injected at startup via
+ * `setOutboxExecutor` (keeps this module free of a Cal.com-service import, so
+ * there's no circular dep). Until an executor is installed the worker holds a
+ * stub that dead-letters every row, so an accidentally-started worker can't
+ * silently lose data.
  *
- * PR 2 will plug in the actual push logic (calcomService.executeOutboxRow).
- * The structure is here so PR 2 is a small, localized change.
+ * Worker is a NO-OP when `CALCOM_SYNC_ENABLED=false` — `start` returns
+ * immediately without scheduling an interval.
  *
  * Concurrency: single-VM today. `claimReadyOutbox` uses FOR UPDATE SKIP
  * LOCKED so future horizontal scaling (multiple containers) is safe by
@@ -51,8 +51,8 @@ export interface OutboxRowExecutor {
    * the same transaction that marks the outbox row succeeded — atomic.
    *
    * Returns `succeeded` if Cal.com accepted; `transient` to retry with
-   * backoff; `permanent` to dead-letter. PR 1 ships with a stub that always
-   * dead-letters; PR 2 replaces it via `setOutboxExecutor`.
+   * backoff; `permanent` to dead-letter. Until `setOutboxExecutor` is called
+   * the default stub dead-letters every row.
    */
   execute(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult>;
 }
@@ -69,9 +69,9 @@ const stubExecutor: OutboxRowExecutor = {
 let executor: OutboxRowExecutor = stubExecutor;
 
 /**
- * Swap the executor — PR 2 calls this from server.ts startup once the real
- * push implementation is in place. Kept as a setter so the worker module
- * doesn't have to import the Cal.com service (avoids a circular dep).
+ * Swap the executor — calcomService installs the real push implementation at
+ * startup. Kept as a setter so the worker module doesn't have to import the
+ * Cal.com service (avoids a circular dep).
  */
 export function setOutboxExecutor(next: OutboxRowExecutor): void {
   executor = next;

@@ -42,23 +42,6 @@ export async function getUserMemberships(
 }
 
 /**
- * Single-row authorization check: the user's role at one restaurant, or null
- * if they are not a member. This is the isolation guarantee — resolveTenant
- * validates the requested restaurant against this before trusting it.
- */
-export async function getMembership(
-  userId: string,
-  restaurantId: string,
-  db: DbClient = pool
-): Promise<{ role: MemberRole } | null> {
-  const result = await db.query<{ role: MemberRole }>(
-    "SELECT role FROM restaurant_members WHERE user_id = $1 AND restaurant_id = $2 LIMIT 1",
-    [userId, restaurantId]
-  );
-  return result.rows[0] ?? null;
-}
-
-/**
  * Idempotently create/refresh the users row on login (the Firebase uid is the
  * PK). email_verified is mirrored from the verified token so cost/paid actions
  * can gate on it. Does NOT create any membership — that happens at restaurant

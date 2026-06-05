@@ -34,7 +34,7 @@ import {
   findReservationByCalcomUid,
   updateReservationCalcomUid
 } from "../repositories/reservations";
-import { enqueueOutbox, OutboxOp } from "../repositories/outbox";
+import { enqueueOutbox } from "../repositories/outbox";
 import {
   OutboxExecutionResult,
   OutboxExecutorRow,
@@ -45,7 +45,6 @@ import { utcIsoToZonedWallClock, zonedWallClockToUtcISO } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 import { createBooking } from "./bookingService";
 import {
-  calcomWebhookEnvelopeSchema,
   extractUidFromCreateResponse,
   parseCalcomWebhookPayload
 } from "./calcomSchemas";

@@ -8,9 +8,9 @@
  *
  *   1. Per-day rolling counter. `recordCalcomRequest()` is called from
  *      calcomClient after every request. Window auto-rolls at UTC midnight.
- *   2. Threshold check. `isAboveQuotaThreshold()` returns true when we've
- *      crossed the warning line (default 80% of CALCOM_DAILY_QUOTA env, or
- *      80% of 3333/day if unset — which is 100k/30).
+ *   2. Threshold check. `quotaSnapshot().above_threshold` is true once we've
+ *      crossed the warning line (CALCOM_DAILY_QUOTA_THRESHOLD env, or 80% of
+ *      the ~3333/day free-tier limit ≈ 2666 if unset).
  *   3. Snapshot for ops endpoint. `quotaSnapshot()` returns today's count +
  *      threshold + threshold state.
  *

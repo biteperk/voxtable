@@ -130,8 +130,8 @@ export async function resolveTenant(
 }
 
 /**
- * Per-restaurant role gate — apply AFTER resolveTenant. Replaces the global
- * requireManagerRole allowlist with the member's role at the active restaurant.
+ * Per-restaurant role gate — apply AFTER resolveTenant. Authorizes against the
+ * member's role at the active restaurant rather than a global email allowlist.
  * Dev escape hatch (DASHBOARD_VERIFY_AUTH=false) allows through.
  */
 export function requireMemberRole(min: MemberRole) {
