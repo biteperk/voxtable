@@ -27,6 +27,7 @@ import {
   verifyCalcomSignature
 } from "../services/calcomService";
 import { calcomWebhookEnvelopeSchema } from "../services/calcomSchemas";
+import { logger } from "../utils/logger";
 
 type RequestWithRawBody = Express.Request & { rawBody?: string };
 
@@ -122,9 +123,7 @@ calRouter.post(
       // won't help (deterministic failure most likely).
       const message = (error as Error).message ?? String(error);
       await markInboxFailed(eventId, message);
-      console.error(
-        JSON.stringify({ evt: "cal_webhook_process_failed", event_id: eventId, error: message })
-      );
+      logger.error({ evt: "cal_webhook_process_failed", event_id: eventId, error });
       response.status(200).json({ status: "deferred", reason: message });
     }
   })

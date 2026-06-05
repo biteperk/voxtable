@@ -33,6 +33,7 @@ import { quotaSnapshot, shouldFireQuotaAlert } from "../services/calcomQuotaTrac
 import { kdsHealthSnapshot } from "../services/orderService";
 import { retellAuthSnapshot } from "../services/retellAuthHealth";
 import { getKdsHeartbeats } from "../routes/orders";
+import { logger } from "../utils/logger";
 
 const CHECK_INTERVAL_MS = 60_000; // every minute
 const OUTBOX_DEPTH_THRESHOLD = 100;
@@ -126,7 +127,7 @@ async function postToSlack(text: string): Promise<void> {
     clearTimeout(timer);
   } catch (error) {
     // Don't crash the alerter if Slack is down. Log and move on.
-    console.warn("[health-alerter] failed to post to Slack:", (error as Error).message);
+    logger.warn({ evt: "health_alerter_slack_post_failed", error: (error as Error).message });
   }
 }
 
@@ -176,7 +177,7 @@ async function checkKds(): Promise<void> {
       state.kdsTabletOfflineAlerted = false;
     }
   } catch (error) {
-    console.warn("[health-alerter] kds check failed:", (error as Error).message);
+    logger.warn({ evt: "health_alerter_kds_check_failed", error: (error as Error).message });
   }
 }
 
@@ -264,7 +265,7 @@ async function checkCalcom(): Promise<void> {
       );
     }
   } catch (error) {
-    console.warn("[health-alerter] calcom check failed:", (error as Error).message);
+    logger.warn({ evt: "health_alerter_calcom_check_failed", error: (error as Error).message });
   }
 }
 
@@ -290,7 +291,7 @@ async function checkRetellAuth(): Promise<void> {
       state.retellAuthAlerted = false;
     }
   } catch (error) {
-    console.warn("[health-alerter] retell auth check failed:", (error as Error).message);
+    logger.warn({ evt: "health_alerter_retell_auth_check_failed", error: (error as Error).message });
   }
 }
 
@@ -317,7 +318,7 @@ async function checkOnboardingFunnel(): Promise<void> {
       `:bar_chart: Onboarding funnel (${todayKey} UTC): ${line}. ${inProgress} restaurant(s) mid-signup.`
     );
   } catch (error) {
-    console.warn("[health-alerter] funnel summary failed:", (error as Error).message);
+    logger.warn({ evt: "health_alerter_funnel_summary_failed", error: (error as Error).message });
   }
 }
 
@@ -336,13 +337,15 @@ export function startHealthAlerter(): void {
   // Slack webhook is the only hard requirement now. KDS rules are valuable
   // even when Cal.com sync is off (single-tenant venues that don't mirror).
   if (!env.OPS_SLACK_WEBHOOK_URL) {
-    console.log(`[health-alerter] not starting (no OPS_SLACK_WEBHOOK_URL)`);
+    logger.info({ evt: "health_alerter_not_started", reason: "no OPS_SLACK_WEBHOOK_URL" });
     return;
   }
   if (intervalHandle !== null) return;
-  console.log(
-    `[health-alerter] starting; every ${CHECK_INTERVAL_MS}ms (kds=on, calcom=${env.CALCOM_SYNC_ENABLED})`
-  );
+  logger.info({
+    evt: "health_alerter_starting",
+    check_interval_ms: CHECK_INTERVAL_MS,
+    calcom_enabled: env.CALCOM_SYNC_ENABLED
+  });
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;

@@ -43,6 +43,7 @@ import {
 import { getRestaurantTimezone } from "../repositories/restaurants";
 import { utcIsoToZonedWallClock, zonedWallClockToUtcISO } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
+import { logger } from "../utils/logger";
 import { createBooking } from "./bookingService";
 import {
   extractUidFromCreateResponse,
@@ -205,16 +206,14 @@ async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<Outb
       };
     }
     await updateReservationCalcomUid(reservation.id, uid, db);
-    console.log(
-      JSON.stringify({
-        evt: "calcom_push_success",
-        op: "create",
-        reservation_id: reservation.id,
-        calcom_uid: uid,
-        latency_ms: response.durationMs,
-        phone_redacted: redactPhone(reservation.customer_phone)
-      })
-    );
+    logger.info({
+      evt: "calcom_push_success",
+      op: "create",
+      reservation_id: reservation.id,
+      calcom_uid: uid,
+      latency_ms: response.durationMs,
+      phone_redacted: redactPhone(reservation.customer_phone)
+    });
     return { outcome: "succeeded" };
   } catch (error) {
     return classifyCalcomError(error, "create");
@@ -235,9 +234,7 @@ async function executeCancel(row: OutboxExecutorRow, db: DbClient): Promise<Outb
         cancellationReason: (row.payload as { reason?: string }).reason ?? "Cancelled via VocoTable"
       }
     });
-    console.log(
-      JSON.stringify({ evt: "calcom_push_success", op: "cancel", reservation_id: row.reservation_id, calcom_uid: uid })
-    );
+    logger.info({ evt: "calcom_push_success", op: "cancel", reservation_id: row.reservation_id, calcom_uid: uid });
     return { outcome: "succeeded" };
   } catch (error) {
     if (error instanceof CalcomPermanentError && error.status === 404) {
@@ -261,19 +258,15 @@ async function executeReschedule(_row: OutboxExecutorRow, _db: DbClient): Promis
 
 function classifyCalcomError(error: unknown, op: string): OutboxExecutionResult {
   if (error instanceof CalcomTransientError) {
-    console.warn(
-      JSON.stringify({ evt: "calcom_push_transient", op, error: error.message, status: error.status })
-    );
+    logger.warn({ evt: "calcom_push_transient", op, error: error.message, status: error.status });
     return { outcome: "transient", error: error.message };
   }
   if (error instanceof CalcomPermanentError) {
-    console.error(
-      JSON.stringify({ evt: "calcom_push_permanent", op, error: error.message, status: error.status })
-    );
+    logger.error({ evt: "calcom_push_permanent", op, error });
     return { outcome: "permanent", error: error.message };
   }
   const message = (error as Error).message ?? String(error);
-  console.error(JSON.stringify({ evt: "calcom_push_unknown", op, error: message }));
+  logger.error({ evt: "calcom_push_unknown", op, error });
   return { outcome: "transient", error: message };
 }
 
@@ -300,7 +293,7 @@ const realExecutor = {
 export function installCalcomExecutor(): void {
   if (!env.CALCOM_SYNC_ENABLED) return;
   setOutboxExecutor(realExecutor);
-  console.log("[calcom] outbox executor installed.");
+  logger.info({ evt: "calcom_executor_installed" });
 }
 
 // --- bookingService convenience ---------------------------------------------
@@ -413,13 +406,11 @@ export async function processInboxEvent(event: CalcomWebhookPayload): Promise<vo
   if (parsed.kind === "invalid") {
     // Shape regression — log loud and throw so the inbox row is marked failed
     // and ops can investigate. Don't silently swallow.
-    console.error(
-      JSON.stringify({
-        evt: "calcom_inbox_payload_invalid",
-        trigger: event.triggerEvent,
-        error: parsed.error
-      })
-    );
+    logger.error({
+      evt: "calcom_inbox_payload_invalid",
+      trigger: event.triggerEvent,
+      error: parsed.error
+    });
     throw new AppError(
       400,
       "CALCOM_PAYLOAD_INVALID",
@@ -428,7 +419,7 @@ export async function processInboxEvent(event: CalcomWebhookPayload): Promise<vo
   }
 
   if (parsed.kind === "ignored") {
-    console.log(JSON.stringify({ evt: "calcom_inbox_event_ignored", trigger: event.triggerEvent }));
+    logger.info({ evt: "calcom_inbox_event_ignored", trigger: event.triggerEvent });
     return;
   }
 
@@ -443,13 +434,11 @@ export async function processInboxEvent(event: CalcomWebhookPayload): Promise<vo
   if (parsed.kind === "rescheduled") {
     // Conservative for v1: treat as cancel + ignore. Natalia can manually
     // re-book if Cal.com reschedules. Documented limitation.
-    console.log(
-      JSON.stringify({
-        evt: "calcom_inbox_reschedule_ignored",
-        uid: parsed.data.uid,
-        message: "Reschedule not yet handled"
-      })
-    );
+    logger.info({
+      evt: "calcom_inbox_reschedule_ignored",
+      uid: parsed.data.uid,
+      message: "Reschedule not yet handled"
+    });
     return;
   }
 }
@@ -474,9 +463,7 @@ async function handleBookingCreated(
   // Loop check — did WE create this booking via the outbox?
   const existing = await findReservationByCalcomUid(uid, readPool);
   if (existing) {
-    console.log(
-      JSON.stringify({ evt: "calcom_inbox_loop_skipped", uid, reservation_id: existing.id })
-    );
+    logger.info({ evt: "calcom_inbox_loop_skipped", uid, reservation_id: existing.id });
     return;
   }
 
@@ -536,18 +523,16 @@ async function handleBookingCreated(
   if (reviewFlags.length > 0) {
     // Loud, structured, grep-able. Keep this evt name stable — healthAlerter
     // / future Slack alert can subscribe on the literal string.
-    console.warn(
-      JSON.stringify({
-        evt: "calcom_inbox_web_booking_needs_review",
-        uid,
-        flags: reviewFlags,
-        party_size_raw: typeof partySizeRaw === "string" || typeof partySizeRaw === "number"
-          ? partySizeRaw
-          : null,
-        phone_present: Boolean(normalizedPhone),
-        customer_email_present: Boolean(customerEmail)
-      })
-    );
+    logger.warn({
+      evt: "calcom_inbox_web_booking_needs_review",
+      uid,
+      flags: reviewFlags,
+      party_size_raw: typeof partySizeRaw === "string" || typeof partySizeRaw === "number"
+        ? partySizeRaw
+        : null,
+      phone_present: Boolean(normalizedPhone),
+      customer_email_present: Boolean(customerEmail)
+    });
   }
 
   const restaurantTimezone = await getRestaurantTimezone(env.DEFAULT_RESTAURANT_ID);
@@ -576,23 +561,19 @@ async function handleBookingCreated(
     // Stamp the uid onto the just-created reservation so future webhooks
     // (e.g. BOOKING_CANCELLED for this uid) can find it.
     await updateReservationCalcomUid(booking.bookingId, uid);
-    console.log(
-      JSON.stringify({
-        evt: "calcom_inbox_web_booking_accepted",
-        uid,
-        reservation_id: booking.bookingId,
-        phone_redacted: redactPhone(normalizedPhone || phone),
-        review_flags: reviewFlags.length > 0 ? reviewFlags : undefined
-      })
-    );
+    logger.info({
+      evt: "calcom_inbox_web_booking_accepted",
+      uid,
+      reservation_id: booking.bookingId,
+      phone_redacted: redactPhone(normalizedPhone || phone),
+      review_flags: reviewFlags.length > 0 ? reviewFlags : undefined
+    });
   } catch (error) {
     // Conflict or other failure — cancel on Cal.com side so the guest gets
     // told. Best-effort; if Cal.com is unreachable we log and continue (the
     // outbox/inbox audit gives ops the info to handle manually).
     const message = (error as Error).message ?? String(error);
-    console.error(
-      JSON.stringify({ evt: "calcom_inbox_web_booking_rejected", uid, error: message })
-    );
+    logger.error({ evt: "calcom_inbox_web_booking_rejected", uid, error });
     try {
       await calcomRequest({
         method: "POST",
@@ -600,13 +581,7 @@ async function handleBookingCreated(
         body: { cancellationReason: `VocoTable rejected: ${message}` }
       });
     } catch (cancelError) {
-      console.error(
-        JSON.stringify({
-          evt: "calcom_inbox_undo_cancel_failed",
-          uid,
-          error: (cancelError as Error).message
-        })
-      );
+      logger.error({ evt: "calcom_inbox_undo_cancel_failed", uid, error: cancelError });
     }
     throw error;
   }
@@ -622,7 +597,7 @@ async function handleBookingCancelled(
   const uid = data.uid;
   const existing = await findReservationByCalcomUid(uid, readPool);
   if (!existing) {
-    console.log(JSON.stringify({ evt: "calcom_inbox_cancel_no_match", uid }));
+    logger.info({ evt: "calcom_inbox_cancel_no_match", uid });
     return;
   }
   if (existing.status === "cancelled") {
@@ -633,9 +608,7 @@ async function handleBookingCancelled(
     "UPDATE reservations SET status = 'cancelled', cancellation_reason = $2, cancelled_at = now() WHERE id = $1",
     [existing.id, "Cancelled via Cal.com"]
   );
-  console.log(
-    JSON.stringify({ evt: "calcom_inbox_cancel_applied", uid, reservation_id: existing.id })
-  );
+  logger.info({ evt: "calcom_inbox_cancel_applied", uid, reservation_id: existing.id });
 }
 
 /**
@@ -666,8 +639,6 @@ async function tryReconcileOutboxRow(uid: string): Promise<boolean> {
   if (result.rows.length !== 1) return false;
   const reservationId = result.rows[0]!.reservation_id;
   await updateReservationCalcomUid(reservationId, uid);
-  console.log(
-    JSON.stringify({ evt: "calcom_inbox_reconciled", uid, reservation_id: reservationId })
-  );
+  logger.info({ evt: "calcom_inbox_reconciled", uid, reservation_id: reservationId });
   return true;
 }

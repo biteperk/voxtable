@@ -18,6 +18,7 @@
 import { env } from "../config/env";
 import { DbClient, pool } from "../db/pool";
 import { claimReadyOutbox, markOutboxFailed, markOutboxRetry, markOutboxSucceeded } from "../repositories/outbox";
+import { logger } from "../utils/logger";
 
 const TICK_INTERVAL_MS = 2_000;
 const BATCH_SIZE = 20;
@@ -137,7 +138,7 @@ async function processBatch(): Promise<void> {
       } catch (error) {
         // Defensive: if the executor itself throws, treat as transient so
         // we don't lose visibility, but log loudly.
-        console.error("[outbox-worker] executor threw — treating as transient:", error);
+        logger.error({ evt: "outbox_executor_threw", error });
         await markOutboxRetry(
           row.id,
           (error as Error).message ?? "executor threw",
@@ -153,7 +154,7 @@ async function processBatch(): Promise<void> {
     } catch {
       /* swallowed — already in error path */
     }
-    console.error("[outbox-worker] batch failed:", error);
+    logger.error({ evt: "outbox_batch_failed", error });
   } finally {
     client.release();
   }
@@ -165,14 +166,14 @@ function delay(ms: number): Promise<void> {
 
 export function startOutboxWorker(): void {
   if (!env.CALCOM_SYNC_ENABLED) {
-    console.log("[outbox-worker] CALCOM_SYNC_ENABLED=false; worker not started.");
+    logger.info({ evt: "outbox_worker_not_started", reason: "CALCOM_SYNC_ENABLED=false" });
     return;
   }
   if (intervalHandle !== null) {
-    console.warn("[outbox-worker] start called twice; ignoring");
+    logger.warn({ evt: "outbox_worker_start_ignored", reason: "already running" });
     return;
   }
-  console.log(`[outbox-worker] starting; tick every ${TICK_INTERVAL_MS}ms, batch ${BATCH_SIZE}`);
+  logger.info({ evt: "outbox_worker_starting", tick_interval_ms: TICK_INTERVAL_MS, batch_size: BATCH_SIZE });
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;
