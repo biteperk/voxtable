@@ -1,5 +1,4 @@
-import { auth } from "./firebase";
-import { signOutUser } from "./firebase";
+import { auth, signOutUser } from "./firebase";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3050";
 

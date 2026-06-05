@@ -2855,19 +2855,6 @@ function SidebarUserButton({ user, active, onClick }) {
   );
 }
 
-function DashboardTopIcons() {
-  return (
-    <div className="dashboard-top-icons">
-      <button aria-label="Notifications">
-        <Icon name="notifications" />
-      </button>
-      <button aria-label="Account">
-        <Icon name="account_circle" />
-      </button>
-    </div>
-  );
-}
-
 // Live Feed polls every 5 s for fresh call activity. Plan: "Live Feed: 3-5
 // second interval during soft launch." Keep the loading flag for the very
 // first fetch only — subsequent refreshes update silently in the background.
@@ -4698,7 +4685,7 @@ function LiveTablesPage({ navigate }) {
   const refreshedAgo = formatRefreshedAgo(refreshedAt);
 
   return (
-    <DashboardShell active="Live Tables" navigate={navigate} branded>
+    <DashboardShell active="Live Tables" navigate={navigate}>
       <header className="operational-header live-tables-header">
         <div>
           <h1>Live Tables</h1>
@@ -5230,14 +5217,6 @@ function TableOrderPage({ navigate, tableLabel }) {
       </div>
     </DashboardShell>
   );
-}
-
-function formatMinutes(mins) {
-  if (mins == null) return "—";
-  if (mins < 60) return `${mins} min`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 function formatRefreshedAgo(date) {
@@ -6177,7 +6156,7 @@ function AnalyticsPage({ navigate }) {
   };
 
   return (
-    <DashboardShell active="Analytics" navigate={navigate} branded>
+    <DashboardShell active="Analytics" navigate={navigate}>
       <header className="analytics-header">
         <div>
           <h1>Performance Analytics</h1>

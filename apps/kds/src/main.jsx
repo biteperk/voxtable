@@ -326,8 +326,6 @@ function KdsApp({ user }) {
     setAudioReady(isAudioUnlocked());
   }, []);
 
-  const visibleOrders = orders;
-
   return (
     <div className="kds-app" onClick={audioReady ? undefined : handleUnlockAudio}>
       <header className="kds-topbar">
@@ -336,7 +334,7 @@ function KdsApp({ user }) {
           Natalia's Kitchen
         </div>
         <div className="kds-topbar-meta">
-          <span>{visibleOrders.length} active</span>
+          <span>{orders.length} active</span>
           <span>{user?.email ?? "kiosk"}</span>
         </div>
       </header>
@@ -354,7 +352,7 @@ function KdsApp({ user }) {
       ) : null}
 
       <Board
-        orders={visibleOrders}
+        orders={orders}
         serverNow={serverNow}
         onAdvance={advance}
         onItemAdvance={advanceItem}
