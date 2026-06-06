@@ -89,6 +89,19 @@ function recordSuccess(): void {
 
 function recordTransientFailure(): void {
   const now = Date.now();
+
+  // A failure while half-open means the single probe call failed — Cal.com is
+  // still unhealthy. Re-open immediately (the documented "otherwise it opens
+  // again" contract). Without this the breaker lingers in half-open and lets
+  // every subsequent call through until the failure count rebuilds to the
+  // threshold, defeating the point of probing.
+  if (breakerState === "half-open") {
+    breakerState = "open";
+    openedAt = now;
+    logger.warn({ evt: "calcom_breaker_reopened", reason: "half_open_probe_failed" });
+    return;
+  }
+
   if (firstFailureAt === null || now - firstFailureAt > BREAKER_FAILURE_WINDOW_MS) {
     firstFailureAt = now;
     consecutiveFailures = 1;
