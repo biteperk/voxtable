@@ -185,7 +185,11 @@ export async function updateReservation(
   }
 
   const nextStatus = input.status ?? current.status;
-  const cancelledAtSql = nextStatus === "cancelled" ? "now()" : "cancelled_at";
+  // When a booking moves OUT of "cancelled" (e.g. a dashboard restore), clear
+  // the cancellation stamps so a now-active booking doesn't carry a stale
+  // reason/timestamp; moving INTO cancelled stamps the time.
+  const cancelledAtSql = nextStatus === "cancelled" ? "now()" : "NULL";
+  const cancellationReasonSql = nextStatus === "cancelled" ? "cancellation_reason" : "NULL";
 
   const params: unknown[] = [
     input.id,
@@ -212,7 +216,8 @@ export async function updateReservation(
       party_size = COALESCE($5, party_size),
       notes = COALESCE($6, notes),
       status = COALESCE($7::reservation_status, status),
-      cancelled_at = ${cancelledAtSql}
+      cancelled_at = ${cancelledAtSql},
+      cancellation_reason = ${cancellationReasonSql}
     WHERE id = $1 ${tenantClause}
     RETURNING *
     `,
