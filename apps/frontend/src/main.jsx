@@ -66,6 +66,9 @@ import {
   mapReservationToRow,
   parseTranscript
 } from "./lib/format";
+import { BiteperkMark } from "./components/brand/BiteperkMark";
+import { BrandMark } from "./components/brand/BrandMark";
+import { CardBrandIcon } from "./components/brand/CardBrandIcon";
 
 const restaurantImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAgvs7qA0qHOd2Nob8Vl9D-gIFHp0BmQY1DOKvAMXDTT6bBAyL8U1lrq-MJV9hWv6MzfT7aNcQk6xL_pujBCXaCuo4ExjvEYGkRayK6-gLpd0Y8DC1Ob8QfyIyg9MMSyRAklEVHlsUdVxYc92Bl2bdKwZNbozxITISxFGSTMm1GFjFgG4jhDIby6jRZKnR_RslKyO96YbopcDOm2xoUgLx4eSTSXZli5KtJYcV_HcCcUo9FGjv2Bxy7pOCxyMYwTdf_kEv41JzNcmE";
@@ -1682,40 +1685,6 @@ function LoginScreen({ navigate }) {
 // V-shape brand mark used in the landing nav + footer. Inlined SVG so we
 // don't burn an HTTP request on a 1 KB icon. Same geometry as the reference
 // design in public/Bella/biteperk-website.html.
-function BiteperkMark({ size = 42 }) {
-  return (
-    <svg
-      viewBox="-160 -200 320 380"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ width: size, height: size }}
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id="lp-mk" x1="18%" y1="0%" x2="60%" y2="100%">
-          <stop offset="0%" stopColor="#fff" />
-          <stop offset="46%" stopColor="#e2e7f1" />
-          <stop offset="100%" stopColor="#919bac" />
-        </linearGradient>
-        <radialGradient id="lp-ok" cx="35%" cy="26%" r="86%">
-          <stop offset="0%" stopColor="#fff" />
-          <stop offset="20%" stopColor="#fdeede" />
-          <stop offset="54%" stopColor="#ff9d3c" />
-          <stop offset="100%" stopColor="#9a5a16" />
-        </radialGradient>
-        <filter id="lp-fk" x="-80%" y="-80%" width="260%" height="260%">
-          <feDropShadow dx="0" dy="9" stdDeviation="18" floodColor="#000" floodOpacity="0.4" />
-        </filter>
-      </defs>
-      <g filter="url(#lp-fk)">
-        <path d="M -118 -130 L 4 88" stroke="url(#lp-mk)" strokeWidth="100" strokeLinecap="round" fill="none" />
-        <path d="M 118 -130 L -4 88" stroke="url(#lp-mk)" strokeWidth="100" strokeLinecap="round" fill="none" />
-      </g>
-      <circle cx="0" cy="70" r="66" fill="url(#lp-ok)" filter="url(#lp-fk)" />
-      <ellipse cx="-20" cy="44" rx="15" ry="9" fill="#fff" opacity="0.6" />
-    </svg>
-  );
-}
-
 function LandingPage({ navigate }) {
   const { user } = useAuth();
   const goToDashboard = () => navigate("/live-feed");
@@ -6000,28 +5969,6 @@ function OutcomeItem({ color, label, value }) {
   );
 }
 
-function BrandMark({ brand }) {
-  if (brand === "google") {
-    // Official Google "G" — multi-color
-    return (
-      <svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true">
-        <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34.1 6.1 29.3 4 24 4 12.95 4 4 12.95 4 24s8.95 20 20 20 20-8.95 20-20c0-1.3-.1-2.4-.4-3.5z" />
-        <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
-        <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2L31 33.5c-2 1.6-4.5 2.5-7 2.5-5.2 0-9.6-3.3-11.2-8L6.3 33C9.6 39.5 16.3 44 24 44z" />
-        <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.7l6.4 5.3C40.9 35.4 44 30.1 44 24c0-1.3-.1-2.4-.4-3.5z" />
-      </svg>
-    );
-  }
-  if (brand === "apple") {
-    return (
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-        <path d="M17.05 20.28c-.98.95-2.05.94-3.08.49-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.49C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-      </svg>
-    );
-  }
-  return null;
-}
-
 function ProfilePage({ navigate }) {
   const { user } = useAuth();
 
@@ -6730,66 +6677,6 @@ function ManagePlanPage({ navigate }) {
         </div>
       )}
     </DashboardShell>
-  );
-}
-
-function CardBrandIcon({ brand }) {
-  const b = (brand || "").toLowerCase();
-  if (b === "visa") {
-    return (
-      <svg viewBox="0 0 40 24" className="card-brand-mark" aria-label="Visa">
-        <rect width="40" height="24" rx="3" fill="#1a1f71" />
-        <text
-          x="20"
-          y="16.5"
-          textAnchor="middle"
-          fontFamily="Arial Black, Arial, sans-serif"
-          fontSize="11"
-          fontWeight="900"
-          fontStyle="italic"
-          fill="#fff"
-        >
-          VISA
-        </text>
-      </svg>
-    );
-  }
-  if (b === "mastercard") {
-    return (
-      <svg viewBox="0 0 40 24" className="card-brand-mark" aria-label="Mastercard">
-        <rect width="40" height="24" rx="3" fill="#0a0a0a" />
-        <circle cx="16" cy="12" r="6.5" fill="#eb001b" />
-        <circle cx="24" cy="12" r="6.5" fill="#f79e1b" />
-        <path
-          d="M20 7.2a6.5 6.5 0 0 1 0 9.6 6.5 6.5 0 0 1 0-9.6z"
-          fill="#ff5f00"
-        />
-      </svg>
-    );
-  }
-  if (b === "amex" || b === "american express") {
-    return (
-      <svg viewBox="0 0 40 24" className="card-brand-mark" aria-label="American Express">
-        <rect width="40" height="24" rx="3" fill="#2e77bb" />
-        <text
-          x="20"
-          y="15.5"
-          textAnchor="middle"
-          fontFamily="Arial Black, Arial, sans-serif"
-          fontSize="8.5"
-          fontWeight="900"
-          fill="#fff"
-          letterSpacing="0.6"
-        >
-          AMEX
-        </text>
-      </svg>
-    );
-  }
-  return (
-    <div className="card-icon">
-      <Icon name="credit_card" />
-    </div>
   );
 }
 
