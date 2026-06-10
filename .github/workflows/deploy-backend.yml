@@ -18,6 +18,11 @@ concurrency:
   group: deploy-backend
   cancel-in-progress: false # never interrupt an in-flight prod deploy
 
+# Keyless auth (WIF): these jobs must be allowed to mint a GitHub OIDC token.
+permissions:
+  contents: read
+  id-token: write
+
 env:
   IMAGE: us-central1-docker.pkg.dev/vocotable-497209/vocotable/api
 
@@ -42,7 +47,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
       - run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
       - name: Build and push (tag with git sha + latest)
@@ -58,7 +64,8 @@ jobs:
     steps:
       - uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
       - name: SSH to VM — pull image, restart, migrate, healthcheck
         run: |
