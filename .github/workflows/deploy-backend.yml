@@ -1,0 +1,73 @@
+name: Deploy backend to VM
+
+# Push-to-main → build image in CI → push to Artifact Registry → VM pulls + restarts.
+# The VM never builds or pulls source; it only `docker pull`s the prebuilt image.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/backend/**"
+      - "package.json"
+      - "package-lock.json"
+      - "Dockerfile"
+      - "docker-compose*.yml"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch: {} # lets us trigger a deploy by hand from the Actions tab
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false # never interrupt an in-flight prod deploy
+
+env:
+  IMAGE: us-central1-docker.pkg.dev/vocotable-497209/vocotable/api
+
+jobs:
+  check:
+    name: Build gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run check # tsc backend + vite build frontend + kds — blocks deploy if red
+
+  build-push:
+    name: Build & push image
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Build and push (tag with git sha + latest)
+        run: |
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+  deploy:
+    name: Deploy on VM
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: SSH to VM — pull image, restart, migrate, healthcheck
+        run: |
+          gcloud compute ssh ali_alganzz@core-central-vm --zone=us-central1-a --quiet --command='
+            set -e
+            cd /opt/vocotable
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml pull api
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml up -d api
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api npm run db:migrate:prod
+            sleep 5
+            curl -fsS http://localhost:3050/health && echo " <- deploy healthy"
+          '

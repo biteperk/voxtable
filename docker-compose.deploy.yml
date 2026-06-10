@@ -1,0 +1,13 @@
+# CI/CD deploy override — points the `api` service at the prebuilt image in
+# Artifact Registry instead of building from source on the VM. The CI pipeline
+# (.github/workflows/deploy-backend.yml) builds + pushes the image; the VM only
+# pulls. Used ALONGSIDE the base + prod compose, e.g.:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml pull api
+#
+# This file lives on the VM at /opt/vocotable/docker-compose.deploy.yml (placed
+# once during setup). The base docker-compose.yml still has `build:` — that is
+# simply ignored when we `pull`/`up` without `--build`.
+services:
+  api:
+    image: us-central1-docker.pkg.dev/vocotable-497209/vocotable/api:latest
+    pull_policy: always
