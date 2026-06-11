@@ -1,0 +1,56 @@
+name: Deploy frontend + KDS to Firebase
+
+# Push-to-main → build the two Vite apps → firebase deploy --only hosting.
+# Keyless: reuses the backend pipeline's WIF — github-deployer@ is impersonated
+# via OIDC and was granted firebasehosting.admin on the 'vocotable' Firebase
+# project (separate from the compute project vocotable-497209).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/frontend/**"
+      - "apps/kds/**"
+      - "firebase.json"
+      - ".firebaserc"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy-frontend.yml"
+  workflow_dispatch: {} # manual trigger from the Actions tab
+
+concurrency:
+  group: deploy-frontend
+  cancel-in-progress: true # hosting deploys are idempotent — drop stale runs
+
+# Keyless auth (WIF) needs the job to mint a GitHub OIDC token.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-deploy:
+    name: Build & deploy Hosting (app + kds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20" # match the app runtime; the action itself runs on Node 24
+          cache: npm
+      - run: npm ci
+      - name: Build frontend + KDS
+        env:
+          # Public-by-design build values (the Firebase web config + maps key
+          # already ship in the client bundle). Stored as repo variables.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
+        run: |
+          npm run build:frontend
+          npm run build:kds
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
+      - name: Deploy to Firebase Hosting (app + kds)
+        env:
+          GOOGLE_CLOUD_QUOTA_PROJECT: vocotable # ADC quota project for the cross-project deploy
+        run: npx --yes --package firebase-tools@15 firebase deploy --only hosting --project vocotable --non-interactive
