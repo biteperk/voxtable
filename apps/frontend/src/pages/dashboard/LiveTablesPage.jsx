@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { completeReservation, listTables, seatReservation } from "../../api";
-import { formatRefreshedAgo, formatVoiceTime12h } from "../../lib/format";
+import { formatRefreshedAgo, formatVoiceTime12h, zoneIcon } from "../../lib/format";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
 
@@ -33,6 +33,8 @@ export function LiveTablesPage({ navigate }) {
         return {
           id: t.id,
           label: t.label,
+          zone: t.zone || null,
+          description: t.description || null,
           minCapacity: t.min_capacity,
           maxCapacity: t.max_capacity,
           status,
@@ -178,6 +180,7 @@ export function LiveTablesPage({ navigate }) {
             <span>Table</span>
             <span>Capacity</span>
             <span>Status</span>
+            <span className="table-desc-head">Description</span>
             <span className="live-tables-action-col">Action</span>
           </div>
           {loading && tables.length === 0 && (
@@ -215,7 +218,17 @@ function TableRow({ table, onSeat, onComplete, onOpenDetails, busy }) {
 
   return (
     <div className={`live-tables-row status-${table.status}`}>
-      <span className="table-label">{table.label}</span>
+      <span className="table-label">
+        <span className="table-label-main">
+          {table.label}
+          {table.zone && (
+            <span className={`zone-badge zone-${table.zone}`}>
+              <Icon name={zoneIcon(table.zone)} />
+              {table.zone}
+            </span>
+          )}
+        </span>
+      </span>
       <span className="table-capacity">
         <Icon name="group" />
         {table.minCapacity}-{table.maxCapacity}
@@ -233,6 +246,9 @@ function TableRow({ table, onSeat, onComplete, onOpenDetails, busy }) {
             Seated — {guest} ({party}pp)
           </>
         )}
+      </span>
+      <span className="table-desc" title={table.description || ""}>
+        {table.description || "—"}
       </span>
       <span className="live-tables-action-col">
         {isReserved && (

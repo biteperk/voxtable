@@ -17,6 +17,18 @@ export const OUTCOME_LABEL = {
   none: "No booking attempted"
 };
 
+// Material Symbols icon per seating zone (migration 013) so each area reads at
+// a glance instead of every zone sharing one icon. Lookup via zoneIcon() in
+// ./format, which falls back to a generic table icon for unknown/empty zones.
+export const ZONE_ICON = {
+  window: "window",
+  patio: "deck",
+  main: "restaurant",
+  booth: "weekend",
+  private: "meeting_room",
+  bar: "local_bar"
+};
+
 // Calls without an ended_at older than this are treated as stale (Retell
 // end-of-call webhook never landed) rather than "live forever".
 export const LIVE_THRESHOLD_MS = 10 * 60 * 1000;

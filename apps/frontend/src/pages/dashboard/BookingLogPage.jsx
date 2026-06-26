@@ -320,6 +320,7 @@ export function BookingLogPage({ navigate, path }) {
                   <th>Date / Time</th>
                   <th>Guest</th>
                   <th>Party</th>
+                  <th>Table</th>
                   <th>Status</th>
                   <th>Notes</th>
                   <th>Actions</th>
@@ -328,7 +329,7 @@ export function BookingLogPage({ navigate, path }) {
               <tbody>
                 {rows.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={6} className="booking-table-empty">
+                    <td colSpan={7} className="booking-table-empty">
                       {isFiltered ? "No bookings match your filters." : "No reservations yet."}
                     </td>
                   </tr>
@@ -448,6 +449,15 @@ function ConfirmModal({ state, busy, onConfirm, onCancel }) {
               <span className="modal-context-label">Party</span>
               <strong>{r.party_size}</strong>
             </div>
+            {r.table_label && (
+              <div className="modal-context-row">
+                <span className="modal-context-label">Table</span>
+                <strong>
+                  {r.table_label}
+                  {r.table_description ? ` · ${r.table_description}` : ""}
+                </strong>
+              </div>
+            )}
           </div>
         )}
 
@@ -507,12 +517,33 @@ function BookingRow({ row, onMarkNoShow, onCancel, onRestore }) {
       <td className="booking-time">
         <strong>{row.dateLabel}</strong>
         <span>{row.timeLabel}</span>
+        {row.ref && <span className="booking-ref">{row.ref}</span>}
       </td>
       <td>
         <strong>{row.guest}</strong>
         <span>{row.phone}</span>
       </td>
       <td>{row.party}</td>
+      <td>
+        {row.tableLabel ? (
+          <div className="booking-table-cell">
+            <span className="booking-table-name">
+              <Icon name="table_restaurant" />
+              {row.tableLabel}
+              {row.tableZone && (
+                <span className={`zone-badge zone-${row.tableZone}`}>{row.tableZone}</span>
+              )}
+            </span>
+            {row.tableDescription && (
+              <span className="booking-table-desc" title={row.tableDescription}>
+                {row.tableDescription}
+              </span>
+            )}
+          </div>
+        ) : (
+          <span className="booking-table-unassigned">Unassigned</span>
+        )}
+      </td>
       <td>
         <span className={`status-pill ${row.statusTone}`}>
           {row.statusTone === "cancelled" && <Icon name="cancel" />}
@@ -577,6 +608,7 @@ function BookingCardItem({ row }) {
         <div className="booking-card-when">
           <strong>{row.dateLabel}</strong>
           <span>{row.timeLabel}</span>
+          {row.ref && <span className="booking-card-ref">{row.ref}</span>}
         </div>
         <span className={`status-pill ${row.statusTone}`}>
           {row.statusTone === "cancelled" && <Icon name="cancel" />}
@@ -594,6 +626,13 @@ function BookingCardItem({ row }) {
           <Icon name="group" />
           Party of {row.party}
         </span>
+        {row.tableLabel && (
+          <span className="booking-card-table">
+            <Icon name="table_restaurant" />
+            {row.tableLabel}
+            {row.tableZone && <em className={`zone-badge zone-${row.tableZone}`}>{row.tableZone}</em>}
+          </span>
+        )}
         {row.note && <span className="booking-card-note">{row.note}</span>}
       </div>
     </li>

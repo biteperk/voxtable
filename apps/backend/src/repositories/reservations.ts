@@ -123,6 +123,8 @@ export interface ReservationListItem extends ReservationRow {
   customer_name: string;
   customer_phone: string;
   table_label: string | null;
+  table_zone: string | null;
+  table_description: string | null;
 }
 
 export async function listReservations(input: {
@@ -147,7 +149,9 @@ export async function listReservations(input: {
       r.*,
       c.name AS customer_name,
       c.phone AS customer_phone,
-      t.label AS table_label
+      t.label AS table_label,
+      t.zone AS table_zone,
+      t.description AS table_description
     FROM reservations r
     JOIN customers c ON c.id = r.customer_id
     LEFT JOIN tables t ON t.id = r.table_id

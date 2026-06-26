@@ -3,6 +3,8 @@ import { DbClient, pool } from "../db/pool";
 export interface TableRow {
   id: string;
   label: string;
+  zone: string | null;
+  description: string | null;
   min_capacity: number;
   max_capacity: number;
   reservation_id: string | null;
@@ -27,6 +29,8 @@ export async function listTables(
     SELECT
       t.id,
       t.label,
+      t.zone,
+      t.description,
       t.min_capacity,
       t.max_capacity,
       r.id          AS reservation_id,

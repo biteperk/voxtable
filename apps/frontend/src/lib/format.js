@@ -1,6 +1,6 @@
 // Pure display formatters shared across dashboard pages. No React, no I/O —
 // just data → string/row shaping. Label maps live in ./constants.
-import { INTENT_LABEL, OUTCOME_LABEL, LIVE_THRESHOLD_MS } from "./constants";
+import { INTENT_LABEL, OUTCOME_LABEL, LIVE_THRESHOLD_MS, ZONE_ICON } from "./constants";
 
 export function centsToDollars(cents) {
   return (Number(cents || 0) / 100).toFixed(2);
@@ -19,6 +19,12 @@ export function humanizeIntent(row) {
 
 export function humanizeOutcome(o) {
   return OUTCOME_LABEL[o] ?? o;
+}
+
+// Map a seating zone (window, patio, main…) to its Material Symbols icon name.
+// Falls back to a generic table icon for unknown/empty zones.
+export function zoneIcon(zone) {
+  return ZONE_ICON[String(zone || "").toLowerCase()] || "table_restaurant";
 }
 
 export function capitalize(s) {
@@ -128,16 +134,29 @@ export function mapReservationToRow(row) {
   };
   return {
     id: row.id,
+    ref: shortBookingRef(row.id),
     dateLabel: formatReservationDate(row.reservation_date),
     timeLabel: formatVoiceTime12h(row.start_time),
     guest: row.customer_name || "Unknown",
     phone: formatPhoneDisplay(row.customer_phone),
     party: row.party_size,
+    // Table mapping + descriptive metadata (migration 013). The API already
+    // LEFT JOINs the table, but this mapper used to drop it entirely.
+    tableLabel: row.table_label || null,
+    tableZone: row.table_zone || null,
+    tableDescription: row.table_description || null,
     status: statusLabelMap[row.status] ?? row.status,
     statusTone: statusToneMap[row.status] ?? "confirmed",
     note: row.notes || (row.source === "voice" ? "Booked via phone" : `Booked via ${row.source}`),
     muted: row.status === "cancelled" || row.status === "no_show"
   };
+}
+
+// First 8 hex chars of the reservation UUID, uppercased, as a human-quotable
+// booking reference ("#A5434652") staff can read back without the full UUID.
+export function shortBookingRef(id) {
+  if (!id) return "";
+  return "#" + String(id).replace(/-/g, "").slice(0, 8).toUpperCase();
 }
 
 export function formatReservationDate(isoDateOrString) {

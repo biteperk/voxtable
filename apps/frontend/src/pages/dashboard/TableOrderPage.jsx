@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listTables } from "../../api";
-import { formatVoiceTime12h } from "../../lib/format";
+import { formatVoiceTime12h, zoneIcon } from "../../lib/format";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
 import { MOCK_TABLE_ORDERS, MOCK_TABLE_TIMELINE } from "../../lib/mockData";
@@ -35,6 +35,8 @@ export function TableOrderPage({ navigate, tableLabel }) {
           setTable({
             id: t.id,
             label: t.label,
+            zone: t.zone || null,
+            description: t.description || null,
             minCapacity: t.min_capacity,
             maxCapacity: t.max_capacity,
             status: !hasReservation
@@ -139,6 +141,12 @@ export function TableOrderPage({ navigate, tableLabel }) {
               <Icon name="group" />
               {table.minCapacity}–{table.maxCapacity}
             </span>
+            {table.zone && (
+              <span className="to-pill to-pill-zone">
+                <Icon name={zoneIcon(table.zone)} />
+                {table.zone}
+              </span>
+            )}
             {hasReservation && (
               <span className="to-pill to-pill-ai">
                 <Icon name="auto_awesome" />
@@ -147,6 +155,8 @@ export function TableOrderPage({ navigate, tableLabel }) {
             )}
           </div>
         </header>
+
+        {table.description && <p className="to-hero-desc">{table.description}</p>}
 
         {(seatedTimeLabel || bookedTimeLabel || hasReservation) && (
           <div className="to-meta-strip">

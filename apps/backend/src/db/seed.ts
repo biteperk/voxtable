@@ -88,27 +88,33 @@ async function seed(): Promise<void> {
     ]
   );
 
-  const tables = [
-    ["T1", 1, 2],
-    ["T2", 1, 2],
-    ["T3", 2, 4],
-    ["T4", 2, 4],
-    ["T5", 4, 6],
-    ["T6", 6, 8],
-    ["T7", 8, 10]
+  // [label, minCapacity, maxCapacity, zone, description]
+  // zone is the coarse area used for booking-log/floor-view badges (migration
+  // 013); description is the free-text "what kind of table" shown next to the
+  // mapping. Display-only — the voice path still assigns by capacity alone.
+  const tables: Array<[string, number, number, string, string]> = [
+    ["T1", 1, 2, "window", "Window two-top overlooking the street"],
+    ["T2", 1, 2, "window", "Quiet window two-top"],
+    ["T3", 2, 4, "main", "Main-floor table for four"],
+    ["T4", 2, 4, "patio", "Outdoor patio table (weather permitting)"],
+    ["T5", 4, 6, "main", "Central round table, seats up to six"],
+    ["T6", 6, 8, "booth", "Large corner booth"],
+    ["T7", 8, 10, "private", "Private back room for large parties"]
   ];
 
-  for (const [label, minCapacity, maxCapacity] of tables) {
+  for (const [label, minCapacity, maxCapacity, zone, description] of tables) {
     await pool.query(
       `
-      INSERT INTO tables (restaurant_id, label, min_capacity, max_capacity, is_active)
-      VALUES ($1, $2, $3, $4, true)
+      INSERT INTO tables (restaurant_id, label, min_capacity, max_capacity, zone, description, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, true)
       ON CONFLICT (restaurant_id, label) DO UPDATE SET
         min_capacity = EXCLUDED.min_capacity,
         max_capacity = EXCLUDED.max_capacity,
+        zone = EXCLUDED.zone,
+        description = EXCLUDED.description,
         is_active = true;
       `,
-      [restaurantId, label, minCapacity, maxCapacity]
+      [restaurantId, label, minCapacity, maxCapacity, zone, description]
     );
   }
 

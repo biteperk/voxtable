@@ -2640,7 +2640,7 @@ gmp-place-autocomplete {
 }
 
 .booking-table {
-  min-width: 900px;
+  min-width: 1000px;
   width: 100%;
   border-collapse: collapse;
   text-align: left;
@@ -2682,10 +2682,12 @@ gmp-place-autocomplete {
   text-decoration-color: var(--outline);
 }
 
+/* Party (col 3) and Status (col 5) are centered. Col 4 (Table) stays
+   left-aligned — keep these indices in sync with the <th> order above. */
 .booking-table td:nth-child(3),
 .booking-table th:nth-child(3),
-.booking-table td:nth-child(4),
-.booking-table th:nth-child(4) {
+.booking-table td:nth-child(5),
+.booking-table th:nth-child(5) {
   text-align: center;
 }
 
@@ -2765,6 +2767,85 @@ gmp-place-autocomplete {
 
 .status-pill-label {
   display: inline-block;
+}
+
+/* ---- Table metadata (migration 013): zone badge + descriptions ---- */
+/* Coarse seating area as a small pill. text-transform renders the lowercase
+   DB zone values (window, patio, booth…) with a leading capital. */
+.zone-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+}
+.zone-badge .material-symbols-outlined {
+  font-size: 12px;
+}
+
+/* Booking-log "Table" column: label + zone badge, with the description below. */
+.booking-table-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.booking-table-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.booking-table-name .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--on-surface-variant);
+}
+.booking-table-desc {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--outline);
+  font-size: 12px;
+  line-height: 16px;
+}
+.booking-table-unassigned {
+  color: var(--outline);
+}
+
+/* Short human-quotable booking reference under the date/time. */
+.booking-ref {
+  margin-top: 2px;
+  opacity: 0.7;
+  letter-spacing: 0.04em;
+}
+
+/* Mobile booking card: ref under the date, table chip in the meta row. */
+.booking-card-when .booking-card-ref {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--outline);
+  letter-spacing: 0.04em;
+}
+.booking-card-table {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.booking-card-table .material-symbols-outlined {
+  font-size: 16px;
 }
 
 /* Booking row pending state — soft-disable while the API mutation is in
@@ -6191,7 +6272,7 @@ button {
 }
 .live-tables-row {
   display: grid;
-  grid-template-columns: 80px 110px 1fr 220px;
+  grid-template-columns: 120px 92px minmax(0, 0.9fr) minmax(0, 1.4fr) 220px;
   align-items: center;
   gap: 16px;
   padding: 14px 20px;
@@ -6216,10 +6297,32 @@ button {
 }
 
 .table-label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
   font-family: "JetBrains Mono", monospace;
   font-weight: 700;
   font-size: 14px;
   color: var(--on-surface);
+}
+.table-label-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Description is its own grid column (next to Status), not a sub-line under the
+   label. min-width:0 lets it ellipsis within its track instead of overflowing. */
+.table-desc {
+  min-width: 0;
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .table-capacity {
   display: inline-flex;
@@ -6308,9 +6411,15 @@ button {
 @media (max-width: 720px) {
   .live-tables-row,
   .live-tables-row-head {
-    grid-template-columns: 60px 90px 1fr;
+    grid-template-columns: 100px 90px 1fr;
     gap: 10px;
     padding: 12px 14px;
+  }
+  /* Description column is supplementary; the zone badge carries the gist on the
+     narrow mobile floor view. Drop the column (header + cell) on mobile. */
+  .table-desc,
+  .table-desc-head {
+    display: none;
   }
   .live-tables-row .live-tables-action-col,
   .live-tables-row-head .live-tables-action-col {
@@ -9588,6 +9697,19 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   border-color: color-mix(in srgb, var(--primary) 40%, transparent);
   color: var(--primary);
+}
+
+/* Seating zone (window, patio…) — DB values are lowercase; capitalize here. */
+.to-pill-zone {
+  text-transform: capitalize;
+}
+
+/* Free-text table description under the hero title (migration 013). */
+.to-hero-desc {
+  margin: 8px 0 0;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .to-hero-actions {
