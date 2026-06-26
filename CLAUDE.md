@@ -108,4 +108,4 @@ An intern engineer at Algorythmos (Ali Ümit ALGAN) works on the same VM and **p
 
 - The 4-week MVP timeline (see `plan-phases/00-overview.md`) explicitly says **no automated tests, manual smoke tests only**. Stick to that; don't add Jest unless a paying customer is asking for stability.
 - Stay in-scope: no multi-tenant, no multilingual, no outbound calling, no loyalty, no mobile, no ResDiary/OpenTable integration in v1.
-- Dashboard auth is currently **open to any verified Google account**. Lock it to an email allowlist before any real bookings flow (tracked as a pre-launch task).
+- Dashboard auth is locked to an **email allowlist** (`DASHBOARD_ALLOWED_EMAILS`), enforced in `auth/firebaseAuth.ts` — a verified account whose email isn't listed gets `403 EMAIL_NOT_ALLOWLISTED` on every dashboard route. Editing the list is an env change, no code. Empty list = open to any verified Google account (dev only; prod env validation forbids the empty case via `env.ts` superRefine).
