@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "../../auth";
 import {
   cancelReservation,
   createReservation,
@@ -13,6 +14,8 @@ import { DashboardShell } from "./DashboardShell";
 import { NewBookingModal } from "../../components/dashboard/NewBookingModal";
 
 export function BookingLogPage({ navigate, path }) {
+  const { hasMinRole } = useAuth();
+  const canViewAnalytics = hasMinRole("manager");
   const [reservations, setReservations] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -95,7 +98,10 @@ export function BookingLogPage({ navigate, path }) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([listReservations({ limit: 100 }), getAnalytics({ days: 30 })])
+    Promise.all([
+      listReservations({ limit: 100 }),
+      canViewAnalytics ? getAnalytics({ days: 30 }) : Promise.resolve({ analytics: null })
+    ])
       .then(([res, stats]) => {
         if (cancelled) return;
         setReservations(res.reservations ?? []);
@@ -106,7 +112,7 @@ export function BookingLogPage({ navigate, path }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canViewAnalytics]);
 
   const markPending = (id, on) =>
     setPendingIds((prev) => {

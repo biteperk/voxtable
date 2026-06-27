@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "../../auth";
 import { listActiveOrders, updateOrderStatus } from "../../api";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
@@ -10,6 +11,8 @@ const KITCHEN_COLUMNS = [
 ];
 
 export function KitchenOverviewPage({ navigate, path }) {
+  const { hasMinRole } = useAuth();
+  const canCancelOrders = hasMinRole("manager");
   const [orders, setOrders] = useState([]);
   const [serverNow, setServerNow] = useState(new Date().toISOString());
   const [error, setError] = useState(null);
@@ -90,6 +93,7 @@ export function KitchenOverviewPage({ navigate, path }) {
             busyId={busyId}
             onAdvance={handleAdvance}
             onCancel={handleCancel}
+            canCancel={canCancelOrders}
           />
         ))}
       </section>
@@ -97,7 +101,7 @@ export function KitchenOverviewPage({ navigate, path }) {
   );
 }
 
-function KitchenColumn({ column, orders, serverNow, busyId, onAdvance, onCancel }) {
+function KitchenColumn({ column, orders, serverNow, busyId, onAdvance, onCancel, canCancel }) {
   return (
     <article className={`kitchen-column kitchen-column-${column.status}`}>
       <header className="kitchen-column-head">
@@ -119,7 +123,7 @@ function KitchenColumn({ column, orders, serverNow, busyId, onAdvance, onCancel 
               busy={busyId === order.id}
               advanceLabel={column.advanceLabel}
               onAdvance={() => onAdvance(order, column.advance)}
-              onCancel={() => onCancel(order)}
+              onCancel={canCancel ? () => onCancel(order) : null}
             />
           ))
         )}
@@ -170,9 +174,11 @@ function KitchenOrderCard({ order, serverNow, busy, advanceLabel, onAdvance, onC
           <Icon name="arrow_forward" />
           {advanceLabel}
         </button>
-        <button type="button" className="kitchen-btn danger" onClick={onCancel} disabled={busy} title="Cancel order">
-          <Icon name="close" />
-        </button>
+        {onCancel && (
+          <button type="button" className="kitchen-btn danger" onClick={onCancel} disabled={busy} title="Cancel order">
+            <Icon name="close" />
+          </button>
+        )}
       </div>
     </article>
   );

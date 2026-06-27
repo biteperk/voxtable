@@ -315,3 +315,59 @@ export function createBillingPortalSession() {
 export function createBillingCheckoutSession() {
   return authedFetch("/api/billing/checkout-session", { method: "POST" });
 }
+
+// ===== Staff management =====
+
+export function getStaffList() {
+  return authedFetch("/api/staff");
+}
+
+export function inviteStaff({ email, role }) {
+  return authedFetch("/api/staff/invite", {
+    method: "POST",
+    body: JSON.stringify({ email, role })
+  });
+}
+
+export function updateStaffRole(userId, role) {
+  return authedFetch(`/api/staff/${userId}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role })
+  });
+}
+
+export function removeStaffMember(userId) {
+  return authedFetch(`/api/staff/${userId}`, { method: "DELETE" });
+}
+
+export function revokeStaffInvite(inviteId) {
+  return authedFetch(`/api/staff/invites/${inviteId}`, { method: "DELETE" });
+}
+
+// Public — no auth needed
+export function getInviteInfo(token) {
+  return fetch(`${API_BASE_URL}/api/staff/invite-info?token=${encodeURIComponent(token)}`).then(
+    async (r) => {
+      if (!r.ok) {
+        const body = await r.text();
+        let parsed = null;
+        try { parsed = JSON.parse(body); } catch { /* not JSON */ }
+        if (parsed?.error?.message) {
+          const err = new Error(parsed.error.message);
+          err.code = parsed.error.code;
+          err.status = r.status;
+          throw err;
+        }
+        throw new Error(`${r.status}: ${body}`);
+      }
+      return r.json();
+    }
+  );
+}
+
+export function acceptStaffInvite(token) {
+  return authedFetch("/api/staff/accept-invite", {
+    method: "POST",
+    body: JSON.stringify({ token })
+  });
+}

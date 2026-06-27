@@ -21,6 +21,7 @@ import { ManagePlanPage } from "./pages/billing/ManagePlanPage";
 import { UpdatePaymentDetailsPage } from "./pages/billing/UpdatePaymentDetailsPage";
 import { OnboardingWizard } from "./pages/onboarding/OnboardingWizard";
 import { LoginScreen } from "./pages/auth/LoginScreen";
+import { AcceptInvitePage } from "./pages/auth/AcceptInvitePage";
 
 
 
@@ -107,7 +108,7 @@ function App() {
       "/manage-menu": "Manage Menu · VocoTable",
       "/kitchen-overview": "Kitchen Overview · VocoTable",
       "/analytics": "Analytics · VocoTable",
-      "/settings": "Settings · VocoTable",
+      "/billing": "Billing · VocoTable",
     };
     if (/^\/live-feed\/[^/]+$/.test(path)) {
       document.title = "Call detail · VocoTable";
@@ -130,7 +131,7 @@ function App() {
     path === "/manage-menu" ||
     path === "/kitchen-overview" ||
     path === "/analytics" ||
-    path === "/settings" ||
+    path === "/billing" ||
     path === "/manage-plan" ||
     path === "/update-payment-details" ||
     path === "/profile" ||
@@ -188,9 +189,25 @@ function useOnboardingGate() {
   return { loading, status };
 }
 
+// Role-based route visibility. Kitchen and server are orthogonal (not a single
+// rank ladder): kitchen sees only the kitchen surface, server sees front-of-
+// house, manager+ sees everything. Returns the path to redirect to, or null if
+// the current path is allowed for the role. Pure — the caller navigates from an
+// effect, never during render.
+const KITCHEN_ROUTES = ["/kitchen-overview", "/profile"];
+const SERVER_ROUTES = ["/live-feed", "/booking-log", "/live-tables", "/profile"];
+
+function roleRouteRedirect(path, role) {
+  const allowed = role === "server" ? SERVER_ROUTES : KITCHEN_ROUTES;
+  const isAllowed = allowed.some((r) => path === r || path.startsWith(r + "/"));
+  if (isAllowed) return null;
+  return role === "kitchen" ? "/kitchen-overview" : "/live-feed";
+}
+
 function AppRouter({ path, navigate, isDashboard }) {
-  const { user, loading } = useAuth();
+  const { user, loading, hasMinRole } = useAuth();
   const isOnboarding = path === "/onboarding" || path.startsWith("/onboarding/");
+  const isInvite = path === "/invite";
   const gate = useOnboardingGate();
 
   // Gate redirects — only after auth + gate are resolved, and only ever toward
@@ -211,6 +228,30 @@ function AppRouter({ path, navigate, isDashboard }) {
     }
   }, [user, loading, isDashboard, isOnboarding, gate.loading, gate.status, allowDuringOnboarding, navigate]);
 
+  // Role-based route guard. Compute the redirect target purely; the effect below
+  // does the navigation (never navigate during render). Only meaningful once
+  // auth + the onboarding gate have resolved, so the role is known and stable.
+  const roleRedirect =
+    isDashboard &&
+    !isOnboarding &&
+    !isInvite &&
+    user &&
+    !loading &&
+    !gate.loading &&
+    gate.status === "live" &&
+    !hasMinRole("manager")
+      ? roleRouteRedirect(path, hasMinRole("server") ? "server" : "kitchen")
+      : null;
+
+  useEffect(() => {
+    if (roleRedirect) navigate(roleRedirect);
+  }, [roleRedirect, navigate]);
+
+  // /invite?token=xxx is outside dashboard/onboarding gates so new staff can join first.
+  if (isInvite) {
+    return <AcceptInvitePage navigate={navigate} />;
+  }
+
   if (isDashboard && loading) {
     return <FullPageMessage title="Loading..." />;
   }
@@ -229,9 +270,14 @@ function AppRouter({ path, navigate, isDashboard }) {
     return <OnboardingWizard navigate={navigate} path={path} />;
   }
 
-  // Incomplete onboarding on a dashboard route: the effect above is redirecting
-  // to /onboarding — render a neutral loader rather than the locked dashboard.
   if (isDashboard && gate.status !== "live") {
+    return <FullPageMessage title="Loading..." />;
+  }
+
+  // A non-manager on a surface their role can't see is being redirected by the
+  // effect above — show a neutral loader meanwhile so the disallowed page never
+  // flashes (and never fires its data fetch).
+  if (roleRedirect) {
     return <FullPageMessage title="Loading..." />;
   }
 
@@ -259,7 +305,7 @@ function AppRouter({ path, navigate, isDashboard }) {
   if (path === "/manage-menu") return <ManageMenuPage navigate={navigate} path={path} />;
   if (path === "/kitchen-overview") return <KitchenOverviewPage navigate={navigate} path={path} />;
   if (path === "/analytics") return <AnalyticsPage navigate={navigate} path={path} />;
-  if (path === "/settings")
+  if (path === "/billing")
     return <BillingPage navigate={navigate} path={path} />;
   if (path === "/manage-plan") return <ManagePlanPage navigate={navigate} path={path} />;
   if (path === "/update-payment-details")

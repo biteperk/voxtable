@@ -11919,3 +11919,490 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Staff Management (Profile page)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.staff-management-card {
+  grid-column: 1 / -1;
+}
+
+.staff-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.staff-invite-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary, #6ee7b7);
+  color: var(--on-primary, #064e3b);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.staff-invite-btn:hover {
+  background: var(--primary-hover, #5dd6a8);
+  transform: translateY(-1px);
+}
+.staff-invite-btn .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
+/* Error banner */
+.staff-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  margin: 0.5rem 0;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  font-size: 0.8125rem;
+}
+.staff-error > button {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.125rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.staff-error .material-symbols-outlined {
+  font-size: 1.125rem;
+  color: #ef4444;
+}
+
+.staff-loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--on-surface-variant, #94a3b8);
+  font-size: 0.875rem;
+}
+
+/* Member list */
+.staff-member-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.staff-member-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.staff-member-row:last-child {
+  border-bottom: none;
+}
+
+.staff-member-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(110, 231, 183, 0.2), rgba(129, 140, 248, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--on-surface, #e2e8f0);
+  flex-shrink: 0;
+}
+
+.staff-member-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.staff-member-info strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--on-surface, #e2e8f0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.staff-member-info span {
+  font-size: 0.75rem;
+  color: var(--on-surface-variant, #94a3b8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.staff-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Role badge */
+.staff-role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 99px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--badge-color, #94a3b8) 15%, transparent);
+  color: var(--badge-color, #94a3b8);
+  border: 1px solid color-mix(in srgb, var(--badge-color, #94a3b8) 25%, transparent);
+}
+
+/* Role select */
+.staff-role-select {
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--on-surface, #e2e8f0);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  outline: none;
+}
+.staff-role-select:focus {
+  border-color: var(--primary, #6ee7b7);
+}
+.staff-role-select option {
+  background: var(--surface-1, #1e293b);
+  color: var(--on-surface, #e2e8f0);
+}
+
+/* Remove button */
+.staff-remove-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--on-surface-variant, #94a3b8);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+}
+.staff-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.staff-remove-btn .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+/* Pending invites */
+.staff-pending-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.staff-pending-section h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--on-surface-variant, #94a3b8);
+  margin: 0 0 0.75rem;
+}
+
+.staff-invite-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.staff-invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.staff-invite-row:last-child {
+  border-bottom: none;
+}
+
+.staff-invite-info {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  flex: 1;
+}
+.staff-invite-info > .material-symbols-outlined {
+  font-size: 1.125rem;
+  color: var(--on-surface-variant, #94a3b8);
+  flex-shrink: 0;
+}
+.staff-invite-info > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+.staff-invite-info strong {
+  font-size: 0.8125rem;
+  color: var(--on-surface, #e2e8f0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.staff-invite-info span {
+  font-size: 0.6875rem;
+  color: var(--on-surface-variant, #94a3b8);
+}
+
+.staff-invite-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.staff-copy-btn,
+.staff-revoke-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--on-surface-variant, #94a3b8);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+}
+.staff-copy-btn:hover {
+  background: rgba(110, 231, 183, 0.12);
+  color: var(--primary, #6ee7b7);
+}
+.staff-revoke-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.staff-copy-btn .material-symbols-outlined,
+.staff-revoke-btn .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+/* ─── Invite Modal ──────────────────────────────────────────────────────── */
+
+.staff-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  animation: fade-in 0.15s ease-out;
+}
+
+.staff-modal {
+  width: min(440px, 100%);
+  background: var(--surface-1, #1e293b);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  animation: slide-up 0.2s ease-out;
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.staff-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+.staff-modal-header h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--on-surface, #e2e8f0);
+  margin: 0;
+}
+.staff-modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: var(--on-surface-variant, #94a3b8);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s;
+}
+.staff-modal-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.staff-modal-field {
+  margin-bottom: 1rem;
+}
+.staff-modal-field label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--on-surface-variant, #94a3b8);
+  margin-bottom: 0.375rem;
+}
+.staff-modal-field input,
+.staff-modal-field select {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--on-surface, #e2e8f0);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.staff-modal-field input:focus,
+.staff-modal-field select:focus {
+  border-color: var(--primary, #6ee7b7);
+}
+.staff-modal-field input::placeholder {
+  color: rgba(148, 163, 184, 0.5);
+}
+.staff-modal-field select option {
+  background: var(--surface-1, #1e293b);
+}
+
+.staff-role-hint {
+  display: block;
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--on-surface-variant, #94a3b8);
+  font-style: italic;
+}
+
+.staff-modal-error {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  font-size: 0.8125rem;
+  margin-bottom: 1rem;
+}
+.staff-modal-error .material-symbols-outlined {
+  font-size: 1rem;
+  color: #ef4444;
+}
+
+.staff-modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+.staff-modal-actions button {
+  padding: 0.5rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s, transform 0.1s;
+}
+.staff-modal-actions button:not(.ghost) {
+  background: var(--primary, #6ee7b7);
+  color: var(--on-primary, #064e3b);
+}
+.staff-modal-actions button:not(.ghost):hover {
+  background: var(--primary-hover, #5dd6a8);
+}
+.staff-modal-actions button:not(.ghost):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.staff-modal-actions button.ghost {
+  background: none;
+  color: var(--on-surface-variant, #94a3b8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.staff-modal-actions button.ghost:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Success state */
+.staff-modal-success {
+  text-align: center;
+}
+.staff-modal-success > .material-symbols-outlined {
+  font-size: 2.5rem;
+  color: var(--primary, #6ee7b7);
+  margin-bottom: 0.5rem;
+}
+.staff-modal-success p {
+  font-size: 0.875rem;
+  color: var(--on-surface-variant, #94a3b8);
+  margin: 0 0 1rem;
+}
+
+.staff-invite-link-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.staff-invite-link-box code {
+  flex: 1;
+  font-size: 0.6875rem;
+  color: var(--on-surface, #e2e8f0);
+  word-break: break-all;
+  text-align: left;
+}
+.staff-invite-link-box button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 6px;
+  border: none;
+  background: var(--primary, #6ee7b7);
+  color: var(--on-primary, #064e3b);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.staff-invite-link-box button .material-symbols-outlined {
+  font-size: 0.875rem;
+}

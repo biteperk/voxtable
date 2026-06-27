@@ -9,21 +9,27 @@ import { RestaurantSwitcher } from "../../components/dashboard/RestaurantSwitche
 import { SidebarUserButton } from "../../components/dashboard/SidebarUserButton";
 
 export function DashboardShell({ active, children, navigate, path }) {
-  const { user } = useAuth();
+  const { user, hasMinRole, role } = useAuth();
   const isPhone = useMediaQuery("(max-width: 767px)");
   const burgerRef = useRef(null);
   const drawer = useDrawer({ pathname: path, triggerRef: burgerRef });
   const { scrolled, sentinelRef } = useScrolled();
   const drawerTitleId = useId();
 
-  const items = [
-    ["Live Tables", "table_restaurant", "/live-tables"],
-    ["Live Feed", "graphic_eq", "/live-feed"],
-    ["Booking Log", "menu_book", "/booking-log"],
-    ["Manage Menu", "restaurant_menu", "/manage-menu"],
-    ["Kitchen", "soup_kitchen", "/kitchen-overview"],
-    ["Analytics", "query_stats", "/analytics"]
+  // Role-filtered sidebar items. Most are hierarchical (hasMinRole), but Kitchen
+  // is orthogonal to front-of-house — a server must NOT see it (the route guard
+  // bounces them on click), so Kitchen shows only for the kitchen role itself or
+  // manager+. Mirrors the route guard in main.jsx.
+  const allItems = [
+    ["Live Tables", "table_restaurant", "/live-tables", () => hasMinRole("server")],
+    ["Live Feed", "graphic_eq", "/live-feed", () => hasMinRole("server")],
+    ["Booking Log", "menu_book", "/booking-log", () => hasMinRole("server")],
+    ["Manage Menu", "restaurant_menu", "/manage-menu", () => hasMinRole("manager")],
+    ["Kitchen", "soup_kitchen", "/kitchen-overview", () => role === "kitchen" || hasMinRole("manager")],
+    ["Analytics", "query_stats", "/analytics", () => hasMinRole("manager")]
   ];
+
+  const items = allItems.filter(([, , , canSee]) => canSee());
 
   const handleSignOut = async () => {
     await signOutUser();
@@ -87,15 +93,17 @@ export function DashboardShell({ active, children, navigate, path }) {
       </nav>
 
       <div className="sidebar-bottom">
-        <button
-          className={`settings-link ${active === "Billing" ? "active" : ""}`}
-          type="button"
-          onClick={() => navigate("/settings")}
-          aria-current={active === "Billing" ? "page" : undefined}
-        >
-          <Icon name="credit_card" fill={active === "Billing"} />
-          <span>Billing</span>
-        </button>
+        {hasMinRole("manager") && (
+          <button
+            className={`settings-link ${active === "Billing" ? "active" : ""}`}
+            type="button"
+            onClick={() => navigate("/billing")}
+            aria-current={active === "Billing" ? "page" : undefined}
+          >
+            <Icon name="credit_card" fill={active === "Billing"} />
+            <span>Billing</span>
+          </button>
+        )}
 
         <SidebarUserButton
           user={user}
@@ -151,7 +159,7 @@ export function DashboardShell({ active, children, navigate, path }) {
         <button
           type="button"
           className="mobile-topbar-avatar"
-          onClick={() => navigate("/settings")}
+          onClick={() => navigate("/profile")}
           aria-label={user?.email ? `Account · ${user.email}` : "Account"}
         >
           {user?.photoURL ? (

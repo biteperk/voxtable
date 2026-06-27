@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "../../auth";
 import { getAnalytics, listCallLogs } from "../../api";
 import { mapCallLogToRow } from "../../lib/format";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -11,6 +12,8 @@ import { DashboardShell } from "./DashboardShell";
 const LIVE_FEED_POLL_MS = 5000;
 
 export function LiveFeedOverviewPage({ navigate, path }) {
+  const { hasMinRole } = useAuth();
+  const canViewAnalytics = hasMinRole("manager");
   const [callLogs, setCallLogs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +56,10 @@ export function LiveFeedOverviewPage({ navigate, path }) {
     let cancelled = false;
 
     const fetchAll = (isInitial) =>
-      Promise.all([listCallLogs({ limit: 25 }), getAnalytics({ days: 1 })])
+      Promise.all([
+        listCallLogs({ limit: 25 }),
+        canViewAnalytics ? getAnalytics({ days: 1 }) : Promise.resolve({ analytics: null })
+      ])
         .then(([calls, stats]) => {
           if (cancelled) return;
           setCallLogs(calls.call_logs ?? []);
@@ -82,7 +88,7 @@ export function LiveFeedOverviewPage({ navigate, path }) {
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canViewAnalytics]);
 
   const allCallRows = useMemo(() => {
     const rows = callLogs.map((row, i) => mapCallLogToRow(row, i));
@@ -97,7 +103,7 @@ export function LiveFeedOverviewPage({ navigate, path }) {
     if (statusFilter.size === 0) return allCallRows;
     return allCallRows.filter((r) => statusFilter.has(r.status));
   }, [allCallRows, statusFilter]);
-  const totalCalls = analytics?.total_calls ?? 0;
+  const totalCalls = analytics?.total_calls ?? allCallRows.length;
   const activeCalls = allCallRows.filter((r) => r.status === "live").length;
   const isFiltered = statusFilter.size > 0;
   const successRate =

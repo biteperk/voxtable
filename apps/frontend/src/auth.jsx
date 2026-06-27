@@ -4,14 +4,18 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth, completeRedirectSignIn } from "./firebase";
 import { getMe, getActiveRestaurantId, setActiveRestaurantId } from "./api";
 
+const ROLE_RANK = { kitchen: 1, server: 2, staff: 2, manager: 3, owner: 4 };
+
 const AuthContext = createContext({
   user: null,
   loading: true,
   memberships: [],
   activeRestaurantId: null,
+  role: null,
   meLoading: false,
   setActiveRestaurant: () => {},
-  refreshMe: () => {}
+  refreshMe: () => {},
+  hasMinRole: () => false
 });
 
 // Pick the active restaurant deterministically: a previously-stored choice if
@@ -25,12 +29,20 @@ function pickActive(memberships, suggested) {
   return ids[0] ?? null;
 }
 
+function roleForRestaurant(memberships, restaurantId) {
+  if (!restaurantId) return null;
+  const m = memberships.find((m) => m.restaurant_id === restaurantId);
+  return m?.role ?? null;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [memberships, setMemberships] = useState([]);
   const [activeRestaurantId, setActiveId] = useState(getActiveRestaurantId());
   const [meLoading, setMeLoading] = useState(false);
+
+  const role = roleForRestaurant(memberships, activeRestaurantId);
 
   // Load identity + memberships for the signed-in user. Sets the active
   // restaurant (and persists it) so X-Restaurant-Id is sent on later calls.
@@ -79,6 +91,15 @@ export function AuthProvider({ children }) {
     setActiveId(id);
   };
 
+  /**
+   * Check if the current user has at least the given role at the active
+   * restaurant. Used for navigation gating and conditional UI rendering.
+   */
+  const hasMinRole = (minRole) => {
+    if (!role) return false;
+    return (ROLE_RANK[role] ?? 0) >= (ROLE_RANK[minRole] ?? 99);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -86,9 +107,11 @@ export function AuthProvider({ children }) {
         loading,
         memberships,
         activeRestaurantId,
+        role,
         meLoading,
         setActiveRestaurant,
-        refreshMe: loadMe
+        refreshMe: loadMe,
+        hasMinRole
       }}
     >
       {children}
@@ -99,3 +122,4 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
+
