@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { getCallLog } from "../../api";
-import { capitalize, formatDuration, humanizeIntent, humanizeOutcome, parseTranscript } from "../../lib/format";
+import {
+  callerDisplayName,
+  capitalize,
+  formatDuration,
+  formatPhoneDisplay,
+  humanizeIntent,
+  humanizeOutcome,
+  parseTranscript
+} from "../../lib/format";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
@@ -31,6 +39,12 @@ export function LiveFeedDetailPage({ navigate, callId, path }) {
   const intentLabel = callLog ? humanizeIntent(callLog) : "—";
   const sentiment = callLog?.user_sentiment ?? null;
   const outcome = callLog?.booking_outcome ?? null;
+  // Prefer the caller's name (booking or post-call analysis); fall back to the
+  // formatted phone, then a generic label.
+  const callerName = callLog ? callerDisplayName(callLog) : null;
+  const callerLabel =
+    callerName ||
+    (callLog?.caller_phone ? formatPhoneDisplay(callLog.caller_phone) : "Unknown caller");
 
   return (
     <DashboardShell active="Live Feed" navigate={navigate} path={path}>
@@ -51,7 +65,7 @@ export function LiveFeedDetailPage({ navigate, callId, path }) {
                 : error
                   ? `Error: ${error}`
                   : callLog
-                    ? `${callLog.caller_phone ?? "Unknown caller"} · ${durationLabel}`
+                    ? `${callerLabel} · ${durationLabel}`
                     : "Call not found"}
             </p>
           </div>
@@ -75,11 +89,7 @@ export function LiveFeedDetailPage({ navigate, callId, path }) {
               <div className="agent-avatar">B</div>
               <div>
                 <strong>Bella (AI Agent)</strong>
-                <span>
-                  {isLive
-                    ? `In call with ${callLog?.caller_phone ?? "unknown"}`
-                    : callLog?.caller_phone ?? "Unknown caller"}
-                </span>
+                <span>{isLive ? `In call with ${callerLabel}` : callerLabel}</span>
               </div>
             </div>
             <time>{durationLabel}</time>
