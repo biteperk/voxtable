@@ -170,17 +170,36 @@ function useOnboardingGate() {
       return;
     }
     setLoading(true);
-    getOnboardingStatus()
-      .then((r) => {
-        if (!cancelled) setStatus(r?.onboarding_status ?? null);
-      })
-      .catch(() => {
-        // 403 NO_RESTAURANT_MEMBERSHIP (no restaurant yet) or transient → null.
-        if (!cancelled) setStatus(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+
+    // On a hard refresh the first status fetch can lose a race with Firebase
+    // token propagation and reject. For a user who HAS a restaurant that is a
+    // transient failure, not "needs onboarding" — so retry a few times with a
+    // short backoff before giving up, rather than resolving to null (which used
+    // to bounce a real member to /onboarding → /live-feed off the page they
+    // were actually on, e.g. a hard refresh of /profile).
+    let attempt = 0;
+    const run = () => {
+      getOnboardingStatus()
+        .then((r) => {
+          if (cancelled) return;
+          setStatus(r?.onboarding_status ?? null);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (memberships.length > 0 && attempt < 3) {
+            attempt += 1;
+            setTimeout(run, 400 * attempt);
+            return;
+          }
+          // Legit 403 NO_RESTAURANT_MEMBERSHIP (no restaurant yet) or exhausted
+          // retries → status unknown/none.
+          setStatus(null);
+          setLoading(false);
+        });
+    };
+    run();
+
     return () => {
       cancelled = true;
     };
@@ -205,7 +224,7 @@ function roleRouteRedirect(path, role) {
 }
 
 function AppRouter({ path, navigate, isDashboard }) {
-  const { user, loading, hasMinRole } = useAuth();
+  const { user, loading, hasMinRole, memberships, meLoading } = useAuth();
   const isOnboarding = path === "/onboarding" || path.startsWith("/onboarding/");
   const isInvite = path === "/invite";
   const gate = useOnboardingGate();
@@ -219,14 +238,23 @@ function AppRouter({ path, navigate, isDashboard }) {
   const allowDuringOnboarding = path === "/manage-menu";
 
   useEffect(() => {
-    if (!user || loading || !isDashboard || gate.loading) return;
-    const complete = gate.status === "live";
-    if (isOnboarding && complete) {
-      navigate("/live-feed");
-    } else if (!isOnboarding && !complete && !allowDuringOnboarding) {
+    if (!user || loading || meLoading || !isDashboard || gate.loading) return;
+    const isLive = gate.status === "live";
+    if (isOnboarding) {
+      // Leave the wizard only once we KNOW the tenant is live.
+      if (isLive) navigate("/live-feed");
+      return;
+    }
+    // On a dashboard route, only send the user to onboarding when we're
+    // CONFIDENT they still need it: no restaurant at all, or a definitively
+    // non-live status. A null status (a failed/racey status fetch on a hard
+    // refresh) is "unknown" — it must NOT bounce a real member off their page.
+    const hasRestaurant = memberships.length > 0;
+    const knownIncomplete = gate.status !== null && !isLive;
+    if ((!hasRestaurant || knownIncomplete) && !allowDuringOnboarding) {
       navigate("/onboarding");
     }
-  }, [user, loading, isDashboard, isOnboarding, gate.loading, gate.status, allowDuringOnboarding, navigate]);
+  }, [user, loading, meLoading, isDashboard, isOnboarding, gate.loading, gate.status, memberships, allowDuringOnboarding, navigate]);
 
   // Role-based route guard. Compute the redirect target purely; the effect below
   // does the navigation (never navigate during render). Only meaningful once
@@ -260,8 +288,12 @@ function AppRouter({ path, navigate, isDashboard }) {
     return <LoginScreen navigate={navigate} />;
   }
 
-  // Hold dashboard surfaces until the gate resolves so an incomplete tenant
-  // never flashes the dashboard (and vice-versa).
+  // Hold dashboard surfaces until we can route confidently, so an incomplete
+  // tenant never flashes the dashboard (and vice-versa). A signed-in member
+  // with a restaurant renders even when the onboarding-status fetch is still
+  // pending OR failed (unknown) — they're entitled to the page; only a member-
+  // less account or a *known* incomplete tenant is held here (then redirected
+  // by the effect above).
   if (isDashboard && gate.loading) {
     return <FullPageMessage title="Loading..." />;
   }
@@ -270,7 +302,8 @@ function AppRouter({ path, navigate, isDashboard }) {
     return <OnboardingWizard navigate={navigate} path={path} />;
   }
 
-  if (isDashboard && gate.status !== "live") {
+  const tenantKnownIncomplete = gate.status !== null && gate.status !== "live";
+  if (isDashboard && (memberships.length === 0 || tenantKnownIncomplete)) {
     return <FullPageMessage title="Loading..." />;
   }
 
