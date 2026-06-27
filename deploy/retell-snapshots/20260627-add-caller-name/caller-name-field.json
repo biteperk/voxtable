@@ -1,0 +1,5 @@
+{
+  "type": "string",
+  "name": "caller_name",
+  "description": "The caller's name as they gave it on the call (first name, plus surname if mentioned). Use the name they introduced themselves with or gave for the booking. Empty string if they never said their name."
+}

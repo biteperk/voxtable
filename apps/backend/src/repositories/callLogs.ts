@@ -6,6 +6,7 @@ export interface UpsertCallLogInput {
   provider?: string;
   providerCallId?: string;
   callerPhone?: string | null;
+  callerName?: string | null;
   status?: CallStatus;
   transcript?: string | null;
   summary?: string | null;
@@ -49,10 +50,11 @@ export async function upsertCallLog(input: UpsertCallLogInput, db: DbClient = po
         in_voicemail,
         call_successful,
         special_requests,
-        analysis_json
+        analysis_json,
+        caller_name
       )
       VALUES ($1, $2, $3, COALESCE($4::call_status, 'started'), $5, $6, $7, $8, COALESCE($9, false), $10, $11,
-              $12, $13, $14, COALESCE($15, false), $16, $17, COALESCE($18::jsonb, '{}'::jsonb))
+              $12, $13, $14, COALESCE($15, false), $16, $17, COALESCE($18::jsonb, '{}'::jsonb), $19)
       RETURNING id
       `,
       [
@@ -73,7 +75,8 @@ export async function upsertCallLog(input: UpsertCallLogInput, db: DbClient = po
         input.inVoicemail ?? null,
         input.callSuccessful ?? null,
         input.specialRequests ?? null,
-        analysisJson
+        analysisJson,
+        input.callerName ?? null
       ]
     );
 
@@ -101,13 +104,15 @@ export async function upsertCallLog(input: UpsertCallLogInput, db: DbClient = po
       in_voicemail,
       call_successful,
       special_requests,
-      analysis_json
+      analysis_json,
+      caller_name
     )
     VALUES ($1, $2, $3, $4, COALESCE($5::call_status, 'started'), $6, $7, $8, $9, COALESCE($10, false), $11, $12,
-            $13, $14, $15, COALESCE($16, false), $17, $18, COALESCE($19::jsonb, '{}'::jsonb))
+            $13, $14, $15, COALESCE($16, false), $17, $18, COALESCE($19::jsonb, '{}'::jsonb), $20)
     ON CONFLICT (provider, provider_call_id) DO UPDATE SET
       restaurant_id = EXCLUDED.restaurant_id,
       caller_phone = COALESCE(EXCLUDED.caller_phone, call_logs.caller_phone),
+      caller_name = COALESCE(EXCLUDED.caller_name, call_logs.caller_name),
       status = EXCLUDED.status,
       transcript = COALESCE(EXCLUDED.transcript, call_logs.transcript),
       summary = COALESCE(EXCLUDED.summary, call_logs.summary),
@@ -144,7 +149,8 @@ export async function upsertCallLog(input: UpsertCallLogInput, db: DbClient = po
       input.inVoicemail ?? null,
       input.callSuccessful ?? null,
       input.specialRequests ?? null,
-      analysisJson
+      analysisJson,
+      input.callerName ?? null
     ]
   );
 
@@ -165,6 +171,11 @@ export interface CallLogRow {
   provider: string;
   provider_call_id: string | null;
   caller_phone: string | null;
+  // Name extracted from Retell post-call analysis (covers non-booking calls).
+  caller_name: string | null;
+  // Name from the booking made on this call (customers.name via reservation_id).
+  // Not a column — JOINed in listCallLogs / getCallLogById. Preferred for display.
+  customer_name: string | null;
   status: CallStatus;
   transcript: string | null;
   summary: string | null;
@@ -193,10 +204,12 @@ export async function listCallLogs(input: {
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
   const result = await pool.query<CallLogRow>(
     `
-    SELECT *
-    FROM call_logs
-    WHERE restaurant_id = $1
-    ORDER BY COALESCE(started_at, created_at) DESC
+    SELECT cl.*, cust.name AS customer_name
+    FROM call_logs cl
+    LEFT JOIN reservations r ON r.id = cl.reservation_id
+    LEFT JOIN customers cust ON cust.id = r.customer_id
+    WHERE cl.restaurant_id = $1
+    ORDER BY COALESCE(cl.started_at, cl.created_at) DESC
     LIMIT $2
     `,
     [input.restaurantId, limit]
@@ -205,7 +218,16 @@ export async function listCallLogs(input: {
 }
 
 export async function getCallLogById(id: string): Promise<CallLogRow | null> {
-  const result = await pool.query<CallLogRow>("SELECT * FROM call_logs WHERE id = $1", [id]);
+  const result = await pool.query<CallLogRow>(
+    `
+    SELECT cl.*, cust.name AS customer_name
+    FROM call_logs cl
+    LEFT JOIN reservations r ON r.id = cl.reservation_id
+    LEFT JOIN customers cust ON cust.id = r.customer_id
+    WHERE cl.id = $1
+    `,
+    [id]
+  );
   return result.rows[0] ?? null;
 }
 
