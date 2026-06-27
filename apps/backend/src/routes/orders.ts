@@ -5,7 +5,7 @@ import {
   AuthenticatedRequest,
   requireFirebaseAuth
 } from "../auth/firebaseAuth";
-import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
+import { requireAnyMemberRole, requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
@@ -26,12 +26,15 @@ import {
 } from "../services/orderService";
 
 export const ordersRouter = Router();
+const FRONT_OF_HOUSE_ROLES = ["staff", "server", "manager", "owner"] as const;
+const KITCHEN_ROLES = ["kitchen", "manager", "owner"] as const;
 
 // Read endpoints — authed, but kitchen kiosk account is in the allowlist.
 ordersRouter.get(
   "/api/orders/active",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(KITCHEN_ROLES),
   asyncHandler(async (request, response) => {
     const orders = await getActiveOrders(tenantId(request));
     // Provide server-now so clients can compute "time since ordered" without
@@ -47,6 +50,7 @@ ordersRouter.get(
   "/api/orders/:id",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(KITCHEN_ROLES),
   asyncHandler(async (request, response) => {
     const order = await getOrderDetail(request.params.id!, tenantId(request));
     response.json(order);
@@ -58,7 +62,7 @@ ordersRouter.post(
   "/api/orders",
   requireFirebaseAuth,
   resolveTenant,
-  requireMemberRole("manager"),
+  requireAnyMemberRole(FRONT_OF_HOUSE_ROLES),
   asyncHandler(async (request: AuthenticatedRequest, response) => {
     const body = createOrderRequestSchema.parse(request.body);
     const idempotencyKey = request.header("idempotency-key") ?? undefined;
@@ -106,6 +110,7 @@ ordersRouter.patch(
   "/api/orders/:id/status",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(KITCHEN_ROLES),
   asyncHandler(async (request: AuthenticatedRequest, response) => {
     const body = updateOrderStatusRequestSchema.parse(request.body);
     const expectedVersion = parseExpectedVersion(request.header("if-match"));
@@ -132,6 +137,7 @@ ordersRouter.patch(
   "/api/orders/:id/items/:itemId/status",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(KITCHEN_ROLES),
   asyncHandler(async (request: AuthenticatedRequest, response) => {
     const body = updateOrderItemStatusRequestSchema.parse(request.body);
     const expectedVersion = parseExpectedVersion(request.header("if-match"));

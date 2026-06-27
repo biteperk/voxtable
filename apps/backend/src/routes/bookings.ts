@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { requireFirebaseAuth } from "../auth/firebaseAuth";
-import { resolveTenant, tenantId } from "../auth/tenantContext";
+import { requireAnyMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
 import {
@@ -20,6 +20,7 @@ import { z } from "zod";
 
 export const bookingsRouter = Router();
 const bookingIdParamSchema = z.string().uuid();
+const FRONT_OF_HOUSE_ROLES = ["staff", "server", "manager", "owner"] as const;
 
 // Dashboard-only mutation. The voice path bypasses HTTP and calls
 // services/bookingService.createBooking directly, so we can safely gate
@@ -29,6 +30,7 @@ bookingsRouter.post(
   "/bookings",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(FRONT_OF_HOUSE_ROLES),
   asyncHandler(async (request, response) => {
     const body = createBookingRequestSchema.parse(request.body);
     const customerName = body.customer_name ?? body.customerName;
@@ -76,6 +78,7 @@ bookingsRouter.patch(
   "/bookings/:id",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(FRONT_OF_HOUSE_ROLES),
   asyncHandler(async (request, response) => {
     const body = updateBookingRequestSchema.parse(request.body);
     const bookingId = bookingIdParamSchema.parse(request.params.id);
@@ -102,6 +105,7 @@ bookingsRouter.post(
   "/bookings/:id/cancel",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(FRONT_OF_HOUSE_ROLES),
   asyncHandler(async (request, response) => {
     const body = cancelBookingRequestSchema.parse(request.body);
     const bookingId = bookingIdParamSchema.parse(request.params.id);
@@ -126,6 +130,7 @@ bookingsRouter.post(
   "/bookings/:id/seat",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(FRONT_OF_HOUSE_ROLES),
   asyncHandler(async (request, response) => {
     const bookingId = bookingIdParamSchema.parse(request.params.id);
     const restaurantId = tenantId(request);
@@ -151,6 +156,7 @@ bookingsRouter.post(
   "/bookings/:id/complete",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(FRONT_OF_HOUSE_ROLES),
   asyncHandler(async (request, response) => {
     const bookingId = bookingIdParamSchema.parse(request.params.id);
     const restaurantId = tenantId(request);

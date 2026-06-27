@@ -4,7 +4,7 @@ import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { logger } from "../utils/logger";
 import { getUserMemberships, type MemberRole, type Membership } from "../repositories/members";
-import { AuthenticatedRequest, isManagerEmail } from "./firebaseAuth";
+import { AuthenticatedRequest, isKitchenEmail, isManagerEmail } from "./firebaseAuth";
 
 export interface TenantContext {
   restaurantId: string;
@@ -12,7 +12,7 @@ export interface TenantContext {
   memberships: Membership[];
 }
 
-const ROLE_RANK: Record<MemberRole, number> = { staff: 1, manager: 2, owner: 3 };
+const ROLE_RANK: Record<MemberRole, number> = { kitchen: 1, server: 2, staff: 2, manager: 3, owner: 4 };
 
 /**
  * The active restaurant id for a request that passed resolveTenant. Throws if
@@ -68,8 +68,13 @@ export async function resolveTenant(
     if (memberships.length === 0 && env.MULTITENANCY_LEGACY_FALLBACK) {
       // requireFirebaseAuth already enforced DASHBOARD_ALLOWED_EMAILS, so an
       // authenticated user reaching here is allowlisted. Grant the default
-      // tenant with a role derived from the manager allowlist.
-      const role: MemberRole = isManagerEmail(user.email) ? "manager" : "staff";
+      // tenant with a role derived from the manager/kitchen allowlists (the KDS
+      // kiosk needs 'kitchen' to read the now role-gated /api/orders/*).
+      const role: MemberRole = isManagerEmail(user.email)
+        ? "manager"
+        : isKitchenEmail(user.email)
+          ? "kitchen"
+          : "staff";
       memberships = [
         { restaurantId: env.DEFAULT_RESTAURANT_ID, restaurantName: "", role }
       ];
@@ -134,6 +139,26 @@ export async function resolveTenant(
  * member's role at the active restaurant rather than a global email allowlist.
  * Dev escape hatch (DASHBOARD_VERIFY_AUTH=false) allows through.
  */
+
+export function requireAnyMemberRole(allowedRoles: readonly MemberRole[]) {
+  const allowed = new Set<MemberRole>(allowedRoles);
+  return (request: AuthenticatedRequest, _response: Response, next: NextFunction): void => {
+    if (!env.DASHBOARD_VERIFY_AUTH) {
+      next();
+      return;
+    }
+    const role = request.tenant?.role;
+    if (!role) {
+      next(new AppError(403, "TENANT_REQUIRED", "Restaurant context required."));
+      return;
+    }
+    if (!allowed.has(role)) {
+      next(new AppError(403, "INSUFFICIENT_ROLE", "This role cannot access this action."));
+      return;
+    }
+    next();
+  };
+}
 export function requireMemberRole(min: MemberRole) {
   return (request: AuthenticatedRequest, _response: Response, next: NextFunction): void => {
     if (!env.DASHBOARD_VERIFY_AUTH) {

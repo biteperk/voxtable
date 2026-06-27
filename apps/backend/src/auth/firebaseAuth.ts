@@ -3,6 +3,7 @@ import admin from "firebase-admin";
 
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
+import { getUserMemberships } from "../repositories/members";
 import { logger } from "../utils/logger";
 import type { TenantContext } from "./tenantContext";
 
@@ -43,6 +44,11 @@ const allowedEmails = parseEmailSet(env.DASHBOARD_ALLOWED_EMAILS);
 // Phase 2 upgrades this to Firebase custom claims (`role: manager`).
 const managerEmails = parseEmailSet(env.DASHBOARD_MANAGER_EMAILS);
 
+// Kitchen-kiosk allowlist — derives the 'kitchen' role for the KDS account in
+// the legacy/no-membership fallback (tenantContext) so the kitchen display can
+// read role-gated /api/orders/* before an invite-based membership exists.
+const kitchenEmails = parseEmailSet(env.DASHBOARD_KITCHEN_EMAILS);
+
 // Platform admins (VocoTable staff) — gate the cross-tenant provisioning console.
 const adminEmails = parseEmailSet(env.DASHBOARD_ADMIN_EMAILS);
 
@@ -63,10 +69,20 @@ export function isManagerEmail(email: string | null | undefined): boolean {
   return managerEmails.has(email.toLowerCase());
 }
 
-export async function requireFirebaseAuth(
+/**
+ * Is this email a kitchen-kiosk account? Used by the legacy bridge
+ * (tenantContext) to assign the 'kitchen' role to a pre-backfill KDS account.
+ */
+export function isKitchenEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return kitchenEmails.has(email.toLowerCase());
+}
+
+async function firebaseAuthMiddleware(
   request: AuthenticatedRequest,
   _response: Response,
-  next: NextFunction
+  next: NextFunction,
+  options: { enforceAllowlist: boolean }
 ): Promise<void> {
   // Dev escape hatch — mirrors RETELL_VERIFY_SIGNATURE / TWILIO_VALIDATE_SIGNATURE.
   // Production env validation forces this true.
@@ -105,13 +121,18 @@ export async function requireFirebaseAuth(
       );
     }
 
-    // Email allowlist — defence-in-depth on top of Firebase project audience
-    // check (which verifyIdToken already enforces via the projectId passed to
-    // initializeApp). Empty allowlist = allow any verified account (dev only;
-    // production env.ts superRefine forbids the empty case).
+    // Email allowlist - defence-in-depth on top of Firebase project audience
+    // check. Invited restaurant members are also allowed even when their email
+    // is not in the platform bootstrap allowlist; otherwise manager-driven
+    // staff onboarding would still require an ops env change per employee.
     if (allowedEmails.size > 0) {
       const email = decoded.email.toLowerCase();
-      if (!allowedEmails.has(email)) {
+      const allowlisted = allowedEmails.has(email);
+      const hasMembership =
+        options.enforceAllowlist && !allowlisted
+          ? (await getUserMemberships(decoded.uid)).length > 0
+          : false;
+      if (options.enforceAllowlist && !allowlisted && !hasMembership) {
         logger.warn({ evt: "auth_email_not_allowlisted", uid: decoded.uid });
         return next(
           new AppError(403, "EMAIL_NOT_ALLOWLISTED", "This account is not authorised.")
@@ -127,6 +148,22 @@ export async function requireFirebaseAuth(
     }
     next(new AppError(401, "INVALID_TOKEN", "ID token verification failed."));
   }
+}
+
+export async function requireFirebaseAuth(
+  request: AuthenticatedRequest,
+  response: Response,
+  next: NextFunction
+): Promise<void> {
+  return firebaseAuthMiddleware(request, response, next, { enforceAllowlist: true });
+}
+
+export async function requireFirebaseIdentity(
+  request: AuthenticatedRequest,
+  response: Response,
+  next: NextFunction
+): Promise<void> {
+  return firebaseAuthMiddleware(request, response, next, { enforceAllowlist: false });
 }
 
 /**

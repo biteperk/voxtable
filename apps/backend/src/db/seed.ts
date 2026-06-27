@@ -158,6 +158,12 @@ async function backfillMultitenancy(restaurantId: string): Promise<void> {
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean)
   );
+  const kitchen = new Set(
+    (env.DASHBOARD_KITCHEN_EMAILS ?? "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
 
   if (allowed.length === 0) {
     console.log("Skipping multitenancy backfill — no DASHBOARD_ALLOWED_EMAILS configured");
@@ -185,7 +191,11 @@ async function backfillMultitenancy(restaurantId: string): Promise<void> {
   for (const email of allowed) {
     try {
       const fbUser = await admin.auth().getUserByEmail(email);
-      const role = managers.has(email) ? "manager" : "staff";
+      const role = managers.has(email)
+        ? "manager"
+        : kitchen.has(email)
+          ? "kitchen"
+          : "staff";
       await pool.query(
         `INSERT INTO users (id, email, name, email_verified)
          VALUES ($1, $2, $3, $4)

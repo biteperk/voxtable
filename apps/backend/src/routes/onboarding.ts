@@ -179,6 +179,7 @@ onboardingRouter.get(
   "/api/onboarding/phone-setup",
   requireFirebaseAuth,
   resolveTenant,
+  requireMemberRole("manager"),
   asyncHandler(async (request, response) => {
     const restaurantId = tenantId(request);
     const prov = await getProvisioning(restaurantId);

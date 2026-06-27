@@ -1,6 +1,6 @@
 import { DbClient, pool } from "../db/pool";
 
-export type MemberRole = "owner" | "manager" | "staff";
+export type MemberRole = "owner" | "manager" | "staff" | "server" | "kitchen";
 
 export interface Membership {
   restaurantId: string;
@@ -8,10 +8,26 @@ export interface Membership {
   role: MemberRole;
 }
 
+export interface RestaurantMember {
+  userId: string;
+  email: string;
+  name: string | null;
+  role: MemberRole;
+  joinedAt: string;
+}
+
 interface MembershipRow {
   restaurant_id: string;
   restaurant_name: string;
   role: MemberRole;
+}
+
+interface RestaurantMemberRow {
+  user_id: string;
+  email: string;
+  name: string | null;
+  role: MemberRole;
+  joined_at: string;
 }
 
 /**
@@ -39,6 +55,100 @@ export async function getUserMemberships(
     restaurantName: row.restaurant_name,
     role: row.role
   }));
+}
+
+/**
+ * All members of a restaurant, joined to users for display. Manager+
+ * can view this to manage their team.
+ */
+export async function listRestaurantMembers(
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<RestaurantMember[]> {
+  const result = await db.query<RestaurantMemberRow>(
+    `
+    SELECT rm.user_id, u.email, u.name, rm.role,
+           rm.created_at::text AS joined_at
+    FROM restaurant_members rm
+    JOIN users u ON u.id = rm.user_id
+    WHERE rm.restaurant_id = $1
+    ORDER BY rm.created_at ASC
+    `,
+    [restaurantId]
+  );
+  return result.rows.map((row) => ({
+    userId: row.user_id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    joinedAt: row.joined_at
+  }));
+}
+
+export async function getRestaurantMember(
+  restaurantId: string,
+  userId: string,
+  db: DbClient = pool
+): Promise<RestaurantMember | null> {
+  const result = await db.query<RestaurantMemberRow>(
+    `
+    SELECT rm.user_id, u.email, u.name, rm.role,
+           rm.created_at::text AS joined_at
+    FROM restaurant_members rm
+    JOIN users u ON u.id = rm.user_id
+    WHERE rm.restaurant_id = $1 AND rm.user_id = $2
+    `,
+    [restaurantId, userId]
+  );
+  const row = result.rows[0];
+  return row
+    ? {
+        userId: row.user_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        joinedAt: row.joined_at
+      }
+    : null;
+}
+/**
+ * Change a member's role within a restaurant. Cannot change the owner role —
+ * owner is assigned at restaurant creation and there must always be one.
+ */
+export async function updateMemberRole(
+  restaurantId: string,
+  userId: string,
+  newRole: MemberRole,
+  db: DbClient = pool
+): Promise<boolean> {
+  const result = await db.query(
+    `
+    UPDATE restaurant_members
+    SET role = $3, updated_at = now()
+    WHERE restaurant_id = $1 AND user_id = $2 AND role != 'owner'
+    `,
+    [restaurantId, userId, newRole]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Remove a member from a restaurant. Owners cannot be removed (safety).
+ * Returns true if a row was actually deleted.
+ */
+export async function removeMember(
+  restaurantId: string,
+  userId: string,
+  db: DbClient = pool
+): Promise<boolean> {
+  const result = await db.query(
+    `
+    DELETE FROM restaurant_members
+    WHERE restaurant_id = $1 AND user_id = $2 AND role != 'owner'
+    `,
+    [restaurantId, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**

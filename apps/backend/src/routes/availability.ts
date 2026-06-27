@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { requireFirebaseAuth } from "../auth/firebaseAuth";
-import { resolveTenant, tenantId } from "../auth/tenantContext";
+import { requireAnyMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
 import { availabilityRequestSchema, normalizePartySize } from "../http/schemas";
@@ -16,6 +16,7 @@ availabilityRouter.post(
   "/availability/check",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(["staff", "server", "manager", "owner"]),
   asyncHandler(async (request, response) => {
     const body = availabilityRequestSchema.parse(request.body);
     const partySize = normalizePartySize(body);

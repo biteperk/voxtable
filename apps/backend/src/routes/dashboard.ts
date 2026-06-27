@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { requireFirebaseAuth } from "../auth/firebaseAuth";
-import { resolveTenant, tenantId } from "../auth/tenantContext";
+import { requireAnyMemberRole, requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
@@ -32,8 +32,13 @@ export const dashboardRouter = Router();
 // (/api/call-logs also matches /api/call-logs/:id; /api/analytics also matches
 // /api/analytics/daily-series).
 const DASHBOARD_PATHS = ["/api/reservations", "/api/tables", "/api/call-logs", "/api/analytics", "/api/ops"];
+const FRONT_OF_HOUSE_PATHS = ["/api/reservations", "/api/tables", "/api/call-logs"];
+const MANAGER_DASHBOARD_PATHS = ["/api/analytics", "/api/ops"];
+const FRONT_OF_HOUSE_ROLES = ["staff", "server", "manager", "owner"] as const;
 dashboardRouter.use(DASHBOARD_PATHS, requireFirebaseAuth);
 dashboardRouter.use(DASHBOARD_PATHS, resolveTenant);
+dashboardRouter.use(FRONT_OF_HOUSE_PATHS, requireAnyMemberRole(FRONT_OF_HOUSE_ROLES));
+dashboardRouter.use(MANAGER_DASHBOARD_PATHS, requireMemberRole("manager"));
 
 const listReservationsQuery = z.object({
   date: z

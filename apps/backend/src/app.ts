@@ -15,6 +15,7 @@ import { menuRouter } from "./routes/menu";
 import { onboardingRouter } from "./routes/onboarding";
 import { ordersRouter } from "./routes/orders";
 import { restaurantRouter } from "./routes/restaurant";
+import { staffRouter } from "./routes/staff";
 import { retellRouter } from "./routes/retell";
 import { stripeWebhookRouter } from "./routes/stripeWebhook";
 import { twilioRouter } from "./routes/twilio";
@@ -121,6 +122,7 @@ export function createApp() {
   app.use(meRouter);
   app.use(onboardingRouter);
   app.use(restaurantRouter);
+  app.use(staffRouter);
   app.use(adminRouter);
   app.use(stripeWebhookRouter);
 

@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { requireFirebaseAuth } from "../auth/firebaseAuth";
-import { resolveTenant, tenantId } from "../auth/tenantContext";
+import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
 import { getStripeCustomerId } from "../repositories/restaurants";
@@ -24,6 +24,7 @@ export const billingRouter = Router();
 // /stripe/webhook) because the router is mounted at "/".
 billingRouter.use("/api/billing", requireFirebaseAuth);
 billingRouter.use("/api/billing", resolveTenant);
+billingRouter.use("/api/billing", requireMemberRole("manager"));
 
 // The restaurant's own Stripe customer, falling back to the legacy single-tenant
 // env id during transition. null → this restaurant hasn't started billing yet.

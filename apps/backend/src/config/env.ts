@@ -57,6 +57,14 @@ const envSchema = z
   // account is intentionally NOT in this list.
   DASHBOARD_MANAGER_EMAILS: z.string().optional(),
 
+  // Kitchen-kiosk allowlist (subset of DASHBOARD_ALLOWED_EMAILS). Grants the
+  // 'kitchen' role to the KDS kiosk account(s) — both via the legacy fallback
+  // (no membership row yet) and the seed backfill — so the kitchen display keeps
+  // reading /api/orders/* after those endpoints became role-gated. Mirrors
+  // DASHBOARD_MANAGER_EMAILS. Real 'kitchen' memberships (invite flow) override
+  // this once they exist.
+  DASHBOARD_KITCHEN_EMAILS: z.string().optional(),
+
   // Platform admin allowlist (VocoTable staff) — gates the cross-tenant
   // provisioning console (/api/admin/*). Distinct from per-restaurant roles.
   DASHBOARD_ADMIN_EMAILS: z.string().optional(),

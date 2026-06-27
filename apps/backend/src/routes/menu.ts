@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { requireFirebaseAuth } from "../auth/firebaseAuth";
-import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
+import { requireAnyMemberRole, requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
@@ -29,6 +29,7 @@ import {
 } from "../services/menuIngestionService";
 
 export const menuRouter = Router();
+const RESTAURANT_MEMBER_ROLES = ["staff", "server", "kitchen", "manager", "owner"] as const;
 
 // Authenticated full-menu read — used by KDS, manager dashboard, and waiter
 // flow. The kitchen kiosk needs read access; only mutations are manager-gated.
@@ -36,6 +37,7 @@ menuRouter.get(
   "/api/menu",
   requireFirebaseAuth,
   resolveTenant,
+  requireAnyMemberRole(RESTAURANT_MEMBER_ROLES),
   asyncHandler(async (request, response) => {
     const menu = await getMenu(tenantId(request));
     response.json(menu);
