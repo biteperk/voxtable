@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import {
+  actorFor,
   AuthenticatedRequest,
   requireFirebaseAuth,
   requireFirebaseIdentity
@@ -25,6 +26,7 @@ import {
   listPendingInvites,
   revokeInvite
 } from "../repositories/invites";
+import { logger } from "../utils/logger";
 
 export const staffRouter = Router();
 
@@ -113,6 +115,15 @@ staffRouter.post(
       invitedBy
     });
 
+    logger.info({
+      evt: "staff_invite_created",
+      actor: actorFor(request),
+      restaurant_id: restaurantId,
+      invite_id: invite.id,
+      invited_email: invite.email,
+      role: invite.role
+    });
+
     response.status(201).json({
       invite_id: invite.id,
       token: invite.token,
@@ -145,6 +156,16 @@ staffRouter.patch(
     if (!updated) {
       throw new AppError(404, "MEMBER_NOT_FOUND", "Member not found.");
     }
+
+    logger.info({
+      evt: "staff_role_changed",
+      actor: actorFor(request),
+      restaurant_id: restaurantId,
+      target_user: userId,
+      old_role: target.role,
+      new_role: body.role
+    });
+
     response.json({ updated: true, user_id: userId, role: body.role });
   })
 );
@@ -180,6 +201,15 @@ staffRouter.delete(
     if (!removed) {
       throw new AppError(404, "MEMBER_NOT_FOUND", "Member not found.");
     }
+
+    logger.info({
+      evt: "staff_member_removed",
+      actor: actorFor(request),
+      restaurant_id: restaurantId,
+      target_user: userId,
+      target_role: target.role
+    });
+
     response.json({ removed: true, user_id: userId });
   })
 );
@@ -209,6 +239,16 @@ staffRouter.delete(
     if (!revoked) {
       throw new AppError(404, "INVITE_NOT_FOUND", "Invite not found or already used.");
     }
+
+    logger.info({
+      evt: "staff_invite_revoked",
+      actor: actorFor(request),
+      restaurant_id: restaurantId,
+      invite_id: inviteId,
+      invited_email: invite.email,
+      role: invite.role
+    });
+
     response.json({ revoked: true });
   })
 );
@@ -270,6 +310,14 @@ staffRouter.post(
     if (!invite) {
       throw new AppError(404, "INVITE_NOT_FOUND", "Invite not found, expired, or already used.");
     }
+
+    logger.info({
+      evt: "staff_invite_accepted",
+      actor: uid,
+      restaurant_id: invite.restaurantId,
+      invite_id: invite.id,
+      role: invite.role
+    });
 
     response.json({
       accepted: true,
