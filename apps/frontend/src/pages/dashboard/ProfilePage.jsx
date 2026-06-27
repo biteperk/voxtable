@@ -29,6 +29,18 @@ const ROLE_COLORS = {
   staff: "var(--on-surface-variant, #94a3b8)"
 };
 
+const ROLE_ICONS = {
+  manager: "shield_person",
+  server: "room_service",
+  kitchen: "soup_kitchen"
+};
+
+const ROLE_DESCRIPTIONS = {
+  manager: "Full access — menu, analytics, billing & staff management",
+  server: "Front-of-house — live feed, bookings & tables",
+  kitchen: "Kitchen only — the order queue & status updates"
+};
+
 const ASSIGNABLE_ROLES = ["manager", "server", "kitchen"];
 const MANAGER_INVITABLE_ROLES = ["server", "kitchen"];
 
@@ -165,6 +177,8 @@ function StaffManagementSection({ isOwner, currentUserId }) {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [copiedToken, setCopiedToken] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const loadStaff = async () => {
     setLoading(true);
@@ -205,28 +219,29 @@ function StaffManagementSection({ isOwner, currentUserId }) {
     }
   };
 
-  const handleRemove = async (userId, name) => {
-    if (!confirm(`Remove ${name || "this member"} from the restaurant?`)) return;
-    setActionLoading(userId);
-    try {
-      await removeStaffMember(userId);
-      await loadStaff();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setActionLoading(null);
-    }
+  const handleRemove = async (userId) => {
+    await removeStaffMember(userId);
+    await loadStaff();
   };
 
   const handleRevoke = async (inviteId) => {
-    setActionLoading(inviteId);
+    await revokeStaffInvite(inviteId);
+    await loadStaff();
+  };
+
+  // Drives the shared ConfirmModal for destructive actions (revoke / remove):
+  // the row buttons stage an action, this runs it with busy state + error
+  // surfacing in one place.
+  const runConfirm = async () => {
+    if (!confirmAction) return;
+    setConfirmBusy(true);
     try {
-      await revokeStaffInvite(inviteId);
-      await loadStaff();
+      await confirmAction.run();
+      setConfirmAction(null);
     } catch (e) {
       setError(e.message);
     } finally {
-      setActionLoading(null);
+      setConfirmBusy(false);
     }
   };
 
@@ -314,11 +329,17 @@ function StaffManagementSection({ isOwner, currentUserId }) {
                       <button
                         type="button"
                         className="staff-remove-btn"
-                        onClick={() => handleRemove(m.user_id, m.name || m.email)}
-                        disabled={actionLoading === m.user_id}
+                        onClick={() =>
+                          setConfirmAction({
+                            title: "Remove member?",
+                            message: `${m.name || m.email} will lose access to this restaurant. You can invite them again later.`,
+                            confirmLabel: "Remove member",
+                            run: () => handleRemove(m.user_id)
+                          })
+                        }
                         title="Remove member"
                       >
-                        <Icon name="close" />
+                        <Icon name="person_remove" />
                       </button>
                     )}
                   </div>
@@ -354,8 +375,14 @@ function StaffManagementSection({ isOwner, currentUserId }) {
                         <button
                           type="button"
                           className="staff-revoke-btn"
-                          onClick={() => handleRevoke(inv.id)}
-                          disabled={actionLoading === inv.id}
+                          onClick={() =>
+                            setConfirmAction({
+                              title: "Revoke this invite?",
+                              message: `The invite to ${inv.email} will be cancelled and its link will stop working immediately.`,
+                              confirmLabel: "Revoke invite",
+                              run: () => handleRevoke(inv.id)
+                            })
+                          }
                           title="Revoke invite"
                         >
                           <Icon name="close" />
@@ -374,10 +401,22 @@ function StaffManagementSection({ isOwner, currentUserId }) {
         <InviteModal
           isOwner={isOwner}
           onClose={() => setShowInviteModal(false)}
+          onCreated={loadStaff}
           onInvited={() => {
             setShowInviteModal(false);
             loadStaff();
           }}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmModal
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel}
+          busy={confirmBusy}
+          onConfirm={runConfirm}
+          onCancel={() => setConfirmAction(null)}
         />
       )}
     </>
@@ -386,13 +425,15 @@ function StaffManagementSection({ isOwner, currentUserId }) {
 
 // ─── Invite Modal ───────────────────────────────────────────────────────────
 
-function InviteModal({ isOwner, onClose, onInvited }) {
+function InviteModal({ isOwner, onClose, onInvited, onCreated }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("server");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [copied, setCopied] = useState(false);
   const inviteRoles = isOwner ? ASSIGNABLE_ROLES : MANAGER_INVITABLE_ROLES;
+  const canNativeShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -402,6 +443,10 @@ function InviteModal({ isOwner, onClose, onInvited }) {
       const result = await inviteStaff({ email, role });
       const url = `${window.location.origin}/invite?token=${result.token}`;
       setSuccess(url);
+      // Surface the new pending invite in the list underneath right away, so
+      // it's there no matter how the modal is dismissed (Done, ✕, or overlay)
+      // — no page refresh needed.
+      onCreated?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -410,8 +455,33 @@ function InviteModal({ isOwner, onClose, onInvited }) {
   };
 
   const handleCopy = () => {
-    if (success) {
-      navigator.clipboard.writeText(success);
+    if (!success) return;
+    navigator.clipboard.writeText(success);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Tier-0 sharing: hand the invite link to the channels a restaurant actually
+  // uses (WhatsApp / SMS / email) with zero backend — no transactional-email
+  // service, no deliverability setup. The native share sheet is offered too
+  // when the browser supports it (best on phones).
+  const shareText = success
+    ? `You've been invited to join our team on VocoTable as ${ROLE_LABELS[role] || role}. Tap to accept: ${success}`
+    : "";
+  const shareViaWhatsApp = () =>
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank", "noopener,noreferrer");
+  const shareViaEmail = () => {
+    const subject = encodeURIComponent("Your VocoTable team invite");
+    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${encodeURIComponent(shareText)}`;
+  };
+  const shareViaSms = () => {
+    window.location.href = `sms:?&body=${encodeURIComponent(shareText)}`;
+  };
+  const shareNative = async () => {
+    try {
+      await navigator.share({ title: "VocoTable team invite", text: shareText, url: success });
+    } catch {
+      /* user dismissed the native share sheet */
     }
   };
 
@@ -448,11 +518,27 @@ function InviteModal({ isOwner, onClose, onInvited }) {
           <div className="new-booking-form">
             <div className="staff-modal-success">
               <Icon name="check_circle" />
-              <p>Invite created — share this link with your new team member:</p>
+              <p>Invite created — share this link with {email}:</p>
               <div className="staff-invite-link-box">
                 <code>{success}</code>
                 <button type="button" onClick={handleCopy}>
-                  <Icon name="content_copy" /> Copy
+                  <Icon name={copied ? "check" : "content_copy"} /> {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div className="staff-share-row">
+                {canNativeShare && (
+                  <button type="button" className="staff-share-btn" onClick={shareNative}>
+                    <Icon name="share" /> Share…
+                  </button>
+                )}
+                <button type="button" className="staff-share-btn whatsapp" onClick={shareViaWhatsApp}>
+                  <Icon name="chat" /> WhatsApp
+                </button>
+                <button type="button" className="staff-share-btn email" onClick={shareViaEmail}>
+                  <Icon name="mail" /> Email
+                </button>
+                <button type="button" className="staff-share-btn sms" onClick={shareViaSms}>
+                  <Icon name="sms" /> SMS
                 </button>
               </div>
             </div>
@@ -486,19 +572,28 @@ function InviteModal({ isOwner, onClose, onInvited }) {
               />
             </label>
 
-            <label className="nb-field">
+            <div className="nb-field">
               <span>Role</span>
-              <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <div className="role-picker" role="radiogroup" aria-label="Role">
                 {inviteRoles.map((r) => (
-                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  <button
+                    type="button"
+                    key={r}
+                    role="radio"
+                    aria-checked={role === r}
+                    className={`role-option ${role === r ? "selected" : ""}`}
+                    onClick={() => setRole(r)}
+                  >
+                    <span className="role-option-head">
+                      <Icon name={ROLE_ICONS[r]} />
+                      <strong>{ROLE_LABELS[r]}</strong>
+                      {role === r && <Icon name="check_circle" className="role-option-check" />}
+                    </span>
+                    <span className="role-option-desc">{ROLE_DESCRIPTIONS[r]}</span>
+                  </button>
                 ))}
-              </select>
-              <span className="staff-role-hint">
-                {role === "manager" && "Full access: menu, analytics, billing, staff management"}
-                {role === "server" && "Front-of-house: live feed, bookings, tables"}
-                {role === "kitchen" && "Kitchen only: order queue and status updates"}
-              </span>
-            </label>
+              </div>
+            </div>
 
             <div className="modal-actions">
               <button
@@ -526,6 +621,58 @@ function InviteModal({ isOwner, onClose, onInvited }) {
             </div>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Confirm Modal ──────────────────────────────────────────────────────────
+// Reuses the booking-modal shell so destructive staff actions get an on-brand,
+// keyboard-/overlay-dismissable confirmation instead of the browser's native
+// confirm() dialog. Generic on purpose — revoke an invite, remove a member, etc.
+
+function ConfirmModal({ title, message, confirmLabel, busy, onConfirm, onCancel }) {
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onCancel();
+      }}
+    >
+      <div className="modal-card new-booking-modal staff-confirm-modal">
+        <header className="new-booking-head">
+          <div>
+            <h2 id="confirm-modal-title" className="modal-title">{title}</h2>
+            <p className="modal-description">{message}</p>
+          </div>
+          <button
+            type="button"
+            className="new-booking-close"
+            onClick={onCancel}
+            disabled={busy}
+            aria-label="Close"
+          >
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="modal-actions">
+          <button type="button" className="modal-button ghost" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="modal-button danger" onClick={onConfirm} disabled={busy}>
+            {busy ? (
+              <>
+                <span className="modal-spinner" aria-hidden="true" />
+                Working…
+              </>
+            ) : (
+              confirmLabel
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

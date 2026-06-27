@@ -12277,3 +12277,118 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 .staff-invite-link-box button .material-symbols-outlined {
   font-size: 0.875rem;
 }
+
+/* Role picker (invite modal) — explicit, always-visible choice so the selected
+   role is unmistakable (replaces the easy-to-mis-pick <select>). */
+.role-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.role-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: left;
+  padding: 0.625rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--on-surface, #e2e8f0);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.role-option:hover {
+  border-color: rgba(110, 231, 183, 0.4);
+  background: rgba(110, 231, 183, 0.05);
+}
+.role-option.selected {
+  border-color: var(--primary, #6ee7b7);
+  background: rgba(110, 231, 183, 0.1);
+}
+.role-option-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.role-option-head strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.role-option-head .material-symbols-outlined {
+  font-size: 1.125rem;
+  color: var(--on-surface-variant, #94a3b8);
+}
+.role-option.selected .role-option-head .material-symbols-outlined {
+  color: var(--primary, #6ee7b7);
+}
+.role-option-check {
+  margin-left: auto;
+  color: var(--primary, #6ee7b7) !important;
+}
+.role-option-desc {
+  font-size: 0.75rem;
+  color: var(--on-surface-variant, #94a3b8);
+  padding-left: 1.625rem;
+}
+
+/* Share row (invite success) — Tier-0 share targets next to Copy. */
+.staff-share-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.staff-share-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--on-surface, #e2e8f0);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s, color 0.15s;
+}
+.staff-share-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.staff-share-btn:active {
+  transform: scale(0.97);
+}
+.staff-share-btn .material-symbols-outlined {
+  font-size: 1rem;
+}
+.staff-share-btn.whatsapp:hover {
+  border-color: #25d366;
+  color: #25d366;
+}
+.staff-share-btn.email:hover {
+  border-color: #818cf8;
+  color: #a5b4fc;
+}
+.staff-share-btn.sms:hover {
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
+/* Staff action icons (copy / revoke / remove) — give them a defined button
+   surface so they read as affordances, not bare icons. */
+.staff-copy-btn,
+.staff-revoke-btn,
+.staff-remove-btn {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Confirm dialog — a touch narrower than the booking modal it borrows from. */
+.staff-confirm-modal {
+  max-width: 26rem;
+}
