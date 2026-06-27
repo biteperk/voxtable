@@ -48,6 +48,26 @@ export function relativeTime(date) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+// Best caller identity for a call log: the name from the booking made on this
+// call (most reliable — captured as a create_booking arg) wins, then the name
+// Retell extracted in post-call analysis (covers calls with no booking). Null
+// when neither is present (anonymous / info call that never gave a name).
+export function callerDisplayName(row) {
+  const name = (row.customer_name || row.caller_name || "").trim();
+  return name || null;
+}
+
+// "John Smith" → "JS", "Madonna" → "M". Drives the feed avatar; null falls back
+// to the generic silhouette.
+export function callerInitials(name) {
+  if (!name) return null;
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+  const first = parts[0][0];
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase();
+}
+
 export function mapCallLogToRow(row, index) {
   const ended = !!row.ended_at;
   const started = row.started_at ? new Date(row.started_at) : new Date(row.created_at);
@@ -61,12 +81,13 @@ export function mapCallLogToRow(row, index) {
         ? Math.max(0, Math.round((new Date(row.ended_at) - started) / 1000))
         : null;
   const tones = ["neutral", "secondary", "tertiary"];
+  const name = callerDisplayName(row);
 
   return {
     id: row.id,
-    name: row.caller_phone ? "Caller" : "Unknown Caller",
-    initials: null,
-    phone: row.caller_phone ?? "Unknown",
+    name: name || (row.caller_phone ? "Caller" : "Unknown Caller"),
+    initials: callerInitials(name),
+    phone: row.caller_phone ? formatPhoneDisplay(row.caller_phone) : "Unknown",
     status,
     intent: humanizeIntent(row),
     duration: durationSec != null ? formatDuration(durationSec) : "—",
