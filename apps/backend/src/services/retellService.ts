@@ -451,6 +451,7 @@ async function persistRetellCall(
     inVoicemail: analysis.in_voicemail,
     callSuccessful: analysis.call_successful,
     specialRequests: analysis.special_requests,
+    callerName: analysis.caller_name,
     analysisJson: analysis.extras
   });
 }
@@ -462,6 +463,7 @@ interface ExtractedAnalysis {
   in_voicemail: boolean | null;
   call_successful: boolean | null;
   special_requests: string | null;
+  caller_name: string | null;
   extras: Record<string, unknown> | null;
 }
 
@@ -490,13 +492,18 @@ function extractCallAnalysis(call: RetellPayload): ExtractedAnalysis {
     typeof custom.special_requests === "string" && custom.special_requests.trim().length > 0
       ? custom.special_requests.trim()
       : null;
+  const caller_name =
+    typeof custom.caller_name === "string" && custom.caller_name.trim().length > 0
+      ? custom.caller_name.trim()
+      : null;
 
   // Spill any other custom fields into analysis_json so we don't lose anything
   // Retell or we add in the future.
   const knownCustomKeys = new Set([
     "intent",
     "booking_outcome",
-    "special_requests"
+    "special_requests",
+    "caller_name"
   ]);
   const extras: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(custom)) {
@@ -510,6 +517,7 @@ function extractCallAnalysis(call: RetellPayload): ExtractedAnalysis {
     in_voicemail,
     call_successful,
     special_requests,
+    caller_name,
     extras: Object.keys(extras).length > 0 ? extras : null
   };
 }
