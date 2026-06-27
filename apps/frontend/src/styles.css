@@ -10488,7 +10488,8 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 }
 
 .nb-field input,
-.nb-field textarea {
+.nb-field textarea,
+.nb-field select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--outline-variant);
@@ -10501,13 +10502,24 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
+/* Role/select inputs match text inputs; keep the native dark dropdown affordance. */
+.nb-field select {
+  color-scheme: dark;
+  cursor: pointer;
+}
+.nb-field select option {
+  background: var(--surface);
+  color: var(--on-surface);
+}
+
 .nb-field textarea {
   resize: vertical;
   min-height: 64px;
 }
 
 .nb-field input:focus,
-.nb-field textarea:focus {
+.nb-field textarea:focus,
+.nb-field select:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);

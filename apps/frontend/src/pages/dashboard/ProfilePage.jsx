@@ -416,69 +416,112 @@ function InviteModal({ isOwner, onClose, onInvited }) {
   };
 
   return (
-    <div className="staff-modal-backdrop" onClick={onClose}>
-      <div className="staff-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="staff-modal-header">
-          <h3>Invite Team Member</h3>
-          <button type="button" className="staff-modal-close" onClick={onClose}>
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="invite-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div className="modal-card new-booking-modal">
+        <header className="new-booking-head">
+          <div>
+            <h2 id="invite-modal-title" className="modal-title">Invite team member</h2>
+            <p className="modal-description">
+              Send an invite link to add a new member to your restaurant.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="new-booking-close"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close"
+          >
             <Icon name="close" />
           </button>
-        </div>
+        </header>
 
         {success ? (
-          <div className="staff-modal-success">
-            <Icon name="check_circle" />
-            <p>Invite sent! Share this link with your team member:</p>
-            <div className="staff-invite-link-box">
-              <code>{success}</code>
-              <button type="button" onClick={handleCopy}>
-                <Icon name="content_copy" /> Copy
-              </button>
+          <div className="new-booking-form">
+            <div className="staff-modal-success">
+              <Icon name="check_circle" />
+              <p>Invite created — share this link with your new team member:</p>
+              <div className="staff-invite-link-box">
+                <code>{success}</code>
+                <button type="button" onClick={handleCopy}>
+                  <Icon name="content_copy" /> Copy
+                </button>
+              </div>
             </div>
-            <div className="staff-modal-actions">
-              <button type="button" onClick={onInvited}>Done</button>
+            <div className="modal-actions">
+              <button type="button" className="modal-button confirm" onClick={onInvited}>
+                Done
+              </button>
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit}>
-            <div className="staff-modal-field">
-              <label htmlFor="invite-email">Email address</label>
+          <form className="new-booking-form" onSubmit={handleSubmit} autoComplete="off">
+            {error ? (
+              <div className="nb-error" role="alert">
+                <Icon name="error_outline" />
+                <div>
+                  <p>{error}</p>
+                </div>
+              </div>
+            ) : null}
+
+            <label className="nb-field">
+              <span>Email address</span>
               <input
-                id="invite-email"
                 type="email"
+                placeholder="team@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="team@example.com"
                 required
                 autoFocus
+                lang="en"
               />
-            </div>
-            <div className="staff-modal-field">
-              <label htmlFor="invite-role">Role</label>
-              <select
-                id="invite-role"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-              >
+            </label>
+
+            <label className="nb-field">
+              <span>Role</span>
+              <select value={role} onChange={(e) => setRole(e.target.value)}>
                 {inviteRoles.map((r) => (
                   <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                 ))}
               </select>
               <span className="staff-role-hint">
-                {isOwner && role === "manager" && "Full access: menu, analytics, billing, staff management"}
+                {role === "manager" && "Full access: menu, analytics, billing, staff management"}
                 {role === "server" && "Front-of-house: live feed, bookings, tables"}
                 {role === "kitchen" && "Kitchen only: order queue and status updates"}
               </span>
-            </div>
-            {error && (
-              <div className="staff-modal-error">
-                <Icon name="error" /> {error}
-              </div>
-            )}
-            <div className="staff-modal-actions">
-              <button type="button" className="ghost" onClick={onClose}>Cancel</button>
-              <button type="submit" disabled={submitting || !email}>
-                {submitting ? "Sending…" : "Send Invite"}
+            </label>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="modal-button ghost"
+                onClick={onClose}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="modal-button confirm"
+                disabled={submitting || !email}
+              >
+                {submitting ? (
+                  <>
+                    <span className="modal-spinner" aria-hidden="true" />
+                    Sending…
+                  </>
+                ) : (
+                  "Send invite"
+                )}
               </button>
             </div>
           </form>
