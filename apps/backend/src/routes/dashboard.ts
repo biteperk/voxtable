@@ -14,7 +14,8 @@ import {
 } from "../repositories/callLogs";
 import { listReservations } from "../repositories/reservations";
 import { getRestaurantTimezone } from "../repositories/restaurants";
-import { listTables } from "../repositories/tables";
+import { listTables, updateTableMetadata } from "../repositories/tables";
+import { updateTableMetadataSchema } from "../http/schemas";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
 import { todayInTz } from "../utils/time";
@@ -69,6 +70,37 @@ dashboardRouter.get(
     const today = todayInTz(tz);
     const rows = await listTables(restaurantId, today);
     response.json({ tables: rows });
+  })
+);
+
+// Manager edit of a table's display-only metadata (zone + description).
+// Auth + tenant are already resolved by the path-scoped middleware above, and
+// the front-of-house gate let manager/server through — the extra
+// requireMemberRole("manager") here narrows the WRITE to manager+ (a server can
+// view the floor but not relabel tables). Tenant-scoped in the repository, so a
+// cross-tenant id is a 404, never a cross-restaurant write.
+const tableIdParam = z.string().uuid();
+
+dashboardRouter.patch(
+  "/api/tables/:id",
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const id = tableIdParam.parse(request.params.id);
+    const body = updateTableMetadataSchema.parse(request.body);
+
+    // Normalise empty/whitespace description to null (clear) so the UI's empty
+    // field and an explicit clear behave identically.
+    const patch: { zone?: string | null; description?: string | null } = {};
+    if (body.zone !== undefined) patch.zone = body.zone;
+    if (body.description !== undefined) {
+      patch.description = body.description && body.description.trim() ? body.description.trim() : null;
+    }
+
+    const updated = await updateTableMetadata(tenantId(request), id, patch);
+    if (!updated) {
+      throw new AppError(404, "TABLE_NOT_FOUND", "Table not found.");
+    }
+    response.json({ table: updated });
   })
 );
 

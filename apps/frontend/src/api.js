@@ -168,6 +168,18 @@ export function listTables() {
   return authedFetch(`/api/tables`);
 }
 
+// Manager-only edit of a table's display metadata (zone + description). Pass null
+// for a field to clear it; omit a field to leave it unchanged.
+export function updateTableMeta(id, { zone, description }) {
+  const body = {};
+  if (zone !== undefined) body.zone = zone;
+  if (description !== undefined) body.description = description;
+  return authedFetch(`/api/tables/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
 export function listCallLogs({ limit } = {}) {
   const qs = new URLSearchParams();
   if (limit) qs.set("limit", String(limit));

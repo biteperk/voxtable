@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { completeReservation, listTables, seatReservation } from "../../api";
 import { formatRefreshedAgo, formatVoiceTime12h, zoneIcon } from "../../lib/format";
+import { useAuth } from "../../auth";
 import { Icon } from "../../components/Icon";
+import { TableMetaModal } from "../../components/dashboard/TableMetaModal";
 import { DashboardShell } from "./DashboardShell";
 
 // ----------------------------------------------------------------------------
@@ -12,11 +14,14 @@ import { DashboardShell } from "./DashboardShell";
 // ----------------------------------------------------------------------------
 
 export function LiveTablesPage({ navigate }) {
+  const { hasMinRole } = useAuth();
+  const canEdit = hasMinRole("manager");
   const [tables, setTables] = useState([]);
   const [refreshedAt, setRefreshedAt] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionBusyId, setActionBusyId] = useState(null);
+  const [editingTable, setEditingTable] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -199,16 +204,28 @@ export function LiveTablesPage({ navigate }) {
               onSeat={handleSeat}
               onComplete={handleComplete}
               onOpenDetails={(tbl) => navigate(`/live-tables/${encodeURIComponent(tbl.label)}`)}
+              onEdit={canEdit ? setEditingTable : null}
               busy={t.reservation && actionBusyId === t.reservation.id}
             />
           ))}
         </div>
       </section>
+
+      {editingTable && (
+        <TableMetaModal
+          table={editingTable}
+          onClose={() => setEditingTable(null)}
+          onSaved={() => {
+            setEditingTable(null);
+            load();
+          }}
+        />
+      )}
     </DashboardShell>
   );
 }
 
-function TableRow({ table, onSeat, onComplete, onOpenDetails, busy }) {
+function TableRow({ table, onSeat, onComplete, onOpenDetails, onEdit, busy }) {
   const isReserved = table.status === "reserved";
   const isSeated = table.status === "seated";
   const r = table.reservation;
@@ -278,6 +295,17 @@ function TableRow({ table, onSeat, onComplete, onOpenDetails, busy }) {
           <Icon name="receipt_long" />
           View Order
         </button>
+        {onEdit && (
+          <button
+            type="button"
+            className="row-action ghost icon-only"
+            onClick={() => onEdit(table)}
+            aria-label={`Edit table ${table.label}`}
+            title="Edit zone & description"
+          >
+            <Icon name="edit" />
+          </button>
+        )}
       </span>
     </div>
   );
