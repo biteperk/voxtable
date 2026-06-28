@@ -408,3 +408,21 @@ export const startIngestionSchema = z.object({
     .regex(/^[a-fA-F0-9]{64}$/, "sha256 must be 64 hex chars")
     .optional()
 });
+
+// Seating zones a manager can pick for a table. Kept in sync with the frontend
+// ZONE_ICON map (lib/constants.js) — each has a badge + icon. The DB column is
+// free TEXT (migration 013) so adding a zone never needs a migration; we still
+// validate at the API boundary so junk zones (no icon/badge) can't be stored.
+export const KNOWN_TABLE_ZONES = ["window", "patio", "main", "booth", "private", "bar"] as const;
+
+// Manager edit of a table's display-only metadata (zone + free-text description).
+// Both fields are independently optional: omit to leave unchanged, send null to
+// clear. At least one must be present.
+export const updateTableMetadataSchema = z
+  .object({
+    zone: z.enum(KNOWN_TABLE_ZONES).nullable().optional(),
+    description: z.string().trim().max(200).nullable().optional()
+  })
+  .refine((value) => value.zone !== undefined || value.description !== undefined, {
+    message: "Provide zone and/or description to update."
+  });

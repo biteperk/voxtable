@@ -58,3 +58,54 @@ export async function listTables(
 
   return result.rows;
 }
+
+export interface TableMetaRow {
+  id: string;
+  label: string;
+  zone: string | null;
+  description: string | null;
+}
+
+/**
+ * Manager edit of a table's display-only metadata (zone + description, migration
+ * 013). Tenant-scoped: the UPDATE is keyed on (id, restaurant_id) so a
+ * cross-tenant id touches nothing and resolves to null (→ 404 at the route).
+ *
+ * Only the fields present on `patch` are written — a present `null` clears the
+ * column, an absent key leaves it unchanged — so the same endpoint can set or
+ * clear either field independently. Returns the updated row, or null if no
+ * active table matched.
+ */
+export async function updateTableMetadata(
+  restaurantId: string,
+  tableId: string,
+  patch: { zone?: string | null; description?: string | null },
+  db: DbClient = pool
+): Promise<TableMetaRow | null> {
+  const sets: string[] = [];
+  const params: unknown[] = [tableId, restaurantId];
+
+  if ("zone" in patch) {
+    params.push(patch.zone ?? null);
+    sets.push(`zone = $${params.length}`);
+  }
+  if ("description" in patch) {
+    params.push(patch.description ?? null);
+    sets.push(`description = $${params.length}`);
+  }
+  if (sets.length === 0) {
+    return null;
+  }
+
+  const result = await db.query<TableMetaRow>(
+    `
+    UPDATE tables
+    SET ${sets.join(", ")}
+    WHERE id = $1 AND restaurant_id = $2 AND is_active = true
+    RETURNING id, label, zone, description
+    `,
+    params
+  );
+
+  return result.rows[0] ?? null;
+}
