@@ -6407,6 +6407,9 @@ button {
   padding: 6px 8px;
 }
 .row-action.danger-ghost:hover { background: rgba(255, 180, 171, 0.08); }
+/* Label-less utility action (e.g. manager "edit table") — tighter padding so it
+   reads as a compact square icon button, matching the booking-log row actions. */
+.row-action.icon-only { padding: 6px 8px; }
 
 @media (max-width: 720px) {
   .live-tables-row,

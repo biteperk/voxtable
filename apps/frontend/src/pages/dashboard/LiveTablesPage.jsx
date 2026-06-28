@@ -298,12 +298,12 @@ function TableRow({ table, onSeat, onComplete, onOpenDetails, onEdit, busy }) {
         {onEdit && (
           <button
             type="button"
-            className="row-action ghost"
+            className="row-action ghost icon-only"
             onClick={() => onEdit(table)}
             aria-label={`Edit table ${table.label}`}
+            title="Edit zone & description"
           >
             <Icon name="edit" />
-            Edit
           </button>
         )}
       </span>
