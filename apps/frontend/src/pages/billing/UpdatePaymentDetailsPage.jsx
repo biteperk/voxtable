@@ -53,7 +53,7 @@ export function UpdatePaymentDetailsPage({ navigate }) {
         <button
           type="button"
           className="back-button"
-          onClick={() => navigate("/settings")}
+          onClick={() => navigate("/billing")}
           aria-label="Back to billing"
         >
           <Icon name="arrow_back" />
@@ -115,7 +115,7 @@ export function UpdatePaymentDetailsPage({ navigate }) {
             <button
               type="button"
               className="ghost-button"
-              onClick={() => navigate("/settings")}
+              onClick={() => navigate("/billing")}
             >
               Back to Billing
             </button>
