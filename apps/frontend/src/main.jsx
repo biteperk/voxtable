@@ -107,8 +107,13 @@ function App() {
       "/booking-log": "Booking Log · VocoTable",
       "/manage-menu": "Manage Menu · VocoTable",
       "/kitchen-overview": "Kitchen Overview · VocoTable",
+      "/live-tables": "Live Tables · VocoTable",
       "/analytics": "Analytics · VocoTable",
       "/billing": "Billing · VocoTable",
+      "/manage-plan": "Manage Plan · VocoTable",
+      "/update-payment-details": "Payment Methods · VocoTable",
+      "/profile": "Profile · VocoTable",
+      "/onboarding": "Get started · VocoTable",
     };
     if (/^\/live-feed\/[^/]+$/.test(path)) {
       document.title = "Call detail · VocoTable";
@@ -117,8 +122,17 @@ function App() {
     }
   }, [path]);
 
-  const navigate = (nextPath) => {
-    window.history.pushState({}, "", nextPath);
+  // `replace` swaps the current history entry instead of pushing a new one. Use
+  // it for *automatic* redirects (onboarding gate, role guard) so they never
+  // leave a phantom entry that the browser Back button lands on and that then
+  // immediately re-redirects — the classic "Back doesn't go where I expect"
+  // bug. User-initiated navigation keeps pushing so Back walks the real trail.
+  const navigate = (nextPath, { replace = false } = {}) => {
+    if (replace) {
+      window.history.replaceState({}, "", nextPath);
+    } else {
+      window.history.pushState({}, "", nextPath);
+    }
     setPath(nextPath);
   };
 
@@ -242,7 +256,7 @@ function AppRouter({ path, navigate, isDashboard }) {
     const isLive = gate.status === "live";
     if (isOnboarding) {
       // Leave the wizard only once we KNOW the tenant is live.
-      if (isLive) navigate("/live-feed");
+      if (isLive) navigate("/live-feed", { replace: true });
       return;
     }
     // On a dashboard route, only send the user to onboarding when we're
@@ -252,7 +266,7 @@ function AppRouter({ path, navigate, isDashboard }) {
     const hasRestaurant = memberships.length > 0;
     const knownIncomplete = gate.status !== null && !isLive;
     if ((!hasRestaurant || knownIncomplete) && !allowDuringOnboarding) {
-      navigate("/onboarding");
+      navigate("/onboarding", { replace: true });
     }
   }, [user, loading, meLoading, isDashboard, isOnboarding, gate.loading, gate.status, memberships, allowDuringOnboarding, navigate]);
 
@@ -272,7 +286,7 @@ function AppRouter({ path, navigate, isDashboard }) {
       : null;
 
   useEffect(() => {
-    if (roleRedirect) navigate(roleRedirect);
+    if (roleRedirect) navigate(roleRedirect, { replace: true });
   }, [roleRedirect, navigate]);
 
   // /invite?token=xxx is outside dashboard/onboarding gates so new staff can join first.
@@ -344,6 +358,16 @@ function AppRouter({ path, navigate, isDashboard }) {
   if (path === "/update-payment-details")
     return <UpdatePaymentDetailsPage navigate={navigate} path={path} />;
   if (path === "/profile") return <ProfilePage navigate={navigate} path={path} />;
+
+  // Public marketing home.
+  if (path === "/") return <LandingPage navigate={navigate} />;
+
+  // Unrecognised path. For a *signed-in* user this almost always means a stale or
+  // mistyped in-app link (e.g. a dead "/settings" route) — and silently rendering
+  // the public LandingPage here is exactly what made those feel like "the Back
+  // button threw me to the homepage". Show a recoverable in-app 404 instead, and
+  // only let genuinely-public (logged-out) visitors fall through to the landing.
+  if (user) return <NotFoundPage navigate={navigate} />;
   return <LandingPage navigate={navigate} />;
 }
 
@@ -351,6 +375,41 @@ function FullPageMessage({ title }) {
   return (
     <div style={{ display: "grid", placeItems: "center", minHeight: "100vh", color: "#cbd5e1" }}>
       <p style={{ fontSize: 20 }}>{title}</p>
+    </div>
+  );
+}
+
+// Shown when a signed-in user lands on an unknown route. Recoverable by design:
+// a clear path back into the dashboard (the role guard will steer kitchen/server
+// users to their own home) instead of the dead-end of the public landing page.
+function NotFoundPage({ navigate }) {
+  return (
+    <div
+      style={{ display: "grid", placeItems: "center", minHeight: "100vh", color: "#cbd5e1", padding: 24 }}
+      role="alert"
+    >
+      <div style={{ textAlign: "center", maxWidth: 420 }}>
+        <p style={{ fontSize: 48, margin: 0, lineHeight: 1 }}>404</p>
+        <h1 style={{ fontSize: 22, margin: "12px 0 8px" }}>Page not found</h1>
+        <p style={{ color: "#94a3b8", margin: "0 0 20px" }}>
+          That page doesn’t exist. The link may be out of date.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate("/live-feed")}
+          style={{
+            padding: "10px 18px",
+            borderRadius: 10,
+            border: "none",
+            background: "#6366f1",
+            color: "#fff",
+            fontSize: 15,
+            cursor: "pointer"
+          }}
+        >
+          Back to dashboard
+        </button>
+      </div>
     </div>
   );
 }
