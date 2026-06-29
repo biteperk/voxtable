@@ -634,6 +634,8 @@ function normalizeBookingArgs(args: Record<string, unknown>, restaurantId: strin
     partySize: args.partySize,
     source: "voice",
     notes: args.notes,
+    seating_preference: args.seating_preference,
+    seatingPreference: args.seatingPreference,
     call_log_id: args.call_log_id,
     callLogId: args.callLogId,
     provider_call_id: args.provider_call_id,
@@ -655,6 +657,17 @@ function normalizeBookingArgs(args: Record<string, unknown>, restaurantId: strin
     throw new AppError(400, "PARTY_SIZE_REQUIRED", "party_size is required.");
   }
 
+  // Stopgap (A): until Bella does real zone-aware allocation (B), fold any seating
+  // preference into the booking notes so staff see it on the floor and can honour
+  // it manually. Tagged so it's scannable, and capped to the notes column bound.
+  const seatingPref = (parsed.seating_preference ?? parsed.seatingPreference)?.trim();
+  const baseNotes = parsed.notes?.trim();
+  let notes = baseNotes || undefined;
+  if (seatingPref) {
+    const tagged = `Seating preference: ${seatingPref}`;
+    notes = (baseNotes ? `${tagged}\n${baseNotes}` : tagged).slice(0, 1000);
+  }
+
   return {
     restaurantId,
     customerName,
@@ -663,7 +676,7 @@ function normalizeBookingArgs(args: Record<string, unknown>, restaurantId: strin
     time: parsed.time,
     partySize,
     source: "voice" as const,
-    notes: parsed.notes,
+    notes,
     callLogId: parsed.call_log_id ?? parsed.callLogId,
     provider: RETELL_PROVIDER,
     providerCallId: parsed.provider_call_id ?? parsed.providerCallId
