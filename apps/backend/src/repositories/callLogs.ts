@@ -286,9 +286,47 @@ export interface CallLogDailyPoint {
 
 export async function getCallLogDailySeries(input: {
   restaurantId: string;
-  days: number;
+  days?: number;
+  // Restaurant-local inclusive date range (YYYY-MM-DD). When provided together
+  // with `timezone`, the series spans exactly [from, to] and each call is
+  // bucketed by its restaurant-local date — this is the calendar-month view.
+  // Without them it falls back to a rolling window of `days` ending today.
+  from?: string;
+  to?: string;
+  timezone?: string;
 }): Promise<CallLogDailyPoint[]> {
-  const days = Math.min(Math.max(input.days, 1), 90);
+  if (input.from && input.to && input.timezone) {
+    const result = await pool.query<CallLogDailyPoint>(
+      `
+      WITH day_bucket AS (
+        SELECT generate_series($2::date, $3::date, interval '1 day')::date AS day
+      )
+      SELECT
+        to_char(d.day, 'YYYY-MM-DD') AS date,
+        COALESCE(c.total, 0)::int    AS total,
+        COALESCE(c.confirmed, 0)::int AS confirmed
+      FROM day_bucket d
+      LEFT JOIN (
+        SELECT
+          (COALESCE(started_at, created_at) AT TIME ZONE $4)::date AS day,
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (
+            WHERE booking_outcome = 'confirmed' OR reservation_id IS NOT NULL
+          )::int AS confirmed
+        FROM call_logs
+        WHERE restaurant_id = $1
+          AND (COALESCE(started_at, created_at) AT TIME ZONE $4)::date >= $2::date
+          AND (COALESCE(started_at, created_at) AT TIME ZONE $4)::date <= $3::date
+        GROUP BY 1
+      ) c ON c.day = d.day
+      ORDER BY d.day ASC
+      `,
+      [input.restaurantId, input.from, input.to, input.timezone]
+    );
+    return result.rows;
+  }
+
+  const days = Math.min(Math.max(input.days ?? 7, 1), 90);
   const result = await pool.query<CallLogDailyPoint>(
     `
     WITH day_bucket AS (
@@ -322,24 +360,50 @@ export async function getCallLogDailySeries(input: {
   return result.rows;
 }
 
+// Shared aggregate projection for call-log stats — used by both the rolling
+// window (`sinceDays`) and the calendar-range (`from`/`to`) variants below so
+// the two can never drift apart.
+const CALL_STATS_AGGREGATES = `
+  COUNT(*)::int AS total_calls,
+  COUNT(*) FILTER (WHERE status = 'completed' AND NOT transferred_to_staff)::int AS handled,
+  COUNT(*) FILTER (WHERE transferred_to_staff)::int AS transferred,
+  COUNT(*) FILTER (WHERE reservation_id IS NOT NULL)::int AS bookings_created,
+  COUNT(*) FILTER (WHERE booking_outcome = 'confirmed')::int AS bookings_confirmed,
+  AVG(latency_ms)::int AS avg_latency_ms,
+  AVG(duration_seconds)::int AS avg_duration_seconds,
+  COUNT(*) FILTER (WHERE user_sentiment = 'positive')::int AS sentiment_positive,
+  COUNT(*) FILTER (WHERE user_sentiment = 'neutral')::int AS sentiment_neutral,
+  COUNT(*) FILTER (WHERE user_sentiment = 'negative')::int AS sentiment_negative
+`;
+
 export async function getCallLogStats(input: {
   restaurantId: string;
-  sinceDays: number;
+  sinceDays?: number;
+  // Restaurant-local inclusive date range (YYYY-MM-DD). When provided together
+  // with `timezone`, stats cover exactly [from, to] in restaurant-local time
+  // (the calendar-month view); otherwise a rolling window of `sinceDays`.
+  from?: string;
+  to?: string;
+  timezone?: string;
 }): Promise<CallLogStats> {
-  const days = Math.min(Math.max(input.sinceDays, 1), 365);
+  if (input.from && input.to && input.timezone) {
+    const result = await pool.query<CallLogStats>(
+      `
+      SELECT ${CALL_STATS_AGGREGATES}
+      FROM call_logs
+      WHERE restaurant_id = $1
+        AND (COALESCE(started_at, created_at) AT TIME ZONE $4)::date >= $2::date
+        AND (COALESCE(started_at, created_at) AT TIME ZONE $4)::date <= $3::date
+      `,
+      [input.restaurantId, input.from, input.to, input.timezone]
+    );
+    return result.rows[0]!;
+  }
+
+  const days = Math.min(Math.max(input.sinceDays ?? 7, 1), 365);
   const result = await pool.query<CallLogStats>(
     `
-    SELECT
-      COUNT(*)::int AS total_calls,
-      COUNT(*) FILTER (WHERE status = 'completed' AND NOT transferred_to_staff)::int AS handled,
-      COUNT(*) FILTER (WHERE transferred_to_staff)::int AS transferred,
-      COUNT(*) FILTER (WHERE reservation_id IS NOT NULL)::int AS bookings_created,
-      COUNT(*) FILTER (WHERE booking_outcome = 'confirmed')::int AS bookings_confirmed,
-      AVG(latency_ms)::int AS avg_latency_ms,
-      AVG(duration_seconds)::int AS avg_duration_seconds,
-      COUNT(*) FILTER (WHERE user_sentiment = 'positive')::int AS sentiment_positive,
-      COUNT(*) FILTER (WHERE user_sentiment = 'neutral')::int AS sentiment_neutral,
-      COUNT(*) FILTER (WHERE user_sentiment = 'negative')::int AS sentiment_negative
+    SELECT ${CALL_STATS_AGGREGATES}
     FROM call_logs
     WHERE restaurant_id = $1
       AND created_at >= now() - ($2::int || ' days')::interval
@@ -347,4 +411,58 @@ export async function getCallLogStats(input: {
     [input.restaurantId, days]
   );
   return result.rows[0]!;
+}
+
+export interface CallLogMonthlyPoint {
+  month: string; // YYYY-MM, restaurant-local
+  total: number;
+  confirmed: number;
+}
+
+/**
+ * Per-calendar-month call totals for the last `months` months, bucketed in the
+ * restaurant's local timezone (so "June" means June in Sydney, not UTC). Empty
+ * months are returned as zero rows so the trend chart has a continuous x-axis.
+ */
+export async function getCallLogMonthlySeries(input: {
+  restaurantId: string;
+  months: number;
+  timezone: string;
+}): Promise<CallLogMonthlyPoint[]> {
+  const months = Math.min(Math.max(input.months, 1), 24);
+  const result = await pool.query<CallLogMonthlyPoint>(
+    `
+    WITH bounds AS (
+      SELECT date_trunc('month', (now() AT TIME ZONE $3)) AS this_month
+    ),
+    month_bucket AS (
+      SELECT generate_series(
+        (SELECT this_month FROM bounds) - make_interval(months => ($2::int - 1)),
+        (SELECT this_month FROM bounds),
+        interval '1 month'
+      ) AS month_start
+    )
+    SELECT
+      to_char(b.month_start, 'YYYY-MM')  AS month,
+      COALESCE(c.total, 0)::int          AS total,
+      COALESCE(c.confirmed, 0)::int      AS confirmed
+    FROM month_bucket b
+    LEFT JOIN (
+      SELECT
+        date_trunc('month', (COALESCE(started_at, created_at) AT TIME ZONE $3)) AS month_start,
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (
+          WHERE booking_outcome = 'confirmed' OR reservation_id IS NOT NULL
+        )::int AS confirmed
+      FROM call_logs
+      WHERE restaurant_id = $1
+        AND (COALESCE(started_at, created_at) AT TIME ZONE $3)
+            >= (SELECT this_month FROM bounds) - make_interval(months => ($2::int - 1))
+      GROUP BY 1
+    ) c ON c.month_start = b.month_start
+    ORDER BY b.month_start ASC
+    `,
+    [input.restaurantId, months, input.timezone]
+  );
+  return result.rows;
 }

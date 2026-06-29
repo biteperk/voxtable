@@ -3355,6 +3355,46 @@ gmp-place-autocomplete {
   text-align: center;
 }
 
+.x-axis span.is-selected {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* 12-month trend chart sits full-width between the KPI grid and the lower grid. */
+.analytics-trend {
+  margin-top: 24px;
+}
+
+/* Trend bars are buttons (click to switch the active month) — strip the button
+   chrome but keep the shared .bar-column flex layout. */
+.trend-bar {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.trend-bar .bar.total {
+  transition: filter 120ms ease, box-shadow 120ms ease;
+}
+
+.trend-bar:hover .bar.total {
+  filter: brightness(1.06);
+}
+
+.trend-bar.is-selected .bar.total {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.period-relative {
+  margin-left: 8px;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+}
+
 .outcome-card {
   min-height: 392px;
   padding: 28px;

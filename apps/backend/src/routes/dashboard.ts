@@ -9,6 +9,7 @@ import { asyncHandler } from "../http/asyncHandler";
 import {
   getCallLogById,
   getCallLogDailySeries,
+  getCallLogMonthlySeries,
   getCallLogStats,
   listCallLogs
 } from "../repositories/callLogs";
@@ -136,18 +137,31 @@ dashboardRouter.get(
   })
 );
 
+// `days` drives the legacy rolling window; `from`/`to` (restaurant-local
+// YYYY-MM-DD, inclusive) drive the calendar-month view. When both a range and
+// `days` are present the range wins.
 const analyticsQuery = z.object({
-  days: z.coerce.number().int().min(1).max(365).optional()
+  days: z.coerce.number().int().min(1).max(365).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+});
+
+const monthlySeriesQuery = z.object({
+  months: z.coerce.number().int().min(1).max(24).optional()
 });
 
 dashboardRouter.get(
   "/api/analytics",
   asyncHandler(async (request, response) => {
     const query = analyticsQuery.parse(request.query);
-    const stats = await getCallLogStats({
-      restaurantId: tenantId(request),
-      sinceDays: query.days ?? 7
-    });
+    const restaurantId = tenantId(request);
+    if (query.from && query.to) {
+      const timezone = await getRestaurantTimezone(restaurantId);
+      const stats = await getCallLogStats({ restaurantId, from: query.from, to: query.to, timezone });
+      response.json({ analytics: stats, from: query.from, to: query.to });
+      return;
+    }
+    const stats = await getCallLogStats({ restaurantId, sinceDays: query.days ?? 7 });
     response.json({ analytics: stats, period_days: query.days ?? 7 });
   })
 );
@@ -156,12 +170,29 @@ dashboardRouter.get(
   "/api/analytics/daily-series",
   asyncHandler(async (request, response) => {
     const query = analyticsQuery.parse(request.query);
+    const restaurantId = tenantId(request);
+    if (query.from && query.to) {
+      const timezone = await getRestaurantTimezone(restaurantId);
+      const series = await getCallLogDailySeries({ restaurantId, from: query.from, to: query.to, timezone });
+      response.json({ series, from: query.from, to: query.to });
+      return;
+    }
     const days = query.days ?? 7;
-    const series = await getCallLogDailySeries({
-      restaurantId: tenantId(request),
-      days
-    });
+    const series = await getCallLogDailySeries({ restaurantId, days });
     response.json({ series, period_days: days });
+  })
+);
+
+// Per-calendar-month call totals for the trend chart + month-over-month deltas.
+// Always TZ-aware (restaurant-local months); defaults to the last 12 months.
+dashboardRouter.get(
+  "/api/analytics/monthly-series",
+  asyncHandler(async (request, response) => {
+    const { months } = monthlySeriesQuery.parse(request.query);
+    const restaurantId = tenantId(request);
+    const timezone = await getRestaurantTimezone(restaurantId);
+    const series = await getCallLogMonthlySeries({ restaurantId, months: months ?? 12, timezone });
+    response.json({ series, months: months ?? 12 });
   })
 );
 

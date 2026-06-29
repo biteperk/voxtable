@@ -1,31 +1,46 @@
-import { useEffect, useRef, useState } from "react";
-import { getAnalytics, getAnalyticsDailySeries } from "../../api";
-import { decorateDailySeries, formatDuration } from "../../lib/format";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getAnalytics, getAnalyticsDailySeries, getAnalyticsMonthlySeries } from "../../api";
+import {
+  decorateDailySeries,
+  decorateMonthlySeries,
+  formatDuration,
+  monthLabel,
+  monthRangeFromKey,
+  recentMonthKeys
+} from "../../lib/format";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
 
-const ANALYTICS_PERIODS = [
-  { days: 7,  label: "Last 7 days" },
-  { days: 15, label: "Last 15 days" },
-  { days: 30, label: "Last 30 days" },
-  { days: 60, label: "Last 60 days" },
-  { days: 90, label: "Last 90 days" },
-];
+const MONTHS_IN_PICKER = 12;
 
 export function AnalyticsPage({ navigate }) {
-  const [days, setDays] = useState(7);
+  // Selected calendar month, "YYYY-MM". Defaults to the current month. The
+  // backend resolves the month boundaries in the restaurant's local timezone.
+  const [monthKey, setMonthKey] = useState(() => recentMonthKeys(new Date(), 1)[0]);
   const [analytics, setAnalytics] = useState(null);
   const [dailySeries, setDailySeries] = useState([]);
+  const [monthlySeries, setMonthlySeries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [periodOpen, setPeriodOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const periodRef = useRef(null);
 
+  // Month options for the picker — newest first, current month labelled.
+  const monthOptions = useMemo(() => {
+    return recentMonthKeys(new Date(), MONTHS_IN_PICKER).map((key, i) => ({
+      key,
+      label: monthLabel(key),
+      relative: i === 0 ? "This month" : i === 1 ? "Last month" : null
+    }));
+  }, []);
+
+  // Selected-month stats + per-day breakdown (refetched when the month changes).
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([getAnalytics({ days }), getAnalyticsDailySeries({ days })])
+    const { from, to } = monthRangeFromKey(monthKey);
+    Promise.all([getAnalytics({ from, to }), getAnalyticsDailySeries({ from, to })])
       .then(([statsRes, seriesRes]) => {
         if (cancelled) return;
         setAnalytics(statsRes.analytics);
@@ -36,7 +51,18 @@ export function AnalyticsPage({ navigate }) {
     return () => {
       cancelled = true;
     };
-  }, [days]);
+  }, [monthKey]);
+
+  // 12-month trend — fetched once; drives the trend chart and MoM deltas.
+  useEffect(() => {
+    let cancelled = false;
+    getAnalyticsMonthlySeries({ months: MONTHS_IN_PICKER })
+      .then((res) => !cancelled && setMonthlySeries(decorateMonthlySeries(res.series ?? [])))
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!periodOpen) return;
@@ -57,12 +83,12 @@ export function AnalyticsPage({ navigate }) {
   }, [periodOpen]);
 
   const totalCalls = analytics?.total_calls ?? 0;
-  // Prefer the new analyzer-driven `bookings_confirmed`; fall back to the
-  // legacy `bookings_created` count of call_logs linked to a reservation.
+  // Prefer the analyzer-driven `bookings_confirmed`; fall back to the legacy
+  // `bookings_created` count of call_logs linked to a reservation.
   const bookingsCount = analytics?.bookings_confirmed ?? analytics?.bookings_created ?? 0;
   const bookingRate =
     totalCalls > 0 ? `${Math.round((bookingsCount / totalCalls) * 100)}%` : "—";
-  const dailyRevenue = `$${((bookingsCount * 80) / days).toFixed(0)}`;
+  const monthlyRevenue = `$${(bookingsCount * 80).toLocaleString("en-AU")}`;
   const avgLatency = analytics?.avg_latency_ms
     ? `${(analytics.avg_latency_ms / 1000).toFixed(1)}s`
     : "—";
@@ -71,7 +97,16 @@ export function AnalyticsPage({ navigate }) {
       ? formatDuration(analytics.avg_duration_seconds)
       : "—";
 
-  const periodLabel = ANALYTICS_PERIODS.find((p) => p.days === days)?.label ?? `Last ${days} days`;
+  // Month-over-month: locate the selected month in the ascending trend series
+  // and compare against the immediately preceding month.
+  const selIdx = monthlySeries.findIndex((m) => m.key === monthKey);
+  const prevMonth = selIdx > 0 ? monthlySeries[selIdx - 1] : null;
+  const callsDelta = pctDelta(totalCalls, prevMonth?.total, prevMonth?.label);
+  const bookingsDelta = pctDelta(bookingsCount, prevMonth?.confirmed, prevMonth?.label);
+
+  const selectedOption =
+    monthOptions.find((o) => o.key === monthKey) ?? { key: monthKey, label: monthLabel(monthKey), relative: null };
+  const periodLabel = selectedOption.label;
 
   const handleExport = async () => {
     if (exporting || loading) return;
@@ -79,18 +114,18 @@ export function AnalyticsPage({ navigate }) {
     try {
       const { exportAnalyticsPdf } = await import("../../pdfExport.js");
       exportAnalyticsPdf({
-        days,
         periodLabel,
+        fileSlug: monthKey,
         metrics: {
           totalCalls,
           bookingsCount,
           bookingRate,
-          dailyRevenue,
+          monthlyRevenue,
           avgLatency,
-          avgDuration,
+          avgDuration
         },
         dailySeries,
-        analytics,
+        analytics
       });
     } catch (e) {
       setError(`Export failed: ${e.message ?? e}`);
@@ -120,20 +155,23 @@ export function AnalyticsPage({ navigate }) {
             </button>
             {periodOpen ? (
               <div className="period-menu" role="menu">
-                {ANALYTICS_PERIODS.map((p) => (
+                {monthOptions.map((opt) => (
                   <button
-                    key={p.days}
+                    key={opt.key}
                     type="button"
                     role="menuitemradio"
-                    aria-checked={days === p.days}
-                    className={`period-menu-item${days === p.days ? " is-active" : ""}`}
+                    aria-checked={monthKey === opt.key}
+                    className={`period-menu-item${monthKey === opt.key ? " is-active" : ""}`}
                     onClick={() => {
-                      setDays(p.days);
+                      setMonthKey(opt.key);
                       setPeriodOpen(false);
                     }}
                   >
-                    {p.label}
-                    {days === p.days ? <Icon name="check" /> : null}
+                    <span>
+                      {opt.label}
+                      {opt.relative ? <em className="period-relative">{opt.relative}</em> : null}
+                    </span>
+                    {monthKey === opt.key ? <Icon name="check" /> : null}
                   </button>
                 ))}
               </div>
@@ -147,18 +185,61 @@ export function AnalyticsPage({ navigate }) {
       </header>
 
       <section className="metric-grid">
-        <Metric icon="call" label="Total Calls" value={loading ? "…" : String(totalCalls)} change={`last ${days}d`} />
-        <Metric icon="event_available" label="Booking Conversion" value={loading ? "…" : bookingRate} change={`${bookingsCount} bookings`} tone="secondary" />
-        <Metric icon="payments" label="Daily Avg Revenue" value={loading ? "…" : dailyRevenue} change="$80 / booking" tone="tertiary" />
-        <Metric icon="timer" label="Avg Call Duration" value={loading ? "…" : avgDuration} change={analytics?.avg_latency_ms ? `${avgLatency} latency` : ""} />
+        <Metric
+          icon="call"
+          label="Total Calls"
+          value={loading ? "…" : String(totalCalls)}
+          change={callsDelta ? callsDelta.text : "no prior month"}
+          down={callsDelta?.down ?? false}
+        />
+        <Metric
+          icon="event_available"
+          label="Booking Conversion"
+          value={loading ? "…" : bookingRate}
+          change={bookingsDelta ? bookingsDelta.text : `${bookingsCount} bookings`}
+          down={bookingsDelta?.down ?? false}
+          tone="secondary"
+        />
+        <Metric
+          icon="payments"
+          label="Est. Revenue"
+          value={loading ? "…" : monthlyRevenue}
+          change={bookingsDelta ? bookingsDelta.text : "$80 / booking"}
+          down={bookingsDelta?.down ?? false}
+          tone="tertiary"
+        />
+        <Metric
+          icon="timer"
+          label="Avg Call Duration"
+          value={loading ? "…" : avgDuration}
+          change={analytics?.avg_latency_ms ? `${avgLatency} latency` : ""}
+        />
+      </section>
+
+      <section className="analytics-trend">
+        <MonthlyTrendChart
+          series={monthlySeries}
+          loading={loading}
+          selectedKey={monthKey}
+          onSelectMonth={setMonthKey}
+        />
       </section>
 
       <section className="analytics-lower-grid">
-        <CallVolumeChart series={dailySeries} loading={loading} days={days} />
+        <CallVolumeChart series={dailySeries} loading={loading} periodLabel={periodLabel} />
         <OutcomeBreakdown analytics={analytics} />
       </section>
     </DashboardShell>
   );
+}
+
+// Month-over-month percent change of `cur` vs `prev`. Returns null when there
+// is no prior month, or when both months are empty (nothing meaningful to say).
+function pctDelta(cur, prev, prevLabel) {
+  if (prev == null || prevLabel == null) return null;
+  if (prev === 0) return cur > 0 ? { text: `new vs ${prevLabel}`, down: false } : null;
+  const d = Math.round(((cur - prev) / prev) * 100);
+  return { text: `${d >= 0 ? "+" : ""}${d}% vs ${prevLabel}`, down: d < 0 };
 }
 
 function Metric({ icon, label, value, change, tone = "primary", down = false }) {
@@ -179,14 +260,79 @@ function Metric({ icon, label, value, change, tone = "primary", down = false }) 
   );
 }
 
+// Per-calendar-month bars across the trend window. Each bar is clickable and
+// jumps the rest of the page to that month; the selected month is highlighted.
+function MonthlyTrendChart({ series, loading, selectedKey, onSelectMonth }) {
+  const maxTotal = Math.max(1, ...series.map((d) => d.total));
+  const niceMax = Math.max(4, Math.ceil(maxTotal / 4) * 4);
+  const ticks = [niceMax, Math.round(niceMax * 0.75), Math.round(niceMax * 0.5), Math.round(niceMax * 0.25), 0];
+  const gridCols = `repeat(${Math.max(series.length, 1)}, minmax(0, 1fr))`;
 
-function CallVolumeChart({ series, loading, days = 7 }) {
+  return (
+    <article className="chart-card">
+      <div className="chart-head">
+        <h2>Monthly Trend</h2>
+        <div className="legend">
+          <span>
+            <i className="legend-primary" />
+            Total Calls
+          </span>
+          <span>
+            <i className="legend-secondary" />
+            Confirmed Bookings
+          </span>
+        </div>
+      </div>
+      <div className="chart-area">
+        <div className="y-axis">
+          {ticks.map((t, i) => (
+            <span key={i}>{t}</span>
+          ))}
+        </div>
+        <div className="bars" style={{ gridTemplateColumns: gridCols, gap: 10 }}>
+          {series.map((d) => {
+            const totalPct = niceMax > 0 ? (d.total / niceMax) * 100 : 0;
+            const confirmedPct = d.total > 0 ? (d.confirmed / d.total) * 100 : 0;
+            const isSelected = d.key === selectedKey;
+            return (
+              <button
+                type="button"
+                className={`bar-column trend-bar${isSelected ? " is-selected" : ""}`}
+                key={d.key}
+                onClick={() => onSelectMonth(d.key)}
+                title={`${d.longLabel}: ${d.total} calls, ${d.confirmed} confirmed`}
+              >
+                <div className="bar total" style={{ height: `${totalPct}%` }}>
+                  <div className="confirmed" style={{ height: `${confirmedPct}%` }} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="x-axis" style={{ gridTemplateColumns: gridCols, gap: 10 }}>
+        {series.map((d) => (
+          <span key={d.key} className={d.key === selectedKey ? "is-selected" : ""}>
+            {d.label}
+          </span>
+        ))}
+      </div>
+      {!loading && series.length > 0 && series.every((d) => d.total === 0) && (
+        <p style={{ color: "var(--outline)", fontSize: 12, marginTop: 8, textAlign: "center" }}>
+          No calls in the last {series.length} months.
+        </p>
+      )}
+    </article>
+  );
+}
+
+function CallVolumeChart({ series, loading, periodLabel }) {
   const maxTotal = Math.max(1, ...series.map((d) => d.total));
   const niceMax = Math.max(4, Math.ceil(maxTotal / 4) * 4);
   const ticks = [niceMax, Math.round(niceMax * 0.75), Math.round(niceMax * 0.5), Math.round(niceMax * 0.25), 0];
 
-  // For wide ranges (>14 days) sample x-axis labels so they don't overlap, and
-  // use a short date instead of weekday since weekdays repeat.
+  // The selected month is up to 31 days — sample x-axis labels so they don't
+  // overlap, and use a short date since weekdays repeat across the month.
   const useShortDate = series.length > 7;
   const labelStride = series.length <= 14 ? 1 : Math.ceil(series.length / 10);
 
@@ -196,7 +342,7 @@ function CallVolumeChart({ series, loading, days = 7 }) {
   return (
     <article className="chart-card">
       <div className="chart-head">
-        <h2>Call Volume & Outcomes</h2>
+        <h2>Daily Calls — {periodLabel}</h2>
         <div className="legend">
           <span>
             <i className="legend-primary" />
@@ -239,7 +385,7 @@ function CallVolumeChart({ series, loading, days = 7 }) {
       </div>
       {!loading && series.every((d) => d.total === 0) && (
         <p style={{ color: "var(--outline)", fontSize: 12, marginTop: 8, textAlign: "center" }}>
-          No calls in the last {days} days.
+          No calls in {periodLabel}.
         </p>
       )}
     </article>

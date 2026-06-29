@@ -191,18 +191,32 @@ export function getCallLog(id) {
   return authedFetch(`/api/call-logs/${id}`);
 }
 
-export function getAnalytics({ days } = {}) {
+// A range (`from`/`to`, YYYY-MM-DD) selects a calendar month; `days` is the
+// legacy rolling window. Range wins when both are passed.
+function analyticsQs({ days, from, to } = {}) {
   const qs = new URLSearchParams();
-  if (days) qs.set("days", String(days));
-  const tail = qs.toString() ? `?${qs}` : "";
-  return authedFetch(`/api/analytics${tail}`);
+  if (from && to) {
+    qs.set("from", from);
+    qs.set("to", to);
+  } else if (days) {
+    qs.set("days", String(days));
+  }
+  return qs.toString() ? `?${qs}` : "";
 }
 
-export function getAnalyticsDailySeries({ days } = {}) {
+export function getAnalytics(params = {}) {
+  return authedFetch(`/api/analytics${analyticsQs(params)}`);
+}
+
+export function getAnalyticsDailySeries(params = {}) {
+  return authedFetch(`/api/analytics/daily-series${analyticsQs(params)}`);
+}
+
+export function getAnalyticsMonthlySeries({ months } = {}) {
   const qs = new URLSearchParams();
-  if (days) qs.set("days", String(days));
+  if (months) qs.set("months", String(months));
   const tail = qs.toString() ? `?${qs}` : "";
-  return authedFetch(`/api/analytics/daily-series${tail}`);
+  return authedFetch(`/api/analytics/monthly-series${tail}`);
 }
 
 // /bookings/:id and /bookings/:id/cancel are auth-protected on the backend

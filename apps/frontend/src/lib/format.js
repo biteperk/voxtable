@@ -220,16 +220,71 @@ export function formatRefreshedAgo(date) {
   return `Refreshed ${m}m ago`;
 }
 
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
 export function decorateDailySeries(rawSeries) {
   const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return rawSeries.map((row) => {
     const [y, m, d] = row.date.split("-").map(Number);
     const date = new Date(Date.UTC(y, m - 1, d));
     return {
       key: row.date,
       label: dayLabels[date.getUTCDay()],
-      shortDate: `${monthLabels[date.getUTCMonth()]} ${date.getUTCDate()}`,
+      shortDate: `${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCDate()}`,
+      total: row.total ?? 0,
+      confirmed: row.confirmed ?? 0
+    };
+  });
+}
+
+// --- Calendar-month analytics helpers --------------------------------------
+// All month keys are "YYYY-MM" strings interpreted in the restaurant's local
+// timezone by the backend; the frontend only ever shapes/labels them.
+
+// "2026-06" → "June 2026"
+export function monthLabel(key) {
+  const [y, m] = String(key).split("-").map(Number);
+  if (!y || !m) return String(key);
+  return `${MONTH_FULL[m - 1]} ${y}`;
+}
+
+// "2026-06" → { from: "2026-06-01", to: "2026-06-30" } (inclusive, calendar
+// dates — TZ-independent strings the backend resolves in restaurant-local time).
+export function monthRangeFromKey(key) {
+  const [y, m] = String(key).split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate(); // day 0 of next month = last day of this one
+  return { from: `${key}-01`, to: `${key}-${String(lastDay).padStart(2, "0")}` };
+}
+
+// The last `count` month keys ending at `baseDate`'s month, newest first.
+// e.g. recentMonthKeys(new Date(2026, 5, 29), 3) → ["2026-06","2026-05","2026-04"]
+export function recentMonthKeys(baseDate, count = 12) {
+  const out = [];
+  let y = baseDate.getFullYear();
+  let m = baseDate.getMonth(); // 0-based
+  for (let i = 0; i < count; i++) {
+    out.push(`${y}-${String(m + 1).padStart(2, "0")}`);
+    m -= 1;
+    if (m < 0) {
+      m = 11;
+      y -= 1;
+    }
+  }
+  return out;
+}
+
+export function decorateMonthlySeries(rawSeries) {
+  return rawSeries.map((row) => {
+    const [y, m] = row.month.split("-").map(Number);
+    return {
+      key: row.month,
+      label: MONTH_SHORT[m - 1],
+      longLabel: `${MONTH_FULL[m - 1]} ${y}`,
+      year: y,
       total: row.total ?? 0,
       confirmed: row.confirmed ?? 0
     };

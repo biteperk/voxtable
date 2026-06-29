@@ -18,7 +18,7 @@ function setFill(doc, [r, g, b]) { doc.setFillColor(r, g, b); }
 function setStroke(doc, [r, g, b]) { doc.setDrawColor(r, g, b); }
 function setText(doc, [r, g, b]) { doc.setTextColor(r, g, b); }
 
-export function exportAnalyticsPdf({ days, periodLabel, metrics, dailySeries, analytics }) {
+export function exportAnalyticsPdf({ periodLabel, fileSlug, metrics, dailySeries, analytics }) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const M = 40;
@@ -55,9 +55,9 @@ export function exportAnalyticsPdf({ days, periodLabel, metrics, dailySeries, an
   const cardH = 76;
 
   const kpis = [
-    { label: "Total Calls",        value: String(metrics.totalCalls),  hint: `last ${days}d` },
+    { label: "Total Calls",        value: String(metrics.totalCalls),  hint: periodLabel },
     { label: "Booking Conversion", value: metrics.bookingRate,         hint: `${metrics.bookingsCount} bookings` },
-    { label: "Daily Avg Revenue",  value: metrics.dailyRevenue,        hint: "$80 / booking" },
+    { label: "Est. Revenue",       value: metrics.monthlyRevenue,      hint: "$80 / booking" },
     { label: "Avg Call Duration",  value: metrics.avgDuration,         hint: analytics?.avg_latency_ms ? `${metrics.avgLatency} latency` : "" },
   ];
 
@@ -214,7 +214,7 @@ export function exportAnalyticsPdf({ days, periodLabel, metrics, dailySeries, an
 
   // Save
   const fileDate = new Date().toISOString().slice(0, 10);
-  doc.save(`vocotable-analytics-${days}d-${fileDate}.pdf`);
+  doc.save(`vocotable-analytics-${fileSlug ?? "report"}-${fileDate}.pdf`);
 }
 
 // ─── Receipt / Tax Invoice export ──────────────────────────────────────────
