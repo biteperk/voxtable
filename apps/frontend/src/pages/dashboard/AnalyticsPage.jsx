@@ -271,9 +271,12 @@ function Metric({ icon, label, value, change, tone = "primary", down = false }) 
 // jumps the rest of the page to that month; the selected month is highlighted.
 function MonthlyTrendChart({ series, loading, selectedKey, onSelectMonth }) {
   const maxTotal = Math.max(1, ...series.map((d) => d.total));
-  const niceMax = Math.max(4, Math.ceil(maxTotal / 4) * 4);
+  // Round up to the next multiple of 4 STRICTLY above maxTotal so the tallest
+  // bar never reaches 100% — leaves room for the value label above each bar.
+  const niceMax = Math.max(4, (Math.floor(maxTotal / 4) + 1) * 4);
   const ticks = [niceMax, Math.round(niceMax * 0.75), Math.round(niceMax * 0.5), Math.round(niceMax * 0.25), 0];
   const gridCols = `repeat(${Math.max(series.length, 1)}, minmax(0, 1fr))`;
+  const hasSelection = series.some((d) => d.key === selectedKey);
 
   return (
     <article className="chart-card">
@@ -304,11 +307,14 @@ function MonthlyTrendChart({ series, loading, selectedKey, onSelectMonth }) {
             return (
               <button
                 type="button"
-                className={`bar-column trend-bar${isSelected ? " is-selected" : ""}`}
+                className={`bar-column trend-bar${isSelected ? " is-selected" : ""}${
+                  hasSelection && !isSelected ? " is-dimmed" : ""
+                }`}
                 key={d.key}
                 onClick={() => onSelectMonth(d.key)}
                 title={`${d.longLabel}: ${d.total} calls, ${d.confirmed} confirmed`}
               >
+                <span className="trend-bar-value">{d.total}</span>
                 <div className="bar total" style={{ height: `${totalPct}%` }}>
                   <div className="confirmed" style={{ height: `${confirmedPct}%` }} />
                 </div>
@@ -326,7 +332,7 @@ function MonthlyTrendChart({ series, loading, selectedKey, onSelectMonth }) {
       </div>
       {!loading && series.length > 0 && series.every((d) => d.total === 0) && (
         <p style={{ color: "var(--outline)", fontSize: 12, marginTop: 8, textAlign: "center" }}>
-          No calls in the last {series.length} months.
+          No calls yet.
         </p>
       )}
     </article>
