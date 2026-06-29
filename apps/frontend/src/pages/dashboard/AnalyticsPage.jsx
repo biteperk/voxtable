@@ -26,14 +26,21 @@ export function AnalyticsPage({ navigate }) {
   const [exporting, setExporting] = useState(false);
   const periodRef = useRef(null);
 
-  // Month options for the picker — newest first, current month labelled.
+  // Month options for the picker — derived from the trend series so the list
+  // only ever spans months the restaurant has actually existed for (no empty
+  // pre-launch months). Newest first; current/previous month labelled. Before
+  // the series loads, offer at least the current month so the picker isn't empty.
   const monthOptions = useMemo(() => {
-    return recentMonthKeys(new Date(), MONTHS_IN_PICKER).map((key, i) => ({
-      key,
-      label: monthLabel(key),
+    if (!monthlySeries.length) {
+      const cur = recentMonthKeys(new Date(), 1)[0];
+      return [{ key: cur, label: monthLabel(cur), relative: "This month" }];
+    }
+    return [...monthlySeries].reverse().map((m, i) => ({
+      key: m.key,
+      label: m.longLabel,
       relative: i === 0 ? "This month" : i === 1 ? "Last month" : null
     }));
-  }, []);
+  }, [monthlySeries]);
 
   // Selected-month stats + per-day breakdown (refetched when the month changes).
   useEffect(() => {

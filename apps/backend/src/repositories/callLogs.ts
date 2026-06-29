@@ -420,25 +420,46 @@ export interface CallLogMonthlyPoint {
 }
 
 /**
- * Per-calendar-month call totals for the last `months` months, bucketed in the
- * restaurant's local timezone (so "June" means June in Sydney, not UTC). Empty
- * months are returned as zero rows so the trend chart has a continuous x-axis.
+ * Per-calendar-month call totals, bucketed in the restaurant's local timezone
+ * (so "June" means June in Sydney, not UTC). The window starts at the first
+ * month that actually has a call — never before the restaurant took its first
+ * call — and ends at the current month, capped to at most `months` months.
+ * Empty months *within* that window are returned as zero rows so the trend
+ * chart has a continuous x-axis.
  */
 export async function getCallLogMonthlySeries(input: {
   restaurantId: string;
-  months: number;
+  months: number; // upper bound on the window length
   timezone: string;
 }): Promise<CallLogMonthlyPoint[]> {
   const months = Math.min(Math.max(input.months, 1), 24);
   const result = await pool.query<CallLogMonthlyPoint>(
     `
     WITH bounds AS (
-      SELECT date_trunc('month', (now() AT TIME ZONE $3)) AS this_month
+      SELECT
+        date_trunc('month', (now() AT TIME ZONE $3)) AS this_month,
+        date_trunc('month', (
+          COALESCE(
+            (SELECT MIN(COALESCE(started_at, created_at)) FROM call_logs WHERE restaurant_id = $1),
+            now()
+          ) AT TIME ZONE $3
+        )) AS first_data_month
+    ),
+    -- Start at the first month with data, capped to the last $2 months and
+    -- never past the current month — so pre-launch empty months never show.
+    span AS (
+      SELECT
+        this_month,
+        LEAST(
+          this_month,
+          GREATEST(first_data_month, this_month - make_interval(months => ($2::int - 1)))
+        ) AS start_month
+      FROM bounds
     ),
     month_bucket AS (
       SELECT generate_series(
-        (SELECT this_month FROM bounds) - make_interval(months => ($2::int - 1)),
-        (SELECT this_month FROM bounds),
+        (SELECT start_month FROM span),
+        (SELECT this_month FROM span),
         interval '1 month'
       ) AS month_start
     )
@@ -456,8 +477,7 @@ export async function getCallLogMonthlySeries(input: {
         )::int AS confirmed
       FROM call_logs
       WHERE restaurant_id = $1
-        AND (COALESCE(started_at, created_at) AT TIME ZONE $3)
-            >= (SELECT this_month FROM bounds) - make_interval(months => ($2::int - 1))
+        AND (COALESCE(started_at, created_at) AT TIME ZONE $3) >= (SELECT start_month FROM span)
       GROUP BY 1
     ) c ON c.month_start = b.month_start
     ORDER BY b.month_start ASC
