@@ -66,6 +66,12 @@ export const createBookingRequestSchema = z.object({
   partySize: partySizeSchema.optional(),
   source: z.enum(["voice", "dashboard"]).default("voice"),
   notes: z.string().max(1000).optional(),
+  // Stopgap (A) for seating requests: the voice agent passes a free-text seating
+  // preference ("window", "patio", "quiet corner"). For now it's folded into the
+  // booking notes so staff can honour it manually; the full zone-aware allocation
+  // (B) will reuse this same field once the real floor plan is known.
+  seating_preference: z.string().max(120).optional(),
+  seatingPreference: z.string().max(120).optional(),
   call_log_id: uuidSchema.optional(),
   callLogId: uuidSchema.optional(),
   provider_call_id: z.string().max(200).optional(),
