@@ -27,7 +27,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 ENV_FILE="/opt/vocotable/.env"
 LOG_FILE="/var/log/vocotable/healthcheck.log"
-HEALTH_CHECK_URL="${HEALTH_CHECK_URL:-https://api.vocotable.com/health}"
+HEALTH_CHECK_URL="${HEALTH_CHECK_URL:-http://localhost:3050/health}"
 TIMEOUT_SECONDS=10
 MAX_RETRIES=2
 RETRY_DELAY=3
