@@ -69,7 +69,7 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - name: SSH to VM — pull image, restart, migrate, healthcheck
         run: |
-          gcloud compute ssh ali_alganzz@core-central-vm --zone=us-central1-a --quiet --command='
+          gcloud compute ssh deployer@core-central-vm --zone=us-central1-a --quiet --command='
             set -e
             cd /opt/vocotable
             docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml pull api
