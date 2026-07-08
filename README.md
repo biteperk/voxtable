@@ -73,4 +73,4 @@ npm run smoke:isolation     # multi-tenant onboarding isolation
 - **Frontend**: Firebase Hosting (`vocotable.web.app`, public brand site at `biteperk.com.au`). Build with `VITE_API_BASE_URL` pointing at the API before `firebase deploy --only hosting`.
 - Production builds: `npm run build:backend` / `build:frontend` / `build:kds`; run with `start:backend`; migrate with `db:migrate:prod`.
 
-Read `CLAUDE.md` and `deploy/runbooks/` before touching production — including the collaboration note about coordinating with teammates who push directly to `main`.
+Read `CLAUDE.md` and `deploy/runbooks/` before touching production.

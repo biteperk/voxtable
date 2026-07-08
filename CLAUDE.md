@@ -106,11 +106,10 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
 
 ## Collaboration
 
-An intern engineer at Algorythmos (Ali Ümit ALGAN) works on the same VM and **pushes directly to `main`** rather than opening PRs. Coordination happens via LinkedIn messenger, not git. Before any backend deploy:
+Sam is currently the only person working on the repo (the former intern, Ali Ümit ALGAN, finished his internship in July 2026 — his remote `feature/*` branches may still hold unmerged work). Standard hygiene before any backend deploy:
 
-1. `git fetch origin && git log --oneline origin/main -5` — check for unexpected commits.
-2. SSH the VM (`gcloud compute ssh core-central-vm --zone us-central1-a`) and `git -C /opt/vocotable status` — files there are often mid-edit, root-owned, and `sudo tar --overwrite` is the safe way to push code without trampling.
-3. Expect occasional conflicts in `firebase.json`, `app.ts` CORS, and `main.jsx`. Resolve and move on; don't escalate.
+1. `git fetch origin && git log --oneline origin/main -5` — confirm main is where you expect.
+2. SSH the VM (`gcloud compute ssh core-central-vm --zone us-central1-a`) and `git -C /opt/vocotable status` — files there may be root-owned; `sudo tar --overwrite` is the safe way to push code without trampling.
 
 ## Hard rules of thumb
 
