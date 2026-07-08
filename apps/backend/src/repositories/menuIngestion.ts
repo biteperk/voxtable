@@ -89,7 +89,12 @@ export async function claimReadyJobs(limit: number, db: DbClient = pool): Promis
     SET status = 'processing', attempts = attempts + 1, updated_at = now()
     WHERE id IN (
       SELECT id FROM menu_ingestion_jobs
-      WHERE status = 'pending' AND next_attempt_at <= now()
+      WHERE (status = 'pending' AND next_attempt_at <= now())
+         -- Reaper: a 'processing' row whose worker died mid-tick (crash /
+         -- redeploy) would otherwise be stuck forever — nothing else ever
+         -- re-selects it. 10 min is far beyond any single tick's work.
+         -- updated_at is trigger-maintained on every UPDATE.
+         OR (status = 'processing' AND updated_at < now() - interval '10 minutes')
       ORDER BY next_attempt_at ASC
       FOR UPDATE SKIP LOCKED
       LIMIT $1

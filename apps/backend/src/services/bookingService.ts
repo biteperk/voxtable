@@ -77,13 +77,20 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
   // Audit M1: if libphonenumber can't parse what Retell transcribed, reject
   // explicitly rather than silently storing the raw string. Message is
   // LLM-readable so Bella re-prompts the caller instead of dumping a 500.
-  const normalizedPhone = normalizePhone(input.customerPhone);
+  let normalizedPhone = normalizePhone(input.customerPhone);
   if (!normalizedPhone) {
-    throw new AppError(
-      400,
-      "CUSTOMER_PHONE_INVALID",
-      "That phone number didn't quite come through. Could you read it back digit by digit?"
-    );
+    if (input.allowUnparseablePhone && input.customerPhone) {
+      // Web booking with no usable phone — keep the sentinel/raw value so the
+      // reservation still lands (the guest already has a Cal.com confirmation);
+      // the caller has flagged it for staff review.
+      normalizedPhone = input.customerPhone;
+    } else {
+      throw new AppError(
+        400,
+        "CUSTOMER_PHONE_INVALID",
+        "That phone number didn't quite come through. Could you read it back digit by digit?"
+      );
+    }
   }
 
   const lockClient = await pool.connect();

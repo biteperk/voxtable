@@ -1,5 +1,7 @@
 # VocoTable — High-Level Architecture
 
+> ⚠️ **STALE — superseded by the Confluence architecture hub** (Vocotable space, page 3375120 and its children). This snapshot predates the Cal.com mirror, Stripe billing, KDS app, and multi-tenant onboarding, and the LLM listed below is out of date (the agent runs GPT-4.1). Kept for historical context only; trust Confluence and `CLAUDE.md`.
+
 > Voice AI booking platform for restaurants.
 > MVP target: Natalia's Bistro, Sydney — live within 30 days.
 

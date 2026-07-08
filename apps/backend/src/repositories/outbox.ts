@@ -127,6 +127,28 @@ export async function markOutboxRetry(
 }
 
 /**
+ * Reschedule a row WITHOUT consuming an attempt. Used when the row was never
+ * actually pushed (circuit breaker open) — a long Cal.com outage must not
+ * burn the retry budget and dead-letter bookings that were never tried.
+ */
+export async function markOutboxDeferred(
+  id: string,
+  error: string,
+  nextAttemptDelayMs: number,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(
+    `
+    UPDATE outbox_calcom
+       SET last_error = $2,
+           next_attempt_at = now() + ($3 || ' milliseconds')::interval
+     WHERE id = $1
+    `,
+    [id, redactSecrets(error).slice(0, 1000), String(nextAttemptDelayMs)]
+  );
+}
+
+/**
  * Dead-letter the row — won't be retried again until ops intervenes.
  * Error string is redacted before storage — Cal.com 4xx echoes back our
  * request body which can include the Authorization header / synthesized

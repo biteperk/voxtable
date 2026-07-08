@@ -180,8 +180,7 @@ export function DashboardShell({ active, children, navigate, path }) {
       <div
         id="primary-drawer"
         className={`drawer ${drawer.isOpen ? "is-open" : ""}`}
-        // eslint-disable-next-line react/no-unknown-property
-        inert={!drawer.isOpen ? "" : undefined}
+        inert={!drawer.isOpen || undefined}
       >
         {sidebarMarkup}
       </div>
@@ -189,8 +188,7 @@ export function DashboardShell({ active, children, navigate, path }) {
       <main
         id="mobile-main"
         className="dashboard-content mobile-main"
-        // eslint-disable-next-line react/no-unknown-property
-        inert={drawer.isOpen ? "" : undefined}
+        inert={drawer.isOpen || undefined}
       >
         {children}
       </main>

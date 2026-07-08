@@ -495,14 +495,19 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<string>
     if (!current) return "no-restaurant";
     const next = nextOnboardingStatus(current, event_);
     if (next !== current) {
+      // Enqueue provisioning BEFORE advancing state, and await it. If the
+      // enqueue fails the webhook 500s and Stripe redelivers; had we advanced
+      // state first, the retry would see next === current and the job would
+      // be silently lost (customer paid, no phone line ever provisioned).
+      // The enqueue is idempotent (partial unique index), so a retry after a
+      // later setOnboardingStatus failure is safe.
+      if (next === "provisioning" && env.PROVISIONING_AUTO_ENABLED) {
+        await enqueueProvisioningJob(restaurantId);
+      }
       await setOnboardingStatus(restaurantId, next);
       logger.info({ evt: "billing_onboarding_advance", restaurant_id: restaurantId, from: current, to: next, stripe_event: type });
+      // notifyRestaurant swallows its own errors (fire-and-forget by design).
       if (next === "live") void notifyRestaurant("live", restaurantId);
-      // Kick off automated telephony provisioning once billing is active.
-      // No-op enqueue when the flag is off (admin handles it manually in 4a).
-      if (next === "provisioning" && env.PROVISIONING_AUTO_ENABLED) {
-        void enqueueProvisioningJob(restaurantId);
-      }
     }
     return `${type} → ${next}`;
   }

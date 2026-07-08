@@ -17,7 +17,13 @@
 
 import { env } from "../config/env";
 import { DbClient, pool } from "../db/pool";
-import { claimReadyOutbox, markOutboxFailed, markOutboxRetry, markOutboxSucceeded } from "../repositories/outbox";
+import {
+  claimReadyOutbox,
+  markOutboxDeferred,
+  markOutboxFailed,
+  markOutboxRetry,
+  markOutboxSucceeded
+} from "../repositories/outbox";
 import { logger } from "../utils/logger";
 
 const TICK_INTERVAL_MS = 2_000;
@@ -25,6 +31,9 @@ const BATCH_SIZE = 20;
 // Token-bucket throttle so we never exceed Cal.com's free-tier rate limit
 // (verify exact ceiling on setup; ~10 req/s is the documented bound).
 const MAX_PUSHES_PER_SECOND = 5;
+// How far to push rows out when the circuit breaker refuses a batch — roughly
+// the breaker's open duration (60 s) so the next claim lines up with a probe.
+const BREAKER_DEFER_MS = 60_000;
 
 let intervalHandle: NodeJS.Timeout | null = null;
 let tickInFlight = false;
@@ -41,7 +50,12 @@ export interface OutboxExecutorRow {
 }
 
 export interface OutboxExecutionResult {
-  outcome: "succeeded" | "transient" | "permanent";
+  /**
+   * `skipped` = the circuit breaker refused the call before any HTTP attempt.
+   * The row is rescheduled WITHOUT consuming a retry attempt, and the rest of
+   * the batch is deferred too (every row would short-circuit identically).
+   */
+  outcome: "succeeded" | "transient" | "permanent" | "skipped";
   error?: string;
 }
 
@@ -121,6 +135,15 @@ async function processBatch(): Promise<void> {
 
         if (result.outcome === "succeeded") {
           await markOutboxSucceeded(row.id, client);
+        } else if (result.outcome === "skipped") {
+          // Breaker is open — defer this row and the remainder of the batch
+          // without burning attempts; the breaker's own half-open probe (the
+          // first call of a later batch) decides when pushes resume.
+          await markOutboxDeferred(row.id, result.error ?? "circuit open", BREAKER_DEFER_MS, client);
+          for (const remaining of rows.slice(index + 1)) {
+            await markOutboxDeferred(remaining.id, result.error ?? "circuit open", BREAKER_DEFER_MS, client);
+          }
+          break;
         } else if (result.outcome === "transient") {
           const nextAttempt = row.attempts + 1;
           if (nextAttempt >= env.CALCOM_OUTBOX_MAX_ATTEMPTS) {

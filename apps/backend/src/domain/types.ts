@@ -52,6 +52,11 @@ export interface CreateBookingInput {
   partySize: number;
   source: BookingSource;
   notes?: string;
+  // Web-channel (Cal.com) bookings may arrive without a parseable phone. The
+  // guest already holds a confirmation email, so instead of rejecting we let
+  // the caller pass a sentinel (e.g. "web:<uid>") stored verbatim. Voice-path
+  // callers must never set this — Bella re-prompts on CUSTOMER_PHONE_INVALID.
+  allowUnparseablePhone?: boolean;
   callLogId?: string;
   provider?: string;
   providerCallId?: string;

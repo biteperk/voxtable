@@ -316,8 +316,12 @@ function AppRouter({ path, navigate, isDashboard }) {
     return <OnboardingWizard navigate={navigate} path={path} />;
   }
 
+  // Incomplete onboarding on a dashboard route: the effect above is redirecting
+  // to /onboarding — render a neutral loader rather than the locked dashboard.
+  // Routes flagged allowDuringOnboarding (the menu editor) must still render,
+  // otherwise MenuStep's "Add manually" link lands on an infinite loader.
   const tenantKnownIncomplete = gate.status !== null && gate.status !== "live";
-  if (isDashboard && (memberships.length === 0 || tenantKnownIncomplete)) {
+  if (isDashboard && (memberships.length === 0 || (tenantKnownIncomplete && !allowDuringOnboarding))) {
     return <FullPageMessage title="Loading..." />;
   }
 

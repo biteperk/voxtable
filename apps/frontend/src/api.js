@@ -73,6 +73,13 @@ async function authedFetch(path, options = {}) {
       err.code = parsed.error.code;
       err.details = parsed.error.details;
       err.status = response.status;
+      // The stored restaurant id is no longer one of the user's memberships
+      // (revoked mid-session). Drop it and let AuthProvider re-pick, otherwise
+      // every request keeps failing until a full reload.
+      if (response.status === 403 && err.code === "NOT_A_MEMBER") {
+        setActiveRestaurantId(null);
+        window.dispatchEvent(new Event("vocotable:memberships-changed"));
+      }
       throw err;
     }
     throw new Error(`${response.status} ${response.statusText}: ${body}`);

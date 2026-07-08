@@ -206,7 +206,7 @@ export function exportAnalyticsPdf({ periodLabel, fileSlug, metrics, dailySeries
   setText(doc, COLOR.muted);
   doc.setFontSize(8);
   doc.text(
-    "VocoTable · Voice-AI booking platform · vocotable.algorythmos.com.au",
+    "VocoTable · Voice-AI booking platform · biteperk.com.au",
     W / 2,
     doc.internal.pageSize.getHeight() - 24,
     { align: "center" }
@@ -270,7 +270,7 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   doc.setFontSize(9);
   setText(doc, COLOR.muted);
   doc.text("Voice-AI booking for restaurants", M, M + 20);
-  doc.text("vocotable.algorythmos.com.au", M, M + 32);
+  doc.text("biteperk.com.au", M, M + 32);
   doc.text(`ABN ${RECEIPT_ABN}`, M, M + 44);
 
   // Title (right aligned)
@@ -441,13 +441,13 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.text(
-    "Questions about this invoice? Email billing@vocotable.algorythmos.com.au",
+    "Questions about this invoice? Email hello@biteperk.com.au",
     W / 2,
     H - 48,
     { align: "center" }
   );
   doc.text(
-    `${RECEIPT_ENTITY} · ABN ${RECEIPT_ABN} · vocotable.algorythmos.com.au`,
+    `${RECEIPT_ENTITY} · ABN ${RECEIPT_ABN} · biteperk.com.au`,
     W / 2,
     H - 32,
     { align: "center" }

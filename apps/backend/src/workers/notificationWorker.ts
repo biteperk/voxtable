@@ -55,14 +55,26 @@ async function sendEmail(row: NotificationRow): Promise<void> {
 
 async function sendSms(row: NotificationRow): Promise<void> {
   if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.NOTIFICATIONS_SMS_FROM) {
-    throw new Error("SMS not configured");
+    const err = new Error("SMS not configured");
+    (err as Error & { transient?: boolean }).transient = false;
+    throw err;
   }
   const client = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
-  await client.messages.create({
-    to: row.recipient,
-    from: env.NOTIFICATIONS_SMS_FROM,
-    body: row.body
-  });
+  try {
+    await client.messages.create({
+      to: row.recipient,
+      from: env.NOTIFICATIONS_SMS_FROM,
+      body: row.body
+    });
+  } catch (error) {
+    // Mirror sendEmail: only rate limits / 5xx are worth retrying. Twilio SDK
+    // errors carry the HTTP status; 400-class (invalid number, unsubscribed)
+    // will fail identically on every attempt.
+    const status = (error as { status?: number }).status;
+    (error as Error & { transient?: boolean }).transient =
+      status === undefined || status === 429 || status >= 500;
+    throw error;
+  }
 }
 
 async function processBatch(): Promise<void> {

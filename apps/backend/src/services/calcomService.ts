@@ -25,6 +25,7 @@ import { AppError } from "../domain/errors";
 import { BookingSource } from "../domain/types";
 import { DbClient, pool, readPool } from "../db/pool";
 import {
+  CalcomCircuitOpenError,
   CalcomPermanentError,
   CalcomTransientError,
   calcomRequest
@@ -257,6 +258,11 @@ async function executeReschedule(_row: OutboxExecutorRow, _db: DbClient): Promis
 }
 
 function classifyCalcomError(error: unknown, op: string): OutboxExecutionResult {
+  if (error instanceof CalcomCircuitOpenError) {
+    // Never reached the network — don't count it against the retry budget.
+    logger.warn({ evt: "calcom_push_skipped_breaker_open", op });
+    return { outcome: "skipped", error: error.message };
+  }
   if (error instanceof CalcomTransientError) {
     logger.warn({ evt: "calcom_push_transient", op, error: error.message, status: error.status });
     return { outcome: "transient", error: error.message };
@@ -548,10 +554,14 @@ async function handleBookingCreated(
   const notes = `${notesPrefix}Web booking via Cal.com (uid ${uid}); email ${customerEmail}`;
 
   try {
+    // No parseable phone → per-booking sentinel, never the email (a shared
+    // email-as-phone both violates the review-flag design and can collide on
+    // the customers (restaurant_id, phone) unique key across guests).
     const booking = await createBooking({
       restaurantId: env.DEFAULT_RESTAURANT_ID,
       customerName,
-      customerPhone: normalizedPhone || phone || customerEmail, // fallback chain
+      customerPhone: normalizedPhone ?? `web:${uid}`,
+      allowUnparseablePhone: !normalizedPhone,
       date,
       time,
       partySize,

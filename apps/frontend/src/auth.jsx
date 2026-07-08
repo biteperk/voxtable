@@ -86,6 +86,16 @@ export function AuthProvider({ children }) {
     return () => unsub();
   }, []);
 
+  // api.js fires this when the backend rejects the stored X-Restaurant-Id
+  // (membership revoked mid-session) — re-fetch memberships and re-pick.
+  useEffect(() => {
+    const onChanged = () => {
+      if (auth.currentUser) void loadMe();
+    };
+    window.addEventListener("vocotable:memberships-changed", onChanged);
+    return () => window.removeEventListener("vocotable:memberships-changed", onChanged);
+  }, []);
+
   const setActiveRestaurant = (id) => {
     setActiveRestaurantId(id);
     setActiveId(id);

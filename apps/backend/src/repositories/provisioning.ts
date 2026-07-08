@@ -51,7 +51,12 @@ export async function claimReadyProvisioningJobs(limit: number, db: DbClient = p
     SET status = 'processing', attempts = attempts + 1
     WHERE id IN (
       SELECT id FROM provisioning_jobs
-      WHERE status = 'pending' AND next_attempt_at <= now()
+      WHERE (status = 'pending' AND next_attempt_at <= now())
+         -- Reaper: re-claim jobs whose worker died mid-step (crash/redeploy).
+         -- Safe because steps are resumable via payload ("already done?"
+         -- checks); without this a crashed job is orphaned forever.
+         -- updated_at is trigger-maintained on every UPDATE.
+         OR (status = 'processing' AND updated_at < now() - interval '10 minutes')
       ORDER BY next_attempt_at ASC
       FOR UPDATE SKIP LOCKED
       LIMIT $1

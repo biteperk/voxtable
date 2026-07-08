@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project context
 
-VocoTable is a voice-AI booking platform for restaurants. The MVP target is **Natalia's Bistro** in Sydney — a single tenant. Customer dials a Twilio AU number, Retell AI's voice agent takes the booking, the backend writes it to Postgres, and the React dashboard renders calls + reservations live. Build plan, weekly milestones, and scope guardrails live in [`plan-phases/`](plan-phases/) and [`apps/backend/docs/architecture_diagram.md`](apps/backend/docs/architecture_diagram.md).
+VocoTable is a voice-AI booking platform for restaurants, built by **Biteperk Pty Ltd** (public brand site: `biteperk.com.au`). The original MVP target is **Natalia's Bistro** in Sydney. Customer dials a Twilio AU number, Retell AI's voice agent ("Bella") takes the booking, the backend writes it to Postgres, and the React dashboard renders calls + reservations live. Multi-tenant self-serve onboarding (Phases 0–5: create restaurant → profile → menu → trial → phone) is merged behind kill-switch flags. The original build plan lives in [`plan-phases/`](plan-phases/) (historical); the up-to-date architecture docs are in Confluence (Vocotable space) — `apps/backend/docs/architecture_diagram.md` is stale (see its banner).
 
 ## Commands
 
@@ -18,16 +18,22 @@ npm run db:seed                         # idempotent — seeds Natalia's Bistro 
 # Local dev
 npm run dev:backend                     # tsx watch on apps/backend/src/server.ts (port 3050)
 npm run dev:frontend                    # vite dev server (port 3051)
-npm run check                           # tsc backend + vite build frontend — no tests, this is the CI gate
+npm run dev:kds                         # kitchen display app (separate Vite app)
+npm run check                           # tsc backend + vite build frontend + kds — no tests, this is the CI gate
 
 # Smoke tests (no automated test suite by design — see plan-phases speed levers)
 npm run smoke:backend                   # full lifecycle: health → availability → create → update → cancel
 npm run smoke:retell                    # exercises /retell/inbound, /retell/webhook, /retell/tools/*
 npm run smoke:twilio                    # exercises /twilio/voice, /twilio/status
+npm run smoke:calcom                    # Cal.com outbox/inbox mirror
+npm run smoke:orders                    # menu + order endpoints (KDS)
+npm run smoke:isolation                 # multi-tenant onboarding isolation
+# also: smoke:retell-signed, smoke:retell-dates, smoke:retell-orders
 
 # Production builds (used inside the Dockerfile)
 npm run build:backend                   # tsc → apps/backend/dist
 npm run build:frontend                  # vite build → apps/frontend/dist
+npm run build:kds                       # vite build → KDS dist
 npm run start:backend                   # node apps/backend/dist/server.js
 npm run db:migrate:prod                 # node ... migrate.js (pre-built JS)
 ```
@@ -44,7 +50,7 @@ To exercise a single integration without a real phone call, hit the routes direc
 4. The Retell LLM (GPT-4.1, single-prompt, voice 11labs-Anna en-AU) calls our **custom function** endpoints at `/retell/tools/check-availability` and `/retell/tools/create-booking`. These return snake_case JSON the LLM can read out (`confirmation_message`, `natural_alternatives_message`).
 5. Retell sends lifecycle events to **`/retell/webhook`** (signed). Final `call_analyzed` event includes `call_analysis.custom_analysis_data.{intent, booking_outcome, special_requests, caller_satisfied}` — the keys are configured on the agent via `post_call_analysis_data`.
 6. `apps/backend/src/services/retellService.ts::persistRetellCall` extracts those fields and upserts into `call_logs` (unique on `(provider, provider_call_id)`).
-7. The React dashboard at `vocotable.web.app` fetches from `/api/reservations`, `/api/call-logs`, `/api/analytics` (all Firebase-ID-token-gated) and renders.
+7. The React dashboard (Firebase Hosting `vocotable.web.app`; public brand site `biteperk.com.au`) fetches from `/api/reservations`, `/api/call-logs`, `/api/analytics` (all Firebase-ID-token-gated) and renders.
 
 ### Cal.com mirror (durable outbox + inbox)
 
@@ -66,15 +72,17 @@ Bookings created by the voice path are mirrored to Cal.com asynchronously — th
 - `auth/firebaseAuth.ts` lazy-initialises Firebase Admin SDK from `GOOGLE_APPLICATION_CREDENTIALS`. Dashboard endpoints (`dashboardRouter`) require `Bearer <Firebase ID token>`; webhook endpoints use HMAC instead.
 - `utils/time.ts` exposes TZ-aware date helpers (`todayInTz`, `tomorrowInTz`, `zonedWallClockToUtcISO`, `utcIsoToZonedWallClock`). The Retell agent's `default_dynamic_variables.{today, tomorrow}` need to be refreshed daily — currently a manual `PATCH /update-retell-llm` (no cron yet).
 - `utils/phone.ts` normalises caller-supplied phones to E.164 via `libphonenumber-js`. Returns null for `anonymous`/`unknown`/`private`/`blocked`/`restricted`.
-- `workers/` — `calcomOutboxWorker` (2 s tick), `healthAlerter` (Slack on outbox depth / breaker open / inbox failures / Cal.com daily quota), `cleanupWorker` (6 h tick, deletes outbox + inbox rows older than 30 days).
+- `workers/` — `calcomOutboxWorker` (2 s tick), `healthAlerter` (Slack on outbox depth / breaker open / inbox failures / Cal.com daily quota), `cleanupWorker` (6 h tick, deletes outbox + inbox rows older than 30 days), plus onboarding workers `menuOcrWorker`, `notificationWorker`, and `provisioningWorker` (each a no-op unless its kill-switch flag is on). Leased job claims (`menu_ingestion_jobs`, `provisioning_jobs`) include a 10-min stuck-`processing` reaper so a crash mid-tick can't orphan a job.
 
-### Single-tenant lockdown
+### Tenancy: dashboard is multi-tenant, voice path is not (yet)
 
-`normalizeRestaurantId()` in `http/schemas.ts` and the Retell function normalizers in `services/retellService.ts` **ignore caller-supplied `restaurant_id`** and always use `env.DEFAULT_RESTAURANT_ID`. This is intentional for v1 — removes a category of "AI tricked into booking elsewhere" attacks. Reverse it when multi-tenant lands.
+- **Dashboard/API**: fully tenant-scoped. `auth/tenantContext.ts` validates the `X-Restaurant-Id` header against the user's memberships (`resolveTenant` → 403 `NOT_A_MEMBER` on mismatch); all dashboard/menu/orders/billing routes chain `requireFirebaseAuth → resolveTenant → requireMemberRole(...)`.
+- **Voice path**: `normalizeRestaurantId()` in `http/schemas.ts` and the Retell/Twilio handlers **ignore caller-supplied `restaurant_id`** and hard-bind `env.DEFAULT_RESTAURANT_ID`. Intentional — removes a category of "AI tricked into booking elsewhere" attacks. Inbound phone-number → restaurant routing is the missing piece before voice goes multi-tenant.
+- **Onboarding Phases 0–5** (routes `onboarding.ts`/`restaurant.ts`/`me.ts`/`admin.ts`/`billing.ts`/`stripeWebhook.ts`, workers `menuOcrWorker`/`notificationWorker`/`provisioningWorker`) ship behind kill-switch flags that all default `false`: `STRIPE_BILLING_ENABLED`, `MENU_OCR_ENABLED`, `NOTIFICATIONS_ENABLED`, `PROVISIONING_AUTO_ENABLED`, `MULTITENANCY_LEGACY_FALLBACK`. Production `superRefine` in `config/env.ts` only demands the matching credentials once a flag is on.
 
 ### Frontend layout
 
-`apps/frontend/src/main.jsx` is a single-file React 19 SPA. Path-based dispatch (no react-router) — `AppRouter` reads `window.location.pathname` and renders one of `LandingPage`/`LiveFeedOverviewPage`/`LiveFeedDetailPage`/`BookingLogPage`/`AnalyticsPage`/`BillingPage`. Dashboard pages are gated by `AuthProvider`; landing is public. `api.js` attaches the Firebase ID token as Bearer and force-refreshes on 401 (single retry). `firebase.js` tries `signInWithPopup` then falls back to `signInWithRedirect` if extensions block the popup network call.
+`apps/frontend/src/main.jsx` is a ~280-line bootstrap + path-based router (no react-router) — the pages live under `src/pages/{landing,auth,dashboard,billing,onboarding}` with shared `components/`, `features/`, `hooks/`, and `lib/`. Routes: `/` (public landing), `/live-feed[/:id]`, `/live-tables[/:id]`, `/booking-log`, `/manage-menu`, `/kitchen-overview`, `/analytics`, `/settings`, `/profile`, `/manage-plan`, `/update-payment-details`, and `/onboarding` (wizard: CreateRestaurant → Profile → Menu → Trial → Phone steps in `pages/onboarding/steps/`). Dashboard routes are gated by `AuthProvider` + an onboarding gate in `AppRouter` (incomplete tenants are redirected to `/onboarding`; `/manage-menu` is reachable during onboarding). `api.js` attaches the Firebase ID token as Bearer, force-refreshes on 401 (single retry), and sends `X-Restaurant-Id` from the persisted active-restaurant selection (a selector only — the backend enforces membership). `firebase.js` tries `signInWithPopup` then falls back to `signInWithRedirect` if extensions block the popup network call. `apps/kds/` is a separate Vite app (kitchen display) that polls the backend.
 
 ## Database
 
@@ -106,6 +114,6 @@ An intern engineer at Algorythmos (Ali Ümit ALGAN) works on the same VM and **p
 
 ## Hard rules of thumb
 
-- The 4-week MVP timeline (see `plan-phases/00-overview.md`) explicitly says **no automated tests, manual smoke tests only**. Stick to that; don't add Jest unless a paying customer is asking for stability.
-- Stay in-scope: no multi-tenant, no multilingual, no outbound calling, no loyalty, no mobile, no ResDiary/OpenTable integration in v1.
+- The MVP plan (see `plan-phases/00-overview.md`) explicitly says **no automated tests, manual smoke tests only**. Stick to that; don't add Jest unless a paying customer is asking for stability.
+- Stay in-scope: no multilingual, no outbound calling, no loyalty, no mobile, no ResDiary/OpenTable integration. Multi-tenant onboarding exists but stays behind its kill-switch flags until deliberately rolled out (see `deploy/runbooks/onboarding-rollout.md`).
 - Dashboard auth is locked to an **email allowlist** (`DASHBOARD_ALLOWED_EMAILS`), enforced in `auth/firebaseAuth.ts` — a verified account whose email isn't listed gets `403 EMAIL_NOT_ALLOWLISTED` on every dashboard route. Editing the list is an env change, no code. Empty list = open to any verified Google account (dev only; prod env validation forbids the empty case via `env.ts` superRefine).

@@ -159,6 +159,11 @@ export function OnboardingWizard({ navigate }) {
       <OnboardingShell onSignOut={handleSignOut}>
         <div className="onboarding-card">
           <p className="onboarding-error">Couldn't load your setup: {error}</p>
+          <div className="onboarding-actions">
+            <button type="button" className="primary-button" onClick={load}>
+              Try again
+            </button>
+          </div>
         </div>
       </OnboardingShell>
     );
@@ -175,6 +180,15 @@ export function OnboardingWizard({ navigate }) {
     content = <TrialStep onRefresh={load} />;
   } else if (current === "phone") {
     content = <PhoneStep onRefresh={load} />;
+  } else if (current) {
+    // The server checklist has a current step this build doesn't know yet —
+    // don't show the completion card for an unfinished setup.
+    content = (
+      <ComingSoonStep
+        title={checklist.find((s) => s.key === current)?.label ?? "Almost there"}
+        body="This step isn't available in the app yet."
+      />
+    );
   } else {
     content = (
       <div className="onboarding-card">
