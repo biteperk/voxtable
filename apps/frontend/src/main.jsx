@@ -49,12 +49,16 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    // eslint-disable-next-line no-console
-    console.error("[vocotable] uncaught render error:", {
-      message: error?.message,
-      stack: error?.stack?.split("\n").slice(0, 6).join("\n"),
-      componentStack: info?.componentStack?.split("\n").slice(0, 6).join("\n")
-    });
+    // Dev-only console logging — raw error text can carry PII, so keep it out of
+    // production consoles. Sentry (below) is the production capture path.
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.error("[vocotable] uncaught render error:", {
+        message: error?.message,
+        stack: error?.stack?.split("\n").slice(0, 6).join("\n"),
+        componentStack: info?.componentStack?.split("\n").slice(0, 6).join("\n")
+      });
+    }
     // Forward to Sentry. No-op when VITE_SENTRY_DSN is unset.
     captureException(error, { componentStack: info?.componentStack });
   }

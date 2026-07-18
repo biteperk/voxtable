@@ -96,9 +96,9 @@ export function LiveFeedDetailPage({ navigate, callId, path }) {
           </div>
 
           <div className="transcript-stream">
-            {loading && <p style={{ color: "#94a3b8", padding: 12 }}>Loading transcript…</p>}
+            {loading && <p style={{ color: "var(--on-surface-variant)", padding: 12 }}>Loading transcript…</p>}
             {!loading && messages.length === 0 && (
-              <p style={{ color: "#64748b", padding: 12 }}>
+              <p style={{ color: "var(--outline)", padding: 12 }}>
                 No transcript captured for this call.
               </p>
             )}

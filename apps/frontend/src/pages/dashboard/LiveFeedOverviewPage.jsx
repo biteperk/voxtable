@@ -5,11 +5,22 @@ import { mapCallLogToRow } from "../../lib/format";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
+import { exportRowsToCsv } from "../../lib/exportCsv";
 
 // Live Feed polls every 5 s for fresh call activity. Plan: "Live Feed: 3-5
 // second interval during soft launch." Keep the loading flag for the very
 // first fetch only — subsequent refreshes update silently in the background.
 const LIVE_FEED_POLL_MS = 5000;
+
+// Columns for the CSV export — mirrors the on-screen table.
+const LIVE_FEED_CSV_COLUMNS = [
+  { label: "Customer", value: "name" },
+  { label: "Phone", value: "phone" },
+  { label: "Status", value: "status" },
+  { label: "Intent", value: "intent" },
+  { label: "Duration", value: "duration" },
+  { label: "Time", value: (r) => [r.time, r.timeNote].filter(Boolean).join(" ") },
+];
 
 export function LiveFeedOverviewPage({ navigate, path }) {
   const { hasMinRole } = useAuth();
@@ -22,6 +33,9 @@ export function LiveFeedOverviewPage({ navigate, path }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const filterRef = useRef(null);
   const isPhone = useMediaQuery("(max-width: 767px)");
+  const [exported, setExported] = useState(false);
+  const exportedTimer = useRef(null);
+  useEffect(() => () => clearTimeout(exportedTimer.current), []);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -111,6 +125,18 @@ export function LiveFeedOverviewPage({ navigate, path }) {
       ? `${Math.round((analytics.handled / analytics.total_calls) * 100)}%`
       : "—";
 
+  const handleExport = () => {
+    const ok = exportRowsToCsv({
+      page: "live-feed",
+      columns: LIVE_FEED_CSV_COLUMNS,
+      rows: callRows,
+    });
+    if (!ok) return;
+    setExported(true);
+    clearTimeout(exportedTimer.current);
+    exportedTimer.current = setTimeout(() => setExported(false), 2000);
+  };
+
   return (
     <DashboardShell active="Live Feed" navigate={navigate} path={path}>
 
@@ -163,7 +189,10 @@ export function LiveFeedOverviewPage({ navigate, path }) {
       {/* Recent Activity Table */}
       <section className="feed-activity-card">
         <div className="feed-activity-header">
-          <h2>Recent Activity</h2>
+          <div className="feed-activity-titles">
+            <h2>Recent Activity</h2>
+            <span className="feed-activity-caption">Latest 25 calls · all time</span>
+          </div>
           <div className="feed-activity-actions">
             <div className="feed-filter-wrap" ref={filterRef}>
               <button
@@ -207,8 +236,16 @@ export function LiveFeedOverviewPage({ navigate, path }) {
                 </div>
               )}
             </div>
-            <button className="feed-action-btn">
-              <Icon name="download" /> Export
+            <button
+              className="feed-action-btn"
+              onClick={handleExport}
+              disabled={callRows.length === 0}
+            >
+              {exported ? (
+                <><Icon name="check" /> Exported</>
+              ) : (
+                <><Icon name="download" /> Export</>
+              )}
             </button>
           </div>
         </div>

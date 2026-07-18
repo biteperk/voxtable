@@ -12,6 +12,19 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
 import { NewBookingModal } from "../../components/dashboard/NewBookingModal";
+import { exportRowsToCsv } from "../../lib/exportCsv";
+
+// Columns for the CSV export — raw reservation fields, formatted for readability.
+const BOOKING_CSV_COLUMNS = [
+  { label: "Name", value: (r) => r.customer_name },
+  { label: "Phone", value: (r) => r.customer_phone },
+  { label: "Party Size", value: (r) => r.party_size },
+  { label: "Date", value: (r) => formatReservationDate(r.date) },
+  { label: "Time", value: (r) => formatVoiceTime12h(r.time) },
+  { label: "Status", value: (r) => r.status },
+  { label: "Source", value: (r) => r.source },
+  { label: "Notes", value: (r) => r.notes },
+];
 
 export function BookingLogPage({ navigate, path }) {
   const { hasMinRole } = useAuth();
@@ -30,6 +43,9 @@ export function BookingLogPage({ navigate, path }) {
   const [newBookingOpen, setNewBookingOpen] = useState(false);
   const filterRef = useRef(null);
   const isPhone = useMediaQuery("(max-width: 767px)");
+  const [exported, setExported] = useState(false);
+  const exportedTimer = useRef(null);
+  useEffect(() => () => clearTimeout(exportedTimer.current), []);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -196,6 +212,18 @@ export function BookingLogPage({ navigate, path }) {
       ? `${Math.round((analytics.bookings_created / analytics.total_calls) * 100)}%`
       : "—";
 
+  const handleExport = () => {
+    const ok = exportRowsToCsv({
+      page: "booking-log",
+      columns: BOOKING_CSV_COLUMNS,
+      rows: filteredReservations,
+    });
+    if (!ok) return;
+    setExported(true);
+    clearTimeout(exportedTimer.current);
+    exportedTimer.current = setTimeout(() => setExported(false), 2000);
+  };
+
   return (
     <DashboardShell active="Booking Log" navigate={navigate} path={path}>
 
@@ -294,7 +322,13 @@ export function BookingLogPage({ navigate, path }) {
             <h2>Recent Reservations</h2>
             <span>{new Date().toLocaleDateString("en-AU", { year: "numeric", month: "long", day: "numeric" })}</span>
           </div>
-          <button>Export</button>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={filteredReservations.length === 0}
+          >
+            {exported ? "Exported ✓" : "Export"}
+          </button>
         </div>
 
         {mutationError && (

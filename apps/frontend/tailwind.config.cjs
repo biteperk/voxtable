@@ -6,30 +6,33 @@ module.exports = {
   },
   theme: {
     extend: {
+      // Mirror the CSS custom properties (single source of truth in styles.css :root).
+      // Pointing at var() kills the hardcoded duplication — retint happens in one place.
       colors: {
-        background: "#131313",
-        surface: "#131313",
-        "surface-container": "#201f1f",
-        "surface-container-high": "#2a2a2a",
-        "surface-container-low": "#1c1b1b",
-        "surface-container-lowest": "#0e0e0e",
-        "on-surface": "#e5e2e1",
-        "on-surface-variant": "#c1c6d7",
-        outline: "#8b90a0",
-        "outline-variant": "#414755",
-        primary: "#adc6ff",
-        "on-primary": "#002e69",
-        "primary-container": "#4b8eff",
-        "on-primary-container": "#00285c",
-        secondary: "#d3fbff",
-        "secondary-container": "#00eefc",
-        "on-secondary-container": "#00686f",
-        tertiary: "#ffb595",
-        "tertiary-container": "#ef6719",
-        error: "#ffb4ab"
+        background: "var(--background)",
+        surface: "var(--surface)",
+        "surface-container": "var(--surface-container)",
+        "surface-container-high": "var(--surface-container-high)",
+        "surface-container-low": "var(--surface-container-low)",
+        "surface-container-lowest": "var(--surface-container-lowest)",
+        "on-surface": "var(--on-surface)",
+        "on-surface-variant": "var(--on-surface-variant)",
+        outline: "var(--outline)",
+        "outline-variant": "var(--outline-variant)",
+        primary: "var(--primary)",
+        "primary-dim": "var(--primary-dim)",
+        "on-primary": "var(--on-primary)",
+        "primary-container": "var(--primary-container)",
+        "on-primary-container": "var(--on-primary-container)",
+        secondary: "var(--secondary)",
+        "secondary-container": "var(--secondary-container)",
+        "on-secondary-container": "var(--on-secondary-container)",
+        tertiary: "var(--tertiary)",
+        "tertiary-container": "var(--tertiary-container)",
+        error: "var(--error)"
       },
       fontFamily: {
-        sans: ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "monospace"]
       },
       borderRadius: {

@@ -22,11 +22,11 @@ const ROLE_LABELS = {
 };
 
 const ROLE_COLORS = {
-  owner: "var(--primary, #6ee7b7)",
-  manager: "var(--accent, #818cf8)",
-  server: "var(--info, #38bdf8)",
-  kitchen: "var(--warning, #fbbf24)",
-  staff: "var(--on-surface-variant, #94a3b8)"
+  owner: "var(--primary)",
+  manager: "var(--primary-dim)",
+  server: "var(--secondary-fixed)",
+  kitchen: "var(--tertiary)",
+  staff: "var(--on-surface-variant)"
 };
 
 const ROLE_ICONS = {
