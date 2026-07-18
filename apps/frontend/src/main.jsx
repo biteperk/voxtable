@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
+import { PHONE_DISPLAY, PHONE_HREF } from "./lib/brand";
 import { getOnboardingStatus } from "./api";
 import { LandingPage } from "./pages/landing/LandingPage";
 import { LiveFeedOverviewPage } from "./pages/dashboard/LiveFeedOverviewPage";
@@ -70,7 +71,7 @@ class ErrorBoundary extends React.Component {
             <h1>Something went wrong</h1>
             <p>
               The page hit an unexpected error. Try reloading — if it keeps happening,
-              please call us on <a href="tel:+61275011140">+61 2 7501 1140</a>.
+              please call us on <a href={PHONE_HREF}>{PHONE_DISPLAY}</a>.
             </p>
             <p className="error-boundary-detail">
               {this.state.error?.message?.slice(0, 200) || "Unknown error"}

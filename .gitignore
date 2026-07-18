@@ -64,6 +64,10 @@ firebase-admin.json
 # Claude Code local session config (per-developer launch.json etc.)
 .claude/
 
+# Local ops references — account identifiers / PII (vendor logins, SIDs).
+# Never committed; secrets belong in the prod env / password manager, not git.
+*.local.md
+
 # Top-level scratchpad — source PNGs and brand reference materials that
 # feed scripts/ but are never deployed. Real app assets live under
 # apps/frontend/public/, which is NOT covered by this rule.

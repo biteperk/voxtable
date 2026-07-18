@@ -4,6 +4,7 @@ import { BiteperkMark } from "../../components/brand/BiteperkMark";
 import { BookOnlineModal, isCalcomConfigured } from "../../features/booking/BookOnlineModal";
 import { TIERS, COMPARE_ROWS, FAQ, buildPricingSchema } from "../../data/pricing";
 import { track } from "../../lib/analytics";
+import { PHONE_DISPLAY, PHONE_HREF, EMAIL_HREF } from "../../lib/brand";
 
 // V-shape brand mark used in the landing nav + footer. Inlined SVG so we
 // don't burn an HTTP request on a 1 KB icon. Same geometry as the reference
@@ -101,8 +102,8 @@ export function LandingPage({ navigate }) {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const phoneHref = "tel:+61450011140";
-  const emailHref = "mailto:hello@biteperk.com.au";
+  const phoneHref = PHONE_HREF;
+  const emailHref = EMAIL_HREF;
 
   return (
     <div className="lp-shell">
@@ -165,7 +166,7 @@ export function LandingPage({ navigate }) {
                 Start your free week →
               </button>
               <a className="lp-btn-ghost" href={phoneHref}>
-                Hear Bella live ▸
+                Talk to us ▸
               </a>
             </div>
           </div>
@@ -617,7 +618,7 @@ export function LandingPage({ navigate }) {
             }}
           >
             <a className="lp-btn" href={phoneHref}>
-              Call to start · 0450 011 140
+              Call to start · {PHONE_DISPLAY}
             </a>
             <a className="lp-btn-ghost" href={emailHref}>
               Email us
@@ -627,7 +628,7 @@ export function LandingPage({ navigate }) {
             <div className="lp-c">
               <div className="lp-cl">Call</div>
               <div className="lp-cv">
-                <a href={phoneHref}>0450 011 140</a>
+                <a href={phoneHref}>{PHONE_DISPLAY}</a>
               </div>
             </div>
             <div className="lp-c">
@@ -694,7 +695,7 @@ export function LandingPage({ navigate }) {
               </div>
               <div className="lp-foot-col">
                 <h4>Get in touch</h4>
-                <a href={phoneHref}>0450 011 140</a>
+                <a href={phoneHref}>{PHONE_DISPLAY}</a>
                 <a href={emailHref}>hello@biteperk.com.au</a>
                 <a href="https://biteperk.com.au" rel="noopener noreferrer">biteperk.com.au</a>
               </div>

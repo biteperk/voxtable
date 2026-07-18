@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { TIERS } from "../../data/pricing";
+import { PHONE_DISPLAY } from "../../lib/brand";
 import { createBillingPortalSession, getBillingSubscription } from "../../api";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "../dashboard/DashboardShell";
@@ -192,7 +193,7 @@ export function ManagePlanPage({ navigate }) {
             <summary>Need more than three locations?</summary>
             <p>
               Our Enterprise plan covers 4+ venues, custom voice personas, and bespoke
-              integrations. Contact us on 0450 011 140 to set it up.
+              integrations. Contact us on {PHONE_DISPLAY} to set it up.
             </p>
           </details>
         </article>

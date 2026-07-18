@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect, useId, useState } from "react";
 import { Icon } from "../../components/Icon";
+import { PHONE_DISPLAY, PHONE_HREF } from "../../lib/brand";
 
 // --- Cal.com booking modal (lazy-loaded) ------------------------------------
 // The Cal.com embed package is ~120 KB gzipped — too much to ship eagerly on
@@ -27,9 +28,9 @@ export function isCalcomConfigured() {
 /**
  * Reusable "embed failed — recover" card. Three escape hatches in priority
  * order: (1) open Cal.com directly in a new tab, which bypasses most
- * ad-blockers and iframe-level CSP issues; (2) call the restaurant —
- * Bella's always there; (3) retry the embed in place. Placed inline (not
- * a portal) so it sits inside the same modal body slot as the embed.
+ * ad-blockers and iframe-level CSP issues; (2) call us on the support
+ * line; (3) retry the embed in place. Placed inline (not a portal) so it
+ * sits inside the same modal body slot as the embed.
  */
 function EmbedFailedFallback({ reason, onRetry }) {
   return (
@@ -51,9 +52,9 @@ function EmbedFailedFallback({ reason, onRetry }) {
           Open booking in a new tab
         </a>
       )}
-      <a href="tel:+61275011140" className="book-modal-fallback-cta">
+      <a href={PHONE_HREF} className="book-modal-fallback-cta">
         <Icon name="phone_in_talk" />
-        Call us on +61 2 7501 1140
+        Call us on {PHONE_DISPLAY}
       </a>
       {onRetry && (
         <button

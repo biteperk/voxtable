@@ -28,6 +28,8 @@
  * @property {string} a
  */
 
+import { PHONE_DISPLAY } from "../lib/brand";
+
 /** @type {Tier[]} */
 export const TIERS = [
   {
@@ -110,7 +112,7 @@ export const TIERS = [
       "Custom onboarding, training & playbooks",
     ],
     cta: "Book a 20-min call →",
-    ctaSecondary: "Or call 0450 011 140",
+    ctaSecondary: `Or call ${PHONE_DISPLAY}`,
   },
 ];
 
