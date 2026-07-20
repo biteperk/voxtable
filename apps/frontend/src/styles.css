@@ -7156,9 +7156,9 @@ button {
   --lp-ink: #0a0b0d;
   --lp-ink2: #101216;
   --lp-surface: #15171c;
-  --lp-amber: #ff9d3c;
-  --lp-amber2: #e8801f;
-  --lp-amber-glow: rgba(255, 157, 60, 0.14);
+  --lp-amber: #f5c418;
+  --lp-amber2: #d9aa0e;
+  --lp-amber-glow: rgba(245, 196, 24, 0.14);
   --lp-white: #ffffff;
   --lp-mist: #9aa1ad;
   --lp-line: rgba(255, 255, 255, 0.10);
@@ -7220,11 +7220,11 @@ button {
   cursor: pointer;
   font-family: inherit;
   transition: transform 0.15s, box-shadow 0.2s;
-  box-shadow: 0 8px 30px rgba(255, 157, 60, 0.25);
+  box-shadow: 0 8px 30px rgba(245, 196, 24, 0.25);
 }
 .lp-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 38px rgba(255, 157, 60, 0.4);
+  box-shadow: 0 12px 38px rgba(245, 196, 24, 0.4);
 }
 .lp-btn,
 .lp-btn-ghost {
@@ -7367,7 +7367,7 @@ button {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(45% 60% at 78% 42%, rgba(255, 157, 60, 0.18), transparent 70%),
+    radial-gradient(45% 60% at 78% 42%, rgba(245, 196, 24, 0.18), transparent 70%),
     radial-gradient(30% 40% at 18% 65%, rgba(120, 80, 50, 0.10), transparent 70%);
 }
 
@@ -7444,7 +7444,7 @@ button {
   transform: translateY(-6px);
   box-shadow:
     0 40px 100px -20px rgba(0, 0, 0, 0.75),
-    0 14px 36px -8px rgba(255, 157, 60, 0.18),
+    0 14px 36px -8px rgba(245, 196, 24, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
@@ -7452,7 +7452,7 @@ button {
   position: absolute;
   inset: -18%;
   z-index: -1;
-  background: radial-gradient(45% 45% at 55% 50%, rgba(255, 157, 60, 0.32), transparent 70%);
+  background: radial-gradient(45% 45% at 55% 50%, rgba(245, 196, 24, 0.32), transparent 70%);
   filter: blur(28px);
   pointer-events: none;
 }
@@ -7467,7 +7467,7 @@ button {
   gap: 36px;
   padding: 48px 36px 80px;
   background:
-    radial-gradient(ellipse 70% 50% at 50% 38%, rgba(255, 157, 60, 0.2), transparent 70%),
+    radial-gradient(ellipse 70% 50% at 50% 38%, rgba(245, 196, 24, 0.2), transparent 70%),
     linear-gradient(180deg, #161210 0%, #0a0807 100%);
 }
 /* Hero photo — fills the card, art-directed at build time so we don't rely on object-fit guesswork */
@@ -7497,7 +7497,7 @@ button {
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(60% 50% at 50% 26%, rgba(255, 157, 60, 0.18), transparent 75%),
+    radial-gradient(60% 50% at 50% 26%, rgba(245, 196, 24, 0.18), transparent 75%),
     linear-gradient(180deg, transparent 42%, rgba(8, 6, 5, 0.5) 78%, rgba(6, 4, 3, 0.9) 100%);
 }
 .lp-hero-card-name {
@@ -7806,7 +7806,7 @@ button {
   height: 38px;
   flex: 0 0 38px;
   border-radius: 10px;
-  background: rgba(255, 157, 60, 0.12);
+  background: rgba(245, 196, 24, 0.12);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7850,7 +7850,7 @@ button {
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(60% 50% at 50% 26%, rgba(255, 157, 60, 0.16), transparent 75%),
+    radial-gradient(60% 50% at 50% 26%, rgba(245, 196, 24, 0.16), transparent 75%),
     linear-gradient(180deg, transparent 42%, rgba(8, 6, 5, 0.55) 78%, rgba(6, 4, 3, 0.92) 100%);
 }
 .lp-bella-tag {
@@ -7889,14 +7889,14 @@ button {
   height: 168px;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 32% 28%, #ffc987 0%, #ff9d3c 38%, #b85311 100%);
+    radial-gradient(circle at 32% 28%, #fff2c0 0%, #f5c418 38%, #7a5e08 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   box-shadow:
-    0 0 60px rgba(255, 157, 60, 0.45),
-    0 0 140px rgba(255, 157, 60, 0.22),
+    0 0 60px rgba(245, 196, 24, 0.45),
+    0 0 140px rgba(245, 196, 24, 0.22),
     inset 0 -22px 50px rgba(0, 0, 0, 0.32),
     inset 0 16px 32px rgba(255, 255, 255, 0.15);
   z-index: 1;
@@ -7907,7 +7907,7 @@ button {
   position: absolute;
   inset: -18px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 157, 60, 0.45);
+  border: 1px solid rgba(245, 196, 24, 0.45);
   animation: lp-bella-pulse 3.2s ease-out infinite;
 }
 .lp-bella-orb::after {
@@ -7937,7 +7937,7 @@ button {
   display: block;
   width: 3px;
   border-radius: 2px;
-  background: linear-gradient(180deg, rgba(255, 157, 60, 0.95), rgba(255, 157, 60, 0.25));
+  background: linear-gradient(180deg, rgba(245, 196, 24, 0.95), rgba(245, 196, 24, 0.25));
   animation: lp-bella-wave 1.4s ease-in-out infinite;
   height: 22%;
 }
@@ -7981,14 +7981,14 @@ button {
   transition: border-color 0.25s, transform 0.25s;
 }
 .lp-feat:hover {
-  border-color: rgba(255, 157, 60, 0.4);
+  border-color: rgba(245, 196, 24, 0.4);
   transform: translateY(-2px);
 }
 .lp-feat .lp-ic {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: rgba(255, 157, 60, 0.12);
+  background: rgba(245, 196, 24, 0.12);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8062,10 +8062,10 @@ button {
 .lp-tier:hover { transform: translateY(-3px); }
 
 .lp-tier-featured {
-  border-color: rgba(255, 157, 60, 0.45);
-  box-shadow: 0 24px 60px -24px rgba(255, 157, 60, 0.22);
+  border-color: rgba(245, 196, 24, 0.45);
+  box-shadow: 0 24px 60px -24px rgba(245, 196, 24, 0.22);
   background:
-    radial-gradient(70% 50% at 50% 0%, rgba(255, 157, 60, 0.07), transparent 70%),
+    radial-gradient(70% 50% at 50% 0%, rgba(245, 196, 24, 0.07), transparent 70%),
     var(--lp-surface);
 }
 
@@ -8151,8 +8151,8 @@ button {
 }
 
 @keyframes lp-tier-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 157, 60, 0); }
-  50%      { box-shadow: 0 0 0 4px rgba(255, 157, 60, 0.45); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 196, 24, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(245, 196, 24, 0.45); }
 }
 .lp-tier-highlighted {
   animation: lp-tier-pulse 1.1s ease-in-out 2;
@@ -8311,7 +8311,7 @@ button {
 .lp-cta-glow {
   position: absolute;
   inset: 0;
-  background: radial-gradient(50% 60% at 50% 30%, rgba(255, 157, 60, 0.18), transparent 70%);
+  background: radial-gradient(50% 60% at 50% 30%, rgba(245, 196, 24, 0.18), transparent 70%);
   z-index: 0;
 }
 .lp-closing-content {
