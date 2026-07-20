@@ -1,0 +1,31 @@
+# VocoTable — vocotable.biteperk.com.au
+# The public landing (/) is indexable. The dashboard is an auth-gated SPA;
+# its routes render the app shell to crawlers, so disallow them to avoid
+# indexing login-walled states and wasting crawl budget.
+
+User-agent: *
+Allow: /$
+Allow: /invite
+Disallow: /live-feed
+Disallow: /live-tables
+Disallow: /booking-log
+Disallow: /manage-menu
+Disallow: /kitchen-overview
+Disallow: /analytics
+Disallow: /billing
+Disallow: /manage-plan
+Disallow: /update-payment-details
+Disallow: /profile
+Disallow: /onboarding
+
+# AI answer-engine crawlers are welcome on the public page.
+User-agent: GPTBot
+Allow: /$
+User-agent: ClaudeBot
+Allow: /$
+User-agent: PerplexityBot
+Allow: /$
+User-agent: Google-Extended
+Allow: /$
+
+Sitemap: https://vocotable.biteperk.com.au/sitemap.xml

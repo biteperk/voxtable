@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>VocoTable by Biteperk — AI that answers every restaurant call</title>
-    <meta name="description" content="Biteperk builds VocoTable, the AI phone host for restaurants. Bella answers every call 24/7 in a natural Australian voice and books the table. Made in Sydney." />
+    <title>VocoTable — Start your free week · AI phone host by BitePerk</title>
+    <meta name="description" content="Start a free week of VocoTable, BitePerk's AI phone host. Bella answers every restaurant call in a natural Australian voice, books the table and never sleeps. Sign in or try it free — made in Sydney." />
     <meta name="theme-color" content="#0a0b0d" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -20,8 +20,8 @@
 
     <link rel="canonical" href="https://vocotable.biteperk.com.au" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="VocoTable by Biteperk — AI that answers every restaurant call" />
-    <meta property="og:description" content="Bella answers every call 24/7 in a natural Australian voice and books the table. Made in Sydney." />
+    <meta property="og:title" content="VocoTable — Start your free week · AI phone host by BitePerk" />
+    <meta property="og:description" content="Start a free week of VocoTable, BitePerk's AI phone host. Bella answers every restaurant call, books the table and never sleeps. Made in Sydney." />
     <meta property="og:image" content="https://vocotable.biteperk.com.au/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -30,6 +30,46 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://vocotable.biteperk.com.au/og-image.png" />
     <meta name="twitter:site" content="@biteperk" />
+
+    <!--
+      Static entity graph (in the initial HTML for reliable crawling —
+      not runtime-injected). Ties this app to BitePerk's stable
+      #organization @id and to the marketing product page, so the two
+      properties consolidate into one brand entity.
+    -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://vocotable.biteperk.com.au/#website",
+          "url": "https://vocotable.biteperk.com.au/",
+          "name": "VocoTable",
+          "publisher": { "@id": "https://biteperk.com.au/#organization" }
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://vocotable.biteperk.com.au/#app",
+          "name": "VocoTable",
+          "url": "https://vocotable.biteperk.com.au/",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web, Phone",
+          "description": "VocoTable is BitePerk's AI phone host for restaurants — Bella answers every call in a natural Australian voice and books the table, 24/7.",
+          "publisher": { "@id": "https://biteperk.com.au/#organization" },
+          "isPartOf": { "@id": "https://biteperk.com.au/products/#voco" },
+          "sameAs": ["https://biteperk.com.au/products/vocotable/"],
+          "offers": {
+            "@type": "Offer",
+            "priceCurrency": "AUD",
+            "price": "80",
+            "url": "https://biteperk.com.au/products/vocotable/",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+      ]
+    }
+    </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

@@ -4,7 +4,18 @@ import { BiteperkMark } from "../../components/brand/BiteperkMark";
 import { BookOnlineModal, isCalcomConfigured } from "../../features/booking/BookOnlineModal";
 import { TIERS, COMPARE_ROWS, FAQ, buildPricingSchema } from "../../data/pricing";
 import { track } from "../../lib/analytics";
-import { PHONE_DISPLAY, PHONE_HREF, EMAIL_HREF } from "../../lib/brand";
+import {
+  PHONE_DISPLAY,
+  PHONE_HREF,
+  EMAIL_HREF,
+  SITE_URL,
+  PRODUCT_URL,
+  GUIDES_URL,
+  ABOUT_URL,
+  CONTACT_URL,
+  PRIVACY_URL,
+  TERMS_URL,
+} from "../../lib/brand";
 
 // V-shape brand mark used in the landing nav + footer. Inlined SVG so we
 // don't burn an HTTP request on a 1 KB icon. Same geometry as the reference
@@ -118,6 +129,15 @@ export function LandingPage({ navigate }) {
             </span>
           </button>
           <div className="lp-nav-links">
+            <a
+              className="lp-lnk lp-brand-back"
+              href={SITE_URL}
+              target="_blank"
+              rel="noopener"
+            >
+              A BitePerk product <span aria-hidden="true">↗</span>
+              <span className="sr-only"> (opens biteperk.com.au in a new tab)</span>
+            </a>
             <button type="button" className="lp-lnk" onClick={scrollTo("how")}>
               How it works
             </button>
@@ -663,9 +683,9 @@ export function LandingPage({ navigate }) {
               </p>
               <a
                 className="lp-biteperk-tag"
-                href="https://biteperk.com.au"
-                rel="noopener noreferrer"
-                aria-label="Biteperk — the company behind VocoTable"
+                href={PRODUCT_URL}
+                rel="noopener"
+                aria-label="VocoTable on biteperk.com.au — the company behind VocoTable"
               >
                 <span>A</span>
                 <img
@@ -686,18 +706,21 @@ export function LandingPage({ navigate }) {
                 <a href="#bella" onClick={scrollTo("bella")}>Meet Bella</a>
                 <a href="#features" onClick={scrollTo("features")}>Features</a>
                 <a href="#pricing" onClick={scrollTo("pricing")}>Pricing</a>
+                <a href="#proof" onClick={scrollTo("proof")}>Customers</a>
               </div>
               <div className="lp-foot-col">
-                <h4>Company</h4>
-                <a href="#proof" onClick={scrollTo("proof")}>Customers</a>
-                <a href={emailHref}>Contact</a>
-                <a href="#contact" onClick={scrollTo("contact")}>Free trial</a>
+                <h4>BitePerk</h4>
+                <a href={PRODUCT_URL} rel="noopener">VocoTable on biteperk.com.au</a>
+                <a href={GUIDES_URL} rel="noopener">Restaurant guides</a>
+                <a href={ABOUT_URL} rel="noopener">About BitePerk</a>
+                <a href={PRIVACY_URL} rel="noopener">Privacy</a>
+                <a href={TERMS_URL} rel="noopener">Terms</a>
               </div>
               <div className="lp-foot-col">
                 <h4>Get in touch</h4>
                 <a href={phoneHref}>{PHONE_DISPLAY}</a>
                 <a href={emailHref}>hello@biteperk.com.au</a>
-                <a href="https://biteperk.com.au" rel="noopener noreferrer">biteperk.com.au</a>
+                <a href={SITE_URL} rel="noopener">biteperk.com.au</a>
               </div>
             </div>
           </div>
