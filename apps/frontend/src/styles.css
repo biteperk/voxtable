@@ -7341,6 +7341,24 @@ button {
 .lp-nav-links .lp-lnk:hover {
   color: #fff;
 }
+/* Parent-brand backlink — subtle, pill-framed, with a gold external arrow. */
+.lp-nav-links .lp-brand-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 100px;
+  border: 1px solid var(--lp-line);
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+.lp-nav-links .lp-brand-back span[aria-hidden] {
+  color: var(--lp-amber);
+}
+.lp-nav-links .lp-brand-back:hover {
+  border-color: color-mix(in srgb, var(--lp-amber) 40%, var(--lp-line));
+}
 
 /* HERO — Apple-inspired two-column stage with framed portrait card.
    Replaces the previous edge-bleed background approach; the photo lives
