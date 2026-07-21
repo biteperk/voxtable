@@ -22,7 +22,7 @@ export const EMAIL_HREF = "mailto:hello@biteperk.com.au";
  * BitePerk; these tie the app to the brand for visitors and for SEO.
  */
 export const SITE_URL = "https://biteperk.com.au";
-export const PRODUCT_URL = "https://biteperk.com.au/products/vocotable/";
+export const PRODUCT_URL = "https://biteperk.com.au/products/perktable/";
 export const GUIDES_URL = "https://biteperk.com.au/blog/";
 export const ABOUT_URL = "https://biteperk.com.au/about/";
 export const CONTACT_URL = "https://biteperk.com.au/contact/";
