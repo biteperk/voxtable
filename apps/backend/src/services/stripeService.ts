@@ -344,7 +344,7 @@ export async function getSubscription(customer: string, restaurantId: string): P
     const currency = price?.currency ?? "aud";
 
     return {
-      plan_name: price?.nickname ?? "VocoTable Core Plan",
+      plan_name: price?.nickname ?? "PerkTable Core Plan",
       amount_cents: amountCents,
       amount_display: amountCents != null ? formatAmount(amountCents, currency) : null,
       currency,

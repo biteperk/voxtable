@@ -34,7 +34,7 @@ export function exportAnalyticsPdf({ periodLabel, fileSlug, metrics, dailySeries
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   setText(doc, COLOR.muted);
-  doc.text("VocoTable AI activity report", M, y + 22);
+  doc.text("PerkTable AI activity report", M, y + 22);
 
   const generatedAt = new Date().toLocaleString("en-AU", {
     dateStyle: "medium",
@@ -206,7 +206,7 @@ export function exportAnalyticsPdf({ periodLabel, fileSlug, metrics, dailySeries
   setText(doc, COLOR.muted);
   doc.setFontSize(8);
   doc.text(
-    "VocoTable · Voice-AI booking platform · biteperk.com.au",
+    "PerkTable · Voice-AI booking platform · biteperk.com.au",
     W / 2,
     doc.internal.pageSize.getHeight() - 24,
     { align: "center" }
@@ -235,10 +235,10 @@ function formatLongDate(iso) {
 
 // Australian tax-invoice issuer identity, used in both the letterhead and the
 // footer (single source of truth). The ABN is a PLACEHOLDER and MUST be set to
-// VocoTable Pty Ltd's real ABN before any live invoice is issued — a tax invoice
+// PerkTable Pty Ltd's real ABN before any live invoice is issued — a tax invoice
 // with a wrong ABN is a compliance problem. Billing ships disabled and in test
 // mode first, so no real tax invoice leaves the system until this is filled in.
-const RECEIPT_ENTITY = "VocoTable Pty Ltd";
+const RECEIPT_ENTITY = "PerkTable Pty Ltd";
 const RECEIPT_ABN = "12 345 678 901"; // TODO(billing): replace with real ABN from Sam before go-live
 
 export function exportReceiptPdf({ invoice, customer, plan }) {
@@ -264,7 +264,7 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   setText(doc, COLOR.text);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
-  doc.text("VocoTable", M, M + 4);
+  doc.text("PerkTable", M, M + 4);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);

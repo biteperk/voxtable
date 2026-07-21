@@ -232,7 +232,7 @@ async function executeCancel(row: OutboxExecutorRow, db: DbClient): Promise<Outb
       method: "POST",
       path: `/bookings/${encodeURIComponent(uid)}/cancel`,
       body: {
-        cancellationReason: (row.payload as { reason?: string }).reason ?? "Cancelled via VocoTable"
+        cancellationReason: (row.payload as { reason?: string }).reason ?? "Cancelled via PerkTable"
       }
     });
     logger.info({ evt: "calcom_push_success", op: "cancel", reservation_id: row.reservation_id, calcom_uid: uid });
@@ -588,7 +588,7 @@ async function handleBookingCreated(
       await calcomRequest({
         method: "POST",
         path: `/bookings/${encodeURIComponent(uid)}/cancel`,
-        body: { cancellationReason: `VocoTable rejected: ${message}` }
+        body: { cancellationReason: `PerkTable rejected: ${message}` }
       });
     } catch (cancelError) {
       logger.error({ evt: "calcom_inbox_undo_cancel_failed", uid, error: cancelError });

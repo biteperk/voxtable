@@ -45,11 +45,11 @@ export function TrialStep({ onRefresh }) {
       </div>
       <h1>Start your free trial</h1>
       <p className="onboarding-lead">
-        Try VocoTable free for 14 days. We'll set up your AI phone host now — cancel anytime.
+        Try PerkTable free for 14 days. We'll set up your AI phone host now — cancel anytime.
       </p>
       <div className="trial-plan">
         <div>
-          <strong>VocoTable Starter</strong>
+          <strong>PerkTable Starter</strong>
           <span>Unlimited AI-answered calls, bookings &amp; orders</span>
         </div>
         <div className="trial-price">

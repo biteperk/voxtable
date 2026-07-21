@@ -50,7 +50,7 @@ export function DashboardShell({ active, children, navigate, path }) {
         <button
           className="dashboard-brand"
           onClick={() => navigate("/")}
-          aria-label="VocoTable home"
+          aria-label="PerkTable home"
         >
           <img
             src="/brand/mark-light-on-dark.svg"
@@ -60,7 +60,7 @@ export function DashboardShell({ active, children, navigate, path }) {
             height="36"
           />
           <span className="dashboard-brand-text">
-            <strong>VocoTable</strong>
+            <strong>PerkTable</strong>
             <span>Restaurant AI Hub</span>
           </span>
         </button>
@@ -146,7 +146,7 @@ export function DashboardShell({ active, children, navigate, path }) {
           type="button"
           className="mobile-topbar-brand"
           onClick={() => navigate("/")}
-          aria-label="VocoTable home"
+          aria-label="PerkTable home"
         >
           <img
             src="/brand/mark-light-on-dark.svg"
@@ -154,7 +154,7 @@ export function DashboardShell({ active, children, navigate, path }) {
             width="28"
             height="28"
           />
-          <span>{active || "VocoTable"}</span>
+          <span>{active || "PerkTable"}</span>
         </button>
         <button
           type="button"

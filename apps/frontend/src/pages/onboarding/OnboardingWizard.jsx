@@ -31,7 +31,7 @@ function OnboardingShell({ checklist, children, onSignOut, welcome = false, curr
       <header className="onboarding-top">
         <div className="onboarding-brand">
           <img src="/brand/mark-light-on-dark.svg" alt="" width="30" height="30" />
-          <strong>VocoTable</strong>
+          <strong>PerkTable</strong>
         </div>
         <button type="button" className="onboarding-signout" onClick={onSignOut}>
           Sign out

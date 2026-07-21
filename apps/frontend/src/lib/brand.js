@@ -18,7 +18,7 @@ export const EMAIL_HREF = "mailto:hello@biteperk.com.au";
 /**
  * Parent-brand (biteperk.com.au) URLs for cross-linking back to the
  * marketing site. Use exact canonical forms (trailing slash on content
- * pages) so links resolve 200 with no 301 hop. VocoTable is a product of
+ * pages) so links resolve 200 with no 301 hop. PerkTable is a product of
  * BitePerk; these tie the app to the brand for visitors and for SEO.
  */
 export const SITE_URL = "https://biteperk.com.au";

@@ -53,7 +53,7 @@ export function PhoneStep({ onRefresh }) {
         <Icon name="hourglass_top" className="phone-provisioning-icon" />
         <h1>We're setting up your phone line</h1>
         <p className="onboarding-lead">
-          Our team is provisioning your dedicated VocoTable number and configuring Bella with your
+          Our team is provisioning your dedicated PerkTable number and configuring Bella with your
           menu. This usually takes a short while — we'll email you the moment it's ready, and this page
           will update automatically.
         </p>
@@ -68,10 +68,10 @@ export function PhoneStep({ onRefresh }) {
     <div className="onboarding-card">
       <h1>Connect your phone</h1>
       <p className="onboarding-lead">
-        Your VocoTable number is ready. Forward your restaurant's calls to it so Bella can answer.
+        Your PerkTable number is ready. Forward your restaurant's calls to it so Bella can answer.
       </p>
       <div className="phone-number-box">
-        <span>Your VocoTable number</span>
+        <span>Your PerkTable number</span>
         <strong>{setup.vocotable_number}</strong>
       </div>
       <ol className="phone-steps">

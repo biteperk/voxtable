@@ -146,7 +146,7 @@ export function AnalyticsPage({ navigate }) {
       <header className="analytics-header">
         <div>
           <h1>Performance Analytics</h1>
-          <p>{error ? `Error: ${error}` : `${periodLabel} of VocoTable AI activity.`}</p>
+          <p>{error ? `Error: ${error}` : `${periodLabel} of PerkTable AI activity.`}</p>
         </div>
         <div className="analytics-actions">
           <div className="period-dropdown" ref={periodRef}>

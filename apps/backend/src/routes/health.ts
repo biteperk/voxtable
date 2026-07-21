@@ -13,7 +13,7 @@ healthRouter.get("/", (_request, response) => {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>VocoTable Backend</title>
+        <title>PerkTable Backend</title>
         <style>
           :root {
             color-scheme: dark;
@@ -79,7 +79,7 @@ healthRouter.get("/", (_request, response) => {
       </head>
       <body>
         <main>
-          <h1>VocoTable</h1>
+          <h1>PerkTable</h1>
           <p>Backend is running. Dashboard UI comes in the frontend phase.</p>
           <dl>
             <dt>Environment</dt>

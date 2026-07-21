@@ -26,7 +26,7 @@ export function CreateRestaurantStep({ onCreated }) {
   return (
     <div className="onboarding-card">
       <img className="onboarding-welcome-mark" src="/brand/mark-light-on-dark.svg" alt="" />
-      <h1>Welcome to VocoTable</h1>
+      <h1>Welcome to PerkTable</h1>
       <p className="onboarding-lead">
         Let's set up Bella, your AI phone host. First — what's your restaurant called?
       </p>

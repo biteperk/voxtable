@@ -189,9 +189,9 @@ export function buildPricingSchema() {
   return {
     "@context": "https://schema.org",
     "@type": "Product",
-    name: "VocoTable",
+    name: "PerkTable",
     description: "AI phone host for restaurants. Bella answers every call 24/7, books the table, and never sleeps.",
-    brand: { "@type": "Brand", name: "VocoTable by Biteperk" },
+    brand: { "@type": "Brand", name: "PerkTable by Biteperk" },
     offers: {
       "@type": "AggregateOffer",
       priceCurrency: "AUD",
@@ -200,7 +200,7 @@ export function buildPricingSchema() {
       offerCount: TIERS.filter((t) => !t.custom).length,
       offers: TIERS.filter((t) => !t.custom).map((t) => ({
         "@type": "Offer",
-        name: `VocoTable ${t.name}`,
+        name: `PerkTable ${t.name}`,
         description: t.tagline,
         price: t.price.replace(/[^0-9]/g, ""),
         priceCurrency: "AUD",

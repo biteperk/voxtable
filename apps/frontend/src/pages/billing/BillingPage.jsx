@@ -95,7 +95,7 @@ export function BillingPage({ navigate }) {
           email: user?.email ?? "—",
         },
         plan: {
-          name: subscription?.plan_name ?? "VocoTable Core Plan",
+          name: subscription?.plan_name ?? "PerkTable Core Plan",
           description: "Monthly subscription — unlimited AI agent bookings",
         },
       });
@@ -133,7 +133,7 @@ export function BillingPage({ navigate }) {
     );
   }
 
-  const planName = subscription?.plan_name ?? "VocoTable Core Plan";
+  const planName = subscription?.plan_name ?? "PerkTable Core Plan";
   const planAmount = subscription?.amount_display ?? "$80.00";
   const planInterval = subscription?.interval ?? "month";
   const nextBilling = subscription?.current_period_end

@@ -86,7 +86,7 @@ export function ProfilePage({ navigate }) {
       <header className="operational-header">
         <div>
           <h1>My Profile</h1>
-          <p>Manage your account and how you sign in to VocoTable.</p>
+          <p>Manage your account and how you sign in to PerkTable.</p>
         </div>
       </header>
 
@@ -110,7 +110,7 @@ export function ProfilePage({ navigate }) {
         <article className="profile-card">
           <header>
             <h2>Sign-in methods</h2>
-            <p>Choose how you want to access VocoTable. You can connect multiple providers.</p>
+            <p>Choose how you want to access PerkTable. You can connect multiple providers.</p>
           </header>
           <ul className="signin-method-list">
             {signInMethods.map((m) => (
@@ -466,12 +466,12 @@ function InviteModal({ isOwner, onClose, onInvited, onCreated }) {
   // service, no deliverability setup. The native share sheet is offered too
   // when the browser supports it (best on phones).
   const shareText = success
-    ? `You've been invited to join our team on VocoTable as ${ROLE_LABELS[role] || role}. Tap to accept: ${success}`
+    ? `You've been invited to join our team on PerkTable as ${ROLE_LABELS[role] || role}. Tap to accept: ${success}`
     : "";
   const shareViaWhatsApp = () =>
     window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank", "noopener,noreferrer");
   const shareViaEmail = () => {
-    const subject = encodeURIComponent("Your VocoTable team invite");
+    const subject = encodeURIComponent("Your PerkTable team invite");
     window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${encodeURIComponent(shareText)}`;
   };
   const shareViaSms = () => {
@@ -479,7 +479,7 @@ function InviteModal({ isOwner, onClose, onInvited, onCreated }) {
   };
   const shareNative = async () => {
     try {
-      await navigator.share({ title: "VocoTable team invite", text: shareText, url: success });
+      await navigator.share({ title: "PerkTable team invite", text: shareText, url: success });
     } catch {
       /* user dismissed the native share sheet */
     }

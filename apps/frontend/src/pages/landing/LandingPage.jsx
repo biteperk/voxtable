@@ -68,7 +68,7 @@ export function LandingPage({ navigate }) {
       if (isCalcomConfigured()) {
         setBookingOpen(true);
       } else {
-        window.location.href = "mailto:hello@biteperk.com.au?subject=VocoTable%20Enterprise%20%C2%B7%20scoping%20call";
+        window.location.href = "mailto:hello@biteperk.com.au?subject=PerkTable%20Enterprise%20%C2%B7%20scoping%20call";
       }
       return;
     }
@@ -120,12 +120,12 @@ export function LandingPage({ navigate }) {
     <div className="lp-shell">
       <nav className={`lp-nav ${scrolled ? "lp-scrolled" : ""}`}>
         <div className="lp-wrap lp-nav-inner">
-          <button className="lp-brand" onClick={() => navigate("/")} aria-label="VocoTable home">
+          <button className="lp-brand" onClick={() => navigate("/")} aria-label="PerkTable home">
             <span className="lp-mark">
               <BiteperkMark size={42} />
             </span>
             <span className="lp-brand-name">
-              Voco<span className="lp-mist" style={{ fontWeight: 300 }}>Table</span>
+              Perk<span className="lp-mist" style={{ fontWeight: 300 }}>Table</span>
             </span>
           </button>
           <div className="lp-nav-links">
@@ -221,7 +221,7 @@ export function LandingPage({ navigate }) {
                     src="/bella/hero-portrait.jpg"
                     width="720"
                     height="900"
-                    alt="Bella, VocoTable's AI phone host, wearing a headset against the Australian flag"
+                    alt="Bella, PerkTable's AI phone host, wearing a headset against the Australian flag"
                     fetchPriority="high"
                     loading="eager"
                     decoding="async"
@@ -271,7 +271,7 @@ export function LandingPage({ navigate }) {
           <span style={{ color: "#41464e" }}>•</span>
           <span>Made in Australia</span>
           <span style={{ color: "#41464e" }}>•</span>
-          <span>Powered by VocoTable voice AI</span>
+          <span>Powered by PerkTable voice AI</span>
         </div>
       </div>
 
@@ -374,7 +374,7 @@ export function LandingPage({ navigate }) {
                   src="/bella/meet-portrait.jpg"
                   width="720"
                   height="720"
-                  alt="Bella, VocoTable's AI phone host, in profile against the Australian flag"
+                  alt="Bella, PerkTable's AI phone host, in profile against the Australian flag"
                   loading="lazy"
                   decoding="async"
                 />
@@ -486,7 +486,7 @@ export function LandingPage({ navigate }) {
             <div className="lp-step lp-reveal">
               <div className="lp-num">03</div>
               <h3>You see it live</h3>
-              <p>Every call and reservation lands in your VocoTable dashboard in real time.</p>
+              <p>Every call and reservation lands in your PerkTable dashboard in real time.</p>
             </div>
           </div>
         </div>
@@ -674,7 +674,7 @@ export function LandingPage({ navigate }) {
                   <BiteperkMark size={34} />
                 </span>
                 <span className="lp-brand-name" style={{ fontSize: 17 }}>
-                  Voco<span className="lp-mist" style={{ fontWeight: 300 }}>Table</span>
+                  Perk<span className="lp-mist" style={{ fontWeight: 300 }}>Table</span>
                 </span>
               </div>
               <p>
@@ -685,7 +685,7 @@ export function LandingPage({ navigate }) {
                 className="lp-biteperk-tag"
                 href={PRODUCT_URL}
                 rel="noopener"
-                aria-label="VocoTable on biteperk.com.au — the company behind VocoTable"
+                aria-label="PerkTable on biteperk.com.au — the company behind PerkTable"
               >
                 <span>A</span>
                 <img
@@ -710,7 +710,7 @@ export function LandingPage({ navigate }) {
               </div>
               <div className="lp-foot-col">
                 <h4>BitePerk</h4>
-                <a href={PRODUCT_URL} rel="noopener">VocoTable on biteperk.com.au</a>
+                <a href={PRODUCT_URL} rel="noopener">PerkTable on biteperk.com.au</a>
                 <a href={GUIDES_URL} rel="noopener">Restaurant guides</a>
                 <a href={ABOUT_URL} rel="noopener">About BitePerk</a>
                 <a href={PRIVACY_URL} rel="noopener">Privacy</a>
@@ -726,7 +726,7 @@ export function LandingPage({ navigate }) {
           </div>
           <div className="lp-foot-bottom">
             <div>© {new Date().getFullYear()} Biteperk Pty Ltd. All rights reserved.</div>
-            <div>VocoTable · Voice AI booking for restaurants · Sydney, Australia</div>
+            <div>PerkTable · Voice AI booking for restaurants · Sydney, Australia</div>
           </div>
         </div>
       </footer>

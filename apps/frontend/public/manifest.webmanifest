@@ -1,6 +1,6 @@
 {
-  "name": "VocoTable",
-  "short_name": "VocoTable",
+  "name": "PerkTable",
+  "short_name": "PerkTable",
   "description": "Voice-AI booking for restaurants.",
   "start_url": "/",
   "display": "standalone",

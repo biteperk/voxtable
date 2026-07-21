@@ -53,7 +53,7 @@ async function main(): Promise<void> {
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {
-    console.log(`VocoTable backend listening on port ${env.PORT}`);
+    console.log(`PerkTable backend listening on port ${env.PORT}`);
   });
 
   // Cal.com executor is installed before the worker starts so the worker's

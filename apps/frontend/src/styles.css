@@ -631,7 +631,7 @@ button {
 }
 
 /* ===================================================================
-   VocoTable Onboarding — "Focused Spotlight"
+   PerkTable Onboarding — "Focused Spotlight"
    REPLACES the entire existing .onboarding-* + .menu-review-* + .trial-*
    + .phone-* block (styles.css ~lines 604–900). Mobile-first; reduced-
    motion safe. Self-contained button styles (no reliance on a global
@@ -7147,7 +7147,7 @@ button {
 
 
 /* ===================================================================
-   LANDING PAGE (Biteperk / VocoTable brand) — added in audit-era pass.
+   LANDING PAGE (Biteperk / PerkTable brand) — added in audit-era pass.
    All classes prefixed `lp-` to avoid collision with dashboard styles.
    Design tokens borrowed from public/Bella/biteperk-website.html.
    =================================================================== */
