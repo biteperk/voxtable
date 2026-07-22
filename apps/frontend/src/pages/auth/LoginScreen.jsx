@@ -36,12 +36,12 @@ export function LoginScreen({ navigate }) {
       <div className="login-card">
         <img
           src="/brand/mark-light-on-dark.svg"
-          alt="PerkTable"
+          alt="VoxTable"
           className="login-mark"
           width="56"
           height="56"
         />
-        <h1 className="login-title">PerkTable</h1>
+        <h1 className="login-title">VoxTable</h1>
         <p className="login-tagline">Voice AI booking for restaurants</p>
 
         <div className="login-divider" aria-hidden="true" />

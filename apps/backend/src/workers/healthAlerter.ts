@@ -195,7 +195,7 @@ async function checkCalcom(): Promise<void> {
         !state.outboxDepthAlerted
       ) {
         await postToSlack(
-          `:warning: PerkTable outbox depth = ${outbox.pendingDepth} (oldest ${
+          `:warning: VoxTable outbox depth = ${outbox.pendingDepth} (oldest ${
             outbox.oldestPendingAt ?? "n/a"
           }). Cal.com mirror is lagging.`
         );
@@ -204,7 +204,7 @@ async function checkCalcom(): Promise<void> {
     } else {
       if (state.outboxDepthAlerted) {
         await postToSlack(
-          `:white_check_mark: PerkTable outbox depth recovered (now ${outbox.pendingDepth}).`
+          `:white_check_mark: VoxTable outbox depth recovered (now ${outbox.pendingDepth}).`
         );
       }
       state.outboxDepthBreaches = 0;

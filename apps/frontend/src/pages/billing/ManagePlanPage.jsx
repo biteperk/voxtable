@@ -96,7 +96,7 @@ export function ManagePlanPage({ navigate }) {
       </button>
       <div>
         <h1>Manage your plan</h1>
-        <p>Change tier, pause or cancel your PerkTable subscription.</p>
+        <p>Change tier, pause or cancel your VoxTable subscription.</p>
       </div>
     </header>
   );

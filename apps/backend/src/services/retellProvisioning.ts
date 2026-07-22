@@ -32,7 +32,7 @@ export async function createAgentForRestaurant(name: string): Promise<string> {
   const created = await c.agent.create({
     response_engine: template.response_engine,
     voice_id: template.voice_id,
-    agent_name: `${name} (PerkTable)`
+    agent_name: `${name} (VoxTable)`
   } as unknown as Parameters<typeof c.agent.create>[0]);
   return created.agent_id;
 }

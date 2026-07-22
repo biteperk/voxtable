@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  Standalone, NON-FUNCTIONAL visual preview of the PerkTable onboarding wizard.
+  Standalone, NON-FUNCTIONAL visual preview of the VoxTable onboarding wizard.
   No backend / DB / auth required — open directly in a browser to click through
   the screens and review the look-and-feel. The markup + classes mirror the real
   components in apps/frontend/src/main.jsx; styles are copied from styles.css.
@@ -10,7 +10,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PerkTable · Onboarding preview</title>
+    <title>VoxTable · Onboarding preview</title>
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&family=Inter:wght@400;600;700&display=swap"
@@ -85,7 +85,7 @@
   <body>
     <div class="onboarding-shell">
       <header class="onboarding-top">
-        <div class="onboarding-brand"><span class="mark">V</span> PerkTable</div>
+        <div class="onboarding-brand"><span class="mark">V</span> VoxTable</div>
         <button class="onboarding-signout">Sign out</button>
       </header>
       <div class="onboarding-body">
@@ -134,7 +134,7 @@
         if (screen === "create") {
           el.innerHTML = `
             <div class="onboarding-card">
-              <h1>Welcome to PerkTable 👋</h1>
+              <h1>Welcome to VoxTable 👋</h1>
               <p class="onboarding-lead">Let's set up your AI phone host. First, what's your restaurant called?</p>
               <div class="onboarding-form">
                 <label class="onboarding-field"><span>Restaurant name</span>
@@ -189,7 +189,7 @@
           el.innerHTML = `
             <div class="onboarding-card">
               <h1>Connect your phone</h1>
-              <p class="onboarding-lead">We'll give you a PerkTable number, show you exactly how to forward your calls, and verify it with a test call — coming soon.</p>
+              <p class="onboarding-lead">We'll give you a VoxTable number, show you exactly how to forward your calls, and verify it with a test call — coming soon.</p>
               <p class="onboarding-note">${icon("info")} Your progress is saved — you can pick up here when this step ships.</p>
               <button class="ghost-button" onclick="screen='create'; render()">${icon("restart_alt")} Restart preview</button>
             </div>`;

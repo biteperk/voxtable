@@ -40,7 +40,7 @@ async function sendEmail(row: NotificationRow): Promise<void> {
     body: JSON.stringify({
       personalizations: [{ to: [{ email: row.recipient }] }],
       from: { email: env.NOTIFICATIONS_FROM_EMAIL },
-      subject: row.subject ?? "PerkTable",
+      subject: row.subject ?? "VoxTable",
       content: [{ type: "text/plain", value: row.body }]
     })
   });

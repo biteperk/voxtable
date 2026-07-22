@@ -234,7 +234,7 @@ export async function getCallLogById(id: string): Promise<CallLogRow | null> {
 /**
  * How many calls landed for a restaurant since `sinceIso`. Used to verify
  * call-forwarding during onboarding: a test call forwarded to the restaurant's
- * PerkTable number resolves the tenant by dialed number and writes a call_log,
+ * VoxTable number resolves the tenant by dialed number and writes a call_log,
  * so a non-zero count proves forwarding works.
  */
 export async function countCallsSince(restaurantId: string, sinceIso: string): Promise<number> {

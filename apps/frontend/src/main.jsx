@@ -107,23 +107,23 @@ function App() {
 
   useEffect(() => {
     const titles = {
-      "/": "PerkTable",
-      "/live-feed": "Live Feed · PerkTable",
-      "/booking-log": "Booking Log · PerkTable",
-      "/manage-menu": "Manage Menu · PerkTable",
-      "/kitchen-overview": "Kitchen Overview · PerkTable",
-      "/live-tables": "Live Tables · PerkTable",
-      "/analytics": "Analytics · PerkTable",
-      "/billing": "Billing · PerkTable",
-      "/manage-plan": "Manage Plan · PerkTable",
-      "/update-payment-details": "Payment Methods · PerkTable",
-      "/profile": "Profile · PerkTable",
-      "/onboarding": "Get started · PerkTable",
+      "/": "VoxTable",
+      "/live-feed": "Live Feed · VoxTable",
+      "/booking-log": "Booking Log · VoxTable",
+      "/manage-menu": "Manage Menu · VoxTable",
+      "/kitchen-overview": "Kitchen Overview · VoxTable",
+      "/live-tables": "Live Tables · VoxTable",
+      "/analytics": "Analytics · VoxTable",
+      "/billing": "Billing · VoxTable",
+      "/manage-plan": "Manage Plan · VoxTable",
+      "/update-payment-details": "Payment Methods · VoxTable",
+      "/profile": "Profile · VoxTable",
+      "/onboarding": "Get started · VoxTable",
     };
     if (/^\/live-feed\/[^/]+$/.test(path)) {
-      document.title = "Call detail · PerkTable";
+      document.title = "Call detail · VoxTable";
     } else {
-      document.title = titles[path] || "PerkTable";
+      document.title = titles[path] || "VoxTable";
     }
   }, [path]);
 

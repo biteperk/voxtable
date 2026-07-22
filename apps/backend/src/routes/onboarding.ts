@@ -173,7 +173,7 @@ onboardingRouter.post(
   })
 );
 
-// Phone-setup view for the owner: their PerkTable number (once an admin has
+// Phone-setup view for the owner: their VoxTable number (once an admin has
 // bound it) + whether they're live. Drives the "Connect your phone" step.
 onboardingRouter.get(
   "/api/onboarding/phone-setup",
@@ -193,7 +193,7 @@ onboardingRouter.get(
 );
 
 // Verify call-forwarding by looking for a real inbound call to the restaurant's
-// PerkTable number in the last 15 minutes (the test call). On success, advance
+// VoxTable number in the last 15 minutes (the test call). On success, advance
 // provisioning → live. This both confirms forwarding works AND proves the owner
 // controls the advertised line.
 onboardingRouter.post(
@@ -218,7 +218,7 @@ onboardingRouter.post(
       throw new AppError(
         409,
         "NO_TEST_CALL",
-        "We haven't seen a test call yet. Forward your number to your PerkTable number, then call your restaurant from another phone."
+        "We haven't seen a test call yet. Forward your number to your VoxTable number, then call your restaurant from another phone."
       );
     }
 

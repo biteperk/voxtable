@@ -20,23 +20,23 @@ type Vars = Record<string, string>;
 // concise. {restaurant} etc. are interpolated from vars.
 const TEMPLATES: Record<NotificationKind, (v: Vars) => { subject: string; body: string }> = {
   welcome: (v) => ({
-    subject: `Welcome to PerkTable, ${v.restaurant ?? "there"}!`,
+    subject: `Welcome to VoxTable, ${v.restaurant ?? "there"}!`,
     body: `Thanks for signing up. Finish setting up your AI phone host and you'll be taking bookings in no time.`
   }),
   number_ready: (v) => ({
-    subject: `Your PerkTable number is ready`,
+    subject: `Your VoxTable number is ready`,
     body: `Your dedicated number ${v.number ?? ""} is live. Log in and follow the "Connect your phone" step to forward your calls and run a quick test.`
   }),
   live: (v) => ({
-    subject: `🎉 ${v.restaurant ?? "Your restaurant"} is live on PerkTable`,
+    subject: `🎉 ${v.restaurant ?? "Your restaurant"} is live on VoxTable`,
     body: `Bella is now answering your calls. Manage bookings, calls and your menu from your dashboard anytime.`
   }),
   trial_ending: (v) => ({
-    subject: `Your PerkTable trial ends soon`,
+    subject: `Your VoxTable trial ends soon`,
     body: `Your free trial is ending. No action needed to continue — your subscription will start automatically. Manage your plan anytime from Billing.`
   }),
   payment_failed: (v) => ({
-    subject: `Action needed: payment issue on your PerkTable account`,
+    subject: `Action needed: payment issue on your VoxTable account`,
     body: `We couldn't process your latest payment. Please update your card in Billing to keep Bella answering your calls.`
   })
 };

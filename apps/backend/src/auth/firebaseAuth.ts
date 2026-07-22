@@ -49,7 +49,7 @@ const managerEmails = parseEmailSet(env.DASHBOARD_MANAGER_EMAILS);
 // read role-gated /api/orders/* before an invite-based membership exists.
 const kitchenEmails = parseEmailSet(env.DASHBOARD_KITCHEN_EMAILS);
 
-// Platform admins (PerkTable staff) — gate the cross-tenant provisioning console.
+// Platform admins (VoxTable staff) — gate the cross-tenant provisioning console.
 const adminEmails = parseEmailSet(env.DASHBOARD_ADMIN_EMAILS);
 
 export interface AuthenticatedRequest extends Request {
@@ -167,7 +167,7 @@ export async function requireFirebaseIdentity(
 }
 
 /**
- * Platform-admin gate (PerkTable staff) for the cross-tenant provisioning
+ * Platform-admin gate (VoxTable staff) for the cross-tenant provisioning
  * console. Apply AFTER requireFirebaseAuth. In dev (verify auth off) it allows
  * through; in production it refuses if no admin allowlist is configured.
  */

@@ -65,7 +65,7 @@ const envSchema = z
   // this once they exist.
   DASHBOARD_KITCHEN_EMAILS: z.string().optional(),
 
-  // Platform admin allowlist (PerkTable staff) — gates the cross-tenant
+  // Platform admin allowlist (VoxTable staff) — gates the cross-tenant
   // provisioning console (/api/admin/*). Distinct from per-restaurant roles.
   DASHBOARD_ADMIN_EMAILS: z.string().optional(),
 

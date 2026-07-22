@@ -17,7 +17,7 @@ import { assertCanGoLive } from "../services/onboardingService";
 import { notifyRestaurant } from "../services/notificationService";
 import { normalizePhone } from "../utils/phone";
 
-// Internal provisioning console (PerkTable staff). Cross-tenant, so it is gated
+// Internal provisioning console (VoxTable staff). Cross-tenant, so it is gated
 // by requireAdminRole rather than per-restaurant membership.
 export const adminRouter = Router();
 
