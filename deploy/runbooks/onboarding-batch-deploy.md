@@ -1,5 +1,9 @@
 # Onboarding batch deploy — runbook
 
+> Historical batch-deploy note. Keep for audit context, but use
+> `apps/backend/docs/gcp-deployment.md`, `deploy/runbooks/rollback.md`, and
+> `deploy/runbooks/backup-restore.md` for current production operations.
+
 The production-grade hardening was committed to `main` in stages. A1–A4 + B1 + B2 are **already live**
 (image built from commit `4933407`). Four further commits are on `main` but **not yet on the VM**, plus
 the external integrations (OCR / Stripe / SendGrid) that need keys + Firebase Storage. This runbook is

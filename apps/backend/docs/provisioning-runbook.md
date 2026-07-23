@@ -5,6 +5,13 @@ When a restaurant finishes the self-serve wizard, its `onboarding_status` become
 active). At that point a VocoTable admin provisions the telephony + agent, then
 flips it live. This is the manual procedure; Phase 4b automates it.
 
+Local development note: when `APP_ENV !== "production"` and
+`PROVISIONING_AUTO_ENABLED=false`, the onboarding phone step exposes a
+development-only "Finish setup locally" path through
+`POST /api/onboarding/verify-forwarding`. That path marks the tenant live
+without Twilio/Retell bindings so the dashboard can be exercised locally. It is
+not production behavior.
+
 ## 0. Find the queue
 `GET /api/admin/provisioning-queue` (admin-gated) lists restaurants awaiting
 provisioning, with their profile + any bindings already set.

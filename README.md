@@ -19,9 +19,9 @@ Caller ──► Twilio (AU number) ──► Retell AI voice agent ("Bella")
 ```
 
 - **apps/backend** — Node 20 + TypeScript + Express. Zod-validated boundaries, HMAC-verified webhooks (Retell/Twilio/Cal.com/Stripe), advisory-lock booking transactions, structured JSON logging with PII redaction.
-- **apps/frontend** — React 19 SPA (Vite). Pages under `src/pages/{landing,auth,dashboard,billing,onboarding}`; path-based router in `main.jsx` (no react-router). Google sign-in via Firebase.
+- **apps/frontend** — React 19 SPA (Vite). Pages under `src/pages/{landing,auth,dashboard,billing,onboarding}`; path-based router in `main.jsx` (no react-router). Google sign-in via Firebase. Dashboard routes include live tables, live feed, booking log, menu, kitchen, analytics, billing, profile, and onboarding.
 - **apps/kds** — kitchen display system (separate Vite app, polls the backend for orders).
-- **Multi-tenant onboarding** (create restaurant → profile → menu → trial → phone) is merged behind kill-switch env flags that all default off; the inbound voice path is still bound to the single default restaurant.
+- **Multi-tenant onboarding** (create restaurant → profile → menu → trial → phone) is merged behind kill-switch env flags that all default off; the inbound voice path is still intentionally conservative and does not trust caller/LLM-supplied restaurant IDs.
 
 ## Quick start
 
@@ -66,11 +66,14 @@ npm run smoke:isolation     # multi-tenant onboarding isolation
 | `deploy/` | nginx config, Retell config snapshots, ops **runbooks** (rollback, backup/restore, onboarding rollout) |
 | `plan-phases/` | original 4-week MVP build plan (historical record) |
 | `CLAUDE.md` | the deep-dive engineering guide — architecture, invariants, deploy detail |
+| `AGENTS.md` | concise coding-agent rules and repo conventions |
+| `SECURITY.md` | vulnerability reporting and security invariants |
 
 ## Deployment (summary)
 
 - **Backend**: GCP VM `core-central-vm` (project `vocotable-497209`) via `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`, fronted by nginx + certbot at `https://vocotable.algorythmos.com.au`.
-- **Frontend**: Firebase Hosting (`vocotable.web.app`, public brand site at `biteperk.com.au`). Build with `VITE_API_BASE_URL` pointing at the API before `firebase deploy --only hosting`.
+- **Frontend**: Firebase Hosting target `app` (`vocotable.web.app`, branded production URLs allowed by CORS). Build with `VITE_API_BASE_URL` pointing at the API before `firebase deploy --only hosting:app`.
+- **KDS**: Firebase Hosting target `kds`, deployed separately with `npm run build:kds && firebase deploy --only hosting:kds`.
 - Production builds: `npm run build:backend` / `build:frontend` / `build:kds`; run with `start:backend`; migrate with `db:migrate:prod`.
 
 Read `CLAUDE.md` and `deploy/runbooks/` before touching production.

@@ -50,7 +50,14 @@ export async function resolveTenant(
   next: NextFunction
 ): Promise<void> {
   if (!env.DASHBOARD_VERIFY_AUTH) {
-    request.tenant = { restaurantId: env.DEFAULT_RESTAURANT_ID, role: "owner", memberships: [] };
+    const memberships = await getUserMemberships("dev-local-user");
+    const requested = (request.header("x-restaurant-id") ?? "").trim() || null;
+    const active =
+      (requested ? memberships.find((m) => m.restaurantId === requested) : undefined) ??
+      (memberships.length === 1
+        ? memberships[0]!
+        : { restaurantId: env.DEFAULT_RESTAURANT_ID, restaurantName: "", role: "owner" as const });
+    request.tenant = { restaurantId: active.restaurantId, role: "owner", memberships };
     next();
     return;
   }

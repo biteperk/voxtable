@@ -1,6 +1,5 @@
 import { Router } from "express";
 
-import { env } from "../config/env";
 import { AuthenticatedRequest, requireFirebaseAuth } from "../auth/firebaseAuth";
 import { asyncHandler } from "../http/asyncHandler";
 import { getUserMemberships, upsertUser } from "../repositories/members";
@@ -17,12 +16,30 @@ meRouter.get(
     const user = request.firebaseUser;
 
     // Dev escape hatch (DASHBOARD_VERIFY_AUTH=false): no verified token. Present
-    // a synthetic owner of the default restaurant so local dashboards work.
+    // the same synthetic identity used by onboarding create, so local signup can
+    // create a restaurant and immediately see its owner membership.
     if (!user) {
+      const devUserId = "dev-local-user";
+      await upsertUser({
+        id: devUserId,
+        email: "dev@local.test",
+        name: "Dev User",
+        emailVerified: true
+      });
+      const memberships = await getUserMemberships(devUserId);
       response.json({
-        user: null,
-        memberships: [],
-        active_restaurant_id: env.DEFAULT_RESTAURANT_ID
+        user: {
+          id: devUserId,
+          email: "dev@local.test",
+          name: "Dev User",
+          email_verified: true
+        },
+        memberships: memberships.map((m) => ({
+          restaurant_id: m.restaurantId,
+          name: m.restaurantName,
+          role: m.role
+        })),
+        active_restaurant_id: memberships.length === 1 ? memberships[0]!.restaurantId : null
       });
       return;
     }

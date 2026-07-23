@@ -1,5 +1,10 @@
 # Staged rollout runbook — multi-tenant onboarding (Phases 0–5)
 
+> Historical rollout plan from the original onboarding cutover. The current
+> production deployment shape is documented in
+> `apps/backend/docs/gcp-deployment.md`; current provisioning behavior is in
+> `apps/backend/docs/provisioning-runbook.md`.
+
 Turnkey, reversible procedure to ship `feat/stripe-billing` to production once
 the VM git is reconciled (see `onboarding-vm-assessment.md`). Everything ships
 **inert** behind kill-switches; the only always-on change is the multi-tenancy

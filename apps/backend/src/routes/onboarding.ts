@@ -35,7 +35,7 @@ function actingUser(request: AuthenticatedRequest): { uid: string; email: string
     return { uid: fb.uid, email: fb.email ?? "", name: (fb.name as string | undefined) ?? null };
   }
   if (!env.DASHBOARD_VERIFY_AUTH) {
-    return { uid: "dev-local-user", email: "dev@local", name: "Dev User" };
+    return { uid: "dev-local-user", email: "dev@local.test", name: "Dev User" };
   }
   throw new AppError(401, "MISSING_AUTH", "Authentication required.");
 }
@@ -187,7 +187,11 @@ onboardingRouter.get(
       onboarding_status: prov?.onboarding_status ?? null,
       vocotable_number: prov?.twilio_phone_number ?? null,
       number_ready: Boolean(prov?.twilio_phone_number && prov?.retell_agent_id),
-      forwarding_verified: prov?.onboarding_status === "live"
+      forwarding_verified: prov?.onboarding_status === "live",
+      dev_can_skip_phone_setup:
+        env.APP_ENV !== "production" &&
+        !env.PROVISIONING_AUTO_ENABLED &&
+        !(prov?.twilio_phone_number && prov?.retell_agent_id)
     });
   })
 );
@@ -205,6 +209,11 @@ onboardingRouter.post(
     const restaurantId = tenantId(request);
     const prov = await getProvisioning(restaurantId);
     if (!prov?.twilio_phone_number || !prov?.retell_agent_id) {
+      if (env.APP_ENV !== "production" && !env.PROVISIONING_AUTO_ENABLED) {
+        await setOnboardingStatus(restaurantId, "live");
+        response.json({ verified: true, onboarding_status: "live", mode: "provisioning_disabled_dev" });
+        return;
+      }
       throw new AppError(409, "NUMBER_NOT_READY", "Your phone line isn't set up yet — please check back shortly.");
     }
     if (prov.onboarding_status === "live") {

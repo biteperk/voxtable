@@ -120,6 +120,11 @@ export function OnboardingWizard({ navigate }) {
       const r = await getOnboardingStatus();
       setStatus(r.onboarding_status);
       setChecklist(r.checklist);
+      window.dispatchEvent(
+        new CustomEvent("vocotable:onboarding-status-changed", {
+          detail: { status: r.onboarding_status }
+        })
+      );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -210,4 +215,3 @@ export function OnboardingWizard({ navigate }) {
     </OnboardingShell>
   );
 }
-

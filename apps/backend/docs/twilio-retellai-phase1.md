@@ -1,6 +1,6 @@
-# Twilio + RetellAI Phase 1 Setup
+# Twilio + RetellAI Setup
 
-Phase 1 uses both providers, but they own different layers:
+VocoTable uses both providers, but they own different layers:
 
 - Twilio owns telephony plumbing: Australian number, call routing, SIP trunking, status callbacks, and optional SMS later.
 - RetellAI owns the voice agent: speech, conversation flow, LLM/tool calling, call analysis, transcript, and AI booking functions.
@@ -29,6 +29,12 @@ Then import/connect the Twilio number in RetellAI so the RetellAI agent receives
 ## Backend Twilio Webhooks
 
 The backend also exposes Twilio-compatible webhook endpoints. These are useful for local testing, status logging, or a fallback Programmable Voice routing setup.
+
+Production API base URL:
+
+```text
+https://vocotable.algorythmos.com.au
+```
 
 ### Incoming Voice URL
 
@@ -88,6 +94,9 @@ RetellAI custom functions still point to:
 ```text
 {PUBLIC_API_BASE_URL}/retell/tools/check-availability
 {PUBLIC_API_BASE_URL}/retell/tools/create-booking
+{PUBLIC_API_BASE_URL}/retell/tools/modify-booking
+{PUBLIC_API_BASE_URL}/retell/tools/menu-lookup
+{PUBLIC_API_BASE_URL}/retell/tools/create-order
 ```
 
 RetellAI lifecycle webhooks still point to:

@@ -1,13 +1,14 @@
-# RetellAI Phase 1 Setup
+# RetellAI Setup
 
-This is the Phase 1 voice-agent setup for VocoTable. RetellAI owns the AI conversation layer. Twilio owns the telephony layer when we route calls through a Twilio number or SIP trunk.
+RetellAI owns the voice-agent conversation layer for VocoTable. Twilio owns the
+telephony layer when calls route through a Twilio number or SIP trunk.
 
 ## Backend URLs
 
-Use the deployed GCP VM URL for RetellAI configuration:
+Use the deployed API URL for RetellAI configuration:
 
 ```text
-https://<your-gcp-domain>
+https://vocotable.algorythmos.com.au
 ```
 
 Local testing can use:
@@ -55,7 +56,8 @@ The backend responds with:
 
 ## RetellAI Custom Functions
 
-Create these custom functions in RetellAI.
+Create the required custom functions in RetellAI. Booking tools must return
+snake_case JSON because Bella reads those messages directly.
 
 ### `check_availability`
 
@@ -169,6 +171,19 @@ The body must include RetellAI's standard custom function shape:
 }
 ```
 
+## Additional Current Tools
+
+The current backend also exposes:
+
+```text
+{PUBLIC_API_BASE_URL}/retell/tools/modify-booking
+{PUBLIC_API_BASE_URL}/retell/tools/menu-lookup
+{PUBLIC_API_BASE_URL}/retell/tools/create-order
+```
+
+Use the dedicated tool URLs where possible; the generic dispatcher remains for
+compatibility.
+
 ## Signature Verification
 
 RetellAI sends `X-Retell-Signature`.
@@ -183,12 +198,15 @@ For production, set:
 
 ```text
 RETELL_API_KEY=<retell-api-key>
+RETELL_WEBHOOK_SECRET=<retell-webhook-secret>
 RETELL_VERIFY_SIGNATURE=true
 ```
 
-The backend verifies the raw request body using `retell-sdk`.
+`RETELL_API_KEY` is the REST API key. `RETELL_WEBHOOK_SECRET` is the dedicated
+webhook signing secret from Retell. The backend verifies the raw request body
+using `retell-sdk`.
 
-## Phase 1 Test
+## Smoke Test
 
 1. Run backend migrations and seed data.
 2. Deploy the backend to the GCP VM (see [GCP Deployment Guide](./gcp-deployment.md)).

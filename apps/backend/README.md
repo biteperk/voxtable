@@ -1,134 +1,161 @@
 # VocoTable Backend
 
-Phase 1 backend for the VocoTable voice booking MVP.
+Node 20 + TypeScript + Express backend for VocoTable.
+
+The backend powers:
+
+- Bella's Retell/Twilio voice booking flow.
+- Dashboard APIs for reservations, live calls, live tables, menu, orders, analytics, billing, staff, and profile data.
+- Multi-tenant onboarding.
+- Cal.com mirroring through a durable outbox/inbox.
+- Stripe billing and subscription webhooks.
+- KDS order polling and mutations.
+- Background workers for Cal.com, menu OCR, notifications, provisioning, cleanup, and health alerts.
 
 ## Local Setup
-1. Copy `.env.example` to `.env`.
-2. Set `DATABASE_URL` to a local PostgreSQL database.
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-4. Run migrations and seed data:
-   ```bash
-   npm run db:migrate
-   npm run db:seed
-   ```
-5. Start the API:
-   ```bash
-   npm run dev:backend
-   ```
 
-## Core Endpoints
-- `GET /health`
-- `POST /availability/check`
-- `POST /bookings`
-- `PATCH /bookings/:id`
-- `POST /bookings/:id/cancel`
-- `POST /retell/webhook`
-- `POST /retell/inbound`
-- `POST /retell/functions`
-- `POST /retell/tools/check-availability`
-- `POST /retell/tools/create-booking`
-- `POST /twilio/voice`
-- `POST /twilio/status`
+From the repository root:
 
-## RetellAI Setup
-Set the RetellAI account-level or agent-level webhook URL to:
+```bash
+npm install
+cp .env.example .env
+npm run db:migrate
+npm run db:seed
+npm run dev:backend
+```
+
+The API listens on `http://localhost:3050` by default.
+
+For local smoke testing, keep provider signature flags off unless you are sending real signed requests:
+
+```text
+RETELL_VERIFY_SIGNATURE=false
+TWILIO_VALIDATE_SIGNATURE=false
+CALCOM_SYNC_ENABLED=false
+STRIPE_BILLING_ENABLED=false
+```
+
+## Checks
+
+```bash
+npm run build:backend
+npm run check
+```
+
+Smoke scripts:
+
+```bash
+npm run smoke:backend
+npm run smoke:retell
+npm run smoke:retell-signed
+npm run smoke:retell-dates
+npm run smoke:retell-orders
+npm run smoke:twilio
+npm run smoke:calcom
+npm run smoke:orders
+npm run smoke:isolation
+```
+
+There is no broad automated test suite. Builds and smoke scripts are the normal verification path.
+
+## Route Areas
+
+Mounted route modules:
+
+- `health.ts`: root and `/health`.
+- `availability.ts`: table availability.
+- `bookings.ts`: reservation creation, mutation, seating, completion, cancellation.
+- `retell.ts`: Retell inbound, lifecycle webhooks, and tool endpoints.
+- `twilio.ts`: Twilio fallback voice and status callbacks.
+- `cal.ts`: Cal.com webhook and ops health.
+- `dashboard.ts`: reservations, call logs, analytics, and tables.
+- `menu.ts`: menu category/item CRUD and OCR ingestion.
+- `orders.ts`: order and KDS endpoints.
+- `billing.ts`: Stripe invoices, payment methods, subscription, portal, checkout.
+- `stripeWebhook.ts`: Stripe webhook processing.
+- `me.ts`: authenticated identity and memberships.
+- `onboarding.ts`: onboarding status, transitions, phone setup, forwarding verification.
+- `restaurant.ts`: active restaurant profile.
+- `staff.ts`: staff list, invites, role updates, removal.
+- `admin.ts`: platform admin provisioning and ops endpoints.
+
+## Architecture Rules
+
+- Keep routes thin. Put business behavior in `services/`, SQL in `repositories/`, and request validation in `http/schemas.ts`.
+- Use `withTransaction(async (db) => ...)` for multi-statement writes.
+- Validate external payloads with Zod.
+- Use `utils/logger.ts` for logs. Do not log raw provider payloads, request bodies, auth headers, tokens, or phone numbers.
+- Dashboard routes that touch tenant data should use `requireFirebaseAuth`, then `resolveTenant`, then a role gate when required.
+- `X-Restaurant-Id` is never trusted; it is validated against memberships.
+- Voice booking must not trust caller-supplied or LLM-supplied restaurant IDs.
+
+## Integrations
+
+### Retell
+
+Retell lifecycle webhook:
 
 ```text
 {PUBLIC_API_BASE_URL}/retell/webhook
 ```
 
-If the phone number should ask VocoTable for per-call metadata and dynamic variables, set the inbound webhook URL to:
+Retell inbound context endpoint:
 
 ```text
 {PUBLIC_API_BASE_URL}/retell/inbound
 ```
 
-For RetellAI custom function URLs, use:
+Tool endpoints include:
 
 ```text
 {PUBLIC_API_BASE_URL}/retell/tools/check-availability
 {PUBLIC_API_BASE_URL}/retell/tools/create-booking
 ```
 
-Alternatively, route both custom functions through:
+Additional Retell tools for menu/order flows live in `routes/retell.ts`. Use the smoke scripts before changing tool contracts.
 
-```text
-{PUBLIC_API_BASE_URL}/retell/functions
-```
+### Twilio
 
-See [`docs/retellai-phase1.md`](./docs/retellai-phase1.md) for the full RetellAI setup.
-
-## Twilio Setup
-Twilio owns the phone-number and telephony layer. For the production path, use Twilio Elastic SIP Trunking with RetellAI.
-
-The backend also exposes Twilio-compatible fallback/testing endpoints:
+Twilio owns PSTN and SIP routing. The backend also exposes fallback/testing endpoints:
 
 ```text
 {PUBLIC_API_BASE_URL}/twilio/voice
 {PUBLIC_API_BASE_URL}/twilio/status
 ```
 
-See [`docs/twilio-retellai-phase1.md`](./docs/twilio-retellai-phase1.md) for the full Twilio + RetellAI setup.
+### Cal.com
 
-## Production Deployment (Google Cloud VM + Docker Compose)
+Cal.com sync is behind `CALCOM_SYNC_ENABLED`. The voice booking path writes to Postgres first and queues Cal.com work in the durable outbox, so Cal.com downtime does not block callers.
 
-The backend and PostgreSQL database run on a Google Cloud VM using Docker Compose.
+### Stripe
 
-### Docker Commands
+Billing is behind `STRIPE_BILLING_ENABLED`.
 
-```bash
-# Build and start all services
-docker compose up -d --build
+- Checkout and portal sessions are tenant-scoped.
+- Webhooks drive subscription state and onboarding transitions.
+- Production requires Stripe secret key, price ID, and webhook secret when billing is enabled.
 
-# View logs
-docker compose logs -f backend
+### Provisioning
 
-# Run migrations in the running container
-docker compose exec backend npm run db:migrate:prod
+Automatic telephony provisioning is behind `PROVISIONING_AUTO_ENABLED`. When it is off, production provisioning is admin-assisted through `/api/admin/*`. Local development has guarded non-production shortcuts so onboarding can be exercised without buying numbers.
 
-# Run seed data
-docker compose exec backend npm run db:seed:prod
+## Deployment
 
-# Restart the backend
-docker compose restart backend
+Production backend runs on the GCP VM with Docker Compose, fronted by nginx and certbot. See:
 
-# Stop all services
-docker compose down
+- [`docs/gcp-deployment.md`](./docs/gcp-deployment.md)
+- [`docs/provisioning-runbook.md`](./docs/provisioning-runbook.md)
+- [`../../deploy/runbooks`](../../deploy/runbooks)
 
-# Stop and remove volumes (⚠️ destroys database data)
-docker compose down -v
-```
-
-### Production Environment
-
-Production mode intentionally rejects unsafe placeholder config. On the GCP VM, generate a real `DEFAULT_RESTAURANT_ID`, use the public domain for `PUBLIC_API_BASE_URL`, set `DATABASE_SSL=true` if needed, and enable RetellAI/Twilio signature validation.
-
-See [`docs/gcp-deployment.md`](./docs/gcp-deployment.md) for the full production deployment guide.
-
-## Smoke Test
-With the API running:
+Production start command:
 
 ```bash
-npm run smoke:backend
+npm run build:backend
+npm run start:backend
 ```
 
-The smoke test checks `/health`, checks availability, creates a booking, updates it, and cancels it.
-
-To exercise the RetellAI-shaped inbound, webhook, and custom-function endpoints locally:
+Production migration command:
 
 ```bash
-npm run smoke:retell
+npm run db:migrate:prod
 ```
-
-Keep `RETELL_VERIFY_SIGNATURE=false` for local manual smoke tests unless you are sending real signed RetellAI requests.
-
-To exercise the Twilio-shaped voice and status endpoints locally:
-
-```bash
-npm run smoke:twilio
-```
-
-Keep `TWILIO_VALIDATE_SIGNATURE=false` for local manual smoke tests unless you are sending real signed Twilio requests.

@@ -26,13 +26,26 @@ export function TrialStep({ onRefresh }) {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setUnavailable(false);
     try {
-      const { url } = await createBillingCheckoutSession();
-      if (url) window.location.href = url;
-      else setBusy(false);
+      const result = await createBillingCheckoutSession();
+      if (result?.url) {
+        window.location.assign(result.url);
+        return;
+      }
+      if (result?.onboarding_status) {
+        await onRefresh?.();
+        return;
+      }
+      setError("Checkout did not return a payment link. Please try again.");
     } catch (e) {
-      if (e.code === "BILLING_NOT_CONFIGURED") setUnavailable(true);
-      else setError(e.message);
+      if (e.code === "BILLING_NOT_CONFIGURED") {
+        setUnavailable(true);
+        setError("Billing is not configured yet, so checkout cannot open.");
+      } else {
+        setError(e.message || "Checkout could not be opened. Please try again.");
+      }
+    } finally {
       setBusy(false);
     }
   };
@@ -64,20 +77,16 @@ export function TrialStep({ onRefresh }) {
       </ul>
       {unavailable && (
         <p className="onboarding-note">
-          <Icon name="info" /> Billing isn't switched on yet — your progress is saved and we'll email
-          you when you can start your trial.
+          <Icon name="info" /> Billing isn't switched on yet — your progress is saved.
         </p>
       )}
       {error && <p className="onboarding-error">{error}</p>}
-      {!unavailable && (
-        <div className="onboarding-actions">
-          <button type="button" className="primary-button" onClick={startTrial} disabled={busy}>
-            {busy ? "Opening secure checkout…" : "Start 14-day free trial"}
-            <Icon name="arrow_forward" />
-          </button>
-        </div>
-      )}
+      <div className="onboarding-actions">
+        <button type="button" className="primary-button" onClick={startTrial} disabled={busy || unavailable}>
+          {busy ? "Opening secure checkout…" : "Start 14-day free trial"}
+          <Icon name="arrow_forward" />
+        </button>
+      </div>
     </div>
   );
 }
-

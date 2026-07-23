@@ -1,5 +1,9 @@
 # Prod config hardening — prerequisite for the onboarding cutover
 
+> Historical hardening plan from the onboarding cutover. The current production
+> configuration expectations are captured in `.env.example`,
+> `apps/backend/src/config/env.ts`, and `apps/backend/docs/gcp-deployment.md`.
+
 Recon of `core-central-vm` (2026-05-29) found the "production" box is running a
 **development configuration**. Harden it BEFORE rebuilding with the onboarding
 code (which adds `/api/admin/*` + onboarding endpoints — we don't want those on

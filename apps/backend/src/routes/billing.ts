@@ -1,10 +1,11 @@
 import { Router } from "express";
 
+import { env } from "../config/env";
 import { requireFirebaseAuth } from "../auth/firebaseAuth";
 import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import { getStripeCustomerId } from "../repositories/restaurants";
+import { getOnboardingStatus, getStripeCustomerId, setOnboardingStatus } from "../repositories/restaurants";
 import {
   createCheckoutSession,
   createPortalSession,
@@ -13,6 +14,7 @@ import {
   listPaymentMethods
 } from "../services/stripeService";
 import { isBillingConfigured, legacyCustomerId, stripeMode } from "../services/stripeClient";
+import { computeChecklist, nextOnboardingStatus } from "../services/onboardingService";
 
 // Per-tenant Stripe billing. Read endpoints mirror the active restaurant's
 // Stripe data; the checkout endpoint starts a self-serve free trial. Auth +
@@ -103,7 +105,24 @@ billingRouter.post(
 billingRouter.post(
   "/api/billing/checkout-session",
   asyncHandler(async (request, response) => {
-    const session = await createCheckoutSession(tenantId(request));
+    const restaurantId = tenantId(request);
+    if (!isBillingConfigured() && env.APP_ENV !== "production") {
+      const current = await getOnboardingStatus(restaurantId);
+      if (!current) {
+        throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
+      }
+      const next = nextOnboardingStatus(current, "trial_started");
+      if (next !== current) await setOnboardingStatus(restaurantId, next);
+      response.json({
+        url: null,
+        onboarding_status: next,
+        checklist: computeChecklist(next),
+        mode: "billing_disabled_dev"
+      });
+      return;
+    }
+
+    const session = await createCheckoutSession(restaurantId);
     response.json(session);
   })
 );

@@ -1,5 +1,9 @@
 # Pre-deploy assessment — onboarding rollout (2026-05-29)
 
+> Historical assessment retained for context. Do not treat this as the current
+> deployment procedure. Use `apps/backend/docs/gcp-deployment.md` and the active
+> rollback/backup runbooks for current operations.
+
 Recon done before deploying `feat/stripe-billing` (multi-tenant onboarding,
 Phases 0–5) to the production VM. **Conclusion: do NOT deploy onto the VM as-is.
 First fix the VM's deploy hygiene + reconcile git (see remediation).**

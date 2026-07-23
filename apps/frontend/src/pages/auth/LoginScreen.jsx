@@ -11,7 +11,10 @@ export function LoginScreen({ navigate }) {
     setBusy(true);
     setError(null);
     try {
-      await signInWithGoogle();
+      const result = await signInWithGoogle();
+      if (result) {
+        navigate("/live-feed", { replace: true });
+      }
       // If we fall through to redirect, the page is navigating away — leave
       // the button disabled until then.
     } catch (e) {
@@ -87,6 +90,5 @@ export function LoginScreen({ navigate }) {
     </div>
   );
 }
-
 
 

@@ -14,7 +14,7 @@ import { DashboardShell } from "./DashboardShell";
 // ----------------------------------------------------------------------------
 
 export function LiveTablesPage({ navigate }) {
-  const { hasMinRole } = useAuth();
+  const { activeRestaurantId, hasMinRole, memberships } = useAuth();
   const canEdit = hasMinRole("manager");
   const [tables, setTables] = useState([]);
   const [refreshedAt, setRefreshedAt] = useState(new Date());
@@ -117,13 +117,15 @@ export function LiveTablesPage({ navigate }) {
     year: "numeric"
   });
   const refreshedAgo = formatRefreshedAgo(refreshedAt);
+  const activeRestaurant = memberships.find((m) => m.restaurant_id === activeRestaurantId);
+  const restaurantName = activeRestaurant?.name || "Your restaurant";
 
   return (
     <DashboardShell active="Live Tables" navigate={navigate}>
       <header className="operational-header live-tables-header">
         <div>
           <h1>Live Tables</h1>
-          <p>Real-time floor and reservation status.</p>
+          <p>{restaurantName} · Real-time floor and reservation status.</p>
         </div>
         <div className="live-tables-meta">
           <span className="today-pill">

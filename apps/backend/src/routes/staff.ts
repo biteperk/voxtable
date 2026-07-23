@@ -284,7 +284,7 @@ staffRouter.post(
 
     const user = request.firebaseUser;
     const uid = user?.uid ?? "dev-local-user";
-    const email = user?.email ?? "dev@local";
+    const email = user?.email ?? "dev@local.test";
     const name = (user?.name as string | undefined) ?? null;
 
     await upsertUser({

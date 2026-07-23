@@ -1,5 +1,10 @@
 # Railway Production Setup
 
+> Historical alternative. Current production runs on the GCP VM with Docker
+> Compose, nginx, and Firebase Hosting. Use [`gcp-deployment.md`](./gcp-deployment.md)
+> for the active deployment path. Keep this file only as a reference if Railway
+> is reconsidered later.
+
 Use Railway for the backend service and Railway PostgreSQL for the database.
 
 ## Production Environment Variables
@@ -103,4 +108,4 @@ Run these checks after deployment:
 6. Twilio status callback writes a `call_logs` row.
 7. A real phone call creates one confirmed reservation in Postgres.
 
-Do not declare Phase 1 production-ready until checks 1-7 pass.
+Do not declare a Railway deployment production-ready until checks 1-7 pass.

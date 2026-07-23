@@ -224,6 +224,18 @@ function useOnboardingGate() {
     };
   }, [user, meLoading, memberships]);
 
+  useEffect(() => {
+    const onChanged = (event) => {
+      const nextStatus = event.detail?.status;
+      if (typeof nextStatus === "string") {
+        setStatus(nextStatus);
+        setLoading(false);
+      }
+    };
+    window.addEventListener("vocotable:onboarding-status-changed", onChanged);
+    return () => window.removeEventListener("vocotable:onboarding-status-changed", onChanged);
+  }, []);
+
   return { loading, status };
 }
 

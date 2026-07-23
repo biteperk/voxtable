@@ -58,8 +58,17 @@ export function PhoneStep({ onRefresh }) {
           will update automatically.
         </p>
         <p className="onboarding-note">
-          <Icon name="info" /> Provisioning in progress…
+          <Icon name="info" /> {setup.dev_can_skip_phone_setup ? "Local setup can be finished without provisioning." : "Provisioning in progress…"}
         </p>
+        {error && <p className="onboarding-error">{error}</p>}
+        {setup.dev_can_skip_phone_setup && (
+          <div className="onboarding-actions">
+            <button type="button" className="primary-button" onClick={verify} disabled={verifying}>
+              {verifying ? "Finishing setup…" : "Finish setup locally"}
+              <Icon name="arrow_forward" />
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -97,4 +106,3 @@ export function PhoneStep({ onRefresh }) {
     </div>
   );
 }
-
