@@ -13,6 +13,8 @@ import { env } from "../config/env";
 // silent date-shifting hazard.
 types.setTypeParser(1082, (value) => value);
 
+const SCHEMA_SEARCH_PATH = "core,reservations,voice,menu_orders,billing,integrations,operations,public";
+
 // Primary write pool — used by the booking path, Retell webhook handlers, and
 // anything that mutates state. Larger max because each booking holds a client
 // for the duration of the per-slot advisory-lock transaction; under 20+
@@ -25,6 +27,7 @@ export const pool = new Pool({
   connectionTimeoutMillis: 5_000,
   statement_timeout: 15_000,
   query_timeout: 15_000,
+  options: `-c search_path=${SCHEMA_SEARCH_PATH}`,
   application_name: "vocotable-api-write"
 });
 
@@ -39,6 +42,7 @@ export const readPool = new Pool({
   connectionTimeoutMillis: 5_000,
   statement_timeout: 10_000,
   query_timeout: 10_000,
+  options: `-c search_path=${SCHEMA_SEARCH_PATH}`,
   application_name: "vocotable-api-read"
 });
 

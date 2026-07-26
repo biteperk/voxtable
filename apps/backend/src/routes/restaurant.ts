@@ -1,10 +1,10 @@
 import { Router } from "express";
 
-import { requireFirebaseAuth } from "../auth/firebaseAuth";
+import { AuthenticatedRequest, requireFirebaseAuth } from "../auth/firebaseAuth";
 import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import { restaurantProfileSchema } from "../http/schemas";
+import { restaurantProfileSchema, supportRequestSchema } from "../http/schemas";
 import {
   findDuplicateRestaurant,
   getOnboardingStatus,
@@ -14,6 +14,7 @@ import {
   updateRestaurantProfile,
   upsertRestaurantSettings
 } from "../repositories/restaurants";
+import { createSupportRequest } from "../repositories/supportRequests";
 import { nextOnboardingStatus } from "../services/onboardingService";
 import { normalizePhone } from "../utils/phone";
 
@@ -25,7 +26,7 @@ restaurantRouter.get(
   "/api/restaurant/profile",
   requireFirebaseAuth,
   resolveTenant,
-  asyncHandler(async (request, response) => {
+  asyncHandler(async (request: AuthenticatedRequest, response) => {
     const restaurantId = tenantId(request);
     const profile = await getRestaurantProfile(restaurantId);
     if (!profile) {
@@ -110,5 +111,31 @@ restaurantRouter.patch(
     }
 
     response.json({ profile });
+  })
+);
+
+restaurantRouter.post(
+  "/api/support",
+  requireFirebaseAuth,
+  resolveTenant,
+  asyncHandler(async (request: AuthenticatedRequest, response) => {
+    const body = supportRequestSchema.parse(request.body);
+    const user = request.firebaseUser;
+    const supportRequest = await createSupportRequest({
+      restaurantId: tenantId(request),
+      userId: user?.uid ?? "dev-local-user",
+      userEmail: user?.email ?? "dev@local.test",
+      category: body.category,
+      subject: body.subject,
+      message: body.message
+    });
+
+    response.status(201).json({
+      support_request: {
+        id: supportRequest.id,
+        status: supportRequest.status,
+        created_at: supportRequest.created_at
+      }
+    });
   })
 );

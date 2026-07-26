@@ -24,6 +24,7 @@ export function DashboardShell({ active, children, navigate, path }) {
     ["Live Tables", "table_restaurant", "/live-tables", () => hasMinRole("server")],
     ["Live Feed", "graphic_eq", "/live-feed", () => hasMinRole("server")],
     ["Booking Log", "menu_book", "/booking-log", () => hasMinRole("server")],
+    ["Manage Tables", "event_seat", "/manage-tables", () => hasMinRole("manager")],
     ["Manage Menu", "restaurant_menu", "/manage-menu", () => hasMinRole("manager")],
     ["Kitchen", "soup_kitchen", "/kitchen-overview", () => role === "kitchen" || hasMinRole("manager")],
     ["Analytics", "query_stats", "/analytics", () => hasMinRole("manager")]

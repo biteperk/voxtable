@@ -137,6 +137,13 @@ export function updateRestaurantProfile(payload) {
   });
 }
 
+export function submitSupportRequest(payload) {
+  return authedFetch(`/api/support`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 // ===== Menu OCR ingestion (Phase 2) =====
 // The file is uploaded to Firebase Storage first (see firebase.js uploadMenuFile);
 // these endpoints register/track/commit the parse job.
@@ -175,16 +182,52 @@ export function listTables() {
   return authedFetch(`/api/tables`);
 }
 
+export function listAvailableTables({ date, time, partySize, excludeReservationId } = {}) {
+  const qs = new URLSearchParams();
+  if (date) qs.set("date", date);
+  if (time) qs.set("time", time);
+  if (partySize) qs.set("partySize", String(partySize));
+  if (excludeReservationId) qs.set("excludeReservationId", excludeReservationId);
+  const tail = qs.toString() ? `?${qs}` : "";
+  return authedFetch(`/api/tables/available${tail}`);
+}
+
+export function listManagedTables() {
+  return authedFetch(`/api/tables/manage`);
+}
+
+export function createTable(payload) {
+  return authedFetch(`/api/tables`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 // Manager-only edit of a table's display metadata (zone + description). Pass null
 // for a field to clear it; omit a field to leave it unchanged.
-export function updateTableMeta(id, { zone, description }) {
+export function updateTableMeta(id, payload) {
   const body = {};
-  if (zone !== undefined) body.zone = zone;
-  if (description !== undefined) body.description = description;
+  for (const key of ["label", "zone", "description", "attributes"]) {
+    if (payload[key] !== undefined) body[key] = payload[key];
+  }
+  if (payload.minCapacity !== undefined) body.minCapacity = payload.minCapacity;
+  if (payload.maxCapacity !== undefined) body.maxCapacity = payload.maxCapacity;
   return authedFetch(`/api/tables/${id}`, {
     method: "PATCH",
     body: JSON.stringify(body)
   });
+}
+
+export function deactivateTable(id) {
+  return authedFetch(`/api/tables/${id}/deactivate`, { method: "POST" });
+}
+
+export function activateTable(id) {
+  return authedFetch(`/api/tables/${id}/activate`, { method: "POST" });
+}
+
+export function deleteTable(id) {
+  return authedFetch(`/api/tables/${id}`, { method: "DELETE" });
 }
 
 export function listCallLogs({ limit } = {}) {

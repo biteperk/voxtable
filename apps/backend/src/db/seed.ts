@@ -1,18 +1,9 @@
 import admin from "firebase-admin";
 
 import { env } from "../config/env";
+import { DEFAULT_OPENING_HOURS } from "../domain/types";
 import { normalizePhone } from "../utils/phone";
 import { closePool, pool } from "./pool";
-
-const openingHours = {
-  monday: [{ open: "17:00", close: "22:00" }],
-  tuesday: [{ open: "17:00", close: "22:00" }],
-  wednesday: [{ open: "17:00", close: "22:00" }],
-  thursday: [{ open: "17:00", close: "22:00" }],
-  friday: [{ open: "17:00", close: "23:00" }],
-  saturday: [{ open: "12:00", close: "23:00" }],
-  sunday: [{ open: "12:00", close: "21:00" }]
-};
 
 const faq = {
   address: "Natalia's Bistro is in Sydney. Confirm the exact street address with staff before production launch.",
@@ -82,7 +73,7 @@ async function seed(): Promise<void> {
     [
       restaurantId,
       90,
-      JSON.stringify(openingHours),
+      JSON.stringify(DEFAULT_OPENING_HOURS),
       JSON.stringify(faq),
       JSON.stringify(voiceConfig)
     ]
@@ -130,7 +121,7 @@ async function seed(): Promise<void> {
  * allowlisted email, mapped to the default restaurant. Idempotent.
  *
  * Degrades gracefully:
- *   - skips silently if migration 007 hasn't applied (tables absent),
+ *   - skips silently if tenancy tables are absent,
  *   - skips if no allowlist is configured (dev = any verified account),
  *   - skips an email if Firebase Admin can't resolve its uid (no service
  *     account locally, or the user hasn't signed in yet). The
@@ -138,13 +129,10 @@ async function seed(): Promise<void> {
  */
 async function backfillMultitenancy(restaurantId: string): Promise<void> {
   const tablesExist = await pool.query<{ exists: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM information_schema.tables
-       WHERE table_schema = current_schema() AND table_name = 'restaurant_members'
-     ) AS exists`
+    `SELECT to_regclass('restaurant_members') IS NOT NULL AS exists`
   );
   if (!tablesExist.rows[0]?.exists) {
-    console.log("Skipping multitenancy backfill — migration 007 not yet applied");
+    console.log("Skipping multitenancy backfill — tenancy tables not yet applied");
     return;
   }
 
@@ -216,17 +204,13 @@ async function backfillMultitenancy(restaurantId: string): Promise<void> {
   console.log(`Multitenancy backfill: linked ${created}/${allowed.length} allowlisted user(s) to ${restaurantId}`);
 }
 
-// Idempotent KDS menu seed. Skipped silently if migration 006 hasn't applied
-// (so `db:seed` keeps working on installs that haven't pulled the schema yet).
+// Idempotent KDS menu seed. Skipped silently if menu tables are absent.
 async function seedMenu(restaurantId: string): Promise<void> {
   const menuTablesExist = await pool.query<{ exists: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM information_schema.tables
-       WHERE table_schema = current_schema() AND table_name = 'menu_items'
-     ) AS exists`
+    `SELECT to_regclass('menu_items') IS NOT NULL AS exists`
   );
   if (!menuTablesExist.rows[0]?.exists) {
-    console.log("Skipping menu seed — migration 006 not yet applied");
+    console.log("Skipping menu seed — menu tables not yet applied");
     return;
   }
 

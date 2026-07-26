@@ -1,0 +1,35 @@
+# Backend Migrations
+
+This app is still in development, so the migration history is a clean baseline
+instead of a production-compatible append-only chain.
+
+Rules:
+
+- Root files are only for global database setup: extensions, schemas, shared
+  enum types, and shared functions.
+- Domain folders map to Postgres schemas: `core`, `reservations`, `voice`,
+  `menu_orders`, `billing`, `integrations`, and `operations`.
+- Each table has its own migration file.
+- A table file may include that table's indexes and triggers.
+- Cross-table constraints that cannot be created inline because of dependency
+  cycles get their own small migration file.
+- File numbers define execution order globally, regardless of folder.
+
+Examples:
+
+```text
+core/010_restaurants.sql
+reservations/020_tables.sql
+voice/030_call_logs.sql
+reservations/040_reservations.sql
+voice/041_call_logs_reservation_fk.sql
+```
+
+The app sets this Postgres search path for runtime queries:
+
+```text
+core,reservations,voice,menu_orders,billing,integrations,operations,public
+```
+
+That lets repository SQL continue using simple table names while the actual
+tables live in domain schemas.

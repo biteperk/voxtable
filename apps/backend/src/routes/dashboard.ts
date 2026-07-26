@@ -14,12 +14,21 @@ import {
   listCallLogs
 } from "../repositories/callLogs";
 import { listReservations } from "../repositories/reservations";
-import { getRestaurantTimezone } from "../repositories/restaurants";
-import { listTables, updateTableMetadata } from "../repositories/tables";
-import { updateTableMetadataSchema } from "../http/schemas";
+import { getRestaurantSettings, getRestaurantTimezone } from "../repositories/restaurants";
+import { listAvailableTables } from "../repositories/availability";
+import {
+  activateTable,
+  createTable,
+  deactivateTable,
+  deleteTable,
+  listManagedTables,
+  listTables,
+  updateTableMetadata
+} from "../repositories/tables";
+import { normalizePartySize, tableAvailabilityQuerySchema, tablePayloadSchema, updateTableMetadataSchema } from "../http/schemas";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
-import { todayInTz } from "../utils/time";
+import { isWithinOpeningHours, todayInTz } from "../utils/time";
 import { getBreakerState } from "../services/calcomClient";
 import { quotaSnapshot } from "../services/calcomQuotaTracker";
 import { pool } from "../db/pool";
@@ -74,7 +83,63 @@ dashboardRouter.get(
   })
 );
 
-// Manager edit of a table's display-only metadata (zone + description).
+dashboardRouter.get(
+  "/api/tables/manage",
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const rows = await listManagedTables(tenantId(request));
+    response.json({ tables: rows });
+  })
+);
+
+dashboardRouter.get(
+  "/api/tables/available",
+  asyncHandler(async (request, response) => {
+    const query = tableAvailabilityQuerySchema.parse(request.query);
+    const partySize = normalizePartySize(query);
+
+    if (!partySize) {
+      throw new AppError(400, "PARTY_SIZE_REQUIRED", "party_size is required.");
+    }
+
+    const restaurantId = tenantId(request);
+    const settings = await getRestaurantSettings(restaurantId);
+    if (!isWithinOpeningHours(query.date, query.time, settings.bookingDurationMinutes, settings.openingHours)) {
+      response.json({ tables: [] });
+      return;
+    }
+
+    const tables = await listAvailableTables({
+      restaurantId,
+      date: query.date,
+      time: query.time,
+      partySize,
+      durationMinutes: settings.bookingDurationMinutes,
+      excludeReservationId: query.exclude_reservation_id ?? query.excludeReservationId
+    });
+
+    response.json({ tables });
+  })
+);
+
+dashboardRouter.post(
+  "/api/tables",
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const body = tablePayloadSchema.parse(request.body);
+    const created = await createTable(tenantId(request), {
+      label: body.label,
+      minCapacity: body.min_capacity ?? body.minCapacity ?? 1,
+      maxCapacity: body.max_capacity ?? body.maxCapacity!,
+      zone: body.zone,
+      description: body.description,
+      attributes: body.attributes
+    });
+    response.status(201).json({ table: created });
+  })
+);
+
+// Manager edit of table map metadata.
 // Auth + tenant are already resolved by the path-scoped middleware above, and
 // the front-of-house gate let manager/server through — the extra
 // requireMemberRole("manager") here narrows the WRITE to manager+ (a server can
@@ -89,10 +154,23 @@ dashboardRouter.patch(
     const id = tableIdParam.parse(request.params.id);
     const body = updateTableMetadataSchema.parse(request.body);
 
-    // Normalise empty/whitespace description to null (clear) so the UI's empty
-    // field and an explicit clear behave identically.
-    const patch: { zone?: string | null; description?: string | null } = {};
+    const patch: {
+      label?: string;
+      minCapacity?: number;
+      maxCapacity?: number;
+      zone?: string | null;
+      description?: string | null;
+      attributes?: string[];
+    } = {};
+    if (body.label !== undefined) patch.label = body.label;
+    if (body.min_capacity !== undefined || body.minCapacity !== undefined) {
+      patch.minCapacity = body.min_capacity ?? body.minCapacity;
+    }
+    if (body.max_capacity !== undefined || body.maxCapacity !== undefined) {
+      patch.maxCapacity = body.max_capacity ?? body.maxCapacity;
+    }
     if (body.zone !== undefined) patch.zone = body.zone;
+    if (body.attributes !== undefined) patch.attributes = body.attributes;
     if (body.description !== undefined) {
       patch.description = body.description && body.description.trim() ? body.description.trim() : null;
     }
@@ -102,6 +180,45 @@ dashboardRouter.patch(
       throw new AppError(404, "TABLE_NOT_FOUND", "Table not found.");
     }
     response.json({ table: updated });
+  })
+);
+
+dashboardRouter.post(
+  "/api/tables/:id/deactivate",
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const id = tableIdParam.parse(request.params.id);
+    const updated = await deactivateTable(tenantId(request), id);
+    if (!updated) {
+      throw new AppError(404, "TABLE_NOT_FOUND", "Table not found.");
+    }
+    response.status(204).send();
+  })
+);
+
+dashboardRouter.post(
+  "/api/tables/:id/activate",
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const id = tableIdParam.parse(request.params.id);
+    const updated = await activateTable(tenantId(request), id);
+    if (!updated) {
+      throw new AppError(404, "TABLE_NOT_FOUND", "Table not found.");
+    }
+    response.json({ table: updated });
+  })
+);
+
+dashboardRouter.delete(
+  "/api/tables/:id",
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const id = tableIdParam.parse(request.params.id);
+    const deleted = await deleteTable(tenantId(request), id);
+    if (!deleted) {
+      throw new AppError(404, "TABLE_NOT_FOUND", "Table not found.");
+    }
+    response.status(204).send();
   })
 );
 

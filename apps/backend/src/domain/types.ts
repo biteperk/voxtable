@@ -9,6 +9,16 @@ export interface OpeningWindow {
 
 export type OpeningHours = Record<string, OpeningWindow[]>;
 
+export const DEFAULT_OPENING_HOURS: OpeningHours = {
+  monday: [{ open: "17:00", close: "22:00" }],
+  tuesday: [{ open: "17:00", close: "22:00" }],
+  wednesday: [{ open: "17:00", close: "22:00" }],
+  thursday: [{ open: "17:00", close: "22:00" }],
+  friday: [{ open: "17:00", close: "23:00" }],
+  saturday: [{ open: "12:00", close: "23:00" }],
+  sunday: [{ open: "12:00", close: "21:00" }]
+};
+
 export interface RestaurantSettings {
   restaurantId: string;
   bookingDurationMinutes: number;
@@ -22,6 +32,9 @@ export interface AvailableTable {
   label: string;
   minCapacity: number;
   maxCapacity: number;
+  zone?: string | null;
+  description?: string | null;
+  attributes?: string[];
 }
 
 export interface AvailabilityInput {
@@ -29,6 +42,7 @@ export interface AvailabilityInput {
   date: string;
   time: string;
   partySize: number;
+  seatingPreference?: string;
   excludeReservationId?: string;
 }
 
@@ -50,8 +64,10 @@ export interface CreateBookingInput {
   date: string;
   time: string;
   partySize: number;
+  tableId?: string;
   source: BookingSource;
   notes?: string;
+  seatingPreference?: string;
   // Web-channel (Cal.com) bookings may arrive without a parseable phone. The
   // guest already holds a confirmation email, so instead of rejecting we let
   // the caller pass a sentinel (e.g. "web:<uid>") stored verbatim. Voice-path

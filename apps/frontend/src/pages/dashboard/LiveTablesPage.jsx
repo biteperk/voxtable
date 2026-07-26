@@ -40,6 +40,7 @@ export function LiveTablesPage({ navigate }) {
           label: t.label,
           zone: t.zone || null,
           description: t.description || null,
+          attributes: t.attributes ?? [],
           minCapacity: t.min_capacity,
           maxCapacity: t.max_capacity,
           status,
@@ -268,6 +269,13 @@ function TableRow({ table, onSeat, onComplete, onOpenDetails, onEdit, busy }) {
       </span>
       <span className="table-desc" title={table.description || ""}>
         {table.description || "—"}
+        {(table.attributes ?? []).length > 0 && (
+          <span className="table-attr-inline">
+            {table.attributes.slice(0, 3).map((attr) => (
+              <em key={attr}>{attr}</em>
+            ))}
+          </span>
+        )}
       </span>
       <span className="live-tables-action-col">
         {isReserved && (

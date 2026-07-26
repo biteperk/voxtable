@@ -67,22 +67,23 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    // If we just returned from a signInWithRedirect, resolve it first so
-    // onAuthStateChanged fires with the new user immediately.
-    let unsub = () => {};
-    completeRedirectSignIn().finally(() => {
-      unsub = onAuthStateChanged(auth, (next) => {
-        setUser(next);
-        setLoading(false);
-        if (next) {
-          void loadMe();
-        } else {
-          setMemberships([]);
-          setActiveRestaurantId(null);
-          setActiveId(null);
-        }
-      });
+    const unsub = onAuthStateChanged(auth, (next) => {
+      setUser(next);
+      setLoading(false);
+      if (next) {
+        void loadMe();
+      } else {
+        setMemberships([]);
+        setActiveRestaurantId(null);
+        setActiveId(null);
+      }
     });
+
+    // Resolve redirect sign-in in parallel with auth subscription. Waiting for
+    // this first can leave the SPA mounted but visually blank if Firebase's
+    // redirect result call is blocked or slow in local development.
+    void completeRedirectSignIn();
+
     return () => unsub();
   }, []);
 
@@ -132,4 +133,3 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
-

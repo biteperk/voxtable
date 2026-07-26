@@ -38,6 +38,7 @@ export async function checkAvailability(
         time: candidateTime,
         partySize: input.partySize,
         durationMinutes: settings.bookingDurationMinutes,
+        seatingPreference: input.seatingPreference,
         excludeReservationId: input.excludeReservationId
       },
       db

@@ -1,5 +1,5 @@
 import { AppError } from "../domain/errors";
-import { RestaurantSettings } from "../domain/types";
+import { DEFAULT_OPENING_HOURS, RestaurantSettings } from "../domain/types";
 import { DbClient, pool, withTransaction } from "../db/pool";
 import { normalizePhone } from "../utils/phone";
 
@@ -300,7 +300,7 @@ export async function upsertRestaurantSettings(
   await db.query(
     `
     INSERT INTO restaurant_settings (restaurant_id, booking_duration_minutes, opening_hours_json)
-    VALUES ($1, COALESCE($2, 90), COALESCE($3::jsonb, '{}'::jsonb))
+    VALUES ($1, COALESCE($2, 90), COALESCE($3::jsonb, $4::jsonb))
     ON CONFLICT (restaurant_id) DO UPDATE SET
       booking_duration_minutes = COALESCE($2, restaurant_settings.booking_duration_minutes),
       opening_hours_json = COALESCE($3::jsonb, restaurant_settings.opening_hours_json)
@@ -308,7 +308,8 @@ export async function upsertRestaurantSettings(
     [
       restaurantId,
       patch.bookingDurationMinutes ?? null,
-      patch.openingHours === undefined ? null : JSON.stringify(patch.openingHours)
+      patch.openingHours === undefined ? null : JSON.stringify(patch.openingHours),
+      JSON.stringify(DEFAULT_OPENING_HOURS)
     ]
   );
 }
@@ -368,9 +369,9 @@ export async function createRestaurantWithOwner(input: {
     );
 
     await db.query(
-      `INSERT INTO restaurant_settings (restaurant_id) VALUES ($1)
+      `INSERT INTO restaurant_settings (restaurant_id, opening_hours_json) VALUES ($1, $2::jsonb)
        ON CONFLICT (restaurant_id) DO NOTHING`,
-      [restaurantId]
+      [restaurantId, JSON.stringify(DEFAULT_OPENING_HOURS)]
     );
 
     return { restaurantId, existing: false };
