@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { listAvailableTables } from "../../api";
 import { Icon } from "../Icon";
 
 export function NewBookingModal({ onClose, onCreate }) {
@@ -14,11 +15,16 @@ export function NewBookingModal({ onClose, onCreate }) {
     partySize: 2,
     date: todayYmd,
     time: defaultTime,
+    tableId: "",
     notes: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [suggestedTimes, setSuggestedTimes] = useState([]);
+  const [availableTables, setAvailableTables] = useState([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [tableError, setTableError] = useState(null);
+  const availabilityRequestId = useRef(0);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -27,6 +33,55 @@ export function NewBookingModal({ onClose, onCreate }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose, submitting]);
+
+  useEffect(() => {
+    const partySize = Number(form.partySize);
+    const canLoadTables =
+      form.date &&
+      form.time &&
+      Number.isInteger(partySize) &&
+      partySize >= 1 &&
+      partySize <= 20;
+
+    if (!canLoadTables) {
+      setAvailableTables([]);
+      setForm((prev) => (prev.tableId ? { ...prev, tableId: "" } : prev));
+      return undefined;
+    }
+
+    const requestId = availabilityRequestId.current + 1;
+    availabilityRequestId.current = requestId;
+    setTablesLoading(true);
+    setTableError(null);
+
+    const timer = window.setTimeout(() => {
+      listAvailableTables({
+        date: form.date,
+        time: form.time,
+        partySize
+      })
+        .then((data) => {
+          if (availabilityRequestId.current !== requestId) return;
+          const tables = data.tables ?? [];
+          setAvailableTables(tables);
+          setForm((prev) => {
+            if (tables.some((table) => table.id === prev.tableId)) return prev;
+            return { ...prev, tableId: tables[0]?.id ?? "" };
+          });
+        })
+        .catch((e) => {
+          if (availabilityRequestId.current !== requestId) return;
+          setAvailableTables([]);
+          setTableError(e.message ?? "Could not load available tables.");
+          setForm((prev) => (prev.tableId ? { ...prev, tableId: "" } : prev));
+        })
+        .finally(() => {
+          if (availabilityRequestId.current === requestId) setTablesLoading(false);
+        });
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [form.date, form.time, form.partySize]);
 
   const update = (field) => (event) => {
     if (typeof event.target.setCustomValidity === "function") {
@@ -54,6 +109,10 @@ export function NewBookingModal({ onClose, onCreate }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (submitting) return;
+    if (!form.tableId) {
+      setError("Please choose an available table for this reservation.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setSuggestedTimes([]);
@@ -72,10 +131,12 @@ export function NewBookingModal({ onClose, onCreate }) {
   };
 
   const applySuggestedTime = (time) => {
-    setForm((prev) => ({ ...prev, time }));
+    setForm((prev) => ({ ...prev, time, tableId: "" }));
     setError(null);
     setSuggestedTimes([]);
   };
+
+  const selectedTable = availableTables.find((table) => table.id === form.tableId);
 
   return (
     <div
@@ -196,6 +257,43 @@ export function NewBookingModal({ onClose, onCreate }) {
               />
             </label>
           </div>
+
+          <label className="nb-field">
+            <span>Table</span>
+            <select
+              value={form.tableId}
+              onChange={update("tableId")}
+              onInvalid={englishValidity}
+              required
+              disabled={tablesLoading || availableTables.length === 0}
+              lang="en"
+            >
+              {tablesLoading ? (
+                <option value="">Checking available tables...</option>
+              ) : availableTables.length === 0 ? (
+                <option value="">No tables available for this time</option>
+              ) : (
+                availableTables.map((table) => (
+                  <option key={table.id} value={table.id}>
+                    {table.label} · {table.minCapacity}-{table.maxCapacity} seats{table.zone ? ` · ${table.zone}` : ""}
+                  </option>
+                ))
+              )}
+            </select>
+            {tableError ? (
+              <em className="nb-table-hint error">{tableError}</em>
+            ) : selectedTable ? (
+              <em className="nb-table-hint">
+                {(selectedTable.attributes ?? []).length > 0
+                  ? selectedTable.attributes.join(", ")
+                  : selectedTable.description || "Available for this slot"}
+              </em>
+            ) : (
+              <em className="nb-table-hint">
+                {tablesLoading ? "Looking at current reservations..." : "Adjust the time or party size to find a table."}
+              </em>
+            )}
+          </label>
 
           <label className="nb-field">
             <span>Notes</span>

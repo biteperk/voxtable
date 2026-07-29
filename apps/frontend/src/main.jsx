@@ -14,6 +14,7 @@ import { BookingLogPage } from "./pages/dashboard/BookingLogPage";
 import { LiveTablesPage } from "./pages/dashboard/LiveTablesPage";
 import { TableOrderPage } from "./pages/dashboard/TableOrderPage";
 import { ManageMenuPage } from "./pages/dashboard/ManageMenuPage";
+import { ManageTablesPage } from "./pages/dashboard/ManageTablesPage";
 import { KitchenOverviewPage } from "./pages/dashboard/KitchenOverviewPage";
 import { AnalyticsPage } from "./pages/dashboard/AnalyticsPage";
 import { ProfilePage } from "./pages/dashboard/ProfilePage";
@@ -111,6 +112,7 @@ function App() {
       "/live-feed": "Live Feed · VoxTable",
       "/booking-log": "Booking Log · VoxTable",
       "/manage-menu": "Manage Menu · VoxTable",
+      "/manage-tables": "Manage Tables · VoxTable",
       "/kitchen-overview": "Kitchen Overview · VoxTable",
       "/live-tables": "Live Tables · VoxTable",
       "/analytics": "Analytics · VoxTable",
@@ -148,6 +150,7 @@ function App() {
     path.startsWith("/live-tables/") ||
     path === "/booking-log" ||
     path === "/manage-menu" ||
+    path === "/manage-tables" ||
     path === "/kitchen-overview" ||
     path === "/analytics" ||
     path === "/billing" ||
@@ -371,6 +374,7 @@ function AppRouter({ path, navigate, isDashboard }) {
   if (path === "/live-tables") return <LiveTablesPage navigate={navigate} path={path} />;
   if (path === "/booking-log") return <BookingLogPage navigate={navigate} path={path} />;
   if (path === "/manage-menu") return <ManageMenuPage navigate={navigate} path={path} />;
+  if (path === "/manage-tables") return <ManageTablesPage navigate={navigate} path={path} />;
   if (path === "/kitchen-overview") return <KitchenOverviewPage navigate={navigate} path={path} />;
   if (path === "/analytics") return <AnalyticsPage navigate={navigate} path={path} />;
   if (path === "/billing")

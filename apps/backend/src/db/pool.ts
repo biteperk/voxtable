@@ -13,6 +13,12 @@ import { env } from "../config/env";
 // silent date-shifting hazard.
 types.setTypeParser(1082, (value) => value);
 
+// NOTE: the domain-schema search_path ("core,reservations,…,public") that
+// shipped with the split-services branch was deliberately reverted here — all
+// live tables are in `public`, and pointing the search path at not-yet-existing
+// schemas is a trap for the day someone creates one. Reinstate it together
+// with db/baseline-sydney/ at the Sydney cutover (see that folder's README).
+
 // Primary write pool — used by the booking path, Retell webhook handlers, and
 // anything that mutates state. Larger max because each booking holds a client
 // for the duration of the per-slot advisory-lock transaction; under 20+

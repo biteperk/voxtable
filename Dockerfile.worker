@@ -1,0 +1,30 @@
+# ---- Stage 1: Builder ----
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+ENV NODE_OPTIONS=--max-old-space-size=2048
+RUN npm run build:backend
+
+# ---- Stage 2: Worker Runner ----
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
+COPY --from=builder /app/apps/backend/db ./apps/backend/db
+
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+USER appuser
+
+CMD ["node", "apps/backend/dist/worker.js"]

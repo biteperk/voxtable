@@ -11,13 +11,14 @@ import {
   updateReservation,
   upsertCustomer
 } from "../repositories/reservations";
-import { getRestaurantTimezone } from "../repositories/restaurants";
+import { getRestaurantSettings, getRestaurantTimezone } from "../repositories/restaurants";
+import { listAvailableTables } from "../repositories/availability";
 import { checkAvailability, requireAvailableTable } from "./availabilityService";
 import {
   enqueueCancelForReservation,
   enqueueCreateForReservation
 } from "./calcomService";
-import { formatVoiceTime, todayInTz } from "../utils/time";
+import { formatVoiceTime, isWithinOpeningHours, todayInTz } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 
 // The DB-level safety-net unique index (migration 003) catches double-booking
@@ -116,19 +117,56 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
           }, lockClient)
         : undefined);
 
-    // Re-check inside the locked transaction. The earlier check_availability
-    // tool call ran without a lock; in the time it took the caller to confirm,
-    // the slot may have been taken.
-    const availability = await checkAvailability(
-      {
-        restaurantId: input.restaurantId,
-        date: input.date,
-        time: input.time,
-        partySize: input.partySize
-      },
-      lockClient
-    );
-    const tableId = requireAvailableTable(availability);
+    let tableId: string;
+
+    if (input.tableId) {
+      const settings = await getRestaurantSettings(input.restaurantId, lockClient);
+      if (!isWithinOpeningHours(input.date, input.time, settings.bookingDurationMinutes, settings.openingHours)) {
+        throw new AppError(
+          409,
+          "BOOKING_NOT_AVAILABLE",
+          "The restaurant is not open for bookings at the selected time."
+        );
+      }
+
+      const availableTables = await listAvailableTables(
+        {
+          restaurantId: input.restaurantId,
+          date: input.date,
+          time: input.time,
+          partySize: input.partySize,
+          durationMinutes: settings.bookingDurationMinutes
+        },
+        lockClient
+      );
+      const selectedTable = availableTables.find((table) => table.id === input.tableId);
+
+      if (!selectedTable) {
+        throw new AppError(
+          409,
+          "TABLE_NOT_AVAILABLE",
+          "That table is no longer available at the selected time. Please choose another table.",
+          { selectedTableId: input.tableId }
+        );
+      }
+
+      tableId = selectedTable.id;
+    } else {
+      // Re-check inside the locked transaction. The earlier check_availability
+      // tool call ran without a lock; in the time it took the caller to confirm,
+      // the slot may have been taken.
+      const availability = await checkAvailability(
+        {
+          restaurantId: input.restaurantId,
+          date: input.date,
+          time: input.time,
+          partySize: input.partySize,
+          seatingPreference: input.seatingPreference
+        },
+        lockClient
+      );
+      tableId = requireAvailableTable(availability);
+    }
 
     const customerId = await upsertCustomer(
       {

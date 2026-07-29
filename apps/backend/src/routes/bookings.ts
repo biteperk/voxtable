@@ -56,8 +56,10 @@ bookingsRouter.post(
       date: body.date,
       time: body.time,
       partySize,
+      tableId: body.table_id ?? body.tableId,
       source: body.source,
       notes: body.notes,
+      seatingPreference: body.seating_preference ?? body.seatingPreference,
       callLogId: body.call_log_id ?? body.callLogId,
       providerCallId: body.provider_call_id ?? body.providerCallId
     });

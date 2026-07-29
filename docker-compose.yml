@@ -25,7 +25,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.api
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,6 +42,26 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: ["node", "apps/backend/dist/worker.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_SSL: "false"
     restart: unless-stopped
     logging:
       driver: json-file

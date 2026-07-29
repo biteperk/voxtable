@@ -2,27 +2,9 @@ import { env } from "./config/env";
 import { createApp } from "./app";
 import { closePool } from "./db/pool";
 import { warmRestaurantCache } from "./repositories/restaurants";
-import { installCalcomExecutor } from "./services/calcomService";
 import { verifyCalcomSchemasAgainstFixtures } from "./services/calcomSchemas";
 import { initSentry } from "./utils/sentry";
-import { startOutboxWorker, stopOutboxWorker } from "./workers/calcomOutboxWorker";
-import { startCleanupWorker, stopCleanupWorker } from "./workers/cleanupWorker";
-import { startHealthAlerter, stopHealthAlerter } from "./workers/healthAlerter";
-import { startMenuOcrWorker, stopMenuOcrWorker } from "./workers/menuOcrWorker";
-import { startNotificationWorker, stopNotificationWorker } from "./workers/notificationWorker";
-import { startProvisioningWorker, stopProvisioningWorker } from "./workers/provisioningWorker";
 
-// Workers register their shutdown hooks here so server.ts doesn't have to know
-// the full set. PR 1 leaves the array empty; PR 2 adds the Cal.com outbox
-// worker. Each hook gets up to SHUTDOWN_WORKER_TIMEOUT_MS to drain.
-type ShutdownHook = () => Promise<void>;
-const shutdownHooks: ShutdownHook[] = [];
-
-export function registerShutdownHook(hook: ShutdownHook): void {
-  shutdownHooks.push(hook);
-}
-
-const SHUTDOWN_WORKER_TIMEOUT_MS = 10_000;
 const SHUTDOWN_HTTP_TIMEOUT_MS = 15_000;
 
 async function main(): Promise<void> {
@@ -56,35 +38,6 @@ async function main(): Promise<void> {
     console.log(`VoxTable backend listening on port ${env.PORT}`);
   });
 
-  // Cal.com executor is installed before the worker starts so the worker's
-  // very first tick has the real implementation (not the dead-letter stub).
-  // Both are no-ops when CALCOM_SYNC_ENABLED=false.
-  installCalcomExecutor();
-  startOutboxWorker();
-  startHealthAlerter();
-  startCleanupWorker();
-  startMenuOcrWorker();
-  startNotificationWorker();
-  startProvisioningWorker();
-  registerShutdownHook(async () => {
-    await stopOutboxWorker();
-  });
-  registerShutdownHook(async () => {
-    await stopNotificationWorker();
-  });
-  registerShutdownHook(async () => {
-    await stopProvisioningWorker();
-  });
-  registerShutdownHook(async () => {
-    await stopHealthAlerter();
-  });
-  registerShutdownHook(async () => {
-    await stopCleanupWorker();
-  });
-  registerShutdownHook(async () => {
-    await stopMenuOcrWorker();
-  });
-
   let shuttingDown = false;
 
   async function shutdown(signal: string): Promise<void> {
@@ -92,24 +45,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     console.log(`[shutdown] received ${signal}; draining…`);
 
-    // 1) Stop background workers first so they don't enqueue new DB work.
-    const workerResults = await Promise.allSettled(
-      shutdownHooks.map((hook) =>
-        Promise.race([
-          hook(),
-          new Promise<void>((_, reject) =>
-            setTimeout(() => reject(new Error("worker shutdown timeout")), SHUTDOWN_WORKER_TIMEOUT_MS)
-          )
-        ])
-      )
-    );
-    for (const [index, result] of workerResults.entries()) {
-      if (result.status === "rejected") {
-        console.warn(`[shutdown] worker ${index} did not exit cleanly:`, result.reason);
-      }
-    }
-
-    // 2) Stop accepting new HTTP connections and drain in-flight ones.
+    // 1) Stop accepting new HTTP connections and drain in-flight ones.
     await new Promise<void>((resolve) => {
       const httpTimer = setTimeout(() => {
         console.warn(`[shutdown] HTTP drain hit ${SHUTDOWN_HTTP_TIMEOUT_MS}ms; forcing close`);
@@ -121,7 +57,7 @@ async function main(): Promise<void> {
       });
     });
 
-    // 3) Tear down the DB pools last so worker writes can complete.
+    // 2) Tear down the DB pool after in-flight requests have drained.
     try {
       await closePool();
     } catch (error) {
