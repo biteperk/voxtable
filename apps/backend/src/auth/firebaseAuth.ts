@@ -125,7 +125,11 @@ async function firebaseAuthMiddleware(
     // check. Invited restaurant members are also allowed even when their email
     // is not in the platform bootstrap allowlist; otherwise manager-driven
     // staff onboarding would still require an ops env change per employee.
-    if (allowedEmails.size > 0) {
+    // With SELF_SERVE_SIGNUP_ENABLED the allowlist stops gating dashboard
+    // routes entirely — any verified account may sign up and create a tenant
+    // (that IS the semantics of self-serve; membership scoping still isolates
+    // tenants, and requireAdminRole keeps its own DASHBOARD_ADMIN_EMAILS gate).
+    if (allowedEmails.size > 0 && !env.SELF_SERVE_SIGNUP_ENABLED) {
       const email = decoded.email.toLowerCase();
       const allowlisted = allowedEmails.has(email);
       const hasMembership =

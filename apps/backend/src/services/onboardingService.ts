@@ -11,6 +11,7 @@ import type { OnboardingStatus } from "../repositories/restaurants";
 const STATUS_ORDER: OnboardingStatus[] = [
   "account_created",
   "profile",
+  "agreement",
   "menu",
   "trial",
   "provisioning",
@@ -24,6 +25,7 @@ function rank(status: OnboardingStatus): number {
 
 export type OnboardingEvent =
   | "profile_completed"
+  | "agreement_completed"
   | "menu_completed"
   | "trial_started"
   | "subscription_active"
@@ -33,6 +35,11 @@ export type OnboardingEvent =
 
 const EVENT_TARGET: Record<OnboardingEvent, OnboardingStatus> = {
   profile_completed: "profile",
+  // agreement_completed is deliberately NOT accepted by the generic
+  // /api/onboarding/advance endpoint (it's absent from onboardingAdvanceSchema)
+  // — only POST /api/onboarding/agreement fires it, because the transition must
+  // be accompanied by the consent + acceptance-ledger write in the same txn.
+  agreement_completed: "agreement",
   menu_completed: "menu",
   trial_started: "trial",
   subscription_active: "provisioning",
@@ -99,6 +106,7 @@ export interface ChecklistStep {
 // Wizard steps, each marked done once the restaurant reaches `doneRank`.
 const WIZARD_STEPS: Array<{ key: string; label: string; href: string; doneRank: number }> = [
   { key: "profile", label: "Restaurant profile", href: "/onboarding/profile", doneRank: rank("profile") },
+  { key: "agreement", label: "Service & data setup", href: "/onboarding/agreement", doneRank: rank("agreement") },
   { key: "menu", label: "Add your menu", href: "/onboarding/menu", doneRank: rank("menu") },
   { key: "trial", label: "Start free trial", href: "/onboarding/trial", doneRank: rank("trial") },
   { key: "phone", label: "Connect your phone", href: "/onboarding/phone", doneRank: rank("live") }

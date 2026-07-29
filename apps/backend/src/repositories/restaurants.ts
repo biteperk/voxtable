@@ -6,6 +6,7 @@ import { normalizePhone } from "../utils/phone";
 export type OnboardingStatus =
   | "account_created"
   | "profile"
+  | "agreement"
   | "menu"
   | "trial"
   | "provisioning"
@@ -448,7 +449,7 @@ export async function cancelAbandonedOnboarding(days: number): Promise<number> {
   const result = await pool.query<{ id: string }>(
     `UPDATE restaurants
         SET onboarding_status = 'cancelled'
-      WHERE onboarding_status IN ('account_created', 'profile', 'menu')
+      WHERE onboarding_status IN ('account_created', 'profile', 'agreement', 'menu')
         AND updated_at < now() - ($1 || ' days')::interval
       RETURNING id`,
     [String(days)]

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isValidAbn } from "../utils/abn";
+
 function isValidCalendarDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
 
@@ -346,9 +348,68 @@ export const restaurantProfileSchema = z.object({
 });
 
 // Owner-driven onboarding transitions only. Subscription/provisioning events
-// are server-internal (Stripe webhook / admin) and are not accepted here.
+// are server-internal (Stripe webhook / admin), and agreement_completed only
+// fires from POST /api/onboarding/agreement (the transition must carry the
+// consent + acceptance-ledger write) — none of those are accepted here.
 export const onboardingAdvanceSchema = z.object({
   event: z.enum(["profile_completed", "menu_completed", "trial_started"])
+});
+
+// --- Legal layer: the Order Form as a form (agreement wizard step) ----------
+
+// Sellable services. voxconcierge ships dark behind SERVICES_VOXCONCIERGE_ENABLED
+// (checked at the route — schemas stay env-free). voxdrive is deliberately
+// absent: it is a concept product and its absence from this enum IS the
+// enforcement that it can never be sold.
+export const AGREEMENT_SERVICES = ["voxtable", "voxorder", "voxconcierge"] as const;
+
+// en-AU only until multilingual genuinely ships (decision D2, 29 Jul 2026):
+// the CSA is narrowed to English rather than promising languages the agent
+// cannot announce itself in. Deliberately not a client-supplied field.
+export const AGREEMENT_LANGUAGES = ["en-AU"] as const;
+
+export const agreementSchema = z.object({
+  client_legal_name: z.string().trim().min(2).max(200),
+  client_abn: z
+    .string()
+    .trim()
+    .transform((s) => s.replace(/\s+/g, ""))
+    .pipe(
+      z
+        .string()
+        .regex(/^\d{11}$/, "ABN must be 11 digits")
+        .refine(isValidAbn, "That ABN fails the ATO checksum — please re-check it.")
+    ),
+  services: z.array(z.enum(AGREEMENT_SERVICES)).nonempty("Select at least one service."),
+  phone_mode: z.enum(["forward_existing", "new_dedicated"]),
+  delivery_targets: z
+    .object({
+      emails: z.array(z.string().email().max(160)).max(5).default([]),
+      dashboard: z.boolean().default(true)
+    })
+    .default({ emails: [], dashboard: true }),
+  // 30 or 90 days (Privacy & Data Handling Schedule §8). There is
+  // intentionally no "keep forever" option.
+  retention_days: z.union([z.literal(30), z.literal(90)]),
+  storage_tier: z.enum(["everything", "everything_except_pii"]),
+  pii_redaction: z.boolean().default(false),
+  service_start_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "start date must be YYYY-MM-DD")
+    .optional(),
+  // Three SEPARATE consents doing three different legal jobs: contract
+  // acceptance (CSA + Schedule), the APP 8 overseas-processing acknowledgement
+  // (CSA 6.4), and the mandatory caller-disclosure warranty (CSA 4.3).
+  // z.literal(true): absent or false both fail validation.
+  consent_terms: z.literal(true, {
+    errorMap: () => ({ message: "You must accept the Client Services Agreement to continue." })
+  }),
+  consent_overseas: z.literal(true, {
+    errorMap: () => ({ message: "You must acknowledge the overseas-processing disclosure." })
+  }),
+  consent_disclosure: z.literal(true, {
+    errorMap: () => ({ message: "You must acknowledge the mandatory caller disclosure." })
+  })
 });
 
 // Admin provisioning bind (Phase 4a) — all optional so an admin can fill in

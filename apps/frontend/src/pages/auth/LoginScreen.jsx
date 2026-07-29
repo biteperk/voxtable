@@ -83,7 +83,15 @@ export function LoginScreen({ navigate }) {
             Back to home
           </button>
           <p className="login-legal">
-            By continuing, you agree to our Terms & Privacy Policy.
+            By continuing, you agree to our{" "}
+            <a href="https://biteperk.com.au/legal/terms/" target="_blank" rel="noreferrer">
+              Terms
+            </a>{" "}
+            &amp;{" "}
+            <a href="https://biteperk.com.au/legal/privacy/" target="_blank" rel="noreferrer">
+              Privacy Policy
+            </a>
+            .
           </p>
         </div>
       </div>

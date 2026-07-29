@@ -5,6 +5,7 @@ import { getOnboardingStatus } from "../../api";
 import { Icon } from "../../components/Icon";
 import { CreateRestaurantStep } from "./steps/CreateRestaurantStep";
 import { ProfileStep } from "./steps/ProfileStep";
+import { AgreementStep } from "./steps/AgreementStep";
 import { MenuStep } from "./steps/MenuStep";
 import { TrialStep } from "./steps/TrialStep";
 import { PhoneStep } from "./steps/PhoneStep";
@@ -19,6 +20,7 @@ function OnboardingShell({ checklist, children, onSignOut, welcome = false, curr
   const allDone = total > 0 && doneCount === total;
   const ONBOARDING_CONTEXT = {
     profile: "Used by Bella on every call — change it anytime",
+    agreement: "Your agreement & data choices — takes about two minutes",
     menu: "Lets Bella answer “how much is…” questions",
     trial: "Card not charged for 14 days · cancel anytime",
     phone: "Works with Telstra, Optus & Vodafone"
@@ -179,6 +181,8 @@ export function OnboardingWizard({ navigate }) {
   let content;
   if (current === "profile") {
     content = <ProfileStep onSaved={load} />;
+  } else if (current === "agreement") {
+    content = <AgreementStep onSaved={load} />;
   } else if (current === "menu") {
     content = <MenuStep onContinue={load} navigate={navigate} />;
   } else if (current === "trial") {

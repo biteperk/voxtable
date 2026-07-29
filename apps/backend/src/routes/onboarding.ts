@@ -5,8 +5,19 @@ import { AuthenticatedRequest, requireFirebaseAuth } from "../auth/firebaseAuth"
 import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import { createRestaurantSchema, onboardingAdvanceSchema } from "../http/schemas";
+import {
+  AGREEMENT_LANGUAGES,
+  AGREEMENT_SERVICES,
+  agreementSchema,
+  createRestaurantSchema,
+  onboardingAdvanceSchema
+} from "../http/schemas";
 import { pool, withTransaction } from "../db/pool";
+import {
+  getLatestAcceptance,
+  insertAcceptance,
+  saveAgreementElections
+} from "../repositories/agreements";
 import { countCallsSince } from "../repositories/callLogs";
 import { getUserMemberships, upsertUser } from "../repositories/members";
 import {
@@ -170,6 +181,130 @@ onboardingRouter.post(
     });
 
     response.json({ onboarding_status: next, checklist: computeChecklist(next) });
+  })
+);
+
+// Agreement step config + state: which document set the wizard shows, which
+// services can be offered, and the latest recorded acceptance (if any). Read
+// is manager-level; accepting (below) is owner-only.
+onboardingRouter.get(
+  "/api/onboarding/agreement",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const restaurantId = tenantId(request);
+    const acceptance = await getLatestAcceptance(restaurantId);
+    response.json({
+      document_set_version: env.TERMS_DOCUMENT_SET_VERSION,
+      csa_url: env.TERMS_CSA_URL,
+      schedule_url: env.TERMS_SCHEDULE_URL,
+      // voxdrive is deliberately absent from AGREEMENT_SERVICES (concept only);
+      // voxconcierge appears once its release flag is on.
+      services_available: AGREEMENT_SERVICES.filter(
+        (s) => s !== "voxconcierge" || env.SERVICES_VOXCONCIERGE_ENABLED
+      ),
+      languages: AGREEMENT_LANGUAGES,
+      accepted: acceptance
+        ? {
+            accepted_at: acceptance.accepted_at,
+            document_set_version: acceptance.document_set_version,
+            order_form: acceptance.order_form_json
+          }
+        : null
+    });
+  })
+);
+
+// Owner accepts the Client Services Agreement + Privacy & Data Handling
+// Schedule and elects the Order-Form values. The acceptance-ledger insert, the
+// elections write, and the state-machine advance are ONE transaction — the
+// status can never move past 'agreement' without a matching evidence row.
+// Re-acceptance (e.g. a new document version) appends a new ledger row and
+// overwrites the elections; the status advance is then an idempotent no-op.
+onboardingRouter.post(
+  "/api/onboarding/agreement",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireMemberRole("owner"),
+  asyncHandler(async (request: AuthenticatedRequest, response) => {
+    const restaurantId = tenantId(request);
+    const user = actingUser(request);
+    const body = agreementSchema.parse(request.body);
+
+    // An acceptance recorded against DRAFT documents is evidence of nothing.
+    // Boot-time env validation blocks the self-serve flag + DRAFT combination;
+    // this guards the admin-invited path too.
+    if (env.APP_ENV === "production" && env.TERMS_DOCUMENT_SET_VERSION === "DRAFT") {
+      throw new AppError(
+        503,
+        "TERMS_NOT_PUBLISHED",
+        "The service agreement isn't available yet — please try again later."
+      );
+    }
+
+    if (body.services.includes("voxconcierge") && !env.SERVICES_VOXCONCIERGE_ENABLED) {
+      throw new AppError(400, "SERVICE_NOT_AVAILABLE", "VoxConcierge isn't available yet.");
+    }
+
+    const result = await withTransaction(async (db) => {
+      // Same lock key as /advance so the two transition paths serialize.
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        `onboard-advance:${restaurantId}`
+      ]);
+
+      const current = await getOnboardingStatus(restaurantId, db);
+      if (!current) {
+        throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
+      }
+
+      // Throws 409 if the profile step hasn't completed yet.
+      const target = nextOnboardingStatus(current, "agreement_completed");
+
+      await saveAgreementElections(
+        restaurantId,
+        {
+          clientLegalName: body.client_legal_name,
+          clientAbn: body.client_abn,
+          services: body.services,
+          phoneMode: body.phone_mode,
+          deliveryTargets: body.delivery_targets,
+          retentionDays: body.retention_days,
+          storageTier: body.storage_tier,
+          piiRedaction: body.pii_redaction,
+          serviceStartDate: body.service_start_date ?? null
+        },
+        env.TERMS_DOCUMENT_SET_VERSION,
+        db
+      );
+
+      const acceptanceId = await insertAcceptance(
+        {
+          restaurantId,
+          userId: user.uid,
+          channel: "online",
+          documentSetVersion: env.TERMS_DOCUMENT_SET_VERSION,
+          csaSha256: env.TERMS_CSA_SHA256 ?? "DRAFT",
+          scheduleSha256: env.TERMS_SCHEDULE_SHA256 ?? "DRAFT",
+          consentTerms: body.consent_terms,
+          consentOverseas: body.consent_overseas,
+          consentDisclosure: body.consent_disclosure,
+          ipAddress: request.ip ?? null,
+          userAgent: request.header("user-agent") ?? null,
+          orderForm: body
+        },
+        db
+      );
+
+      if (target !== current) await setOnboardingStatus(restaurantId, target, db);
+      return { target, acceptanceId };
+    });
+
+    response.status(201).json({
+      onboarding_status: result.target,
+      checklist: computeChecklist(result.target),
+      acceptance_id: result.acceptanceId
+    });
   })
 );
 

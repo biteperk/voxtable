@@ -12511,3 +12511,44 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 .staff-confirm-modal {
   max-width: 26rem;
 }
+
+/* ===== Agreement step (legal layer) ===== */
+/* Three separate consents + the redaction election. Checkbox rows follow the
+   dashboard's accent-color convention; links inherit the muted text colour so
+   the legal block stays quiet next to the form. */
+.onboarding-consents {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.onboarding-consents-legal {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--outline-variant, rgba(255, 255, 255, 0.12));
+}
+.onboarding-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+.onboarding-consent input[type="checkbox"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  accent-color: var(--primary);
+}
+.onboarding-consent a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* Login-footer legal links (were plain text with no documents behind them). */
+.login-legal a {
+  color: inherit;
+  text-decoration: underline;
+}

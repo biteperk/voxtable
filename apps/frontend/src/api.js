@@ -118,6 +118,17 @@ export function advanceOnboarding(event) {
   });
 }
 
+export function getAgreement() {
+  return authedFetch(`/api/onboarding/agreement`);
+}
+
+export function submitAgreement(payload) {
+  return authedFetch(`/api/onboarding/agreement`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getPhoneSetup() {
   return authedFetch(`/api/onboarding/phone-setup`);
 }

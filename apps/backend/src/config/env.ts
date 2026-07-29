@@ -168,7 +168,30 @@ const envSchema = z
   // Template Retell agent to clone per restaurant.
   RETELL_TEMPLATE_AGENT_ID: z.string().optional(),
   // Area code to prefer when buying AU numbers (e.g. "2" for Sydney).
-  PROVISIONING_TWILIO_AREA_CODE: z.string().optional()
+  PROVISIONING_TWILIO_AREA_CODE: z.string().optional(),
+
+  // Legal layer (agreement wizard step). The Client Services Agreement and
+  // Privacy & Data Handling Schedule are published on biteperk.com.au; the app
+  // records WHICH version (plus content hashes of the published pages) each
+  // owner accepted. "DRAFT" is a sentinel meaning "no executed documents yet":
+  // the agreement endpoint refuses it in production, and superRefine below
+  // refuses to boot production with self-serve signup on while it stands.
+  TERMS_DOCUMENT_SET_VERSION: z.string().trim().min(1).default("DRAFT"),
+  // Interim URLs are the live site terms/privacy pages; switch to the
+  // versioned CSA/Schedule URLs when the executed documents publish.
+  TERMS_CSA_URL: z.string().url().default("https://biteperk.com.au/legal/terms/"),
+  TERMS_SCHEDULE_URL: z.string().url().default("https://biteperk.com.au/legal/privacy/"),
+  TERMS_CSA_SHA256: z.string().trim().optional(),
+  TERMS_SCHEDULE_SHA256: z.string().trim().optional(),
+  // Self-serve signup: lets a verified account that is NOT in
+  // DASHBOARD_ALLOWED_EMAILS create a restaurant and enter the wizard (the
+  // allowlist remains the gate while this is off, and stays authoritative for
+  // admin routes regardless). Kill-switch pattern: ships OFF.
+  SELF_SERVE_SIGNUP_ENABLED: boolFlag(),
+  // VoxConcierge is contracted "when released" — the wizard only offers it
+  // once this flag is on. VoxDrive is deliberately not a service value
+  // anywhere: it is a concept and must never be sold.
+  SERVICES_VOXCONCIERGE_ENABLED: boolFlag()
   })
   .superRefine((value, ctx) => {
     if (value.APP_ENV !== "production") {
@@ -270,6 +293,29 @@ const envSchema = z
         path: ["RETELL_TEMPLATE_AGENT_ID"],
         message: "RETELL_TEMPLATE_AGENT_ID is required when PROVISIONING_AUTO_ENABLED=true."
       });
+    }
+
+    // Legal layer — self-serve signup must never run against DRAFT documents:
+    // an acceptance recorded against "DRAFT" is evidence of nothing. The
+    // content hashes pin the acceptance to the exact published bytes.
+    if (value.SELF_SERVE_SIGNUP_ENABLED) {
+      if (value.TERMS_DOCUMENT_SET_VERSION === "DRAFT") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["TERMS_DOCUMENT_SET_VERSION"],
+          message:
+            "TERMS_DOCUMENT_SET_VERSION must name a published document set (not DRAFT) " +
+            "when SELF_SERVE_SIGNUP_ENABLED=true."
+        });
+      }
+      requireInProd(
+        "TERMS_CSA_SHA256",
+        "TERMS_CSA_SHA256 is required when SELF_SERVE_SIGNUP_ENABLED=true."
+      );
+      requireInProd(
+        "TERMS_SCHEDULE_SHA256",
+        "TERMS_SCHEDULE_SHA256 is required when SELF_SERVE_SIGNUP_ENABLED=true."
+      );
     }
   });
 
