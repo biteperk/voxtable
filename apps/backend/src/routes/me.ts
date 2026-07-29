@@ -1,8 +1,16 @@
 import { Router } from "express";
+import { z } from "zod";
 
-import { AuthenticatedRequest, requireFirebaseAuth } from "../auth/firebaseAuth";
+import {
+  AuthenticatedRequest,
+  requireFirebaseAuth,
+  requireFirebaseIdentity
+} from "../auth/firebaseAuth";
+import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import { getUserMemberships, upsertUser } from "../repositories/members";
+import { contactLimiter } from "../http/rateLimiters";
+import { getUserMemberships, updateUserContact, upsertUser } from "../repositories/members";
+import { normalizePhone } from "../utils/phone";
 
 // Identity endpoint the dashboard calls on load to learn who the user is and
 // which restaurant(s) they belong to. This is also where the `users` row is
@@ -69,5 +77,53 @@ meRouter.get(
       // and sends X-Restaurant-Id thereafter. null → frontend must pick.
       active_restaurant_id: memberships.length === 1 ? memberships[0]!.restaurantId : null
     });
+  })
+);
+
+const contactSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  phone: z.string().trim().min(6).max(32).optional()
+});
+
+// Representative contact details (the person, not the venue): the mobile
+// number captured at signup, flushed by the frontend on the first VERIFIED
+// session. requireFirebaseIdentity: verified email enforced (shared
+// middleware), allowlist deliberately NOT — this is lead capture and must
+// work before any membership or allowlist entry exists. Writes only the
+// caller's own users row; contactLimiter caps abuse.
+meRouter.post(
+  "/api/me/contact",
+  requireFirebaseIdentity,
+  contactLimiter,
+  asyncHandler(async (request: AuthenticatedRequest, response) => {
+    const user = request.firebaseUser;
+    if (!user) {
+      // Dev escape hatch — accept and no-op against the synthetic identity.
+      response.json({ ok: true, dev: true });
+      return;
+    }
+
+    const body = contactSchema.parse(request.body);
+
+    let phone: string | null = null;
+    if (body.phone !== undefined) {
+      phone = normalizePhone(body.phone);
+      if (!phone) {
+        throw new AppError(
+          400,
+          "INVALID_PHONE",
+          "That mobile number doesn't look right — please use an Australian mobile like 04xx xxx xxx."
+        );
+      }
+    }
+
+    await updateUserContact({
+      id: user.uid,
+      email: user.email ?? "",
+      name: body.name ?? null,
+      phone
+    });
+
+    response.json({ ok: true });
   })
 );

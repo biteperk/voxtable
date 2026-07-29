@@ -174,3 +174,28 @@ export async function upsertUser(
     [input.id, input.email, input.name ?? null, input.emailVerified ?? false]
   );
 }
+
+/**
+ * Representative contact details captured at self-serve signup (migration
+ * 021): the person's mobile (E.164, normalized by the caller) and optionally
+ * a display-name refresh. Row may not exist yet (contact can land before the
+ * first /api/me hit), so this upserts. signup_source is stamped once and
+ * never overwritten.
+ */
+export async function updateUserContact(
+  input: { id: string; email: string; name?: string | null; phone?: string | null },
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(
+    `
+    INSERT INTO users (id, email, name, email_verified, phone, signup_source)
+    VALUES ($1, $2, $3, true, $4, 'self_serve')
+    ON CONFLICT (id) DO UPDATE SET
+      name = COALESCE(EXCLUDED.name, users.name),
+      phone = COALESCE(EXCLUDED.phone, users.phone),
+      signup_source = COALESCE(users.signup_source, 'self_serve'),
+      updated_at = now()
+    `,
+    [input.id, input.email, input.name ?? null, input.phone ?? null]
+  );
+}

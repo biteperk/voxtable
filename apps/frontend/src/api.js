@@ -98,6 +98,15 @@ export function getMe() {
   return authedFetch(`/api/me`);
 }
 
+// Representative contact details captured at signup (name, mobile) — persisted
+// once the account is verified. See flushPendingSignup in auth.jsx.
+export function submitContact(payload) {
+  return authedFetch(`/api/me/contact`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 // ===== Onboarding =====
 
 export function createRestaurant(payload) {

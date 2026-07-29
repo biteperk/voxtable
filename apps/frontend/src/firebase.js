@@ -2,10 +2,15 @@ import { initializeApp } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
   getRedirectResult,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
-  signOut
+  signOut,
+  updateProfile
 } from "firebase/auth";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -104,4 +109,42 @@ export async function completeRedirectSignIn() {
 
 export async function signOutUser() {
   return signOut(auth);
+}
+
+// ===== Email/password accounts (self-serve signup) =====
+
+// The verification link runs through Firebase's hosted action handler, which
+// applies the code and then redirects to this URL — our own screen picks the
+// user up from there. The origin must be in Firebase's authorized domains.
+const verifyContinueUrl = () => ({ url: `${window.location.origin}/verify-email` });
+
+/**
+ * Create an email/password account for a restaurant representative.
+ * Order matters: the profile is set BEFORE the verification email is sent so
+ * the template's %DISPLAY_NAME% renders the person's name, not a blank.
+ * Returns the (signed-in, unverified) user; the caller routes to /verify-email.
+ */
+export async function createAccount({ name, email, password }) {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  if (name) {
+    await updateProfile(cred.user, { displayName: name });
+  }
+  await sendEmailVerification(cred.user, verifyContinueUrl());
+  return cred.user;
+}
+
+export async function signInWithEmail(email, password) {
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred.user;
+}
+
+/** Re-send the verification email for the CURRENT signed-in user. */
+export async function resendVerification() {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in.");
+  await sendEmailVerification(user, verifyContinueUrl());
+}
+
+export async function sendPasswordReset(email) {
+  await sendPasswordResetEmail(auth, email);
 }
