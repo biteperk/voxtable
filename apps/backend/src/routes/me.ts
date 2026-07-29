@@ -96,12 +96,14 @@ meRouter.post(
   requireFirebaseIdentity,
   contactLimiter,
   asyncHandler(async (request: AuthenticatedRequest, response) => {
-    const user = request.firebaseUser;
-    if (!user) {
-      // Dev escape hatch — accept and no-op against the synthetic identity.
-      response.json({ ok: true, dev: true });
-      return;
-    }
+    // Dev escape hatch (DASHBOARD_VERIFY_AUTH=false): write against the same
+    // synthetic identity /api/me uses, so the flush path is testable locally
+    // instead of silently no-oping (a no-op here made local dev unable to
+    // prove the lead-capture write at all).
+    const user = request.firebaseUser ?? {
+      uid: "dev-local-user",
+      email: "dev@local.test"
+    };
 
     const body = contactSchema.parse(request.body);
 
