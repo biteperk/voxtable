@@ -23,6 +23,7 @@ import { ManagePlanPage } from "./pages/billing/ManagePlanPage";
 import { UpdatePaymentDetailsPage } from "./pages/billing/UpdatePaymentDetailsPage";
 import { OnboardingWizard } from "./pages/onboarding/OnboardingWizard";
 import { LoginScreen } from "./pages/auth/LoginScreen";
+import { VerifyEmailScreen } from "./pages/auth/VerifyEmailScreen";
 import { AcceptInvitePage } from "./pages/auth/AcceptInvitePage";
 
 
@@ -121,6 +122,7 @@ function App() {
       "/update-payment-details": "Payment Methods · VoxTable",
       "/profile": "Profile · VoxTable",
       "/onboarding": "Get started · VoxTable",
+      "/verify-email": "Verify your email · VoxTable",
     };
     if (/^\/live-feed\/[^/]+$/.test(path)) {
       document.title = "Call detail · VoxTable";
@@ -261,6 +263,7 @@ function AppRouter({ path, navigate, isDashboard }) {
   const { user, loading, hasMinRole, memberships, meLoading } = useAuth();
   const isOnboarding = path === "/onboarding" || path.startsWith("/onboarding/");
   const isInvite = path === "/invite";
+  const isVerifyEmail = path === "/verify-email";
   const gate = useOnboardingGate();
 
   // Gate redirects — only after auth + gate are resolved, and only ever toward
@@ -314,12 +317,37 @@ function AppRouter({ path, navigate, isDashboard }) {
     return <AcceptInvitePage navigate={navigate} />;
   }
 
+  // /verify-email is the continue-URL Firebase's action handler bounces back
+  // to after the user clicks the emailed link. Outside the dashboard gates:
+  // the link may be opened on a device with no session (phone), in which case
+  // the user just signs in and the verified account sails through.
+  if (isVerifyEmail) {
+    if (loading) return <FullPageMessage title="Loading..." />;
+    if (!user) {
+      return <LoginScreen navigate={navigate} notice="Email verified — sign in to continue." />;
+    }
+    if (user.emailVerified) {
+      // Already verified (e.g. revisit) — nothing to do here.
+      navigate("/onboarding", { replace: true });
+      return <FullPageMessage title="Loading..." />;
+    }
+    return <VerifyEmailScreen navigate={navigate} />;
+  }
+
   if (isDashboard && loading) {
     return <FullPageMessage title="Loading..." />;
   }
 
   if (isDashboard && !user) {
     return <LoginScreen navigate={navigate} />;
+  }
+
+  // A signed-in but unverified account (email/password signup mid-funnel, or
+  // the rare unverified-Google case) must verify before anything else — the
+  // backend 403s every call anyway; without this gate the wizard renders
+  // broken and silent.
+  if (isDashboard && user && !user.emailVerified) {
+    return <VerifyEmailScreen navigate={navigate} />;
   }
 
   // Hold dashboard surfaces until we can route confidently, so an incomplete

@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 
 import { auth, completeRedirectSignIn } from "./firebase";
-import { getMe, getActiveRestaurantId, setActiveRestaurantId } from "./api";
+import { getMe, getActiveRestaurantId, setActiveRestaurantId, submitContact } from "./api";
+import { PENDING_SIGNUP_KEY } from "./pages/auth/LoginScreen";
 
 const ROLE_RANK = { kitchen: 1, server: 2, staff: 2, manager: 3, owner: 4 };
 
@@ -33,6 +34,36 @@ function roleForRestaurant(memberships, restaurantId) {
   if (!restaurantId) return null;
   const m = memberships.find((m) => m.restaurant_id === restaurantId);
   return m?.role ?? null;
+}
+
+// Representative details captured at signup can only be persisted once the
+// account is verified (the backend refuses unverified requests). Flush the
+// stash on any verified session so the same-device path AND the
+// "verified elsewhere, came back later" path both land the record.
+// Best-effort: a failed flush keeps the stash for the next session.
+async function flushPendingSignup() {
+  let raw;
+  try {
+    raw = localStorage.getItem(PENDING_SIGNUP_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  try {
+    const pending = JSON.parse(raw);
+    await submitContact({ name: pending.name || undefined, phone: pending.phone || undefined });
+    localStorage.removeItem(PENDING_SIGNUP_KEY);
+  } catch {
+    // Invalid JSON is unrecoverable — drop it; a network/API failure keeps
+    // the stash so the next verified session retries.
+    if (raw && raw[0] !== "{") {
+      try {
+        localStorage.removeItem(PENDING_SIGNUP_KEY);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 }
 
 export function AuthProvider({ children }) {
@@ -70,9 +101,14 @@ export function AuthProvider({ children }) {
     const unsub = onAuthStateChanged(auth, (next) => {
       setUser(next);
       setLoading(false);
-      if (next) {
+      if (next && next.emailVerified) {
+        // Verified accounts only — an unverified email/password signup would
+        // just collect a guaranteed 403 EMAIL_NOT_VERIFIED here (and land in a
+        // silently broken wizard). The verify screen calls refreshMe() itself
+        // after the post-verification token refresh.
         void loadMe();
-      } else {
+        void flushPendingSignup();
+      } else if (!next) {
         setMemberships([]);
         setActiveRestaurantId(null);
         setActiveId(null);

@@ -43,3 +43,15 @@ export const menuIngestLimiter = rateLimit({
   keyGenerator: uidOrIpKey,
   message: { error: { code: "RATE_LIMITED", message: "You're uploading menus too quickly — please wait a moment." } }
 });
+
+// Contact-details upsert (signup flush + profile edits). Cheap write to the
+// caller's own users row, but deliberately reachable by any verified account
+// pre-allowlist — so cap it like restaurant creation.
+export const contactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: uidOrIpKey,
+  message: { error: { code: "RATE_LIMITED", message: "Too many attempts — please try again later." } }
+});
