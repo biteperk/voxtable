@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project context
 
-**VoxTable** is a voice-AI booking platform for restaurants, built by **Biteperk Pty Ltd** (public brand site: `biteperk.com.au`). *(Product brand renamed VocoTable → PerkTable → **VoxTable**; the lowercase `vocotable` infra identity — subdomain, Firebase project id `vocotable`/`vocotable-497209`, `vocotable_number` API field, event/storage keys — is deliberately retained until a DNS migration. The VoxTable rename **shipped 22 July 2026**, after trademark clearance, alongside the Vox rename on biteperk.com.au. Pushing to `main` auto-deploys via two GitHub Actions — `deploy-frontend.yml` (paths `apps/frontend/**`, `apps/kds/**`, `firebase.json`, `.firebaserc`, `package*.json`) and `deploy-backend.yml` (paths `apps/backend/**`, `package*.json`, `Dockerfile`, `docker-compose*.yml`) — so a change touching only one side deploys only that side.)* The original MVP target is **Natalia's Bistro** in Sydney. Customer dials a Twilio AU number, Retell AI's voice agent ("Bella") takes the booking, the backend writes it to Postgres, and the React dashboard renders calls + reservations live. Multi-tenant self-serve onboarding (Phases 0–5: create restaurant → profile → menu → trial → phone) is merged behind kill-switch flags. The original build plan lives in [`plan-phases/`](plan-phases/) (historical); the up-to-date architecture docs are in Confluence (Vocotable space) — `apps/backend/docs/architecture_diagram.md` is stale (see its banner).
+**VoxTable** is a voice-AI booking platform for restaurants, built by **Biteperk Pty Ltd** (public brand site: `biteperk.com.au`). *(Product brand renamed VocoTable → PerkTable → **VoxTable**; the lowercase `vocotable` infra identity — subdomain, Firebase project id `vocotable`/`vocotable-497209`, `vocotable_number` API field, event/storage keys — is deliberately retained until a DNS migration. The VoxTable rename **shipped 22 July 2026**, after trademark clearance, alongside the Vox rename on biteperk.com.au. Pushing to `main` auto-deploys via two GitHub Actions — `deploy-frontend.yml` (paths `apps/frontend/**`, `apps/kds/**`, `firebase.json`, `.firebaserc`, `package*.json`) and `deploy-backend.yml` (paths `apps/backend/**`, `package*.json`, `Dockerfile`, `docker-compose*.yml`) — so a change touching only one side deploys only that side.)* The original MVP target is **Natalia's Bistro** in Sydney. Customer dials a Twilio AU number, Retell AI's voice agent ("Bella") takes the booking, the backend writes it to Postgres, and the React dashboard renders calls + reservations live. Multi-tenant self-serve onboarding (create restaurant → profile → **agreement** → menu → trial → phone) is merged behind kill-switch flags — the agreement step (rev. 29 Jul 2026) is the legal layer: Order-Form elections + three separate consents recorded in the append-only `agreement_acceptances` ledger. The backend runs as **two processes since 29 Jul 2026**: `server.ts` (api) and `worker.ts` (all background workers), built as separate images (`Dockerfile.api`, `Dockerfile.worker`) and separate compose services. The original build plan lives in [`plan-phases/`](plan-phases/) (historical); the up-to-date architecture docs are in Confluence (Vocotable space) — `apps/backend/docs/architecture_diagram.md` is stale (see its banner).
 
 ## Commands
 
@@ -16,19 +16,22 @@ npm run db:migrate                      # applies anything new in apps/backend/d
 npm run db:seed                         # idempotent — seeds Natalia's Bistro restaurant + tables
 
 # Local dev
-npm run dev:backend                     # tsx watch on apps/backend/src/server.ts (port 3050)
+npm run dev:backend                     # tsx watch on apps/backend/src/server.ts (port 3050, api only)
+npm run dev:worker                      # tsx watch on apps/backend/src/worker.ts (background workers)
 npm run dev:frontend                    # vite dev server (port 3051)
 npm run dev:kds                         # kitchen display app (separate Vite app)
-npm run check                           # tsc backend + vite build frontend + kds — no tests, this is the CI gate
+npm run check                           # tsc backend + DB-free unit tests + vite build frontend + kds — the CI gate
 
-# Smoke tests (no automated test suite by design — see plan-phases speed levers)
+# Smoke tests (product behaviour is smoke-tested, not unit-tested — see the
+# testing rule under "Hard rules of thumb")
 npm run smoke:backend                   # full lifecycle: health → availability → create → update → cancel
+npm run smoke:legal                     # legal layer: unskippable agreement step, consent/ABN refusals, append-only ledger trigger
 npm run smoke:retell                    # exercises /retell/inbound, /retell/webhook, /retell/tools/*
 npm run smoke:twilio                    # exercises /twilio/voice, /twilio/status
 npm run smoke:calcom                    # Cal.com outbox/inbox mirror
 npm run smoke:orders                    # menu + order endpoints (KDS)
 npm run smoke:isolation                 # multi-tenant onboarding isolation
-# also: smoke:retell-signed, smoke:retell-dates, smoke:retell-orders
+# also: smoke:retell-signed, smoke:retell-dates, smoke:retell-orders, test:backend
 
 # Production builds (used inside the Dockerfile)
 npm run build:backend                   # tsc → apps/backend/dist
@@ -86,7 +89,11 @@ Bookings created by the voice path are mirrored to Cal.com asynchronously — th
 
 ## Database
 
-Custom migration runner — **not Knex/Prisma**. `apps/backend/src/db/migrate.ts` reads `apps/backend/db/migrations/*.sql` in lexical order and records applied files in `schema_migrations`. Each migration runs in one `client.query(sql)` call, so **multi-statement DDL with `GENERATED ALWAYS AS` expressions can trip node-pg with error `08P01` (invalid message format)** — when that happens, apply the SQL via `psql -f` directly and `INSERT INTO schema_migrations (filename) VALUES (…)` manually. Migration `003` hit this; it's now applied but worth knowing for future migrations.
+Custom migration runner — **not Knex/Prisma**. `apps/backend/src/db/migrate.ts` walks `apps/backend/db/migrations/**` recursively, orders by numeric filename prefix, and records applied files in `schema_migrations` (root files by bare filename — backward-compatible with the pre-existing ledger). Each migration runs in one `client.query(sql)` call, so **multi-statement DDL with `GENERATED ALWAYS AS` expressions can trip node-pg with error `08P01` (invalid message format)** — when that happens, apply the SQL via `psql -f` directly and `INSERT INTO schema_migrations (filename) VALUES (…)` manually. Migration `003` hit this; it's now applied but worth knowing for future migrations.
+
+**The chain is append-only (001–020) and must stay that way** — production records applied filenames in `schema_migrations`. `apps/backend/db/baseline-sydney/` is a **parked** fresh-install schema (domain folders, separate Postgres schemas) for the planned Iowa→Sydney database migration; it is NOT walked by the runner and must never be applied to the live database (its tables would be created empty next to the real `public` ones — see its README and the 29 Jul 2026 merge `c3cf71a`). New schema for shipped code goes in a numbered migration, even if the baseline also has it — `020_table_attributes.sql` exists because the seating-preference code shipped reading a column only the baseline defined.
+
+**Deploys auto-migrate**: `deploy-backend.yml` runs `db:migrate:prod` inside the api container after restarting it. For a migration whose enum values/tables the NEW code references at startup or on a worker tick, **pre-apply it via psql (expand-first) before pushing the merge** — the runner then skips it by filename and there is no schema/code race window.
 
 Schema is in `001_initial_schema.sql`. The interesting columns added in `003`:
 - `call_logs.intent`, `booking_outcome`, `user_sentiment`, `in_voicemail`, `call_successful`, `special_requests`, `analysis_json` (JSONB), `duration_seconds` (GENERATED).
@@ -96,7 +103,7 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
 
 ## Deployment
 
-- **Backend**: GCP VM `core-central-vm` (project `vocotable-497209`, static IP `136.113.35.88`) running `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`. The `prod` override mounts `/opt/vocotable/firebase-admin.json` → `/secrets/firebase-admin.json` (read-only) and sets `GOOGLE_APPLICATION_CREDENTIALS`. The base compose stays Firebase-Admin-free so local dev doesn't need a service-account JSON.
+- **Backend**: GCP VM `core-central-vm` (project `vocotable-497209`, static IP `136.113.35.88`) running **two containers since 29 Jul 2026** — `api` (`Dockerfile.api`, serves HTTP) and `worker` (`Dockerfile.worker`, all background workers) — via `docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml up -d api worker`. CI builds/pushes both images to Artifact Registry (`…/vocotable/api`, `…/vocotable/worker`); the VM only pulls. The `prod` override mounts `/opt/vocotable/firebase-admin.json` → `/secrets/firebase-admin.json` (read-only) into both. The base compose stays Firebase-Admin-free so local dev doesn't need a service-account JSON. **The VM's git checkout has no GitHub credentials** (`git pull` fails) — compose/env file updates reach the VM by `gcloud compute scp`, not git; images are the only automated artefact.
 - **TLS** via nginx + certbot at `https://vocotable.algorythmos.com.au`. Nginx config is in `deploy/nginx/vocotable.conf` — rate limits at the top-level `http {}` scope (already correct), raw body buffering on webhook paths for signature verification.
 - **Frontend** on Firebase Hosting target `app` (`vocotable.web.app`). Build with `VITE_API_BASE_URL=https://vocotable.algorythmos.com.au` before `firebase deploy --only hosting:app`. KDS is the separate Firebase Hosting target `kds`.
 - **DNS** managed in Cloudflare under `algorythmos.com.au`. The `vocotable` A record must be **DNS-only (gray cloud)** — orange-cloud proxying breaks Let's Encrypt HTTP-01 and Retell/Twilio signature URLs.
@@ -106,13 +113,13 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
 
 ## Collaboration
 
-Sam is currently the only person working on the repo (the former intern, Ali Ümit ALGAN, finished his internship in July 2026 — his remote `feature/*` branches may still hold unmerged work). Standard hygiene before any backend deploy:
+**Two people work on this repo: Sam and Abhishek Yadav** (`abhishekyadav01`, active since Jul 2026 — the dev-experience fixes, the api/worker split, and Manage Tables are his). Branch etiquette: main auto-deploys, so coordinate before merging, and remember his branches may assume a fresh database (the split-services branch shipped a full migration rebaseline that had to be parked — see the Database section). The former intern, Ali Ümit ALGAN, finished in July 2026. Standard hygiene before any backend deploy:
 
 1. `git fetch origin && git log --oneline origin/main -5` — confirm main is where you expect.
 2. SSH the VM (`gcloud compute ssh core-central-vm --zone us-central1-a`) and `git -C /opt/vocotable status` — files there may be root-owned; `sudo tar --overwrite` is the safe way to push code without trampling.
 
 ## Hard rules of thumb
 
-- The MVP plan (see `plan-phases/00-overview.md`) explicitly says **no automated tests, manual smoke tests only**. Stick to that; don't add Jest unless a paying customer is asking for stability.
+- The MVP plan (see `plan-phases/00-overview.md`) says **product behaviour is smoke-tested, not unit-tested**. Amended 29 Jul 2026: DB-free `node:test` unit tests for pure plumbing (migration discovery, worker lifecycle) are allowed and run in `npm run check`; everything that touches the DB or an integration stays a smoke script (`smoke:*`). Still no Jest.
 - Stay in-scope: no multilingual, no outbound calling, no loyalty, no mobile, no ResDiary/OpenTable integration. Multi-tenant onboarding exists but stays behind its kill-switch flags until deliberately rolled out (see `deploy/runbooks/onboarding-rollout.md`).
 - Dashboard auth is locked to an **email allowlist** (`DASHBOARD_ALLOWED_EMAILS`), enforced in `auth/firebaseAuth.ts` — a verified account whose email isn't listed gets `403 EMAIL_NOT_ALLOWLISTED` on every dashboard route. Editing the list is an env change, no code. Empty list = open to any verified Google account (dev only; prod env validation forbids the empty case via `env.ts` superRefine).
