@@ -24,7 +24,8 @@ permissions:
   id-token: write
 
 env:
-  IMAGE: us-central1-docker.pkg.dev/vocotable-497209/vocotable/api
+  API_IMAGE: us-central1-docker.pkg.dev/vocotable-497209/vocotable/api
+  WORKER_IMAGE: us-central1-docker.pkg.dev/vocotable-497209/vocotable/worker
 
 jobs:
   check:
@@ -40,7 +41,7 @@ jobs:
       - run: npm run check # tsc backend + vite build frontend + kds — blocks deploy if red
 
   build-push:
-    name: Build & push image
+    name: Build & push images
     needs: check
     runs-on: ubuntu-latest
     steps:
@@ -51,11 +52,19 @@ jobs:
           service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
       - run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
-      - name: Build and push (tag with git sha + latest)
+      # Two images since the api/worker split: same build stage, different
+      # entrypoints. The api image also carries db/migrations (auto-migrate
+      # runs inside it on the VM).
+      - name: Build and push api (tag with git sha + latest)
         run: |
-          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
-          docker push "$IMAGE:${{ github.sha }}"
-          docker push "$IMAGE:latest"
+          docker build -f Dockerfile.api -t "$API_IMAGE:${{ github.sha }}" -t "$API_IMAGE:latest" .
+          docker push "$API_IMAGE:${{ github.sha }}"
+          docker push "$API_IMAGE:latest"
+      - name: Build and push worker (tag with git sha + latest)
+        run: |
+          docker build -f Dockerfile.worker -t "$WORKER_IMAGE:${{ github.sha }}" -t "$WORKER_IMAGE:latest" .
+          docker push "$WORKER_IMAGE:${{ github.sha }}"
+          docker push "$WORKER_IMAGE:latest"
 
   deploy:
     name: Deploy on VM
@@ -67,14 +76,15 @@ jobs:
           workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
-      - name: SSH to VM — pull image, restart, migrate, healthcheck
+      - name: SSH to VM — pull images, restart, migrate, healthcheck
         run: |
           gcloud compute ssh deployer@core-central-vm --zone=us-central1-a --quiet --command='
             set -e
             cd /opt/vocotable
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml pull api
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml up -d api
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml pull api worker
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml up -d api worker
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api npm run db:migrate:prod
             sleep 5
             curl -fsS http://localhost:3050/health && echo " <- deploy healthy"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
           '

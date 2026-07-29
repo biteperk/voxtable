@@ -5,6 +5,7 @@ export interface TableRow {
   label: string;
   zone: string | null;
   description: string | null;
+  attributes: string[];
   min_capacity: number;
   max_capacity: number;
   reservation_id: string | null;
@@ -31,6 +32,7 @@ export async function listTables(
       t.label,
       t.zone,
       t.description,
+      t.attributes,
       t.min_capacity,
       t.max_capacity,
       r.id          AS reservation_id,
@@ -64,6 +66,81 @@ export interface TableMetaRow {
   label: string;
   zone: string | null;
   description: string | null;
+  attributes: string[];
+  min_capacity: number;
+  max_capacity: number;
+  is_active: boolean;
+}
+
+export async function listManagedTables(
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<TableMetaRow[]> {
+  const result = await db.query<TableMetaRow>(
+    `
+    SELECT id, label, zone, description, attributes, min_capacity, max_capacity, is_active
+    FROM tables
+    WHERE restaurant_id = $1
+    ORDER BY is_active DESC, label ASC
+    `,
+    [restaurantId]
+  );
+  return result.rows;
+}
+
+export interface TableWritePayload {
+  label: string;
+  minCapacity: number;
+  maxCapacity: number;
+  zone?: string | null;
+  description?: string | null;
+  attributes?: string[];
+}
+
+function normalizeAttributes(attributes: string[] | undefined): string[] {
+  if (!attributes) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const attr of attributes) {
+    const next = attr.trim().replace(/\s+/g, " ");
+    const key = next.toLowerCase();
+    if (!next || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(next);
+  }
+  return normalized;
+}
+
+export async function createTable(
+  restaurantId: string,
+  payload: TableWritePayload,
+  db: DbClient = pool
+): Promise<TableMetaRow> {
+  const result = await db.query<TableMetaRow>(
+    `
+    INSERT INTO tables (
+      restaurant_id,
+      label,
+      min_capacity,
+      max_capacity,
+      zone,
+      description,
+      attributes
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7::text[])
+    RETURNING id, label, zone, description, attributes, min_capacity, max_capacity, is_active
+    `,
+    [
+      restaurantId,
+      payload.label.trim(),
+      payload.minCapacity,
+      payload.maxCapacity,
+      payload.zone?.trim() || null,
+      payload.description?.trim() || null,
+      normalizeAttributes(payload.attributes)
+    ]
+  );
+  return result.rows[0]!;
 }
 
 /**
@@ -79,19 +156,42 @@ export interface TableMetaRow {
 export async function updateTableMetadata(
   restaurantId: string,
   tableId: string,
-  patch: { zone?: string | null; description?: string | null },
+  patch: {
+    label?: string;
+    minCapacity?: number;
+    maxCapacity?: number;
+    zone?: string | null;
+    description?: string | null;
+    attributes?: string[];
+  },
   db: DbClient = pool
 ): Promise<TableMetaRow | null> {
   const sets: string[] = [];
   const params: unknown[] = [tableId, restaurantId];
 
+  if ("label" in patch) {
+    params.push(patch.label?.trim());
+    sets.push(`label = $${params.length}`);
+  }
+  if ("minCapacity" in patch) {
+    params.push(patch.minCapacity);
+    sets.push(`min_capacity = $${params.length}`);
+  }
+  if ("maxCapacity" in patch) {
+    params.push(patch.maxCapacity);
+    sets.push(`max_capacity = $${params.length}`);
+  }
   if ("zone" in patch) {
-    params.push(patch.zone ?? null);
+    params.push(patch.zone?.trim() || null);
     sets.push(`zone = $${params.length}`);
   }
   if ("description" in patch) {
     params.push(patch.description ?? null);
     sets.push(`description = $${params.length}`);
+  }
+  if ("attributes" in patch) {
+    params.push(normalizeAttributes(patch.attributes));
+    sets.push(`attributes = $${params.length}::text[]`);
   }
   if (sets.length === 0) {
     return null;
@@ -102,10 +202,60 @@ export async function updateTableMetadata(
     UPDATE tables
     SET ${sets.join(", ")}
     WHERE id = $1 AND restaurant_id = $2 AND is_active = true
-    RETURNING id, label, zone, description
+    RETURNING id, label, zone, description, attributes, min_capacity, max_capacity, is_active
     `,
     params
   );
 
+  return result.rows[0] ?? null;
+}
+
+export async function deactivateTable(
+  restaurantId: string,
+  tableId: string,
+  db: DbClient = pool
+): Promise<TableMetaRow | null> {
+  const result = await db.query<TableMetaRow>(
+    `
+    UPDATE tables
+    SET is_active = false
+    WHERE id = $1 AND restaurant_id = $2 AND is_active = true
+    RETURNING id, label, zone, description, attributes, min_capacity, max_capacity, is_active
+    `,
+    [tableId, restaurantId]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function activateTable(
+  restaurantId: string,
+  tableId: string,
+  db: DbClient = pool
+): Promise<TableMetaRow | null> {
+  const result = await db.query<TableMetaRow>(
+    `
+    UPDATE tables
+    SET is_active = true
+    WHERE id = $1 AND restaurant_id = $2 AND is_active = false
+    RETURNING id, label, zone, description, attributes, min_capacity, max_capacity, is_active
+    `,
+    [tableId, restaurantId]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function deleteTable(
+  restaurantId: string,
+  tableId: string,
+  db: DbClient = pool
+): Promise<TableMetaRow | null> {
+  const result = await db.query<TableMetaRow>(
+    `
+    DELETE FROM tables
+    WHERE id = $1 AND restaurant_id = $2
+    RETURNING id, label, zone, description, attributes, min_capacity, max_capacity, is_active
+    `,
+    [tableId, restaurantId]
+  );
   return result.rows[0] ?? null;
 }

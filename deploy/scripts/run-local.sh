@@ -15,6 +15,7 @@
 # Optional environment variables:
 #   SKIP_INSTALL=true   Skip npm install when node_modules is missing
 #   SKIP_SEED=true      Skip db:seed
+#   START_WORKER=false  Do not start the backend worker process
 #   START_KDS=false     Do not start the KDS dev server
 #
 # =============================================================================
@@ -33,6 +34,7 @@ POSTGRES_PORT_DEFAULT="55432"
 LOCAL_HOST_DEFAULT="localhost"
 
 BACKEND_PID=""
+WORKER_PID=""
 FRONTEND_PID=""
 KDS_PID=""
 
@@ -76,7 +78,7 @@ remove_blank_optional_env() {
 cleanup() {
   log "Stopping local dev processes..."
 
-  for pid in "$KDS_PID" "$FRONTEND_PID" "$BACKEND_PID"; do
+  for pid in "$KDS_PID" "$FRONTEND_PID" "$WORKER_PID" "$BACKEND_PID"; do
     if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
       kill "$pid" >/dev/null 2>&1 || true
     fi
@@ -148,6 +150,14 @@ fi
 log "Starting backend on http://localhost:3050 ..."
 npm run dev:backend &
 BACKEND_PID="$!"
+
+if [ "${START_WORKER:-true}" = "true" ]; then
+  log "Starting backend worker ..."
+  npm run dev:worker &
+  WORKER_PID="$!"
+else
+  log "Skipping backend worker because START_WORKER=false."
+fi
 
 log "Starting frontend on http://localhost:3051 ..."
 npm run dev:frontend &

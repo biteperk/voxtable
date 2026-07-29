@@ -105,6 +105,7 @@ export function BookingLogPage({ navigate, path }) {
       party_size: Number(form.partySize),
       date: form.date,
       time: form.time,
+      table_id: form.tableId,
       source: "dashboard",
       notes: form.notes || undefined,
     });

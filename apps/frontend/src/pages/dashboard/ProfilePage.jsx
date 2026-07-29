@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../auth";
 import { signOutUser } from "../../firebase";
 import {
+  getRestaurantProfile,
   getStaffList,
   inviteStaff,
+  submitSupportRequest,
+  updateRestaurantProfile,
   updateStaffRole,
   removeStaffMember,
   revokeStaffInvite
@@ -43,11 +46,33 @@ const ROLE_DESCRIPTIONS = {
 
 const ASSIGNABLE_ROLES = ["manager", "server", "kitchen"];
 const MANAGER_INVITABLE_ROLES = ["server", "kitchen"];
+const DAYS = [
+  ["monday", "Monday"],
+  ["tuesday", "Tuesday"],
+  ["wednesday", "Wednesday"],
+  ["thursday", "Thursday"],
+  ["friday", "Friday"],
+  ["saturday", "Saturday"],
+  ["sunday", "Sunday"]
+];
+
+const DEFAULT_HOURS = {
+  monday: [{ open: "17:00", close: "22:00" }],
+  tuesday: [{ open: "17:00", close: "22:00" }],
+  wednesday: [{ open: "17:00", close: "22:00" }],
+  thursday: [{ open: "17:00", close: "22:00" }],
+  friday: [{ open: "17:00", close: "23:00" }],
+  saturday: [{ open: "12:00", close: "23:00" }],
+  sunday: [{ open: "12:00", close: "21:00" }]
+};
+
+const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"];
 
 export function ProfilePage({ navigate }) {
   const { user, hasMinRole } = useAuth();
   const isManager = hasMinRole("manager");
   const isOwner = hasMinRole("owner");
+  const [supportOpen, setSupportOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOutUser();
@@ -107,6 +132,8 @@ export function ProfilePage({ navigate }) {
           </div>
         </article>
 
+        <RestaurantProfileSection canEdit={isManager} onSupport={() => setSupportOpen(true)} />
+
         <article className="profile-card">
           <header>
             <h2>Sign-in methods</h2>
@@ -163,7 +190,400 @@ export function ProfilePage({ navigate }) {
           <StaffManagementSection isOwner={isOwner} currentUserId={user?.uid} />
         )}
       </section>
+
+      {supportOpen && <SupportModal onClose={() => setSupportOpen(false)} />}
     </DashboardShell>
+  );
+}
+
+function normalizeOpeningHours(hours) {
+  const source = hours && typeof hours === "object" ? hours : DEFAULT_HOURS;
+  return DAYS.reduce((acc, [key]) => {
+    const first = Array.isArray(source[key]) ? source[key][0] : null;
+    acc[key] = {
+      closed: !first,
+      open: first?.open ?? DEFAULT_HOURS[key][0].open,
+      close: first?.close ?? DEFAULT_HOURS[key][0].close
+    };
+    return acc;
+  }, {});
+}
+
+function hoursFormToPayload(hours) {
+  return DAYS.reduce((acc, [key]) => {
+    const day = hours[key];
+    acc[key] = day?.closed ? [] : [{ open: day.open, close: day.close }];
+    return acc;
+  }, {});
+}
+
+function formatHours(hours) {
+  const normalized = normalizeOpeningHours(hours);
+  return DAYS.map(([key, label]) => {
+    const day = normalized[key];
+    return {
+      key,
+      label,
+      value: day.closed ? "Closed" : `${day.open}-${day.close}`,
+      closed: day.closed
+    };
+  });
+}
+
+function RestaurantProfileSection({ canEdit, onSupport }) {
+  const [profile, setProfile] = useState(null);
+  const [form, setForm] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [saved, setSaved] = useState(false);
+
+  const loadProfile = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getRestaurantProfile();
+      const p = data.profile ?? {};
+      setProfile(p);
+      setForm({
+        name: p.name ?? "",
+        restaurantId: p.id ?? "",
+        owner_name: p.owner_name ?? "",
+        contact_email: p.contact_email ?? "",
+        existing_phone_number: p.existing_phone_number ?? "",
+        address: p.address ?? "",
+        suburb: p.suburb ?? "",
+        state: p.state ?? "",
+        postcode: p.postcode ?? "",
+        timezone: p.timezone ?? "Australia/Sydney",
+        booking_duration_minutes: p.booking_duration_minutes ?? 90,
+        opening_hours: normalizeOpeningHours(p.opening_hours)
+      });
+    } catch (e) {
+      setError(e.message ?? String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  const setField = (key) => (event) => {
+    setForm((prev) => ({ ...prev, [key]: event.target.value }));
+  };
+
+  const setDay = (day, patch) => {
+    setForm((prev) => ({
+      ...prev,
+      opening_hours: {
+        ...prev.opening_hours,
+        [day]: { ...prev.opening_hours[day], ...patch }
+      }
+    }));
+  };
+
+  const cancelEdit = () => {
+    if (profile) {
+      setForm({
+        name: profile.name ?? "",
+        restaurantId: profile.id ?? "",
+        owner_name: profile.owner_name ?? "",
+        contact_email: profile.contact_email ?? "",
+        existing_phone_number: profile.existing_phone_number ?? "",
+        address: profile.address ?? "",
+        suburb: profile.suburb ?? "",
+        state: profile.state ?? "",
+        postcode: profile.postcode ?? "",
+        timezone: profile.timezone ?? "Australia/Sydney",
+        booking_duration_minutes: profile.booking_duration_minutes ?? 90,
+        opening_hours: normalizeOpeningHours(profile.opening_hours)
+      });
+    }
+    setEditing(false);
+    setError(null);
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!form || saving) return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await updateRestaurantProfile({
+        name: form.name.trim() || undefined,
+        owner_name: form.owner_name.trim() || undefined,
+        contact_email: form.contact_email.trim() || undefined,
+        existing_phone_number: form.existing_phone_number.trim() || undefined,
+        address: form.address.trim() || undefined,
+        suburb: form.suburb.trim() || undefined,
+        state: form.state || undefined,
+        postcode: form.postcode.trim() || undefined,
+        timezone: form.timezone.trim() || undefined,
+        booking_duration_minutes: Number(form.booking_duration_minutes),
+        opening_hours: hoursFormToPayload(form.opening_hours)
+      });
+      await loadProfile();
+      setEditing(false);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      setError(e.message ?? String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <article className="profile-card restaurant-profile-card">
+      <header>
+        <div className="profile-card-title-row">
+          <div>
+            <h2>Restaurant Profile</h2>
+            <p>{loading ? "Loading restaurant details..." : profile?.name ?? "Restaurant details"}</p>
+          </div>
+          <div className="profile-card-actions">
+            <button type="button" className="profile-small-btn" onClick={onSupport}>
+              <Icon name="support_agent" />
+              Support
+            </button>
+            {canEdit && !editing && (
+              <button type="button" className="profile-small-btn primary" onClick={() => setEditing(true)} disabled={!form}>
+                <Icon name="edit" />
+                Edit
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {error && (
+        <div className="staff-error">
+          <Icon name="error" />
+          <span>{error}</span>
+          <button type="button" onClick={() => setError(null)}>x</button>
+        </div>
+      )}
+      {saved && <div className="profile-save-note"><Icon name="check_circle" /> Saved</div>}
+
+      {loading || !form ? (
+        <div className="staff-loading"><span>Loading profile...</span></div>
+      ) : editing ? (
+        <form className="restaurant-profile-form" onSubmit={submit}>
+          <div className="restaurant-form-grid">
+            <label className="profile-field">
+              <span>Restaurant name</span>
+              <input value={form.name} onChange={setField("name")} maxLength={120} required />
+            </label>
+            <label className="profile-field">
+              <span>Restaurant ID</span>
+              <input value={form.restaurantId} readOnly />
+            </label>
+            <label className="profile-field">
+              <span>Owner name</span>
+              <input value={form.owner_name} onChange={setField("owner_name")} maxLength={120} />
+            </label>
+            <label className="profile-field">
+              <span>Contact email</span>
+              <input type="email" value={form.contact_email} onChange={setField("contact_email")} maxLength={160} />
+            </label>
+            <label className="profile-field">
+              <span>Phone number</span>
+              <input value={form.existing_phone_number} onChange={setField("existing_phone_number")} maxLength={32} />
+            </label>
+            <label className="profile-field">
+              <span>Timezone</span>
+              <input value={form.timezone} onChange={setField("timezone")} maxLength={64} />
+            </label>
+            <label className="profile-field restaurant-field-wide">
+              <span>Address</span>
+              <input value={form.address} onChange={setField("address")} maxLength={200} />
+            </label>
+            <label className="profile-field">
+              <span>Suburb</span>
+              <input value={form.suburb} onChange={setField("suburb")} maxLength={80} />
+            </label>
+            <label className="profile-field">
+              <span>State</span>
+              <select value={form.state} onChange={setField("state")}>
+                <option value="">-</option>
+                {AU_STATES.map((state) => <option key={state} value={state}>{state}</option>)}
+              </select>
+            </label>
+            <label className="profile-field">
+              <span>Postcode</span>
+              <input value={form.postcode} onChange={(e) => setForm((prev) => ({ ...prev, postcode: e.target.value.replace(/\D/g, "").slice(0, 4) }))} inputMode="numeric" maxLength={4} />
+            </label>
+            <label className="profile-field">
+              <span>Booking duration</span>
+              <input type="number" min={15} max={360} step={15} value={form.booking_duration_minutes} onChange={setField("booking_duration_minutes")} />
+            </label>
+          </div>
+
+          <div className="hours-editor">
+            <div className="hours-editor-head">
+              <span>Opening hours</span>
+            </div>
+            {DAYS.map(([key, label]) => {
+              const day = form.opening_hours[key];
+              return (
+                <div key={key} className={`hours-editor-row ${day.closed ? "is-closed" : ""}`}>
+                  <label className="hours-day-toggle">
+                    <input
+                      type="checkbox"
+                      checked={!day.closed}
+                      onChange={(e) => setDay(key, { closed: !e.target.checked })}
+                    />
+                    <span>{label}</span>
+                  </label>
+                  <input type="time" value={day.open} disabled={day.closed} onChange={(e) => setDay(key, { open: e.target.value })} />
+                  <input type="time" value={day.close} disabled={day.closed} onChange={(e) => setDay(key, { close: e.target.value })} />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="profile-form-actions">
+            <button type="button" className="modal-button ghost" onClick={cancelEdit} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="modal-button confirm" disabled={saving}>
+              {saving ? "Saving..." : "Save restaurant"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <dl className="restaurant-profile-details">
+            <div>
+              <dt>Restaurant ID</dt>
+              <dd>{profile.id}</dd>
+            </div>
+            <div>
+              <dt>Address</dt>
+              <dd>{[profile.address, profile.suburb, profile.state, profile.postcode].filter(Boolean).join(", ") || "Not set"}</dd>
+            </div>
+            <div>
+              <dt>Contact</dt>
+              <dd>{profile.contact_email || "Not set"}{profile.existing_phone_number ? ` · ${profile.existing_phone_number}` : ""}</dd>
+            </div>
+            <div>
+              <dt>Timezone</dt>
+              <dd>{profile.timezone}</dd>
+            </div>
+            <div>
+              <dt>Booking duration</dt>
+              <dd>{profile.booking_duration_minutes ?? 90} minutes</dd>
+            </div>
+          </dl>
+          <div className="opening-hours-list">
+            {formatHours(profile.opening_hours).map((day) => (
+              <div key={day.key} className={day.closed ? "is-closed" : ""}>
+                <span>{day.label}</span>
+                <strong>{day.value}</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </article>
+  );
+}
+
+function SupportModal({ onClose }) {
+  const [form, setForm] = useState({
+    category: "technical",
+    subject: "",
+    message: ""
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await submitSupportRequest(form);
+      setSuccess(result.support_request);
+    } catch (e) {
+      setError(e.message ?? String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="support-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div className="modal-card new-booking-modal">
+        <header className="new-booking-head">
+          <div>
+            <h2 id="support-modal-title" className="modal-title">Contact support</h2>
+            <p className="modal-description">Send restaurant and account details to the VoxTable team.</p>
+          </div>
+          <button type="button" className="new-booking-close" onClick={onClose} disabled={submitting} aria-label="Close">
+            <Icon name="close" />
+          </button>
+        </header>
+
+        {success ? (
+          <div className="staff-modal-success">
+            <Icon name="check_circle" />
+            <p>Support request received.</p>
+            <div className="staff-invite-link-box"><code>{success.id}</code></div>
+            <div className="modal-actions">
+              <button type="button" className="modal-button confirm" onClick={onClose}>Done</button>
+            </div>
+          </div>
+        ) : (
+          <form className="new-booking-form" onSubmit={submit}>
+            {error && (
+              <div className="nb-error" role="alert">
+                <Icon name="error_outline" />
+                <div><p>{error}</p></div>
+              </div>
+            )}
+            <label className="nb-field">
+              <span>Category</span>
+              <select value={form.category} onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}>
+                <option value="technical">Technical</option>
+                <option value="booking">Booking</option>
+                <option value="billing">Billing</option>
+                <option value="account">Account</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label className="nb-field">
+              <span>Subject</span>
+              <input value={form.subject} onChange={(e) => setForm((prev) => ({ ...prev, subject: e.target.value }))} maxLength={120} required />
+            </label>
+            <label className="nb-field">
+              <span>Details</span>
+              <textarea value={form.message} onChange={(e) => setForm((prev) => ({ ...prev, message: e.target.value }))} rows={5} maxLength={2000} required />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="modal-button ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+              <button type="submit" className="modal-button confirm" disabled={submitting}>
+                {submitting ? "Sending..." : "Send request"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -677,4 +1097,3 @@ function ConfirmModal({ title, message, confirmLabel, busy, onConfirm, onCancel 
     </div>
   );
 }
-

@@ -22,9 +22,65 @@ cp .env.example .env
 npm run db:migrate
 npm run db:seed
 npm run dev:backend
+npm run dev:worker
 ```
 
 The API listens on `http://localhost:3050` by default.
+
+## Runtime Split
+
+The backend runs as two Node entrypoints from the same TypeScript codebase:
+
+- `apps/backend/src/server.ts`: HTTP API only.
+- `apps/backend/src/worker.ts`: background workers only.
+
+Local Docker Compose runs three backend-side containers:
+
+- `postgres`: database.
+- `api`: Express routes on port 3050.
+- `worker`: Cal.com outbox, cleanup, health alerts, menu OCR, notifications, and provisioning.
+
+Run the split locally with:
+
+```bash
+docker compose up --build postgres api worker
+```
+
+The API image is built from `Dockerfile.api`; the worker image is built from
+`Dockerfile.worker`.
+
+## Database Migration Strategy
+
+The project keeps raw SQL migrations, but the runner now supports domain
+folders under `apps/backend/db/migrations`:
+
+- `core`
+- `reservations`
+- `voice`
+- `menu_orders`
+- `billing`
+- `integrations`
+- `operations`
+
+Because the app is still in development, migrations are maintained as a clean
+schema baseline rather than an append-only production chain. Each table has its
+own migration file inside its domain folder, and root migration files are
+reserved for extensions, schema creation, enum types, and shared functions.
+
+After a migration-history refactor, reset local Postgres before migrating:
+
+```bash
+docker compose down -v
+docker compose up -d postgres
+npm run db:migrate
+npm run db:seed
+```
+
+Alembic itself is a Python/SQLAlchemy tool, so it is not a natural fit for this
+Node/TypeScript backend. If we want an ORM with Alembic-like typed migrations,
+the best TypeScript-native candidates are Drizzle or Prisma; until then, the
+raw SQL runner gives us explicit, reviewable migrations without adding another
+runtime.
 
 For local smoke testing, keep provider signature flags off unless you are sending real signed requests:
 
@@ -39,6 +95,7 @@ STRIPE_BILLING_ENABLED=false
 
 ```bash
 npm run build:backend
+npm run test:backend
 npm run check
 ```
 
@@ -56,7 +113,7 @@ npm run smoke:orders
 npm run smoke:isolation
 ```
 
-There is no broad automated test suite. Builds and smoke scripts are the normal verification path.
+There is no broad automated test suite yet. Backend unit tests cover the runtime worker split, and builds plus smoke scripts remain the normal verification path for provider flows.
 
 ## Route Areas
 

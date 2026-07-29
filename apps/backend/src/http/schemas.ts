@@ -52,7 +52,18 @@ export const availabilityRequestSchema = z.object({
   date: dateSchema,
   time: timeSchema,
   party_size: partySizeSchema.optional(),
-  partySize: partySizeSchema.optional()
+  partySize: partySizeSchema.optional(),
+  seating_preference: z.string().max(120).optional(),
+  seatingPreference: z.string().max(120).optional()
+});
+
+export const tableAvailabilityQuerySchema = z.object({
+  date: dateSchema,
+  time: timeSchema,
+  party_size: partySizeSchema.optional(),
+  partySize: partySizeSchema.optional(),
+  exclude_reservation_id: uuidSchema.optional(),
+  excludeReservationId: uuidSchema.optional()
 });
 
 export const createBookingRequestSchema = z.object({
@@ -66,6 +77,8 @@ export const createBookingRequestSchema = z.object({
   time: timeSchema,
   party_size: partySizeSchema.optional(),
   partySize: partySizeSchema.optional(),
+  table_id: uuidSchema.optional(),
+  tableId: uuidSchema.optional(),
   source: z.enum(["voice", "dashboard"]).default("voice"),
   notes: z.string().max(1000).optional(),
   // Stopgap (A) for seating requests: the voice agent passes a free-text seating
@@ -347,6 +360,12 @@ export const restaurantProfileSchema = z.object({
   opening_hours: openingHoursSchema
 });
 
+export const supportRequestSchema = z.object({
+  category: z.enum(["account", "billing", "booking", "technical", "other"]).default("technical"),
+  subject: z.string().trim().min(3).max(120),
+  message: z.string().trim().min(10).max(2000)
+});
+
 // Owner-driven onboarding transitions only. Subscription/provisioning events
 // are server-internal (Stripe webhook / admin), and agreement_completed only
 // fires from POST /api/onboarding/agreement (the transition must carry the
@@ -476,20 +495,63 @@ export const startIngestionSchema = z.object({
     .optional()
 });
 
-// Seating zones a manager can pick for a table. Kept in sync with the frontend
-// ZONE_ICON map (lib/constants.js) — each has a badge + icon. The DB column is
-// free TEXT (migration 013) so adding a zone never needs a migration; we still
-// validate at the API boundary so junk zones (no icon/badge) can't be stored.
-export const KNOWN_TABLE_ZONES = ["window", "patio", "main", "booth", "private", "bar"] as const;
+const tableAttributeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9 _-]*$/, "Use letters, numbers, spaces, hyphens or underscores.");
 
-// Manager edit of a table's display-only metadata (zone + free-text description).
-// Both fields are independently optional: omit to leave unchanged, send null to
-// clear. At least one must be present.
+export const tablePayloadSchema = z
+  .object({
+    label: z.string().trim().min(1).max(40),
+    min_capacity: z.coerce.number().int().min(1).max(50).optional(),
+    minCapacity: z.coerce.number().int().min(1).max(50).optional(),
+    max_capacity: z.coerce.number().int().min(1).max(50).optional(),
+    maxCapacity: z.coerce.number().int().min(1).max(50).optional(),
+    zone: z.string().trim().min(1).max(40).nullable().optional(),
+    description: z.string().trim().max(200).nullable().optional(),
+    attributes: z.array(tableAttributeSchema).max(12).optional()
+  })
+  .refine((value) => Boolean(value.max_capacity ?? value.maxCapacity), {
+    message: "max_capacity is required.",
+    path: ["max_capacity"]
+  })
+  .refine((value) => (value.min_capacity ?? value.minCapacity ?? 1) <= (value.max_capacity ?? value.maxCapacity ?? 0), {
+    message: "min_capacity must be less than or equal to max_capacity.",
+    path: ["min_capacity"]
+  });
+
+// Manager edit of table map metadata. Both camelCase and snake_case capacity
+// keys are accepted to match the existing dashboard API style.
 export const updateTableMetadataSchema = z
   .object({
-    zone: z.enum(KNOWN_TABLE_ZONES).nullable().optional(),
-    description: z.string().trim().max(200).nullable().optional()
+    label: z.string().trim().min(1).max(40).optional(),
+    min_capacity: z.coerce.number().int().min(1).max(50).optional(),
+    minCapacity: z.coerce.number().int().min(1).max(50).optional(),
+    max_capacity: z.coerce.number().int().min(1).max(50).optional(),
+    maxCapacity: z.coerce.number().int().min(1).max(50).optional(),
+    zone: z.string().trim().min(1).max(40).nullable().optional(),
+    description: z.string().trim().max(200).nullable().optional(),
+    attributes: z.array(tableAttributeSchema).max(12).optional()
   })
-  .refine((value) => value.zone !== undefined || value.description !== undefined, {
-    message: "Provide zone and/or description to update."
+  .refine(
+    (value) =>
+      value.label !== undefined ||
+      value.min_capacity !== undefined ||
+      value.minCapacity !== undefined ||
+      value.max_capacity !== undefined ||
+      value.maxCapacity !== undefined ||
+      value.zone !== undefined ||
+      value.description !== undefined ||
+      value.attributes !== undefined,
+    { message: "Provide at least one field to update." }
+  )
+  .refine((value) => {
+    const min = value.min_capacity ?? value.minCapacity;
+    const max = value.max_capacity ?? value.maxCapacity;
+    return min === undefined || max === undefined || min <= max;
+  }, {
+    message: "min_capacity must be less than or equal to max_capacity.",
+    path: ["min_capacity"]
   });

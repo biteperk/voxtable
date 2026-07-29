@@ -604,7 +604,9 @@ function normalizeAvailabilityArgs(args: Record<string, unknown>, restaurantId: 
     date: args.date,
     time: args.time,
     party_size: args.party_size,
-    partySize: args.partySize
+    partySize: args.partySize,
+    seating_preference: args.seating_preference,
+    seatingPreference: args.seatingPreference
   });
   const partySize = normalizePartySize(parsed);
 
@@ -616,7 +618,8 @@ function normalizeAvailabilityArgs(args: Record<string, unknown>, restaurantId: 
     restaurantId,
     date: parsed.date,
     time: parsed.time,
-    partySize
+    partySize,
+    seatingPreference: (parsed.seating_preference ?? parsed.seatingPreference)?.trim()
   };
 }
 
@@ -677,6 +680,7 @@ function normalizeBookingArgs(args: Record<string, unknown>, restaurantId: strin
     partySize,
     source: "voice" as const,
     notes,
+    seatingPreference: seatingPref,
     callLogId: parsed.call_log_id ?? parsed.callLogId,
     provider: RETELL_PROVIDER,
     providerCallId: parsed.provider_call_id ?? parsed.providerCallId

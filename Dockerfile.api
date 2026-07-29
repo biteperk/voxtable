@@ -1,0 +1,37 @@
+# ---- Stage 1: Builder ----
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+ENV NODE_OPTIONS=--max-old-space-size=2048
+RUN npm run build:backend
+
+# ---- Stage 2: API Runner ----
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+RUN apk add --no-cache wget
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
+COPY --from=builder /app/apps/backend/db ./apps/backend/db
+
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+USER appuser
+
+EXPOSE 3050
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3050/health || exit 1
+
+CMD ["node", "apps/backend/dist/server.js"]
