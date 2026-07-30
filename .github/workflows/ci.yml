@@ -15,6 +15,7 @@ permissions:
   contents: read
 
 env:
+  REGISTRY_HOST: australia-southeast1-docker.pkg.dev
   API_IMAGE: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/api
   WORKER_IMAGE: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/worker
 
@@ -55,6 +56,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Lint
+        run: npm run lint --if-present
+
       - name: Build backend
         run: npm run build:backend
 
@@ -73,15 +77,20 @@ jobs:
       - name: Build KDS
         run: npm run build:kds
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
   docker-images:
-    name: Build Docker images
+    name: Build, scan, and publish Docker images
     runs-on: ubuntu-latest
     needs: validate
     permissions:
-      contents: read
+      contents: write
       id-token: write
     env:
-      SHOULD_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      PUSH_SHA_IMAGES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/integration' }}
+      PUSH_VERSION_IMAGES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      SHOULD_PUSH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/integration' || github.ref == 'refs/heads/main') }}
 
     steps:
       - uses: actions/checkout@v5
@@ -107,28 +116,52 @@ jobs:
 
       - name: Configure Artifact Registry auth
         if: env.SHOULD_PUSH == 'true'
-        run: gcloud auth configure-docker australia-southeast1-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker "$REGISTRY_HOST" --quiet
 
       - name: Build api image
-        run: |
-          docker build -f Dockerfile.api -t vocotable-api:ci .
-          if [ "$SHOULD_PUSH" = "true" ]; then
-            docker tag vocotable-api:ci "$API_IMAGE:${{ steps.package-version.outputs.version }}"
-            docker tag vocotable-api:ci "$API_IMAGE:v${{ steps.package-version.outputs.version }}"
-            docker tag vocotable-api:ci "$API_IMAGE:latest"
-            docker push "$API_IMAGE:${{ steps.package-version.outputs.version }}"
-            docker push "$API_IMAGE:v${{ steps.package-version.outputs.version }}"
-            docker push "$API_IMAGE:latest"
-          fi
+        run: docker build -f Dockerfile.api -t vocotable-api:ci .
 
       - name: Build worker image
+        run: docker build -f Dockerfile.worker -t vocotable-worker:ci .
+
+      - name: Scan api image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: vocotable-api:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      - name: Scan worker image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: vocotable-worker:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      - name: Push commit hash images from integration
+        if: env.PUSH_SHA_IMAGES == 'true'
         run: |
-          docker build -f Dockerfile.worker -t vocotable-worker:ci .
-          if [ "$SHOULD_PUSH" = "true" ]; then
-            docker tag vocotable-worker:ci "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
-            docker tag vocotable-worker:ci "$WORKER_IMAGE:v${{ steps.package-version.outputs.version }}"
-            docker tag vocotable-worker:ci "$WORKER_IMAGE:latest"
-            docker push "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
-            docker push "$WORKER_IMAGE:v${{ steps.package-version.outputs.version }}"
-            docker push "$WORKER_IMAGE:latest"
-          fi
+          docker tag vocotable-api:ci "$API_IMAGE:${{ github.sha }}"
+          docker tag vocotable-worker:ci "$WORKER_IMAGE:${{ github.sha }}"
+          docker push "$API_IMAGE:${{ github.sha }}"
+          docker push "$WORKER_IMAGE:${{ github.sha }}"
+
+      - name: Push semantic version images from main
+        if: env.PUSH_VERSION_IMAGES == 'true'
+        run: |
+          docker tag vocotable-api:ci "$API_IMAGE:${{ steps.package-version.outputs.version }}"
+          docker tag vocotable-worker:ci "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
+          docker push "$API_IMAGE:${{ steps.package-version.outputs.version }}"
+          docker push "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
+
+      - name: Tag release commit
+        if: env.PUSH_VERSION_IMAGES == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.package-version.outputs.version }}"
+          git push origin "${{ steps.package-version.outputs.version }}"
