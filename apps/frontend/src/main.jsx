@@ -278,8 +278,12 @@ function AppRouter({ path, navigate, isDashboard }) {
     if (!user || loading || meLoading || !isDashboard || gate.loading) return;
     const isLive = gate.status === "live";
     if (isOnboarding) {
-      // Leave the wizard only once we KNOW the tenant is live.
-      if (isLive) navigate("/live-feed", { replace: true });
+      // Leave the wizard only once we KNOW the tenant is live AND the user
+      // actually belongs to a restaurant. A member-less account stays on the
+      // wizard no matter what the status endpoint claims — otherwise an
+      // inconsistent backend state (e.g. the legacy-fallback leak) ping-pongs
+      // this redirect against the !hasRestaurant one below, forever.
+      if (isLive && memberships.length > 0) navigate("/live-feed", { replace: true });
       return;
     }
     // On a dashboard route, only send the user to onboarding when we're
