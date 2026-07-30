@@ -19,10 +19,23 @@ export function PhoneStep({ onRefresh }) {
   }, [onRefresh]);
 
   useEffect(() => {
+    // Poll while the number is being provisioned by an admin. Provisioning is
+    // a manual ops step that can take a while, so back off after the first
+    // minute rather than hammering the API every 6s indefinitely.
+    let attempts = 0;
+    let cancelled = false;
+    const tick = async () => {
+      attempts += 1;
+      await load();
+      if (cancelled) return;
+      pollRef.current = setTimeout(tick, attempts < 10 ? 6000 : 30000);
+    };
     load();
-    // Poll while the number is being provisioned by an admin.
-    pollRef.current = setInterval(load, 6000);
-    return () => clearInterval(pollRef.current);
+    pollRef.current = setTimeout(tick, 6000);
+    return () => {
+      cancelled = true;
+      clearTimeout(pollRef.current);
+    };
   }, [load]);
 
   const verify = async () => {

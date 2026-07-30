@@ -55,6 +55,17 @@ async function authedFetch(path, options = {}) {
     }
   }
 
+  // A just-verified account can race Firebase's claim propagation: the backend
+  // rejects with 403 EMAIL_NOT_VERIFIED while the cached token still carries
+  // email_verified: false. Force-refresh once — the fresh token has the new
+  // claim. A second 403 falls through to normal error handling (no loop).
+  if (response.status === 403 && auth.currentUser) {
+    const peek = await response.clone().json().catch(() => null);
+    if (peek?.error?.code === "EMAIL_NOT_VERIFIED") {
+      response = await callOnce(path, options, true);
+    }
+  }
+
   if (!response.ok) {
     const body = await response.text();
     // Backend errors are `{ error: { code, message, details } }` (AppError

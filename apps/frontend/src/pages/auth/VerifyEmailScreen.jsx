@@ -73,7 +73,11 @@ function CodeVerifyEmail({ navigate, onFallback }) {
     [onFallback]
   );
 
-  // The mandatory post-verification token refresh, then into onboarding.
+  // The mandatory post-verification token refresh, then into onboarding. Only
+  // navigate on success — navigating with a stale (unverified) user object
+  // makes the router re-render this screen on /onboarding with the success
+  // card stuck forever. On failure the code IS already confirmed, so offer a
+  // retry of just the handoff.
   const advanceVerified = async () => {
     if (advancing.current) return;
     advancing.current = true;
@@ -85,8 +89,10 @@ function CodeVerifyEmail({ navigate, onFallback }) {
         await user.getIdToken(true);
       }
       await refreshMe();
-    } finally {
       navigate("/onboarding", { replace: true });
+    } catch {
+      advancing.current = false;
+      setPhase("verified-retry");
     }
   };
 
@@ -161,13 +167,24 @@ function CodeVerifyEmail({ navigate, onFallback }) {
 
         <div className="login-divider" aria-hidden="true" />
 
-        {success ? (
+        {success || phase === "verified-retry" ? (
           <div className="verify-success" role="status">
             <span className="verify-success-ring">
               <Icon name="check" />
             </span>
             <h2 className="login-heading">Email verified</h2>
-            <p className="login-sub">Taking you to your setup…</p>
+            {phase === "verified-retry" ? (
+              <>
+                <p className="login-sub">
+                  We couldn't load your account just now — check your connection and try again.
+                </p>
+                <button type="button" className="login-check" onClick={advanceVerified}>
+                  Continue to setup
+                </button>
+              </>
+            ) : (
+              <p className="login-sub">Taking you to your setup…</p>
+            )}
           </div>
         ) : (
           <>
