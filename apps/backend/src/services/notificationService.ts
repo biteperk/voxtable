@@ -4,7 +4,11 @@ import { enqueueNotification } from "../repositories/notifications";
 import { getRestaurantProfile } from "../repositories/restaurants";
 
 export function isNotificationsEnabled(): boolean {
-  return env.NOTIFICATIONS_ENABLED && Boolean(env.SENDGRID_API_KEY);
+  if (!env.NOTIFICATIONS_ENABLED) return false;
+  // The worker can only drain the outbox with the active provider's credential.
+  return env.EMAIL_PROVIDER === "zeptomail"
+    ? Boolean(env.ZEPTOMAIL_TOKEN)
+    : Boolean(env.SENDGRID_API_KEY);
 }
 
 export type NotificationKind =
