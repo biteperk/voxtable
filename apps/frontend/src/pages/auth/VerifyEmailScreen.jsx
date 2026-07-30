@@ -1,17 +1,239 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { auth, resendVerification, signOutUser } from "../../firebase";
+import { sendVerificationCode, confirmVerificationCode } from "../../api";
 import { authErrorMessage } from "../../lib/authErrors";
 import { useAuth } from "../../auth";
 import { Icon } from "../../components/Icon";
+import { OtpInput } from "../../components/OtpInput";
 
-// The funnel's "Verify Email" node. Shown to any signed-in-but-unverified
-// account (email/password signups, and the rare unverified-Google case — so
-// the copy never assumes an email is already in the inbox).
+// The funnel's "Verify Email" node, shown to any signed-in-but-unverified
+// account. Two modes:
 //
-// Stale-token trap: the cached ID token carries email_verified for up to 1h
-// and api.js only force-refreshes on 401, not 403. After verification we MUST
-// user.reload() then getIdToken(true) before touching the API, or every call
-// keeps 403ing.
+//  "code"   — the premium path: the backend emails a branded 6-digit code
+//             (via the notifications outbox) and the user types it here.
+//  "legacy" — the original Firebase-link flow, kept verbatim as the fallback
+//             when the backend has the code feature off (404 FEATURE_DISABLED)
+//             or predates it.
+//
+// Stale-token trap (both modes): the cached ID token carries email_verified
+// for up to 1h and api.js only force-refreshes on 401, not 403. After
+// verification we MUST user.reload() then getIdToken(true) before touching
+// the API, or every call keeps 403ing.
+
+export function VerifyEmailScreen({ navigate }) {
+  const [mode, setMode] = useState("code");
+  if (mode === "legacy") {
+    return <LegacyVerifyEmail navigate={navigate} />;
+  }
+  return <CodeVerifyEmail navigate={navigate} onFallback={() => setMode("legacy")} />;
+}
+
+// ===== Code mode =====
+
+function CodeVerifyEmail({ navigate, onFallback }) {
+  const { refreshMe } = useAuth();
+  const [code, setCode] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+  const [phase, setPhase] = useState("sending"); // sending | ready | confirming | success
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const sentOnce = useRef(false);
+  const advancing = useRef(false);
+  const email = auth.currentUser?.email ?? "your email";
+
+  const requestCode = useCallback(
+    async ({ silent = false } = {}) => {
+      setError(null);
+      try {
+        const res = await sendVerificationCode();
+        if (res?.already_verified) {
+          await advanceVerified();
+          return;
+        }
+        setCooldown(res?.cooldown_seconds ?? 60);
+        setPhase("ready");
+        if (!silent) setNotice("A fresh code is on its way.");
+      } catch (e) {
+        // Feature off or older backend → the legacy Firebase-link flow.
+        if (e?.status === 404 || /^404\b/.test(e?.message ?? "")) {
+          onFallback();
+          return;
+        }
+        // Cooldown/cap: a code is already in the inbox — calm state, not an error.
+        if (e?.status === 429) {
+          setCooldown(e?.details?.retry_after_seconds ?? 60);
+          setPhase("ready");
+          return;
+        }
+        setPhase("ready");
+        setError(e?.message ?? String(e));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [onFallback]
+  );
+
+  // The mandatory post-verification token refresh, then into onboarding.
+  const advanceVerified = async () => {
+    if (advancing.current) return;
+    advancing.current = true;
+    setPhase("success");
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        await user.reload();
+        await user.getIdToken(true);
+      }
+      await refreshMe();
+    } finally {
+      navigate("/onboarding", { replace: true });
+    }
+  };
+
+  // Auto-send on arrival. (Signup no longer fires Firebase's email, so this is
+  // the moment the first code goes out.)
+  useEffect(() => {
+    if (sentOnce.current) return;
+    sentOnce.current = true;
+    requestCode({ silent: true });
+  }, [requestCode]);
+
+  // Resend cooldown ticker.
+  useEffect(() => {
+    if (cooldown <= 0) return undefined;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const handleComplete = async (fullCode) => {
+    if (phase === "confirming" || phase === "success") return;
+    setPhase("confirming");
+    setError(null);
+    setNotice(null);
+    try {
+      await confirmVerificationCode(fullCode);
+      await advanceVerified();
+    } catch (e) {
+      setPhase("ready");
+      setCode("");
+      if (e?.code === "INVALID_CODE") {
+        const left = e?.details?.attempts_remaining;
+        setError(
+          left > 0
+            ? `That code isn't right — ${left} ${left === 1 ? "try" : "tries"} left.`
+            : "That code isn't right."
+        );
+      } else if (e?.code === "CODE_EXPIRED") {
+        setError("That code has expired — tap “Send a new code”.");
+      } else if (e?.code === "TOO_MANY_ATTEMPTS") {
+        setError("Too many wrong guesses — tap “Send a new code”.");
+      } else if (e?.code === "NO_ACTIVE_CODE") {
+        setError("That code is no longer active — tap “Send a new code”.");
+      } else {
+        setError(e?.message ?? String(e));
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    navigate("/", { replace: true });
+  };
+
+  const confirming = phase === "confirming";
+  const success = phase === "success";
+
+  return (
+    <div className="login-shell">
+      <div className="login-bg-glow login-bg-glow-1" aria-hidden="true" />
+      <div className="login-bg-glow login-bg-glow-2" aria-hidden="true" />
+
+      <div className="login-card">
+        <img
+          src="/brand/mark-light-on-dark.svg"
+          alt="VoxTable"
+          className="login-mark"
+          width="56"
+          height="56"
+        />
+        <h1 className="login-title">VoxTable</h1>
+        <p className="login-tagline">Voice AI booking for restaurants</p>
+
+        <div className="login-divider" aria-hidden="true" />
+
+        {success ? (
+          <div className="verify-success" role="status">
+            <span className="verify-success-ring">
+              <Icon name="check" />
+            </span>
+            <h2 className="login-heading">Email verified</h2>
+            <p className="login-sub">Taking you to your setup…</p>
+          </div>
+        ) : (
+          <>
+            <h2 className="login-heading">Check your email</h2>
+            <p className="login-sub">
+              We{phase === "sending" ? "'re sending" : " sent"} a 6-digit code to{" "}
+              <strong>{email}</strong>. Enter it below — this page moves on by itself.
+            </p>
+
+            <OtpInput
+              value={code}
+              onChange={(next) => {
+                setCode(next);
+                if (error) setError(null);
+              }}
+              onComplete={handleComplete}
+              disabled={confirming || phase === "sending"}
+              error={Boolean(error)}
+            />
+
+            {confirming && (
+              <p className="verify-status" role="status">
+                <span className="login-spinner verify-spinner" aria-hidden="true" />
+                Checking your code…
+              </p>
+            )}
+
+            {error && (
+              <div className="login-error" role="alert">
+                <Icon name="error" />
+                <span>{error}</span>
+              </div>
+            )}
+            {notice && !error && (
+              <p className="login-notice" role="status">
+                <Icon name="check_circle" />
+                {notice}
+              </p>
+            )}
+
+            <button
+              type="button"
+              className="login-check"
+              onClick={() => requestCode()}
+              disabled={cooldown > 0 || confirming || phase === "sending"}
+            >
+              {cooldown > 0 ? `Send a new code in ${cooldown}s` : "Send a new code"}
+            </button>
+
+            <p className="verify-hint">Not seeing it? Check your spam folder.</p>
+          </>
+        )}
+
+        <div className="login-footer">
+          <button onClick={handleSignOut} className="login-back" type="button">
+            <Icon name="arrow_back" />
+            Use a different account
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Legacy mode (Firebase link flow) =====
+// Kept verbatim as the fallback for a backend without the code feature.
 
 const POLL_MS = 5000;
 const MAX_POLLS = 60; // ~5 minutes, then the manual button takes over
@@ -40,7 +262,7 @@ function markSent() {
   }
 }
 
-export function VerifyEmailScreen({ navigate }) {
+function LegacyVerifyEmail({ navigate }) {
   const { refreshMe } = useAuth();
   const [error, setError] = useState(null);
   const [sentAt, setSentAt] = useState(() => (readStoredCooldown() > 0 ? Date.now() : null));
@@ -113,6 +335,19 @@ export function VerifyEmailScreen({ navigate }) {
     setCooldown(RESEND_COOLDOWN_S);
   };
 
+  // Signup no longer fires Firebase's email (the code flow owns sending), so
+  // in this fallback the first link goes out on arrival — unless one was sent
+  // moments ago (cooldown survived a reload).
+  const autoSent = useRef(false);
+  useEffect(() => {
+    if (autoSent.current) return;
+    autoSent.current = true;
+    if (readStoredCooldown() === 0) {
+      handleSend();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCheck = async () => {
     if (checking) return;
     setChecking(true);
@@ -161,7 +396,7 @@ export function VerifyEmailScreen({ navigate }) {
           We need to confirm <strong>{email}</strong> is yours.
           {sentAt
             ? " A verification link is on its way — tap it, and this page moves on by itself. Not seeing it? Check your spam folder."
-            : " Tap the link in the email we sent when you created your account — or send a fresh one below."}
+            : " We're sending you a verification link — tap it, and this page moves on by itself."}
         </p>
 
         <button

@@ -78,11 +78,19 @@ export function isKitchenEmail(email: string | null | undefined): boolean {
   return kitchenEmails.has(email.toLowerCase());
 }
 
+/**
+ * The Firebase Admin app, for the rare service that must write to Firebase
+ * Auth itself (e.g. the verification-code flow marking an email verified).
+ */
+export function getAdminApp(): admin.app.App {
+  return ensureInitialized();
+}
+
 async function firebaseAuthMiddleware(
   request: AuthenticatedRequest,
   _response: Response,
   next: NextFunction,
-  options: { enforceAllowlist: boolean }
+  options: { enforceAllowlist: boolean; allowUnverified?: boolean }
 ): Promise<void> {
   // Dev escape hatch — mirrors RETELL_VERIFY_SIGNATURE / TWILIO_VALIDATE_SIGNATURE.
   // Production env validation forces this true.
@@ -110,7 +118,7 @@ async function firebaseAuthMiddleware(
     // without this an unverified email/password account would pass auth and
     // reach cost-bearing actions (OCR, provisioning). Google sign-ins are
     // pre-verified, so this is transparent for them.
-    if (!decoded.email || decoded.email_verified !== true) {
+    if (!decoded.email || (decoded.email_verified !== true && !options.allowUnverified)) {
       logger.warn({
         evt: "auth_email_not_verified",
         uid: decoded.uid,
@@ -168,6 +176,22 @@ export async function requireFirebaseIdentity(
   next: NextFunction
 ): Promise<void> {
   return firebaseAuthMiddleware(request, response, next, { enforceAllowlist: false });
+}
+
+/**
+ * Identity check that tolerates an unverified email — ONLY for the
+ * verify-email endpoints themselves (a user must be able to request/confirm a
+ * code before they're verified). Everything else keeps the verified gate.
+ */
+export async function requireFirebaseIdentityAllowUnverified(
+  request: AuthenticatedRequest,
+  response: Response,
+  next: NextFunction
+): Promise<void> {
+  return firebaseAuthMiddleware(request, response, next, {
+    enforceAllowlist: false,
+    allowUnverified: true
+  });
 }
 
 /**
