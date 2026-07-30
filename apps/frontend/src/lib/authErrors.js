@@ -18,7 +18,7 @@ const MESSAGES = {
   "auth/invalid-credential": "Incorrect email or password. Try again, or use “Forgot password?”.",
   "auth/user-disabled": "This account has been disabled. Contact hello@biteperk.com.au.",
   "auth/too-many-requests":
-    "Too many attempts — please wait a minute and try again.",
+    "No rush — that was a few tries in quick succession. Give it a moment, then try again.",
   "auth/network-request-failed":
     "Couldn't reach the sign-in service. This is usually an ad blocker or " +
     "privacy extension blocking identitytoolkit.googleapis.com. Try disabling " +
