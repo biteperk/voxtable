@@ -111,12 +111,16 @@ export function OnboardingWizard({ navigate }) {
 
   const hasRestaurant = (memberships?.length ?? 0) > 0;
 
-  const load = useCallback(async () => {
+  // `silent` refreshes the status/checklist without flipping the whole wizard
+  // into the "Loading…" card — used by polling steps (Trial, Phone) so the
+  // current card doesn't remount (and replay its entrance animation) on every
+  // background tick.
+  const load = useCallback(async ({ silent = false } = {}) => {
     if (!hasRestaurant) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const r = await getOnboardingStatus();
@@ -138,8 +142,16 @@ export function OnboardingWizard({ navigate }) {
     load();
   }, [load]);
 
+  const silentRefresh = useCallback(() => load({ silent: true }), [load]);
+
   const handleSignOut = async () => {
-    await signOutUser();
+    try {
+      await signOutUser();
+    } catch {
+      // Sign-out very rarely fails (network blip mid-revoke); leaving the user
+      // signed in with no feedback is worse than landing them on the public
+      // page, where the auth listener settles the real state.
+    }
     navigate("/");
   };
 
@@ -186,9 +198,9 @@ export function OnboardingWizard({ navigate }) {
   } else if (current === "menu") {
     content = <MenuStep onContinue={load} navigate={navigate} />;
   } else if (current === "trial") {
-    content = <TrialStep onRefresh={load} />;
+    content = <TrialStep onRefresh={silentRefresh} />;
   } else if (current === "phone") {
-    content = <PhoneStep onRefresh={load} />;
+    content = <PhoneStep onRefresh={silentRefresh} />;
   } else if (current) {
     // The server checklist has a current step this build doesn't know yet —
     // don't show the completion card for an unfinished setup.

@@ -119,58 +119,68 @@ async function firebaseAuthMiddleware(
     );
   }
 
+  // Token verification gets its own try/catch so ONLY a bad token maps to 401.
+  // (Previously the catch wrapped the allowlist membership lookup too, so a
+  // transient DB failure was reported as 401 INVALID_TOKEN — the frontend then
+  // force-refreshed a perfectly good token, got 401 again, and signed the user
+  // out. A DB blip must be a 5xx, not a mass sign-out.)
+  let decoded: admin.auth.DecodedIdToken;
   try {
     const app = ensureInitialized();
-    const decoded = await app.auth().verifyIdToken(match[1]!);
+    decoded = await app.auth().verifyIdToken(match[1]!);
+  } catch {
+    return next(new AppError(401, "INVALID_TOKEN", "ID token verification failed."));
+  }
 
-    // A verified email is required for EVERY authenticated request, regardless
-    // of the allowlist. This must sit ABOVE the allowlist branch: with open
-    // signup (empty allowlist) the allowlist check is skipped entirely, so
-    // without this an unverified email/password account would pass auth and
-    // reach cost-bearing actions (OCR, provisioning). Google sign-ins are
-    // pre-verified, so this is transparent for them.
-    if (!decoded.email || (decoded.email_verified !== true && !options.allowUnverified)) {
-      logger.warn({
-        evt: "auth_email_not_verified",
-        uid: decoded.uid,
-        email_verified: decoded.email_verified === true
-      });
-      return next(
-        new AppError(403, "EMAIL_NOT_VERIFIED", "Please verify your email address to continue.")
-      );
-    }
+  // A verified email is required for EVERY authenticated request, regardless
+  // of the allowlist. This must sit ABOVE the allowlist branch: with open
+  // signup (empty allowlist) the allowlist check is skipped entirely, so
+  // without this an unverified email/password account would pass auth and
+  // reach cost-bearing actions (OCR, provisioning). Google sign-ins are
+  // pre-verified, so this is transparent for them.
+  if (!decoded.email || (decoded.email_verified !== true && !options.allowUnverified)) {
+    logger.warn({
+      evt: "auth_email_not_verified",
+      uid: decoded.uid,
+      email_verified: decoded.email_verified === true
+    });
+    return next(
+      new AppError(403, "EMAIL_NOT_VERIFIED", "Please verify your email address to continue.")
+    );
+  }
 
-    // Email allowlist - defence-in-depth on top of Firebase project audience
-    // check. Invited restaurant members are also allowed even when their email
-    // is not in the platform bootstrap allowlist; otherwise manager-driven
-    // staff onboarding would still require an ops env change per employee.
-    // With SELF_SERVE_SIGNUP_ENABLED the allowlist stops gating dashboard
-    // routes entirely — any verified account may sign up and create a tenant
-    // (that IS the semantics of self-serve; membership scoping still isolates
-    // tenants, and requireAdminRole keeps its own DASHBOARD_ADMIN_EMAILS gate).
-    if (allowedEmails.size > 0 && !env.SELF_SERVE_SIGNUP_ENABLED) {
-      const email = decoded.email.toLowerCase();
-      const allowlisted = allowedEmails.has(email);
-      const hasMembership =
-        options.enforceAllowlist && !allowlisted
-          ? (await getUserMemberships(decoded.uid)).length > 0
-          : false;
-      if (options.enforceAllowlist && !allowlisted && !hasMembership) {
+  // Email allowlist - defence-in-depth on top of Firebase project audience
+  // check. Invited restaurant members are also allowed even when their email
+  // is not in the platform bootstrap allowlist; otherwise manager-driven
+  // staff onboarding would still require an ops env change per employee.
+  // With SELF_SERVE_SIGNUP_ENABLED the allowlist stops gating dashboard
+  // routes entirely — any verified account may sign up and create a tenant
+  // (that IS the semantics of self-serve; membership scoping still isolates
+  // tenants, and requireAdminRole keeps its own DASHBOARD_ADMIN_EMAILS gate).
+  if (allowedEmails.size > 0 && !env.SELF_SERVE_SIGNUP_ENABLED) {
+    const email = decoded.email.toLowerCase();
+    const allowlisted = allowedEmails.has(email);
+    if (options.enforceAllowlist && !allowlisted) {
+      let hasMembership = false;
+      try {
+        hasMembership = (await getUserMemberships(decoded.uid)).length > 0;
+      } catch (error) {
+        logger.error({ evt: "auth_membership_lookup_failed", uid: decoded.uid, error });
+        return next(
+          new AppError(503, "AUTH_LOOKUP_FAILED", "Could not verify account access — please retry.")
+        );
+      }
+      if (!hasMembership) {
         logger.warn({ evt: "auth_email_not_allowlisted", uid: decoded.uid });
         return next(
           new AppError(403, "EMAIL_NOT_ALLOWLISTED", "This account is not authorised.")
         );
       }
     }
-
-    request.firebaseUser = decoded;
-    next();
-  } catch (error) {
-    if (error instanceof AppError) {
-      return next(error);
-    }
-    next(new AppError(401, "INVALID_TOKEN", "ID token verification failed."));
   }
+
+  request.firebaseUser = decoded;
+  next();
 }
 
 export async function requireFirebaseAuth(

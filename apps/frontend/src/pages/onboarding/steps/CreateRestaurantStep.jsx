@@ -17,6 +17,11 @@ export function CreateRestaurantStep({ onCreated }) {
       await onCreated();
     } catch (e) {
       setError(e.message);
+    } finally {
+      // On success this component normally unmounts (memberships arrive), but
+      // if the post-create refresh silently failed the wizard re-renders this
+      // step — the button must not stay stuck on "Creating…". The create POST
+      // is idempotent, so re-submitting is safe.
       setBusy(false);
     }
   };
