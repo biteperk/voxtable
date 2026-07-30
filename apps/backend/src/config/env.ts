@@ -162,6 +162,20 @@ const envSchema = z
   NOTIFICATIONS_FROM_EMAIL: z.string().email().default("hello@biteperk.com.au"),
   NOTIFICATIONS_SMS_FROM: z.string().optional(),
 
+  // Which transactional-email API the notification worker speaks. "zeptomail"
+  // is Zoho's transactional service (AU data centre by default) — used for the
+  // branded verification-code emails; "sendgrid" is the original path.
+  EMAIL_PROVIDER: z.enum(["sendgrid", "zeptomail"]).default("sendgrid"),
+  ZEPTOMAIL_TOKEN: z.string().optional(),
+  ZEPTOMAIL_BASE_URL: z.string().url().default("https://api.zeptomail.com.au/v1.1"),
+
+  // Premium signup verification: a 6-digit code emailed via the notifications
+  // outbox and typed on the verify screen (replaces Firebase's default
+  // verification email, which lands in spam). Kill-switch pattern: ships OFF;
+  // the /api/auth/verify-email/* routes 404 and the frontend falls back to the
+  // Firebase link flow until enabled.
+  EMAIL_VERIFICATION_CODE_ENABLED: boolFlag(),
+
   // Automated provisioning (Phase 4b). Kill-switch: ships OFF; the worker is a
   // no-op and provisioning stays admin-assisted (Phase 4a) until enabled.
   PROVISIONING_AUTO_ENABLED: boolFlag(),
@@ -285,6 +299,31 @@ const envSchema = z
         path: ["MENU_OCR_BASE_URL"],
         message: "MENU_OCR_BASE_URL is required when MENU_OCR_PROVIDER=openai."
       });
+    }
+
+    // Notifications email provider — the worker can't send without the matching
+    // credential. Only enforced when the outbox is actually draining.
+    if (value.NOTIFICATIONS_ENABLED && value.EMAIL_PROVIDER === "sendgrid") {
+      requireInProd(
+        "SENDGRID_API_KEY",
+        "SENDGRID_API_KEY is required when NOTIFICATIONS_ENABLED=true and EMAIL_PROVIDER=sendgrid."
+      );
+    }
+    if (value.NOTIFICATIONS_ENABLED && value.EMAIL_PROVIDER === "zeptomail") {
+      requireInProd(
+        "ZEPTOMAIL_TOKEN",
+        "ZEPTOMAIL_TOKEN is required when NOTIFICATIONS_ENABLED=true and EMAIL_PROVIDER=zeptomail."
+      );
+    }
+
+    // Verification codes ride the notifications outbox — without the worker
+    // draining it, signups would wait forever for an email that never sends.
+    if (value.EMAIL_VERIFICATION_CODE_ENABLED) {
+      requireInProd(
+        "NOTIFICATIONS_ENABLED",
+        "NOTIFICATIONS_ENABLED must be true when EMAIL_VERIFICATION_CODE_ENABLED=true " +
+          "(verification codes are delivered via the notifications outbox)."
+      );
     }
 
     if (value.PROVISIONING_AUTO_ENABLED && !value.RETELL_TEMPLATE_AGENT_ID) {

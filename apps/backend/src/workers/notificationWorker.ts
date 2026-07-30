@@ -30,7 +30,7 @@ function backoffMsForAttempt(attempts: number): number {
   return Math.min(60_000 * 2 ** attempts, 60 * 60 * 1000);
 }
 
-async function sendEmail(row: NotificationRow): Promise<void> {
+async function sendViaSendGrid(row: NotificationRow): Promise<void> {
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
     headers: {
@@ -41,7 +41,11 @@ async function sendEmail(row: NotificationRow): Promise<void> {
       personalizations: [{ to: [{ email: row.recipient }] }],
       from: { email: env.NOTIFICATIONS_FROM_EMAIL },
       subject: row.subject ?? "VoxTable",
-      content: [{ type: "text/plain", value: row.body }]
+      // SendGrid requires text/plain before text/html.
+      content: [
+        { type: "text/plain", value: row.body },
+        ...(row.body_html ? [{ type: "text/html", value: row.body_html }] : [])
+      ]
     })
   });
   if (!res.ok) {
@@ -51,6 +55,35 @@ async function sendEmail(row: NotificationRow): Promise<void> {
     (err as Error & { transient?: boolean }).transient = transient;
     throw err;
   }
+}
+
+async function sendViaZeptoMail(row: NotificationRow): Promise<void> {
+  const res = await fetch(`${env.ZEPTOMAIL_BASE_URL}/email`, {
+    method: "POST",
+    headers: {
+      authorization: `Zoho-enczapikey ${env.ZEPTOMAIL_TOKEN}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      from: { address: env.NOTIFICATIONS_FROM_EMAIL, name: "VoxTable" },
+      to: [{ email_address: { address: row.recipient } }],
+      subject: row.subject ?? "VoxTable",
+      textbody: row.body,
+      ...(row.body_html ? { htmlbody: row.body_html } : {})
+    })
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    const transient = res.status === 429 || res.status >= 500;
+    const err = new Error(`ZeptoMail ${res.status}: ${body.slice(0, 200)}`);
+    (err as Error & { transient?: boolean }).transient = transient;
+    throw err;
+  }
+}
+
+async function sendEmail(row: NotificationRow): Promise<void> {
+  if (env.EMAIL_PROVIDER === "zeptomail") return sendViaZeptoMail(row);
+  return sendViaSendGrid(row);
 }
 
 async function sendSms(row: NotificationRow): Promise<void> {

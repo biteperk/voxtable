@@ -33,6 +33,7 @@
     "smoke:retell-orders": "tsx apps/backend/scripts/smoke-retell-orders.ts",
     "smoke:isolation": "tsx apps/backend/scripts/smoke-onboarding-isolation.ts",
     "smoke:legal": "tsx apps/backend/scripts/smoke-legal.ts",
+    "smoke:verify-email": "tsx apps/backend/scripts/smoke-verify-email.ts",
     "test:backend": "APP_ENV=test DATABASE_URL=postgres://test:test@localhost:5432/test tsx --test apps/backend/src/**/*.test.ts",
     "check": "npm run build:backend && npm run test:backend && npm run build:frontend && npm run build:kds"
   },

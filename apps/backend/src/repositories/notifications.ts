@@ -8,6 +8,7 @@ export interface NotificationRow {
   kind: string;
   subject: string | null;
   body: string;
+  body_html: string | null;
   status: "pending" | "sent" | "failed";
   attempts: number;
   next_attempt_at: string;
@@ -23,17 +24,19 @@ export async function enqueueNotification(input: {
   kind: string;
   subject?: string | null;
   body: string;
+  bodyHtml?: string | null;
 }): Promise<void> {
   await pool.query(
-    `INSERT INTO notifications_outbox (restaurant_id, channel, recipient, kind, subject, body)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO notifications_outbox (restaurant_id, channel, recipient, kind, subject, body, body_html)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
       input.restaurantId ?? null,
       input.channel,
       input.recipient,
       input.kind,
       input.subject ?? null,
-      input.body
+      input.body,
+      input.bodyHtml ?? null
     ]
   );
 }

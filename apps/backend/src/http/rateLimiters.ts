@@ -44,6 +44,18 @@ export const menuIngestLimiter = rateLimit({
   message: { error: { code: "RATE_LIMITED", message: "You're uploading menus too quickly — please wait a moment." } }
 });
 
+// Verify-email code endpoints (send + confirm). The service enforces its own
+// DB-backed send cooldown and guess cap; this is the outer belt that also
+// covers pre-verification accounts hammering the route itself.
+export const verifyEmailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: uidOrIpKey,
+  message: { error: { code: "RATE_LIMITED", message: "Too many attempts — please try again later." } }
+});
+
 // Contact-details upsert (signup flush + profile edits). Cheap write to the
 // caller's own users row, but deliberately reachable by any verified account
 // pre-allowlist — so cap it like restaurant creation.

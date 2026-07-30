@@ -120,8 +120,9 @@ const verifyContinueUrl = () => ({ url: `${window.location.origin}/verify-email`
 
 /**
  * Create an email/password account for a restaurant representative.
- * Order matters: the profile is set BEFORE the verification email is sent so
- * the template's %DISPLAY_NAME% renders the person's name, not a blank.
+ * Deliberately does NOT send Firebase's verification email here — the verify
+ * screen owns sending (a branded 6-digit code via our backend, or the Firebase
+ * link only as its legacy fallback), so signup can't double-send.
  * Returns the (signed-in, unverified) user; the caller routes to /verify-email.
  */
 export async function createAccount({ name, email, password }) {
@@ -129,7 +130,6 @@ export async function createAccount({ name, email, password }) {
   if (name) {
     await updateProfile(cred.user, { displayName: name });
   }
-  await sendEmailVerification(cred.user, verifyContinueUrl());
   return cred.user;
 }
 

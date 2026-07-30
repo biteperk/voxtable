@@ -4,6 +4,7 @@ import rateLimit from "express-rate-limit";
 
 import { env } from "./config/env";
 import { adminRouter } from "./routes/admin";
+import { authVerificationRouter } from "./routes/authVerification";
 import { availabilityRouter } from "./routes/availability";
 import { billingRouter } from "./routes/billing";
 import { bookingsRouter } from "./routes/bookings";
@@ -120,6 +121,7 @@ export function createApp() {
   app.use(dashboardRouter);
   app.use(billingRouter);
   app.use(meRouter);
+  app.use(authVerificationRouter);
   app.use(onboardingRouter);
   app.use(restaurantRouter);
   app.use(staffRouter);
