@@ -20,6 +20,12 @@ async function main(): Promise<void> {
   startBackendWorkers();
   console.log(`VoxTable backend worker listening for jobs (${env.APP_ENV}).`);
 
+  // Every worker unref()s its own timer — correct in the api process, which the
+  // HTTP listener keeps alive. This process has no HTTP listener, so without a
+  // ref'd handle Node's event loop drains and the process exits 0 right after
+  // startup (Docker then restarts it in a loop). Hold the loop open until shutdown.
+  const keepAlive = setInterval(() => {}, 1 << 30);
+
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -37,6 +43,7 @@ async function main(): Promise<void> {
       console.warn("[shutdown] closePool failed:", error);
     }
 
+    clearInterval(keepAlive);
     console.log("[shutdown] worker done");
     process.exit(0);
   }
