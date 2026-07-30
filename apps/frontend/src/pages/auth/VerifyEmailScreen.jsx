@@ -16,12 +16,35 @@ import { Icon } from "../../components/Icon";
 const POLL_MS = 5000;
 const MAX_POLLS = 60; // ~5 minutes, then the manual button takes over
 const RESEND_COOLDOWN_S = 30;
+const SENT_AT_KEY = "vocotable:verify-email-sent-at";
+
+// Resend cooldown that survives a page reload — so a client who refreshes and
+// clicks again sees the countdown, not a fresh-looking button that trips
+// Firebase's server-side rate limit.
+function readStoredCooldown() {
+  try {
+    const raw = window.localStorage.getItem(SENT_AT_KEY);
+    if (!raw) return 0;
+    const elapsed = Math.floor((Date.now() - Number(raw)) / 1000);
+    return Math.max(0, RESEND_COOLDOWN_S - elapsed);
+  } catch {
+    return 0;
+  }
+}
+
+function markSent() {
+  try {
+    window.localStorage.setItem(SENT_AT_KEY, String(Date.now()));
+  } catch {
+    // Storage disabled (e.g. private mode) — the cooldown just won't persist.
+  }
+}
 
 export function VerifyEmailScreen({ navigate }) {
   const { refreshMe } = useAuth();
   const [error, setError] = useState(null);
-  const [sentAt, setSentAt] = useState(null);
-  const [cooldown, setCooldown] = useState(0);
+  const [sentAt, setSentAt] = useState(() => (readStoredCooldown() > 0 ? Date.now() : null));
+  const [cooldown, setCooldown] = useState(readStoredCooldown);
   const [checking, setChecking] = useState(false);
   const advancing = useRef(false);
   const email = auth.currentUser?.email ?? "your email";
@@ -74,11 +97,20 @@ export function VerifyEmailScreen({ navigate }) {
     setError(null);
     try {
       await resendVerification();
-      setSentAt(Date.now());
-      setCooldown(RESEND_COOLDOWN_S);
     } catch (e) {
-      setError(authErrorMessage(e));
+      // Firebase rate-limits repeated sends. For a client that only means a
+      // link is already sitting in their inbox — not worth a red alert. Any
+      // other failure still surfaces normally.
+      if (!(e && e.code === "auth/too-many-requests")) {
+        setError(authErrorMessage(e));
+        return;
+      }
     }
+    // Freshly sent, or already sent moments ago — both land in the same calm
+    // "it's on its way" state, with a resend countdown that survives reloads.
+    markSent();
+    setSentAt(Date.now());
+    setCooldown(RESEND_COOLDOWN_S);
   };
 
   const handleCheck = async () => {
@@ -91,7 +123,11 @@ export function VerifyEmailScreen({ navigate }) {
         setError("Not verified yet — tap the link in the email we sent, then try again.");
       }
     } catch (e) {
-      setError(authErrorMessage(e));
+      if (e && e.code === "auth/too-many-requests") {
+        setError("Still confirming — give it a few seconds, then tap again.");
+      } else {
+        setError(authErrorMessage(e));
+      }
     } finally {
       setChecking(false);
     }
@@ -124,7 +160,7 @@ export function VerifyEmailScreen({ navigate }) {
         <p className="login-sub">
           We need to confirm <strong>{email}</strong> is yours.
           {sentAt
-            ? " A verification link is on its way — tap it, and this page moves on by itself."
+            ? " A verification link is on its way — tap it, and this page moves on by itself. Not seeing it? Check your spam folder."
             : " Tap the link in the email we sent when you created your account — or send a fresh one below."}
         </p>
 
