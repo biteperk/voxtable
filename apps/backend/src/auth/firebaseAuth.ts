@@ -79,6 +79,17 @@ export function isKitchenEmail(email: string | null | undefined): boolean {
 }
 
 /**
+ * Is this email in the platform bootstrap allowlist? Used by the multi-tenancy
+ * legacy bridge (tenantContext): with SELF_SERVE_SIGNUP_ENABLED, passing
+ * requireFirebaseAuth no longer implies allowlisted, so the bridge must check
+ * for itself before granting the default tenant.
+ */
+export function isAllowlistedEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return allowedEmails.has(email.toLowerCase());
+}
+
+/**
  * The Firebase Admin app, for the rare service that must write to Firebase
  * Auth itself (e.g. the verification-code flow marking an email verified).
  */

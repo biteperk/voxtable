@@ -4,7 +4,7 @@ import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { logger } from "../utils/logger";
 import { getUserMemberships, type MemberRole, type Membership } from "../repositories/members";
-import { AuthenticatedRequest, isKitchenEmail, isManagerEmail } from "./firebaseAuth";
+import { AuthenticatedRequest, isAllowlistedEmail, isKitchenEmail, isManagerEmail } from "./firebaseAuth";
 
 export interface TenantContext {
   restaurantId: string;
@@ -72,11 +72,14 @@ export async function resolveTenant(
   try {
     let memberships = await getUserMemberships(user.uid);
 
-    if (memberships.length === 0 && env.MULTITENANCY_LEGACY_FALLBACK) {
-      // requireFirebaseAuth already enforced DASHBOARD_ALLOWED_EMAILS, so an
-      // authenticated user reaching here is allowlisted. Grant the default
-      // tenant with a role derived from the manager/kitchen allowlists (the KDS
-      // kiosk needs 'kitchen' to read the now role-gated /api/orders/*).
+    if (memberships.length === 0 && env.MULTITENANCY_LEGACY_FALLBACK && isAllowlistedEmail(user.email)) {
+      // Legacy bridge for pre-backfill ALLOWLISTED operators only. With
+      // SELF_SERVE_SIGNUP_ENABLED, requireFirebaseAuth skips the allowlist, so
+      // a brand-new self-serve account also lands here member-less — it must
+      // fall through to 403 NO_RESTAURANT_MEMBERSHIP (the onboarding wizard),
+      // never be granted the default tenant. Role derives from the
+      // manager/kitchen allowlists (the KDS kiosk needs 'kitchen' to read the
+      // role-gated /api/orders/*).
       const role: MemberRole = isManagerEmail(user.email)
         ? "manager"
         : isKitchenEmail(user.email)
