@@ -912,6 +912,29 @@ button {
   color: var(--error, #ffb4ab);
 }
 
+/* A validation message pinned under its own input, rather than only in the
+   summary line at the foot of the card. On a long form the summary alone
+   doesn't tell you which box is wrong.
+
+   Scoped as `.onboarding-field > .onboarding-field-error` deliberately: the
+   bare class loses to `.onboarding-field > span` above, which would render
+   this in the label's white instead of the error colour. No margin — the
+   parent is a flex column with its own gap. */
+.onboarding-field > .onboarding-field-error {
+  display: block;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  color: var(--error, #ffb4ab);
+}
+
+/* Don't rely on colour alone to mark the bad field — it fails for anyone with
+   a red/green deficiency, which is roughly 1 in 12 men. */
+.onboarding-field input[aria-invalid="true"] {
+  border-color: var(--error, #ffb4ab);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 18%, transparent);
+}
+
 /* ---- Welcome (CreateRestaurant) hero mark ---- */
 .onboarding-welcome-mark {
   width: 56px;

@@ -57,10 +57,18 @@ export const errorHandler: ErrorRequestHandler = (error, request, response, _nex
       return;
     }
 
+    // Say WHICH field is wrong and why. This used to return a flat "Request
+    // validation failed." with the real reason buried in `details`, so a client
+    // filling in the agreement step saw only that sentence and had no way to
+    // tell that (say) their ABN failed the ATO checksum — a dead end on a form
+    // they cannot skip. Our schemas already carry good, specific messages;
+    // there was no reason to withhold them from the dashboard when the Retell
+    // path had been getting them all along.
+    // `details` stays for programmatic per-field handling.
     response.status(400).json({
       error: {
         code: "VALIDATION_ERROR",
-        message: "Request validation failed.",
+        message: describeZodIssues(error),
         details: error.flatten()
       }
     });
@@ -94,4 +102,43 @@ function humanizeZodIssues(error: ZodError): string {
     return `${field} ${issue.message.toLowerCase()}`;
   });
   return `I couldn't read that — ${parts.join("; ")}.`;
+}
+
+/** `client_abn` → `ABN`, `client_legal_name` → `Client legal name`. */
+function prettyFieldName(path: string): string {
+  const leaf = path.split(".").pop() ?? path;
+  const words = leaf.split("_");
+  // Keep acronyms shouting — "Client abn" reads like a typo.
+  const ACRONYMS = new Set(["abn", "id", "url", "sms", "pii", "api"]);
+  return words
+    .map((word, i) =>
+      ACRONYMS.has(word) ? word.toUpperCase() : i === 0 ? word[0]?.toUpperCase() + word.slice(1) : word
+    )
+    .join(" ");
+}
+
+/**
+ * Turn a validation failure into something a restaurant owner can act on.
+ *
+ * Distinct from humanizeZodIssues above, which is written in Bella's voice for
+ * the phone agent ("I couldn't read that — ...") and lowercases everything,
+ * mangling "ABN" into "abn". That register is wrong for a form.
+ */
+function describeZodIssues(error: ZodError): string {
+  const parts = error.issues.slice(0, 3).map((issue) => {
+    const field = issue.path.filter((p) => typeof p === "string").join(".");
+    // Our schemas' custom messages are already written for people and name
+    // their own field ("That ABN fails the ATO checksum — please re-check
+    // it."). Only Zod's terse built-ins ("Required") need a field name
+    // bolted on, so detect a real sentence and leave it alone.
+    const isFullSentence = /^[A-Z]/.test(issue.message) && /[.!?]$/.test(issue.message);
+    if (isFullSentence || !field) return issue.message;
+    const label = prettyFieldName(field);
+    // Don't stutter: "ABN must be 11 digits" already names its field, so
+    // prefixing gives "Client ABN: ABN must be 11 digits".
+    const namesItself = issue.message.toLowerCase().includes(label.toLowerCase().split(" ").pop() ?? "");
+    return namesItself ? `${issue.message}.` : `${label}: ${issue.message}.`;
+  });
+  const more = error.issues.length - parts.length;
+  return parts.join(" ") + (more > 0 ? ` (and ${more} more.)` : "");
 }

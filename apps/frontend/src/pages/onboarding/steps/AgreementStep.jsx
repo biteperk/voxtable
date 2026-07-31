@@ -19,6 +19,8 @@ export function AgreementStep({ onSaved, onBack = null }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Validation messages pinned to a specific input, keyed by API field name.
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -58,7 +60,15 @@ export function AgreementStep({ onSaved, onBack = null }) {
     );
   }
 
-  const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  // Clear a field's error as soon as the owner starts correcting it — leaving
+  // it up while they retype reads as "still wrong" and is quietly demoralising.
+  const clearFieldError = (field) =>
+    setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: null } : prev));
+
+  const set = (field) => (e) => {
+    clearFieldError(field);
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  };
   const setCheck = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.checked }));
   const toggleService = (s) =>
     setForm((prev) => ({
@@ -77,6 +87,7 @@ export function AgreementStep({ onSaved, onBack = null }) {
     }
     setBusy(true);
     setError(null);
+    setFieldErrors({});
     const payload = {
       client_legal_name: form.client_legal_name.trim(),
       client_abn: form.client_abn.trim(),
@@ -97,6 +108,17 @@ export function AgreementStep({ onSaved, onBack = null }) {
       await submitAgreement(payload);
       await onSaved();
     } catch (e) {
+      // The API returns per-field detail alongside the summary
+      // (`{ error: { message, details: { fieldErrors } } }`). Pin what we can
+      // to its input so the owner sees which box to fix; anything we can't
+      // place still shows in the summary line at the foot of the card.
+      const perField = e.details?.fieldErrors ?? {};
+      const placed = Object.fromEntries(
+        Object.entries(perField)
+          .filter(([, messages]) => Array.isArray(messages) && messages.length > 0)
+          .map(([field, messages]) => [field, messages[0]])
+      );
+      setFieldErrors(placed);
       setError(e.message);
       setBusy(false);
     }
@@ -135,7 +157,17 @@ export function AgreementStep({ onSaved, onBack = null }) {
               placeholder="12 345 678 901"
               maxLength={14}
               required
+              aria-invalid={fieldErrors.client_abn ? "true" : undefined}
+              aria-describedby={fieldErrors.client_abn ? "abn-error" : undefined}
             />
+            {/* Shown against the field rather than only at the foot of the
+                card — an ABN typo is 20 lines above the submit button, and a
+                message down there gives no clue which box to fix. */}
+            {fieldErrors.client_abn && (
+              <span className="onboarding-field-error" id="abn-error" role="alert">
+                {fieldErrors.client_abn}
+              </span>
+            )}
           </label>
         </div>
 
@@ -274,7 +306,11 @@ export function AgreementStep({ onSaved, onBack = null }) {
           </label>
         </div>
 
-        {error && <p className="onboarding-error">{error}</p>}
+        {error && (
+          <p className="onboarding-error" role="alert">
+            {error}
+          </p>
+        )}
         <div className="onboarding-actions">
           {onBack && (
             <button type="button" className="ghost-button" onClick={onBack} disabled={busy}>
