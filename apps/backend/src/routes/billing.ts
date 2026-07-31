@@ -20,7 +20,11 @@ import {
   listPaymentMethods
 } from "../services/stripeService";
 import { isBillingConfigured, legacyCustomerId, stripeMode } from "../services/stripeClient";
-import { computeChecklist, nextOnboardingStatus } from "../services/onboardingService";
+import {
+  assertCanStartCheckout,
+  computeChecklist,
+  nextOnboardingStatus
+} from "../services/onboardingService";
 
 // Per-tenant Stripe billing. Read endpoints mirror the active restaurant's
 // Stripe data; the checkout endpoint starts a self-serve free trial. Auth +
@@ -113,6 +117,15 @@ billingRouter.post(
   asyncHandler(async (request, response) => {
     const restaurantId = tenantId(request);
 
+    // Don't take a card until the earlier steps are actually done. A tenant who
+    // pays too early can't be advanced by the Stripe webhook, and unwinding a
+    // charge is far worse than refusing one.
+    const statusBeforeCheckout = await getOnboardingStatus(restaurantId);
+    if (!statusBeforeCheckout) {
+      throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
+    }
+    assertCanStartCheckout(statusBeforeCheckout);
+
     // Commitment boundary for the advertised-number reservation: pre-trial
     // signups may share a number freely (see findDuplicateRestaurant), but the
     // first tenant to start a trial claims it. Same generic contract as the
@@ -132,10 +145,9 @@ billingRouter.post(
     }
 
     if (!isBillingConfigured() && env.APP_ENV !== "production") {
-      const current = await getOnboardingStatus(restaurantId);
-      if (!current) {
-        throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
-      }
+      // Dev-only shortcut: no Stripe, so nothing will ever send us the webhook
+      // that normally advances the tenant. Tick the trial step by hand instead.
+      const current = statusBeforeCheckout;
       const next = nextOnboardingStatus(current, "trial_started");
       if (next !== current) await setOnboardingStatus(restaurantId, next);
       response.json({
