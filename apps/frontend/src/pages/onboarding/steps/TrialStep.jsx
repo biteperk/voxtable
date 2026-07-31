@@ -80,7 +80,7 @@ export function TrialStep({ onRefresh, onBack = null }) {
           <Icon name="info" /> Billing isn't switched on yet — your progress is saved.
         </p>
       )}
-      {error && <p className="onboarding-error">{error}</p>}
+      {error && <p className="onboarding-error" role="alert">{error}</p>}
       <div className="onboarding-actions">
         {onBack && (
           <button type="button" className="ghost-button" onClick={onBack} disabled={busy}>

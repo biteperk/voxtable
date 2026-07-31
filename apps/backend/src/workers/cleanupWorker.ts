@@ -55,10 +55,9 @@ async function tick(): Promise<void> {
       SELECT count(*)::int AS deleted FROM deleted
       `
     );
-    // Phase 5: purge old sent notifications + cancel abandoned onboardings.
-    // Guarded with IF-table-exists so this is safe before migration 012 applies.
+    // Phase 5: purge old sent notifications. Guarded with its own catch so
+    // this is safe before migration 012 applies.
     let notificationsDeleted = 0;
-    let abandonedCancelled = 0;
     try {
       const notif = await pool.query<{ deleted: number }>(
         `
@@ -71,10 +70,18 @@ async function tick(): Promise<void> {
         `
       );
       notificationsDeleted = notif.rows[0]?.deleted ?? 0;
-      abandonedCancelled = await cancelAbandonedOnboarding(30);
     } catch (error) {
       // Tables/columns may not exist yet on an un-migrated DB — non-fatal.
       logger.warn({ evt: "cleanup_worker_phase5_skipped", error });
+    }
+
+    // Phase 6: cancel abandoned onboardings. Isolated from phase 5 so an
+    // outbox purge failure can never silently skip the sweeper.
+    let abandonedCancelled = 0;
+    try {
+      abandonedCancelled = await cancelAbandonedOnboarding(30);
+    } catch (error) {
+      logger.warn({ evt: "cleanup_worker_phase6_skipped", error });
     }
 
     logger.info({

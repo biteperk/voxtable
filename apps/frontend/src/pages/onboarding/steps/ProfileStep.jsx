@@ -13,9 +13,13 @@ const ONBOARDING_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"];
 export function ProfileStep({ onSaved }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null); // { message, code } | null
   const placesReady = isPlacesEnabled();
   const [placesMounted, setPlacesMounted] = useState(false);
+  // Autocomplete is only trusted once it has actually delivered a selection —
+  // a mounted widget whose API calls 403 must never hide the manual input.
+  const [placesProven, setPlacesProven] = useState(false);
+  const [manualAddress, setManualAddress] = useState(false);
 
   // Google Places address autocomplete (powered by Google) via the new
   // PlaceAutocompleteElement web component — the legacy `Autocomplete`
@@ -43,6 +47,7 @@ export function ProfileStep({ onSaved }) {
             const place = placePrediction.toPlace();
             await place.fetchFields({ fields: ["addressComponents", "formattedAddress"] });
             const parsed = parsePlaceNew(place);
+            setPlacesProven(true);
             setForm((prev) => ({
               ...prev,
               address: parsed.address || prev.address,
@@ -78,7 +83,7 @@ export function ProfileStep({ onSaved }) {
           timezone: p.timezone ?? "Australia/Sydney"
         });
       })
-      .catch((e) => !cancelled && setError(e.message));
+      .catch((e) => !cancelled && setError({ message: e.message, code: e.code }));
     return () => {
       cancelled = true;
     };
@@ -87,7 +92,7 @@ export function ProfileStep({ onSaved }) {
   if (!form) {
     return (
       <div className="onboarding-card is-loading">
-        <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error}` : "Loading…"}</p>
+        <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error.message}` : "Loading…"}</p>
       </div>
     );
   }
@@ -125,10 +130,13 @@ export function ProfileStep({ onSaved }) {
       await updateRestaurantProfile(payload);
       await onSaved();
     } catch (e) {
-      setError(e.message);
+      setError({ message: e.message, code: e.code });
       setBusy(false);
     }
   };
+
+  // Phone-specific errors render under the phone field, not at the card foot.
+  const phoneError = error && (error.code === "DUPLICATE_RESTAURANT" || error.code === "INVALID_PHONE");
 
   return (
     <div className="onboarding-card">
@@ -162,26 +170,35 @@ export function ProfileStep({ onSaved }) {
             placeholder="(02) 1234 5678"
             maxLength={32}
           />
-          <span className="onboarding-field-help">
-            <Icon name="info" /> Later you'll forward this number to Bella — nothing changes for your callers.
-          </span>
+          {phoneError ? (
+            <p className="onboarding-error" role="alert">{error.message}</p>
+          ) : (
+            <span className="onboarding-field-help">
+              <Icon name="info" /> Later you'll forward this number to Bella — nothing changes for your callers.
+            </span>
+          )}
         </label>
         <label className="onboarding-field">
           <span>Street address</span>
           {/* Google Places element mounts here when enabled. */}
-          {placesReady && <div ref={placesHostRef} className="onboarding-places-host" />}
-          {/* Fallback / manual input — hidden once the Places element mounts. */}
+          {placesReady && !manualAddress && <div ref={placesHostRef} className="onboarding-places-host" />}
+          {/* Manual input. Hidden ONLY once autocomplete has proven it works
+              (delivered a selection) — a mounted-but-403ing widget must never
+              leave the form without a writable address field. */}
           <input
             type="text"
             value={form.address}
             onChange={set("address")}
             maxLength={200}
             autoComplete="off"
-            style={placesReady && placesMounted ? { display: "none" } : undefined}
+            style={placesReady && placesMounted && placesProven && !manualAddress ? { display: "none" } : undefined}
           />
-          {placesReady && placesMounted && (
+          {placesReady && placesMounted && !manualAddress && (
             <span className="onboarding-field-help">
-              <Icon name="search" /> Pick your address — suburb, state &amp; postcode fill in automatically.
+              <Icon name="search" /> Pick your address — suburb, state &amp; postcode fill in automatically.{" "}
+              <button type="button" className="onboarding-inline-link" onClick={() => setManualAddress(true)}>
+                Enter it manually instead
+              </button>
             </span>
           )}
         </label>
@@ -245,7 +262,7 @@ export function ProfileStep({ onSaved }) {
             )}
           </div>
         </div>
-        {error && <p className="onboarding-error">{error}</p>}
+        {error && !phoneError && <p className="onboarding-error" role="alert">{error.message}</p>}
         <button type="submit" className="primary-button" disabled={busy}>
           {busy ? "Saving…" : "Save & continue"}
           <Icon name="arrow_forward" />
