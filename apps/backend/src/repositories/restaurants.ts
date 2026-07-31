@@ -527,8 +527,11 @@ export async function setProvisioningBindings(
 
 /**
  * Find an existing restaurant that likely matches a new signup, for the
- * duplicate guard: same advertised phone, or same name+postcode. Excludes
- * cancelled restaurants. Returns the first match's id + name, or null.
+ * duplicate guard: same advertised phone, or same name+postcode. Only
+ * COMMITTED tenants (trial and beyond) reserve a number — a half-finished
+ * wizard signup must never block a real one, and possession is ultimately
+ * proven at the verify-forwarding step. Returns the first match's id + name,
+ * or null.
  */
 export async function findDuplicateRestaurant(input: {
   existingPhoneNumber?: string | null;
@@ -543,7 +546,7 @@ export async function findDuplicateRestaurant(input: {
   const result = await pool.query<{ id: string; name: string }>(
     `
     SELECT id, name FROM restaurants
-    WHERE onboarding_status <> 'cancelled'
+    WHERE onboarding_status IN ('trial', 'provisioning', 'live', 'suspended')
       AND (
         ($1::text IS NOT NULL AND existing_phone_number = $1)
         OR ($2::text IS NOT NULL AND $3::text IS NOT NULL

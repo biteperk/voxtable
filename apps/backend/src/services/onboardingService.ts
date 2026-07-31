@@ -70,6 +70,13 @@ export function nextOnboardingStatus(
     return "live";
   }
 
+  // A cancelled tenant (abandoned-onboarding sweeper) is allowed to restart
+  // the wizard from the top — completing the profile again revives it. Any
+  // other forward event from cancelled/suspended still 409s below.
+  if (current === "cancelled" && event === "profile_completed") {
+    return "profile";
+  }
+
   const target = EVENT_TARGET[event];
   const cur = rank(current);
   const tgt = rank(target);

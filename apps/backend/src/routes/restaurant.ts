@@ -62,22 +62,28 @@ restaurantRouter.patch(
     const body = restaurantProfileSchema.parse(request.body);
 
     // Normalise the restaurant's advertised number to E.164 for the dedup check
-    // + storage (so "02..." and "+612..." compare equal).
-    const existingPhone =
-      body.existing_phone_number !== undefined
-        ? normalizePhone(body.existing_phone_number) ?? body.existing_phone_number
-        : undefined;
+    // + storage (so "02..." and "+612..." compare equal). An unparseable number
+    // is rejected rather than stored raw — mixed raw/E.164 rows would make the
+    // duplicate check compare unequal representations of the same number.
+    let existingPhone: string | undefined;
+    if (body.existing_phone_number !== undefined && body.existing_phone_number !== "") {
+      const parsed = normalizePhone(body.existing_phone_number);
+      if (!parsed) {
+        throw new AppError(400, "INVALID_PHONE", "That phone number doesn't look valid. Enter it as you'd dial it in Australia, e.g. (02) 1234 5678.");
+      }
+      existingPhone = parsed;
+    }
 
-    // Duplicate guard: if this advertised number already belongs to a DIFFERENT
-    // restaurant, refuse rather than splitting bookings across two tenants.
+    // Duplicate guard: only tenants that reached billing (trial and beyond)
+    // reserve an advertised number — see findDuplicateRestaurant. The generic
+    // message deliberately omits the other tenant's identity.
     if (existingPhone) {
       const dup = await findDuplicateRestaurant({ existingPhoneNumber: existingPhone });
       if (dup && dup.id !== restaurantId) {
         throw new AppError(
           409,
           "DUPLICATE_RESTAURANT",
-          `A restaurant ("${dup.name}") is already set up with that phone number. If this is your venue, ask the owner to invite you instead of creating a second account.`,
-          { restaurant_name: dup.name }
+          "That phone number is already connected to an active VoxTable account. Double-check the number, or contact support@biteperk.com.au if you believe this is an error."
         );
       }
     }

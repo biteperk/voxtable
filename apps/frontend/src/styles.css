@@ -793,6 +793,24 @@ button {
   color: var(--secondary-container, #00eefc);
 }
 
+/* Inline text-link button (e.g. "Enter it manually instead" in field help). */
+.onboarding-inline-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary, #f5c418);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.onboarding-inline-link:focus-visible {
+  outline: none;
+  box-shadow: var(--ob-focus-ring);
+  border-radius: 4px;
+}
+
 /* ---- Review mode (revisit a completed step) ---- */
 .onboarding-progress-seg.is-viewing {
   outline: 1px solid var(--on-surface, #e5e2e1);

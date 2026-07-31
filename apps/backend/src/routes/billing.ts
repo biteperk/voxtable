@@ -5,7 +5,13 @@ import { requireFirebaseAuth } from "../auth/firebaseAuth";
 import { requireMemberRole, resolveTenant, tenantId } from "../auth/tenantContext";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import { getOnboardingStatus, getStripeCustomerId, setOnboardingStatus } from "../repositories/restaurants";
+import {
+  findDuplicateRestaurant,
+  getOnboardingStatus,
+  getRestaurantProfile,
+  getStripeCustomerId,
+  setOnboardingStatus
+} from "../repositories/restaurants";
 import {
   createCheckoutSession,
   createPortalSession,
@@ -106,6 +112,25 @@ billingRouter.post(
   "/api/billing/checkout-session",
   asyncHandler(async (request, response) => {
     const restaurantId = tenantId(request);
+
+    // Commitment boundary for the advertised-number reservation: pre-trial
+    // signups may share a number freely (see findDuplicateRestaurant), but the
+    // first tenant to start a trial claims it. Same generic contract as the
+    // profile route — no other tenant's identity in the response.
+    const profile = await getRestaurantProfile(restaurantId);
+    if (profile?.existing_phone_number) {
+      const dup = await findDuplicateRestaurant({
+        existingPhoneNumber: profile.existing_phone_number
+      });
+      if (dup && dup.id !== restaurantId) {
+        throw new AppError(
+          409,
+          "DUPLICATE_RESTAURANT",
+          "The phone number on your profile is already connected to an active VoxTable account. Update it on the profile step, or contact support@biteperk.com.au if you believe this is an error."
+        );
+      }
+    }
+
     if (!isBillingConfigured() && env.APP_ENV !== "production") {
       const current = await getOnboardingStatus(restaurantId);
       if (!current) {
