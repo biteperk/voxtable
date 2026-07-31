@@ -1,8 +1,21 @@
 // Google Places address autocomplete — new PlaceAutocompleteElement API.
 //
 // Powered by Google. The Maps JS key is a BROWSER key (VITE_GOOGLE_MAPS_KEY,
-// baked at build time), restricted to our referrers + Places/Maps APIs in the
-// Cloud console — safe to ship.
+// baked at build time), so it is public — anyone can read it out of the bundle.
+// That is only safe if the key is locked down in the Cloud console, which is
+// the ONLY thing standing between this and someone billing Google usage to us.
+//
+// It needs BOTH of these, and they are separate settings:
+//   1. Application restriction → HTTP referrers, listing our origins only.
+//   2. API restriction → the Maps/Places APIs only.
+//
+// Checked 31 Jul 2026: the key in use (Firebase's auto-created browser key) had
+// NEITHER — no referrer restriction at all, and an API list of 27 Firebase
+// services with no maps or places entry, which is why autocomplete 403'd with
+// API_KEY_SERVICE_BLOCKED. An earlier version of this comment asserted the key
+// was restricted; it was not. Verify in the console rather than trusting this
+// comment — and prefer a dedicated Maps key over the Firebase one, which
+// Firebase tooling manages and may rewrite.
 //
 // NOTE: the legacy `places.Autocomplete` constructor is NOT available to Google
 // Cloud projects created after 2025-03-01 (it constructs but never renders).
