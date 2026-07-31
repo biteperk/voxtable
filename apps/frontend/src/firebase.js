@@ -14,15 +14,14 @@ import {
 } from "firebase/auth";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyD1NZt3Ov0Esu-krdijIKzlQZ8qtgG6pcg",
-  authDomain: "vocotable.firebaseapp.com",
-  projectId: "vocotable",
-  storageBucket: "vocotable.firebasestorage.app",
-  messagingSenderId: "110560713396",
-  appId: "1:110560713396:web:d90c8ffa1fe04fc5e915e1",
-  measurementId: "G-LRHRWVXCJW"
-};
+import { buildFirebaseConfig } from "./lib/firebaseConfig";
+
+// Which Firebase project this build talks to. Comes from build-time env vars so
+// staging can point at its own project — separate auth users and storage, so a
+// test signup never lands beside a real customer. Throws with a clear message
+// naming the missing variable rather than initialising with `undefined`, which
+// is what Vite would otherwise inline. See lib/firebaseConfig.js.
+const firebaseConfig = buildFirebaseConfig(import.meta.env);
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
