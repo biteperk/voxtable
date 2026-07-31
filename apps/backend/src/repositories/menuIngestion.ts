@@ -12,7 +12,17 @@ export interface MenuIngestionJob {
   id: string;
   restaurant_id: string;
   source_kind: "image" | "pdf";
+  /** Page 1. Kept for rows written before multi-page support (migration 023). */
   source_url: string;
+  /**
+   * Ordered page images, page 1 first. May be EMPTY on two paths that both still
+   * have to work: a row written by the old single-page client, and any row read
+   * in the window where new code is live but migration 023 hasn't run yet
+   * (deploy-backend.yml restarts containers before migrating).
+   *
+   * Never read this directly — use pagesForJob() below.
+   */
+  source_urls?: string[];
   source_sha256: string | null;
   status: MenuIngestionStatus;
   attempts: number;
@@ -24,35 +34,83 @@ export interface MenuIngestionJob {
 }
 
 /**
+ * The pages to parse for a job, in order. The single place that knows how to
+ * reconcile the multi-page column with the legacy single-URL one — so a legacy
+ * row, a pre-migration read, and a modern 12-page row all look the same to
+ * callers.
+ */
+export function pagesForJob(job: MenuIngestionJob): string[] {
+  const pages = Array.isArray(job.source_urls) ? job.source_urls.filter((u) => typeof u === "string" && u) : [];
+  return pages.length > 0 ? pages : [job.source_url];
+}
+
+/**
  * Enqueue an ingestion job. Idempotent on (restaurant_id, source_sha256): a
- * re-upload of the same file returns the existing job instead of paying for a
+ * re-upload of the same menu returns the existing job instead of paying for a
  * second parse. Without a sha256, every call is a new job.
+ *
+ * A re-upload of a job that FAILED is reset to pending and re-run. Previously
+ * the conflict clause only touched source_url and returned the row untouched,
+ * so a failed job stayed failed with attempts already exhausted: the owner
+ * re-uploaded, got the same stale error instantly, and had no way to retry short
+ * of altering the file. `parsed` and `committed` rows are deliberately NOT
+ * reset — that work is done, and re-running it would duplicate the menu.
  */
 export async function enqueueIngestionJob(input: {
   restaurantId: string;
   sourceKind: "image" | "pdf";
-  sourceUrl: string;
+  /** Ordered page images, page 1 first. */
+  sourceUrls: string[];
   sha256?: string | null;
 }): Promise<MenuIngestionJob> {
+  const pages = input.sourceUrls;
+  const firstPage = pages[0];
+  if (!firstPage) throw new Error("enqueueIngestionJob requires at least one page URL");
+
   if (input.sha256) {
     const result = await pool.query<MenuIngestionJob>(
       `
-      INSERT INTO menu_ingestion_jobs (restaurant_id, source_kind, source_url, source_sha256)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO menu_ingestion_jobs (restaurant_id, source_kind, source_url, source_urls, source_sha256)
+      VALUES ($1, $2, $3, $4::jsonb, $5)
       ON CONFLICT (restaurant_id, source_sha256) WHERE source_sha256 IS NOT NULL
-        DO UPDATE SET source_url = EXCLUDED.source_url
+        DO UPDATE SET
+          source_url  = EXCLUDED.source_url,
+          source_urls = EXCLUDED.source_urls,
+          -- Give a failed import a genuine second chance; leave finished work alone.
+          status          = CASE WHEN menu_ingestion_jobs.status = 'failed' THEN 'pending'
+                                 ELSE menu_ingestion_jobs.status END,
+          attempts        = CASE WHEN menu_ingestion_jobs.status = 'failed' THEN 0
+                                 ELSE menu_ingestion_jobs.attempts END,
+          next_attempt_at = CASE WHEN menu_ingestion_jobs.status = 'failed' THEN now()
+                                 ELSE menu_ingestion_jobs.next_attempt_at END,
+          last_error      = CASE WHEN menu_ingestion_jobs.status = 'failed' THEN NULL
+                                 ELSE menu_ingestion_jobs.last_error END,
+          updated_at      = now()
       RETURNING *
       `,
-      [input.restaurantId, input.sourceKind, input.sourceUrl, input.sha256]
+      [input.restaurantId, input.sourceKind, firstPage, JSON.stringify(pages), input.sha256]
     );
     return result.rows[0]!;
   }
   const result = await pool.query<MenuIngestionJob>(
-    `INSERT INTO menu_ingestion_jobs (restaurant_id, source_kind, source_url)
-     VALUES ($1, $2, $3) RETURNING *`,
-    [input.restaurantId, input.sourceKind, input.sourceUrl]
+    `INSERT INTO menu_ingestion_jobs (restaurant_id, source_kind, source_url, source_urls)
+     VALUES ($1, $2, $3, $4::jsonb) RETURNING *`,
+    [input.restaurantId, input.sourceKind, firstPage, JSON.stringify(pages)]
   );
   return result.rows[0]!;
+}
+
+/**
+ * Push `updated_at` forward on an in-flight job.
+ *
+ * The claim query re-claims any row stuck in 'processing' for 10 minutes, on the
+ * assumption its worker died. A batched multi-page parse can legitimately run
+ * that long (8 batches × a 60s model call), so without this a second worker
+ * would grab a job that is still running — paying twice for the same menu and
+ * racing to commit it. Called after each batch to prove we're alive.
+ */
+export async function heartbeatIngestionJob(id: string, db: DbClient = pool): Promise<void> {
+  await db.query("UPDATE menu_ingestion_jobs SET updated_at = now() WHERE id = $1 AND status = 'processing'", [id]);
 }
 
 export async function getIngestionJob(

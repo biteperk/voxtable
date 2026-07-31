@@ -2,9 +2,9 @@ import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { withTransaction } from "../db/pool";
 import { logger } from "../utils/logger";
-import { menuDraftSchema, type MenuDraft } from "../http/schemas";
+import { MENU_INGEST_MAX_PAGES, menuDraftSchema, type MenuDraft } from "../http/schemas";
 import {
-  createCategory as repoCreateCategory,
+  getOrCreateCategory as repoGetOrCreateCategory,
   createMenuItem as repoCreateMenuItem,
   replaceModifiers,
   replaceVariants
@@ -26,7 +26,8 @@ import { assertAllowedMenuSourceUrl, isMenuOcrEnabled } from "./menuOcrClient";
  */
 export async function startIngestion(input: {
   restaurantId: string;
-  sourceUrl: string;
+  /** Ordered page images, page 1 first. A single photo is an array of one. */
+  sourceUrls: string[];
   sourceKind: "image" | "pdf";
   sha256?: string | null;
 }): Promise<MenuIngestionJob> {
@@ -34,12 +35,28 @@ export async function startIngestion(input: {
     throw new AppError(503, "MENU_OCR_DISABLED", "Menu photo import isn't enabled yet — add your menu manually for now.");
   }
 
-  // Reject an out-of-bounds URL before a job row exists, so the caller gets an
-  // immediate 400 instead of a job that fails minutes later in the worker. The
-  // worker re-checks at fetch time — this is the fast path, not the guarantee.
-  assertAllowedMenuSourceUrl(input.sourceUrl);
+  if (input.sourceUrls.length === 0) {
+    throw new AppError(400, "MENU_SOURCE_URL_INVALID", "No menu pages were uploaded. Please try again.");
+  }
+  if (input.sourceUrls.length > MENU_INGEST_MAX_PAGES) {
+    throw new AppError(
+      400,
+      "MENU_TOO_MANY_PAGES",
+      `That menu has more than ${MENU_INGEST_MAX_PAGES} pages. Import the first ${MENU_INGEST_MAX_PAGES} and add the rest in the editor.`
+    );
+  }
 
-  // Abuse/cost cap: bound parses per restaurant per rolling 24h.
+  // EVERY page is checked, not just the first. These URLs are client-supplied
+  // and fetched server-side, so validating only one would reopen the SSRF hole
+  // the allowlist exists to close — an attacker would simply put the internal
+  // address on page 2. Rejected before a job row exists so the caller gets an
+  // immediate 400 rather than a failure minutes later in the worker; the worker
+  // re-checks at fetch time, which is the actual guarantee.
+  for (const url of input.sourceUrls) assertAllowedMenuSourceUrl(url);
+
+  // Abuse/cost cap: bound parses per restaurant per rolling 24h. Deliberately
+  // counted per JOB, not per page — a 12-page menu is one import to the owner,
+  // and the per-job page cap above is what bounds the vision spend inside it.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const recent = await countJobsSince(input.restaurantId, since);
   if (recent >= env.MENU_OCR_MAX_JOBS_PER_DAY) {
@@ -53,7 +70,7 @@ export async function startIngestion(input: {
   return enqueueIngestionJob({
     restaurantId: input.restaurantId,
     sourceKind: input.sourceKind,
-    sourceUrl: input.sourceUrl,
+    sourceUrls: input.sourceUrls,
     sha256: input.sha256 ?? null
   });
 }
@@ -104,7 +121,8 @@ export async function commitDraft(jobId: string, restaurantId: string): Promise<
     let catIndex = 0;
     for (const category of draft.categories) {
       catIndex += 1;
-      const cat = await repoCreateCategory(
+      // get-or-create: a repeated or already-existing heading must not abort the import.
+      const cat = await repoGetOrCreateCategory(
         { restaurantId, name: category.name, displayOrder: catIndex },
         db
       );

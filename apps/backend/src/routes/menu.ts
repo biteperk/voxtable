@@ -229,13 +229,20 @@ menuRouter.post(
   requireMemberRole("manager"),
   menuIngestLimiter,
   asyncHandler(async (request, response) => {
+    // The schema collapses the legacy `source_url` and the current
+    // `source_urls` into one array, so nothing below needs to know which shape
+    // the client sent.
     const body = startIngestionSchema.parse(request.body);
     const job = await startIngestion({
       restaurantId: tenantId(request),
-      sourceUrl: body.source_url,
+      sourceUrls: body.source_urls,
       sourceKind: body.source_kind,
       sha256: body.sha256
     });
+    // `status` matters to the client: a re-upload of an already-parsed or
+    // already-committed menu returns that terminal status immediately, so the
+    // UI can jump straight to review instead of polling for something that has
+    // already happened.
     response.status(202).json({ job_id: job.id, status: job.status });
   })
 );

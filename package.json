@@ -36,7 +36,8 @@
     "smoke:onboarding": "tsx apps/backend/scripts/smoke-onboarding-funnel.ts",
     "smoke:verify-email": "tsx apps/backend/scripts/smoke-verify-email.ts",
     "test:backend": "APP_ENV=test DATABASE_URL=postgres://test:test@localhost:5432/test tsx --test apps/backend/src/**/*.test.ts",
-    "check": "npm run build:backend && npm run test:backend && npm run build:frontend && npm run build:kds"
+    "test:frontend": "tsx --test apps/frontend/src/lib/*.test.js",
+    "check": "npm run build:backend && npm run test:backend && npm run test:frontend && npm run build:frontend && npm run build:kds"
   },
   "dependencies": {
     "@calcom/embed-react": "^1.5.3",
@@ -51,6 +52,7 @@
     "firebase-admin": "^13.10.0",
     "jspdf": "^4.2.1",
     "libphonenumber-js": "^1.13.3",
+    "pdfjs-dist": "4.10.38",
     "pg": "^8.13.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
