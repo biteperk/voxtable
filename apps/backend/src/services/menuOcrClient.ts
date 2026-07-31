@@ -42,19 +42,94 @@ interface FetchedFile {
   mediaType: string;
 }
 
+/**
+ * `source_url` is supplied by the client, and we then fetch it server-side —
+ * classic SSRF shape. Without a host check any authenticated manager could aim
+ * this at `http://169.254.169.254/` (cloud metadata) or any address inside our
+ * VPC. It isn't even blind: the fetch outcome is persisted to `last_error` and
+ * handed back by GET /api/menu/ingest/:jobId, which turns it into a port
+ * scanner. So: HTTPS only, and only hosts we actually upload to.
+ *
+ * The frontend uploads to Firebase Storage and passes us the download URL
+ * (see uploadMenuFile in apps/frontend/src/firebase.js), so the allowlist is
+ * normally just the storage host. Kept in env so a bucket move is a config
+ * change, not a deploy.
+ */
+export function assertAllowedMenuSourceUrl(sourceUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(sourceUrl);
+  } catch {
+    throw new AppError(400, "MENU_SOURCE_URL_INVALID", "That file link isn't valid.");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new AppError(400, "MENU_SOURCE_URL_INVALID", "That file link isn't valid.");
+  }
+  const allowed = env.MENU_OCR_ALLOWED_HOSTS.split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+  const host = parsed.hostname.toLowerCase();
+  // Exact host match only. A suffix match would let `evil-firebasestorage.
+  // googleapis.com.attacker.test` through.
+  if (!allowed.includes(host)) {
+    logger.warn({ evt: "menu_ocr_source_url_rejected", host });
+    throw new AppError(
+      400,
+      "MENU_SOURCE_URL_INVALID",
+      "Menus can only be imported from a file you uploaded here. Please upload the file again."
+    );
+  }
+}
+
 async function fetchAsBase64(sourceUrl: string): Promise<FetchedFile> {
+  // Re-checked here, not just at the API boundary: this is the line that
+  // actually makes the request, and it runs in the worker long after the
+  // request that created the job.
+  assertAllowedMenuSourceUrl(sourceUrl);
+
+  const maxBytes = env.MENU_OCR_MAX_FILE_MB * 1024 * 1024;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), env.MENU_OCR_REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(sourceUrl, { signal: controller.signal });
+    const res = await fetch(sourceUrl, {
+      signal: controller.signal,
+      // An allowed host must not be able to bounce us to an internal one.
+      redirect: "error"
+    });
     if (!res.ok) {
-      throw new AppError(502, "MENU_OCR_FETCH_FAILED", `Could not fetch the uploaded file (${res.status}).`);
+      // The upstream status stays in our logs. Echoing it to the tenant is what
+      // made this a usable scanner.
+      logger.warn({ evt: "menu_ocr_fetch_failed", status: res.status });
+      throw new AppError(502, "MENU_OCR_FETCH_FAILED", "We couldn't read that uploaded file.");
     }
-    const buf = Buffer.from(await res.arrayBuffer());
-    const maxBytes = env.MENU_OCR_MAX_FILE_MB * 1024 * 1024;
-    if (buf.byteLength > maxBytes) {
+
+    // Trust the declared length when it's there — cheapest possible rejection.
+    const declared = Number(res.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > maxBytes) {
       throw new AppError(413, "MENU_OCR_FILE_TOO_LARGE", `File exceeds ${env.MENU_OCR_MAX_FILE_MB}MB.`);
     }
+
+    // Stream with a running cap rather than arrayBuffer(): buffering first and
+    // checking after means a multi-GB response OOMs the worker process — which
+    // also runs notifications and provisioning — before we ever get to look.
+    const chunks: Buffer[] = [];
+    let total = 0;
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new AppError(502, "MENU_OCR_FETCH_FAILED", "We couldn't read that uploaded file.");
+    }
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new AppError(413, "MENU_OCR_FILE_TOO_LARGE", `File exceeds ${env.MENU_OCR_MAX_FILE_MB}MB.`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+
+    const buf = Buffer.concat(chunks, total);
     const mediaType = res.headers.get("content-type")?.split(";")[0]?.trim() || guessMediaType(sourceUrl);
     return { base64: buf.toString("base64"), mediaType };
   } finally {

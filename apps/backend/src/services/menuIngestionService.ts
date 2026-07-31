@@ -17,7 +17,7 @@ import {
   updateDraft,
   type MenuIngestionJob
 } from "../repositories/menuIngestion";
-import { isMenuOcrEnabled } from "./menuOcrClient";
+import { assertAllowedMenuSourceUrl, isMenuOcrEnabled } from "./menuOcrClient";
 
 /**
  * Begin an OCR ingestion: rate-limit, then enqueue a job for the worker to
@@ -33,6 +33,11 @@ export async function startIngestion(input: {
   if (!isMenuOcrEnabled()) {
     throw new AppError(503, "MENU_OCR_DISABLED", "Menu photo import isn't enabled yet — add your menu manually for now.");
   }
+
+  // Reject an out-of-bounds URL before a job row exists, so the caller gets an
+  // immediate 400 instead of a job that fails minutes later in the worker. The
+  // worker re-checks at fetch time — this is the fast path, not the guarantee.
+  assertAllowedMenuSourceUrl(input.sourceUrl);
 
   // Abuse/cost cap: bound parses per restaurant per rolling 24h.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -145,7 +150,12 @@ export async function commitDraft(jobId: string, restaurantId: string): Promise<
         itemCount += 1;
       }
     }
-    await markCommitted(job.id, db);
+    // Loses the race to a concurrent commit → roll the whole insert back rather
+    // than duplicating the menu. The caller retries and gets the no-op above.
+    const claimed = await markCommitted(job.id, db);
+    if (!claimed) {
+      throw new AppError(409, "INGESTION_ALREADY_COMMITTED", "This menu import was already imported.");
+    }
     return { categories: draft.categories.length, items: itemCount };
   });
 
