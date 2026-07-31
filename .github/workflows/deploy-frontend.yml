@@ -43,6 +43,12 @@ jobs:
           # already ship in the client bundle). Stored as repo variables.
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
+          # Error reporting. Without this the ErrorBoundary catches crashes and
+          # tells nobody — production had no crash visibility at all. A Sentry
+          # DSN is a public ingest key (it ships in the bundle by design), but
+          # it's kept as a secret so it isn't scraped from the workflow file.
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_APP_VERSION: ${{ github.sha }}
         run: |
           npm run build:frontend
           npm run build:kds
