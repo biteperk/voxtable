@@ -25,7 +25,7 @@ function matchCurrentTierId(subscription) {
   return tier?.id ?? null;
 }
 
-export function ManagePlanPage({ navigate }) {
+export function ManagePlanPage({ navigate, subscriptionLapsed = false }) {
   const [subscription, setSubscription] = useState(null);
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -101,10 +101,28 @@ export function ManagePlanPage({ navigate }) {
     </header>
   );
 
+  // Shown when a payment has lapsed and the router sent the user here rather
+  // than letting them sit on a dashboard they can't use. Explains why they
+  // landed on this page — without it the redirect looks like a bug.
+  const lapsedNotice = subscriptionLapsed ? (
+    <div className="billing-lapsed-notice" role="alert">
+      <Icon name="error" aria-hidden="true" />
+      <div>
+        <strong>Your subscription is paused</strong>
+        <p>
+          We couldn't take your last payment, so VoxTable has stopped answering your calls.
+          Update your card below and your AI host starts again straight away. Your restaurant,
+          menu and bookings are all still here. Need a hand? Call us on {PHONE_DISPLAY}.
+        </p>
+      </div>
+    </div>
+  ) : null;
+
   if (loading) {
     return (
       <DashboardShell active="Billing" navigate={navigate}>
         {header}
+        {lapsedNotice}
         <p style={{ color: "var(--on-surface-variant)" }}>Loading your plan…</p>
       </DashboardShell>
     );
@@ -113,6 +131,7 @@ export function ManagePlanPage({ navigate }) {
   return (
     <DashboardShell active="Billing" navigate={navigate}>
       {header}
+      {lapsedNotice}
 
       {error && (
         <div className="billing-banner billing-banner-info" role="status">

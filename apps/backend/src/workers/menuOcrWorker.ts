@@ -79,10 +79,13 @@ export function startMenuOcrWorker(): void {
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;
-    currentTick = processBatch().finally(() => {
-      tickInFlight = false;
-      currentTick = null;
-    });
+    // See provisioningWorker: an unhandled rejection here kills the process.
+    currentTick = processBatch()
+      .catch((error) => logger.error({ evt: "menu_ocr_tick_failed", error }))
+      .finally(() => {
+        tickInFlight = false;
+        currentTick = null;
+      });
   }, TICK_INTERVAL_MS);
   intervalHandle.unref();
 }

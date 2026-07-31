@@ -33,6 +33,7 @@ function backoffMsForAttempt(attempts: number): number {
 async function sendViaSendGrid(row: NotificationRow): Promise<void> {
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
+    signal: AbortSignal.timeout(env.NOTIFICATIONS_REQUEST_TIMEOUT_MS),
     headers: {
       authorization: `Bearer ${env.SENDGRID_API_KEY}`,
       "content-type": "application/json"
@@ -60,6 +61,7 @@ async function sendViaSendGrid(row: NotificationRow): Promise<void> {
 async function sendViaZeptoMail(row: NotificationRow): Promise<void> {
   const res = await fetch(`${env.ZEPTOMAIL_BASE_URL}/email`, {
     method: "POST",
+    signal: AbortSignal.timeout(env.NOTIFICATIONS_REQUEST_TIMEOUT_MS),
     headers: {
       authorization: `Zoho-enczapikey ${env.ZEPTOMAIL_TOKEN}`,
       "content-type": "application/json"
@@ -92,7 +94,11 @@ async function sendSms(row: NotificationRow): Promise<void> {
     (err as Error & { transient?: boolean }).transient = false;
     throw err;
   }
-  const client = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
+  // Same reasoning as the email sends: this runs in the sequential drain loop,
+  // so an unbounded request here stalls every queued notification behind it.
+  const client = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN, {
+    timeout: env.NOTIFICATIONS_REQUEST_TIMEOUT_MS
+  });
   try {
     await client.messages.create({
       to: row.recipient,
@@ -146,10 +152,13 @@ export function startNotificationWorker(): void {
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;
-    currentTick = processBatch().finally(() => {
-      tickInFlight = false;
-      currentTick = null;
-    });
+    // See provisioningWorker: an unhandled rejection here kills the process.
+    currentTick = processBatch()
+      .catch((error) => logger.error({ evt: "notification_tick_failed", error }))
+      .finally(() => {
+        tickInFlight = false;
+        currentTick = null;
+      });
   }, TICK_INTERVAL_MS);
   intervalHandle.unref();
 }

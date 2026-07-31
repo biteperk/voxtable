@@ -25,6 +25,7 @@
  */
 
 import { env } from "../config/env";
+import { pool } from "../db/pool";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
 import { getOnboardingFunnel } from "../repositories/restaurants";
@@ -75,6 +76,15 @@ interface AlertState {
   // D1: UTC day-key of the last onboarding-funnel summary posted, so it fires
   // at most once per day (the alerter ticks every minute).
   funnelSummaryDayKey: string | null;
+  // The money-path queues. Every one of these represents a customer who has
+  // PAID and is stuck: a failed provisioning job is a restaurant with no phone
+  // number, an unprocessed Stripe event is a subscription we never acted on,
+  // and a failed notification is a verification code that never arrived.
+  // None of them were monitored — a paid-but-never-provisioned customer was
+  // invisible until they emailed us.
+  provisioningStuckAlerted: boolean;
+  notificationsStuckAlerted: boolean;
+  stripeUnprocessedAlerted: boolean;
 }
 
 const state: AlertState = {
@@ -88,7 +98,10 @@ const state: AlertState = {
   kdsTabletOfflineAlerted: false,
   kdsHasSeenAnyHeartbeat: false,
   retellAuthAlerted: false,
-  funnelSummaryDayKey: null
+  funnelSummaryDayKey: null,
+  provisioningStuckAlerted: false,
+  notificationsStuckAlerted: false,
+  stripeUnprocessedAlerted: false
 };
 
 // D1: how the onboarding funnel reads in the daily summary. Ordered by the
@@ -322,12 +335,89 @@ async function checkOnboardingFunnel(): Promise<void> {
   }
 }
 
+/**
+ * 9) The paid-customer queues. Every row these count is a customer who has
+ *    already given us money and is silently stuck:
+ *
+ *    - a `failed` provisioning job  → they paid, and have no phone number
+ *    - an unprocessed Stripe event  → we took a payment and never acted on it
+ *    - a `failed` notification      → an email nobody received (including the
+ *                                     signup verification codes)
+ *
+ *    None of this was monitored. The bug that made every paying customer stall
+ *    at the menu step produced a permanent webhook-retry loop and left zero
+ *    trace anywhere — we would only have learned about it from the customer.
+ *    Edge-triggered with a recovery message, same shape as the checks above.
+ */
+async function checkPaidCustomerQueues(): Promise<void> {
+  try {
+    const { rows } = await pool.query<{
+      provisioning_stuck: string;
+      notifications_failed: string;
+      stripe_unprocessed: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM provisioning_jobs
+           WHERE status = 'failed'
+              OR (status = 'processing' AND updated_at < now() - interval '30 minutes')
+         ) AS provisioning_stuck,
+         (SELECT count(*) FROM notifications_outbox
+           WHERE status = 'failed' AND created_at > now() - interval '24 hours'
+         ) AS notifications_failed,
+         -- Uses idx_stripe_webhook_events_unprocessed (010_billing_webhook.sql),
+         -- which was created for exactly this query and had no reader until now.
+         (SELECT count(*) FROM stripe_webhook_events
+           WHERE processed_at IS NULL AND received_at < now() - interval '15 minutes'
+         ) AS stripe_unprocessed`
+    );
+    const counts = rows[0];
+    if (!counts) return;
+
+    const provisioningStuck = Number(counts.provisioning_stuck);
+    const notificationsFailed = Number(counts.notifications_failed);
+    const stripeUnprocessed = Number(counts.stripe_unprocessed);
+
+    if (provisioningStuck > 0 && !state.provisioningStuckAlerted) {
+      await postToSlack(
+        `:rotating_light: ${provisioningStuck} provisioning job(s) stuck or failed. These are PAYING customers with no phone number. Check \`provisioning_jobs\` (last_error) — and if the failure mentions a purchase started but never recorded, check the Twilio console for an unassigned AU number BEFORE retrying.`
+      );
+      state.provisioningStuckAlerted = true;
+    } else if (provisioningStuck === 0 && state.provisioningStuckAlerted) {
+      await postToSlack(`:white_check_mark: Provisioning queue clear — no stuck or failed jobs.`);
+      state.provisioningStuckAlerted = false;
+    }
+
+    if (stripeUnprocessed > 0 && !state.stripeUnprocessedAlerted) {
+      await postToSlack(
+        `:rotating_light: ${stripeUnprocessed} Stripe webhook event(s) unprocessed for >15 min. We may have taken payments without acting on them — subscriptions can be active in Stripe while the tenant never goes live. Check \`stripe_webhook_events.last_error\`.`
+      );
+      state.stripeUnprocessedAlerted = true;
+    } else if (stripeUnprocessed === 0 && state.stripeUnprocessedAlerted) {
+      await postToSlack(`:white_check_mark: Stripe webhook backlog clear.`);
+      state.stripeUnprocessedAlerted = false;
+    }
+
+    if (notificationsFailed > 0 && !state.notificationsStuckAlerted) {
+      await postToSlack(
+        `:warning: ${notificationsFailed} notification(s) failed permanently in the last 24h. Signup verification codes ride this queue, so new signups may be blocked. Check \`notifications_outbox.last_error\`.`
+      );
+      state.notificationsStuckAlerted = true;
+    } else if (notificationsFailed === 0 && state.notificationsStuckAlerted) {
+      await postToSlack(`:white_check_mark: Notification queue clear — no permanent failures in the last 24h.`);
+      state.notificationsStuckAlerted = false;
+    }
+  } catch (error) {
+    logger.warn({ evt: "health_alerter_paid_queue_check_failed", error: (error as Error).message });
+  }
+}
+
 async function checkOnce(): Promise<void> {
   // KDS + Retell auth always run when slack is configured. Cal.com gated by its
   // env flag.
   await checkKds();
   await checkRetellAuth();
   await checkOnboardingFunnel();
+  await checkPaidCustomerQueues();
   if (env.CALCOM_SYNC_ENABLED) {
     await checkCalcom();
   }
