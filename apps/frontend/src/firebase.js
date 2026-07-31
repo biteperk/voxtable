@@ -85,7 +85,16 @@ function stalledError() {
  */
 export function uploadMenuPage(restaurantId, blob, { fileName = "page.jpg", onProgress } = {}) {
   const safeName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
-  const path = `menu-imports/${restaurantId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+  // crypto.randomUUID rather than Math.random: a 12-page menu uploads in a
+  // tight loop, so Date.now() is frequently identical between pages and the
+  // suffix is the only thing keeping two pages from overwriting each other.
+  // Math.random gave ~6 weak characters for that job; this gives 8 strong ones
+  // and collisions stop being something to reason about. (It also clears
+  // Sonar's insecure-PRNG rule, which was failing the quality gate — though as
+  // a SECURITY finding that was a false positive: this is a filename, not a
+  // secret, and the path grants nothing on its own. See storage.rules.)
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const path = `menu-imports/${restaurantId}/${Date.now()}-${suffix}-${safeName}`;
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error("Sign in again to upload your menu.");
   const task = uploadBytesResumable(ref(storage, path), blob, {
