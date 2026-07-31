@@ -6,6 +6,13 @@ export interface ProvisioningJobPayload {
   twilio_number?: string;
   twilio_sid?: string;
   retell_agent_id?: string;
+  /**
+   * Set immediately BEFORE we ask Twilio for a number, so a crash between the
+   * purchase and recording the result is detectable. Without it the reaper
+   * re-runs buy_number against an empty payload and buys a SECOND number we pay
+   * for every month. See the buy_number step in workers/provisioningWorker.ts.
+   */
+  buy_started_at?: string;
 }
 
 export interface ProvisioningJob {
@@ -68,7 +75,14 @@ export async function claimReadyProvisioningJobs(limit: number, db: DbClient = p
   return result.rows;
 }
 
-/** Advance the step + merge acquired resources into payload (resumable). */
+/**
+ * Advance the step + merge acquired resources into payload (resumable).
+ *
+ * Resets `attempts`, because a completed step is real progress: the budget is
+ * there to stop a step failing forever, not to cap how many steps a healthy job
+ * may complete. Without the reset a clean 4-step run burned 4 of 6 attempts, so
+ * two unrelated blips permanently failed a paying customer's provisioning.
+ */
 export async function advanceProvisioningStep(
   id: string,
   step: ProvisioningStep,
@@ -76,9 +90,25 @@ export async function advanceProvisioningStep(
 ): Promise<void> {
   await pool.query(
     `UPDATE provisioning_jobs
-        SET step = $2, payload = payload || $3::jsonb, status = 'pending', last_error = NULL
+        SET step = $2, payload = payload || $3::jsonb, status = 'pending', attempts = 0, last_error = NULL
       WHERE id = $1`,
     [id, step, JSON.stringify(payloadPatch)]
+  );
+}
+
+/**
+ * Merge into payload WITHOUT touching status, step or attempts — the job keeps
+ * its 'processing' lease. Used to record intent before an irreversible external
+ * call (buying a Twilio number): advanceProvisioningStep would flip status back
+ * to 'pending' and hand the job to another claim mid-purchase.
+ */
+export async function patchProvisioningPayload(
+  id: string,
+  payloadPatch: ProvisioningJobPayload
+): Promise<void> {
+  await pool.query(
+    "UPDATE provisioning_jobs SET payload = payload || $2::jsonb WHERE id = $1",
+    [id, JSON.stringify(payloadPatch)]
   );
 }
 
