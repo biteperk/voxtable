@@ -44,10 +44,11 @@ jobs:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
           # Error reporting. Without this the ErrorBoundary catches crashes and
-          # tells nobody — production had no crash visibility at all. A Sentry
-          # DSN is a public ingest key (it ships in the bundle by design), but
-          # it's kept as a secret so it isn't scraped from the workflow file.
-          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          # tells nobody. A Sentry DSN belongs in this public-by-design block:
+          # it ships in the bundle either way, and it only grants permission to
+          # SEND events to one project — it cannot read anything. Storing it as
+          # a secret would imply a confidentiality it doesn't have.
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_APP_VERSION: ${{ github.sha }}
         run: |
           npm run build:frontend
