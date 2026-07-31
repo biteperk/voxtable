@@ -30,6 +30,24 @@
 
 import { PHONE_DISPLAY } from "../lib/brand";
 
+/**
+ * Every price in TIERS is ex-GST — see the FAQ entry below. Stripe adds GST at
+ * checkout, so a "$80" plan bills A$88.00.
+ *
+ * Anywhere we show a price immediately before someone hands over a card must
+ * say so, or the number on the Stripe page won't match the number they agreed
+ * to. Use priceIncGst() rather than writing the grossed-up figure by hand, so
+ * the two can never disagree.
+ */
+export const GST_RATE = 0.1;
+
+/** "$80" → "A$88.00". Returns null for non-numeric prices ("Let's talk"). */
+export function priceIncGst(price) {
+  const amount = Number(String(price).replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return `A$${(amount * (1 + GST_RATE)).toFixed(2)}`;
+}
+
 /** @type {Tier[]} */
 export const TIERS = [
   {

@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { createBillingCheckoutSession } from "../../../api";
+import { priceIncGst } from "../../../data/pricing";
 import { Icon } from "../../../components/Icon";
+
+// The self-serve plan this wizard subscribes people to. Kept as one constant so
+// the ex-GST and inc-GST figures on screen are derived from the same number and
+// cannot drift apart.
+// NOTE: this must match the price behind STRIPE_PRICE_ID. It is not read from
+// pricing.js because which TIER maps to the self-serve checkout isn't encoded
+// anywhere in the codebase — worth wiring up properly rather than trusting two
+// places to be edited together.
+const SELF_SERVE_PRICE = "$80";
+const SELF_SERVE_PRICE_INC_GST = priceIncGst(SELF_SERVE_PRICE);
 
 export function TrialStep({ onRefresh, onBack = null }) {
   const [busy, setBusy] = useState(false);
@@ -66,13 +77,22 @@ export function TrialStep({ onRefresh, onBack = null }) {
           <span>Unlimited AI-answered calls, bookings &amp; orders</span>
         </div>
         <div className="trial-price">
-          <strong>$80</strong>
-          <span>/ month after trial</span>
+          <strong>{SELF_SERVE_PRICE}</strong>
+          <span>+ GST / month after trial</span>
         </div>
       </div>
       <ul className="trial-reassure">
         <li><Icon name="check" /> 14-day free trial</li>
         <li><Icon name="check" /> Card not charged until the trial ends</li>
+        {/* The figure Stripe will actually charge. Our prices are quoted
+            ex-GST, so without this the checkout page shows a bigger number
+            than the one they just agreed to — which reads as a bait-and-switch
+            at the exact moment they're handing over a card. */}
+        {SELF_SERVE_PRICE_INC_GST && (
+          <li>
+            <Icon name="check" /> {SELF_SERVE_PRICE_INC_GST} per month including GST
+          </li>
+        )}
         <li><Icon name="check" /> Cancel anytime</li>
       </ul>
       {unavailable && (
