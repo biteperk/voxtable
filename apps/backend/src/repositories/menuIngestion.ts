@@ -141,6 +141,20 @@ export async function updateDraft(
   return result.rows[0] ?? null;
 }
 
-export async function markCommitted(id: string, db: DbClient = pool): Promise<void> {
-  await db.query("UPDATE menu_ingestion_jobs SET status = 'committed' WHERE id = $1", [id]);
+/**
+ * Flip a parsed job to committed. Returns false if it was NOT still 'parsed' —
+ * i.e. someone else committed it first.
+ *
+ * The `status = 'parsed'` predicate is the concurrency control: commitDraft
+ * reads the job outside its transaction, so two simultaneous commits (a
+ * double-click, or a retry racing the original) both saw 'parsed' and both
+ * inserted the entire menu, duplicating every category and item. Whoever loses
+ * this race updates 0 rows and rolls back.
+ */
+export async function markCommitted(id: string, db: DbClient = pool): Promise<boolean> {
+  const result = await db.query(
+    "UPDATE menu_ingestion_jobs SET status = 'committed' WHERE id = $1 AND status = 'parsed'",
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
 }

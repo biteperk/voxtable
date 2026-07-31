@@ -5,14 +5,45 @@ import { advanceOnboarding, commitMenuDraft, getMenuIngestion, saveMenuDraft, st
 import { centsToDollars, dollarsToCents } from "../../../lib/format";
 import { Icon } from "../../../components/Icon";
 
-function MenuDraftReview({ draft, onCommit, onCancel, committing }) {
-  const [cats, setCats] = useState(() =>
-    (draft.categories ?? []).map((c) => ({
-      ...c,
-      items: (c.items ?? []).map((it) => ({ ...it }))
-    }))
-  );
+// Stable identity for rows so React keys survive a deletion. Using the array
+// index as a key meant deleting a mid-list item re-used the DOM node for its
+// successor — and because the price field was uncontrolled, it kept showing the
+// DELETED row's price while state held the new one. Prices visibly desynced
+// from what was actually committed.
+let rowUid = 0;
+const nextUid = () => `r${(rowUid += 1)}`;
 
+/**
+ * Normalise an OCR draft into editable rows. `priceText` is what the user types
+ * (kept as a string so "12." and "" are representable mid-edit); `price_cents`
+ * is what we send. Deriving one from the other on every keystroke is what let a
+ * cleared field silently commit $0.00.
+ */
+export function draftToRows(draft) {
+  return (draft?.categories ?? []).map((c) => ({
+    ...c,
+    uid: nextUid(),
+    items: (c.items ?? []).map((it) => ({
+      ...it,
+      uid: nextUid(),
+      priceText: centsToDollars(it.price_cents)
+    }))
+  }));
+}
+
+/** Back to the wire shape the API expects — drop our editing-only fields. */
+export function rowsToDraft(cats) {
+  return {
+    categories: cats.map(({ uid, items, ...cat }) => ({
+      ...cat,
+      items: items.map(({ uid: _itemUid, priceText, ...item }) => item)
+    }))
+  };
+}
+
+// `cats` lives in the parent so a failed save can't destroy the user's edits —
+// this component unmounts the moment a commit starts.
+function MenuDraftReview({ cats, setCats, onCommit, onCancel, committing }) {
   const setItem = (ci, ii, patch) =>
     setCats((prev) =>
       prev.map((c, i) =>
@@ -41,33 +72,50 @@ function MenuDraftReview({ draft, onCommit, onCancel, committing }) {
       )}
       <div className="menu-review">
         {cats.map((c, ci) => (
-          <div key={ci} className="menu-review-cat">
+          <div key={c.uid} className="menu-review-cat">
             <input
               className="menu-review-catname"
               value={c.name}
+              aria-label="Category name"
               onChange={(e) => setCatName(ci, e.target.value)}
             />
             {c.items.map((it, ii) => {
               const unsure = typeof it.confidence === "number" && it.confidence < 0.5;
               return (
-                <div key={ii} className={`menu-review-row${unsure ? " is-unsure" : ""}`}>
+                <div key={it.uid} className={`menu-review-row${unsure ? " is-unsure" : ""}`}>
                   <input
                     className="menu-review-name"
                     value={it.name}
+                    aria-label="Item name"
                     onChange={(e) => setItem(ci, ii, { name: e.target.value })}
                   />
                   <div className="menu-review-price">
-                    <span>$</span>
+                    <span aria-hidden="true">$</span>
                     <input
                       type="text"
                       inputMode="decimal"
-                      defaultValue={centsToDollars(it.price_cents)}
-                      onChange={(e) => setItem(ci, ii, { price_cents: dollarsToCents(e.target.value) })}
+                      value={it.priceText}
+                      aria-label={`Price for ${it.name || "this item"} in dollars`}
+                      onChange={(e) =>
+                        setItem(ci, ii, {
+                          priceText: e.target.value,
+                          price_cents: dollarsToCents(e.target.value)
+                        })
+                      }
                     />
                   </div>
-                  {unsure && <span className="menu-review-flag" title="Double-check this price">⚠</span>}
-                  <button type="button" className="menu-review-del" onClick={() => removeItem(ci, ii)} aria-label="Remove item">
-                    <Icon name="close" />
+                  {unsure && (
+                    <span className="menu-review-flag" role="img" aria-label="Double-check this price">
+                      ⚠
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="menu-review-del"
+                    onClick={() => removeItem(ci, ii)}
+                    aria-label={`Remove ${it.name || "this item"}`}
+                  >
+                    <Icon name="close" aria-hidden="true" />
                   </button>
                 </div>
               );
@@ -82,7 +130,7 @@ function MenuDraftReview({ draft, onCommit, onCancel, committing }) {
         <button
           type="button"
           className="primary-button"
-          onClick={() => onCommit({ categories: cats })}
+          onClick={onCommit}
           disabled={committing || itemCount === 0}
         >
           {committing ? "Saving…" : `Looks good — import ${itemCount} item${itemCount === 1 ? "" : "s"}`}
@@ -98,11 +146,20 @@ export function MenuStep({ onContinue, navigate, onBack = null }) {
   // phase: choose | uploading | parsing | review | committing
   const [phase, setPhase] = useState("choose");
   const [jobId, setJobId] = useState(null);
-  const [draft, setDraft] = useState(null);
+  // The user's edits. Held HERE, not inside MenuDraftReview, because that
+  // component unmounts as soon as a commit starts — when a save failed, its
+  // state died with it and ten minutes of price corrections silently reverted
+  // to the raw OCR output.
+  const [cats, setCats] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [ocrUnavailable, setOcrUnavailable] = useState(false);
   const pollRef = useRef(null);
+  // The commit is three calls (save draft → commit → advance) and only the
+  // first is rejected once the job is committed. Without this, a failure at
+  // step 3 made every retry replay step 1 and get a permanent 409
+  // INGESTION_NOT_EDITABLE — the step could never be completed again.
+  const committedRef = useRef(false);
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
@@ -113,7 +170,7 @@ export function MenuStep({ onContinue, navigate, onBack = null }) {
         const r = await getMenuIngestion(id);
         if (r.status === "parsed") {
           clearInterval(pollRef.current);
-          setDraft(r.draft ?? { categories: [] });
+          setCats(draftToRows(r.draft ?? { categories: [] }));
           setPhase("review");
         } else if (r.status === "failed") {
           clearInterval(pollRef.current);
@@ -151,14 +208,20 @@ export function MenuStep({ onContinue, navigate, onBack = null }) {
     }
   };
 
-  const handleCommit = async (editedDraft) => {
-    if (busy) return;
+  const handleCommit = async () => {
+    if (busy || !cats) return;
     setBusy(true);
     setError(null);
     setPhase("committing");
     try {
-      await saveMenuDraft(jobId, editedDraft);
-      await commitMenuDraft(jobId);
+      // Resume from wherever the last attempt stopped. Saving the draft is only
+      // valid while the job is still editable, so once the commit has landed we
+      // must never replay it — that's the 409 trap.
+      if (!committedRef.current) {
+        await saveMenuDraft(jobId, rowsToDraft(cats));
+        await commitMenuDraft(jobId);
+        committedRef.current = true;
+      }
       await advanceOnboarding("menu_completed");
       await onContinue();
     } catch (e) {
@@ -181,18 +244,29 @@ export function MenuStep({ onContinue, navigate, onBack = null }) {
     }
   };
 
-  if (phase === "review" && draft) {
+  // Stays mounted through "committing" — unmounting on submit is what threw the
+  // user's edits away, and it also made the "Saving…" state unreachable.
+  if ((phase === "review" || phase === "committing") && cats) {
     return (
-      <MenuDraftReview
-        draft={draft}
-        committing={phase === "committing" || busy}
-        onCommit={handleCommit}
-        onCancel={() => {
-          setDraft(null);
-          setJobId(null);
-          setPhase("choose");
-        }}
-      />
+      <>
+        <MenuDraftReview
+          cats={cats}
+          setCats={setCats}
+          committing={phase === "committing" || busy}
+          onCommit={handleCommit}
+          onCancel={() => {
+            committedRef.current = false;
+            setCats(null);
+            setJobId(null);
+            setPhase("choose");
+          }}
+        />
+        {error && (
+          <p className="onboarding-error" role="alert">
+            {error}
+          </p>
+        )}
+      </>
     );
   }
 
