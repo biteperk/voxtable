@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Request } from "express";
 
 import { asyncHandler } from "../http/asyncHandler";
+import { withAdvisoryLock } from "../db/pool";
 import { logger } from "../utils/logger";
 import {
   isWebhookProcessed,
@@ -35,7 +36,20 @@ stripeWebhookRouter.post(
     let event;
     try {
       event = verifyWebhookSignature(rawBody, signature);
-    } catch {
+    } catch (error) {
+      // Distinguish "this isn't from Stripe" from "we aren't configured to
+      // check". verifyWebhookSignature throws 503 BILLING_NOT_CONFIGURED when
+      // STRIPE_WEBHOOK_SECRET is missing or billing is switched off — reporting
+      // that as a 400 tells Stripe never to retry, so a rotated secret would
+      // silently drop every subscription event. Never swallow this silently:
+      // the old bare `catch {}` here had no log line at all.
+      const code = (error as { code?: string }).code;
+      if (code === "BILLING_NOT_CONFIGURED") {
+        logger.error({ evt: "stripe_webhook_not_configured", error });
+        response.status(500).json({ error: "not_configured" });
+        return;
+      }
+      logger.warn({ evt: "stripe_webhook_bad_signature", has_signature: Boolean(signature) });
       response.status(400).json({ error: "invalid_signature" });
       return;
     }
@@ -48,10 +62,24 @@ stripeWebhookRouter.post(
       return;
     }
 
+    // The record-then-check above leaves a gap: if the SAME event is delivered
+    // twice while the first is still in flight, the second sees "recorded but
+    // not processed" and handles it again — double emails, double state writes.
+    // Stripe re-delivers on timeout, so this is a routine occurrence, not a
+    // corner case. Serialise per event id and let the loser ack as a duplicate.
     try {
-      const outcome = await handleBillingWebhook(event);
-      await markWebhookProcessed(event.id);
-      response.json({ received: true, outcome });
+      const attempt = await withAdvisoryLock(`stripe-webhook:${event.id}`, async () => {
+        const outcome = await handleBillingWebhook(event);
+        await markWebhookProcessed(event.id);
+        return outcome;
+      });
+
+      if (!attempt.ran) {
+        logger.info({ evt: "stripe_webhook_concurrent_duplicate", stripe_event: event.type });
+        response.json({ received: true, duplicate: true });
+        return;
+      }
+      response.json({ received: true, outcome: attempt.result });
     } catch (error) {
       await markWebhookFailed(event.id, (error as Error).message).catch(() => {});
       logger.error({ evt: "stripe_webhook_process_failed", stripe_event: event.type, error });

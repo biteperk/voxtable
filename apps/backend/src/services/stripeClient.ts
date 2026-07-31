@@ -77,8 +77,14 @@ export function verifyWebhookSignature(rawBody: string, signature: string | unde
   if (!signature) {
     throw new AppError(400, "STRIPE_BAD_SIGNATURE", "Missing Stripe-Signature header.");
   }
+  // getStripe() throws BILLING_NOT_CONFIGURED when billing is switched off.
+  // Resolve the client OUTSIDE the try: a blanket catch would relabel that
+  // config error as a bad signature, the route would answer 400, and Stripe
+  // would never retry — silently dropping every subscription event until
+  // someone noticed customers weren't going live.
+  const stripe = getStripe();
   try {
-    return getStripe().webhooks.constructEvent(rawBody, signature, env.STRIPE_WEBHOOK_SECRET);
+    return stripe.webhooks.constructEvent(rawBody, signature, env.STRIPE_WEBHOOK_SECRET);
   } catch {
     throw new AppError(400, "STRIPE_BAD_SIGNATURE", "Invalid Stripe webhook signature.");
   }

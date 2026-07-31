@@ -95,3 +95,43 @@ export async function withTransaction<T>(
     client.release();
   }
 }
+
+/**
+ * Run `fn` while holding a SESSION-level advisory lock on `key`, or skip it if
+ * another caller already holds that lock. Returns `{ ran: false }` when the
+ * lock wasn't free — the caller decides what that means.
+ *
+ * Session-level (not `pg_advisory_xact_lock`) because the guarded work spans
+ * several independent pool queries rather than one transaction. Postgres drops
+ * session locks when the connection ends, so a crashed process can't wedge the
+ * lock permanently; the explicit unlock in `finally` is the fast path.
+ *
+ * Use this to make a non-transactional handler safe against concurrent
+ * duplicates — e.g. the same Stripe webhook event delivered twice at once.
+ */
+export async function withAdvisoryLock<T>(
+  key: string,
+  fn: () => Promise<T>
+): Promise<{ ran: true; result: T } | { ran: false }> {
+  const client = await pool.connect();
+  let held = false;
+  try {
+    const lock = await client.query<{ acquired: boolean }>(
+      "SELECT pg_try_advisory_lock(hashtextextended($1::text, 0)) AS acquired",
+      [key]
+    );
+    held = lock.rows[0]?.acquired === true;
+    if (!held) return { ran: false };
+    return { ran: true, result: await fn() };
+  } finally {
+    if (held) {
+      await client
+        .query("SELECT pg_advisory_unlock(hashtextextended($1::text, 0))", [key])
+        .catch(() => {
+          // Releasing the connection ends the session, which drops the lock
+          // anyway — never mask the caller's error with an unlock failure.
+        });
+    }
+    client.release();
+  }
+}
