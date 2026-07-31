@@ -16,9 +16,8 @@ export function ProfileStep({ onSaved }) {
   const [error, setError] = useState(null); // { message, code } | null
   const placesReady = isPlacesEnabled();
   const [placesMounted, setPlacesMounted] = useState(false);
-  // Autocomplete is only trusted once it has actually delivered a selection —
-  // a mounted widget whose API calls 403 must never hide the manual input.
-  const [placesProven, setPlacesProven] = useState(false);
+  // Set when the owner chooses "Enter it manually instead" — brings the plain
+  // address input back and leaves it there.
   const [manualAddress, setManualAddress] = useState(false);
 
   // Google Places address autocomplete (powered by Google) via the new
@@ -47,7 +46,6 @@ export function ProfileStep({ onSaved }) {
             const place = placePrediction.toPlace();
             await place.fetchFields({ fields: ["addressComponents", "formattedAddress"] });
             const parsed = parsePlaceNew(place);
-            setPlacesProven(true);
             setForm((prev) => ({
               ...prev,
               address: parsed.address || prev.address,
@@ -182,16 +180,23 @@ export function ProfileStep({ onSaved }) {
           <span>Street address</span>
           {/* Google Places element mounts here when enabled. */}
           {placesReady && !manualAddress && <div ref={placesHostRef} className="onboarding-places-host" />}
-          {/* Manual input. Hidden ONLY once autocomplete has proven it works
-              (delivered a selection) — a mounted-but-403ing widget must never
-              leave the form without a writable address field. */}
+          {/* Manual input — hidden once the autocomplete widget has MOUNTED.
+              It used to stay visible until autocomplete had "proven" itself by
+              delivering a selection, which sounds cautious but means every
+              first-time user saw TWO address boxes: the widget, and a plain one
+              underneath. People type in the plain one — it looks like the
+              normal field — then wonder why Google never suggests anything.
+              That happened to us in testing on 31 Jul 2026.
+              The escape hatch below is always on screen, and if the widget
+              fails to mount at all this input is shown, so nobody is ever left
+              without somewhere to type. */}
           <input
             type="text"
             value={form.address}
             onChange={set("address")}
             maxLength={200}
             autoComplete="off"
-            style={placesReady && placesMounted && placesProven && !manualAddress ? { display: "none" } : undefined}
+            style={placesReady && placesMounted && !manualAddress ? { display: "none" } : undefined}
           />
           {placesReady && placesMounted && !manualAddress && (
             <span className="onboarding-field-help">
