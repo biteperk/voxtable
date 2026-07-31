@@ -128,7 +128,12 @@ onboardingRouter.get(
     response.json({
       onboarding_status: status,
       checklist: computeChecklist(status),
-      restaurant: { id: restaurantId, name: profile?.name ?? "" }
+      restaurant: { id: restaurantId, name: profile?.name ?? "" },
+      // The wizard renders the trial length from THIS value rather than its own
+      // copy of the number, so what the customer is promised is the same value
+      // Stripe is told at checkout. They previously disagreed: the landing page
+      // said 7 days, the wizard said 14, and Stripe granted 14.
+      trial_days: env.STRIPE_TRIAL_DAYS
     });
   })
 );
