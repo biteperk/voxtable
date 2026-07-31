@@ -3,27 +3,45 @@ rules_version = '2';
 // VocoTable Firebase Storage rules.
 //
 // Menu photo/PDF uploads land at  menu-imports/{restaurantId}/{file}.
-// Firebase Storage rules can't query Postgres (where restaurant_members lives),
-// so authorization here is the COARSE first gate: the uploader must be a
-// signed-in, email-verified Firebase user, and uploads are constrained to
-// images/PDFs under a size cap. The AUTHORITATIVE per-tenant check happens
-// server-side: the client sends the download URL to POST /api/menu/ingest,
-// which runs requireFirebaseAuth + resolveTenant + requireMemberRole("manager")
-// and the menuOcr path only ever reads files for the caller's own tenant.
+// Storage rules can't query Postgres (where restaurant_members lives), so
+// authorization here is the COARSE first gate: the uploader must be a signed-in,
+// email-verified Firebase user, and uploads are constrained to images/PDFs under
+// a size cap. The AUTHORITATIVE per-tenant check happens server-side: the client
+// sends the download URL to POST /api/menu/ingest, which runs requireFirebaseAuth
+// + resolveTenant + requireMemberRole("manager") and only ever reads files for
+// the caller's own tenant.
 //
-// Net: a verified user can only WRITE menu-import files (not read others'
-// dashboards/data), the API enforces tenant ownership before doing anything
-// with the file, and everything else in the bucket is denied by default.
+// READS ARE PINNED TO THE UPLOADER.
+// This rule used to be `allow read: if request.auth != null`, which meant ANY
+// signed-in user could read ANY restaurant's uploaded menu given its path — a
+// former staff member, or anyone who had ever seen a restaurant id. Rules can't
+// check membership, but they can check who put the file there, so every upload
+// now records its uploader in custom metadata and only that account can read it
+// back through the SDK.
+//
+// This does not affect the OCR worker: it fetches the download URL, whose
+// `?token=` is a capability that bypasses rules entirely. That is also why the
+// backend can read the file at all without a Firebase session.
 
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Menu imports: authenticated + verified users may upload bounded media.
     match /menu-imports/{restaurantId}/{fileName} {
-      allow read: if request.auth != null;
+      // Only the account that uploaded this object. Objects written before this
+      // rule have no `uid` metadata and are therefore unreadable via the SDK —
+      // deliberate, and harmless: nothing reads old imports that way.
+      allow read: if request.auth != null
+                  && resource.metadata.uid == request.auth.uid;
+
       allow write: if request.auth != null
                    && request.auth.token.email_verified == true
-                   && request.resource.size < 15 * 1024 * 1024
+                   // Mirrors MENU_OCR_MAX_FILE_MB. These were 15 MB and 10 MB,
+                   // so a file could upload successfully and then be rejected by
+                   // the worker minutes later. The client renders pages to a few
+                   // hundred KB, so nothing legitimate is anywhere near this.
+                   && request.resource.size < 10 * 1024 * 1024
+                   // Stamped so the read rule above has something to check.
+                   && request.resource.metadata.uid == request.auth.uid
                    && (
                         request.resource.contentType.matches('image/.*')
                         || request.resource.contentType == 'application/pdf'

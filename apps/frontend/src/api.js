@@ -191,13 +191,17 @@ export function submitSupportRequest(payload) {
 }
 
 // ===== Menu OCR ingestion (Phase 2) =====
-// The file is uploaded to Firebase Storage first (see firebase.js uploadMenuFile);
+// Pages are rendered and uploaded to Firebase Storage first (see
+// lib/menuImportPrepare.js and firebase.js uploadMenuPage);
 // these endpoints register/track/commit the parse job.
 
-export function startMenuIngestion({ source_url, source_kind, sha256 }) {
+// `source_urls` is one entry per rendered page, in menu order. The backend also
+// still accepts the old single `source_url`, which is what keeps an older cached
+// client working while a deploy rolls out.
+export function startMenuIngestion({ source_urls, source_kind, sha256 }) {
   return authedFetch(`/api/menu/ingest`, {
     method: "POST",
-    body: JSON.stringify({ source_url, source_kind, sha256 })
+    body: JSON.stringify({ source_urls, source_kind, sha256 })
   });
 }
 

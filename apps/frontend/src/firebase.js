@@ -12,7 +12,7 @@ import {
   signOut,
   updateProfile
 } from "firebase/auth";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD1NZt3Ov0Esu-krdijIKzlQZ8qtgG6pcg",
@@ -28,46 +28,110 @@ export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-/** Hex SHA-256 of a File/Blob — used to dedupe menu re-uploads server-side. */
-export async function sha256Hex(file) {
-  const buf = await file.arrayBuffer();
+/**
+ * Hex SHA-256 of a Blob — dedupes menu re-uploads server-side.
+ *
+ * Always hash the PREPARED page, never the original file. On the 413 MB menu
+ * that prompted this work, `arrayBuffer()` on the source is itself enough to
+ * kill a phone tab — and the hash should identify what the worker will actually
+ * fetch, which is the rendered page.
+ */
+export async function sha256Hex(blob) {
+  const buf = await blob.arrayBuffer();
   const digest = await crypto.subtle.digest("SHA-256", buf);
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
-/**
- * Upload a menu photo/PDF straight to Firebase Storage (keeps large binaries
- * off our API). Returns the download URL + file hash + inferred kind for the
- * OCR ingestion job.
- */
-// Firebase Storage calls hang indefinitely when the bucket/CORS isn't reachable
-// (e.g. the Storage bucket isn't provisioned). Bound them so the menu step fails
-// fast and the owner can fall back to the manual editor instead of spinning on
-// "Uploading…" forever.
-function withTimeout(promise, ms, message) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+/** Combined hash for a multi-page menu, so re-uploading the same menu dedupes. */
+export async function sha256OfPages(blobs) {
+  const perPage = [];
+  for (const blob of blobs) perPage.push(await sha256Hex(blob));
+  const joined = new TextEncoder().encode(perPage.join(":"));
+  const digest = await crypto.subtle.digest("SHA-256", joined);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-export async function uploadMenuFile(restaurantId, file) {
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
-  const path = `menu-imports/${restaurantId}/${Date.now()}-${safeName}`;
-  const failMsg = "Photo import isn't available right now — please add your menu manually below.";
-  const snap = await withTimeout(
-    uploadBytes(ref(storage, path), file, { contentType: file.type || "application/octet-stream" }),
-    20000,
-    failMsg
-  );
-  const url = await withTimeout(getDownloadURL(snap.ref), 10000, failMsg);
-  const sha256 = await sha256Hex(file);
-  const sourceKind =
-    (file.type || "").includes("pdf") || /\.pdf$/i.test(file.name) ? "pdf" : "image";
-  return { url, sha256, sourceKind };
+/**
+ * How long a transfer may make NO progress before we call it dead.
+ *
+ * This replaces a flat 20-second cap on the whole upload. That cap was the
+ * incident: a 413 MB file needs about six minutes on mobile data, so it was
+ * killed at 20 seconds and reported as "photo import isn't available right now"
+ * — a sentence that sent the owner off to type their menu by hand instead of
+ * simply waiting. A healthy-but-slow transfer must never be treated as a
+ * failure; a genuinely stalled one still must.
+ */
+const UPLOAD_STALL_MS = 45_000;
+/** Absolute ceiling, so a trickling connection can't hang the step forever. */
+const UPLOAD_CEILING_MS = 10 * 60_000;
+
+function stalledError() {
+  const error = new Error("Upload stopped — check your connection and try again.");
+  error.code = "UPLOAD_STALLED";
+  return error;
+}
+
+/**
+ * Upload one prepared menu page to Firebase Storage, straight from the browser
+ * so large binaries never touch our API.
+ *
+ * Returns `{ promise, cancel }`. Progress is reported as a percentage, and the
+ * upload is genuinely cancellable — a 12-page menu takes long enough that a
+ * dead Cancel button is a real complaint.
+ */
+export function uploadMenuPage(restaurantId, blob, { fileName = "page.jpg", onProgress } = {}) {
+  const safeName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  const path = `menu-imports/${restaurantId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error("Sign in again to upload your menu.");
+  const task = uploadBytesResumable(ref(storage, path), blob, {
+    contentType: blob.type || "image/jpeg",
+    // REQUIRED by storage.rules — reads are pinned to whoever uploaded, so an
+    // object without this is both unwritable and later unreadable.
+    customMetadata: { uid }
+  });
+
+  const promise = new Promise((resolve, reject) => {
+    let lastBytes = -1;
+    let lastMovedAt = Date.now();
+    const startedAt = Date.now();
+
+    const watchdog = setInterval(() => {
+      const now = Date.now();
+      if (now - lastMovedAt > UPLOAD_STALL_MS || now - startedAt > UPLOAD_CEILING_MS) {
+        clearInterval(watchdog);
+        task.cancel();
+        reject(stalledError());
+      }
+    }, 5_000);
+
+    task.on(
+      "state_changed",
+      (snapshot) => {
+        if (snapshot.bytesTransferred !== lastBytes) {
+          lastBytes = snapshot.bytesTransferred;
+          lastMovedAt = Date.now();
+        }
+        if (snapshot.totalBytes > 0) {
+          onProgress?.((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+        }
+      },
+      (error) => {
+        clearInterval(watchdog);
+        reject(error);
+      },
+      () => {
+        clearInterval(watchdog);
+        getDownloadURL(task.snapshot.ref).then(resolve).catch(reject);
+      }
+    );
+  });
+
+  return { promise, cancel: () => task.cancel() };
 }
 
 const provider = new GoogleAuthProvider();
