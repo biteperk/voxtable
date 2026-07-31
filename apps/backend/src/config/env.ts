@@ -154,6 +154,13 @@ const envSchema = z
   MENU_OCR_MAX_JOBS_PER_DAY: z.coerce.number().int().positive().default(25),
   MENU_OCR_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
 
+  // Hosts the menu importer is allowed to fetch from (comma-separated, exact
+  // hostname match). The client uploads to Firebase Storage and hands us the
+  // download URL, so this is normally just that host. It exists because
+  // `source_url` is client-supplied and fetched server-side: without a pin,
+  // anyone with an account could point it at cloud metadata or our own VPC.
+  MENU_OCR_ALLOWED_HOSTS: z.string().default("firebasestorage.googleapis.com"),
+
   // Notifications (Phase 5). Email via SendGrid REST (no SDK dep — fetch), SMS
   // via the installed Twilio SDK. Kill-switch: ships OFF; the worker is a no-op
   // and notifications silently queue without sending until enabled.
@@ -168,6 +175,13 @@ const envSchema = z
   EMAIL_PROVIDER: z.enum(["sendgrid", "zeptomail"]).default("sendgrid"),
   ZEPTOMAIL_TOKEN: z.string().optional(),
   ZEPTOMAIL_BASE_URL: z.string().url().default("https://api.zeptomail.com.au/v1.1"),
+
+  // Hard cap on a single email send. The outbox drains sequentially under a
+  // tick guard, so ONE hung connection stalls the whole queue — including the
+  // signup verification codes that ride it, which stops new signups dead until
+  // someone restarts the worker. fetch() has no default timeout, so this is the
+  // only thing standing between a slow provider and that outage.
+  NOTIFICATIONS_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
 
   // Premium signup verification: a 6-digit code emailed via the notifications
   // outbox and typed on the verify screen (replaces Firebase's default
