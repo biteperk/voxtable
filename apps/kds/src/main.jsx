@@ -331,7 +331,7 @@ function KdsApp({ user }) {
       <header className="kds-topbar">
         <div className="kds-brand">
           <span className="kds-brand-dot" aria-hidden="true" />
-          Natalia's Kitchen
+          Kitchen Display
         </div>
         <div className="kds-topbar-meta">
           <span>{orders.length} active</span>
@@ -369,7 +369,7 @@ function SignInScreen() {
     <div className="kds-signin">
       <div className="kds-brand">
         <span className="kds-brand-dot" />
-        Natalia's Kitchen
+        Kitchen Display
       </div>
       <p>Sign in with the kitchen kiosk Google account.</p>
       <button type="button" className="kds-signin-btn" onClick={() => signInWithGoogle()}>
@@ -396,7 +396,7 @@ function Root() {
       <div className="kds-loading">
         <div className="kds-brand">
           <span className="kds-brand-dot" />
-          Natalia's Kitchen
+          Kitchen Display
         </div>
         <p>Loading…</p>
       </div>
