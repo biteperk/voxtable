@@ -27,12 +27,26 @@ service firebase.storage {
   match /b/{bucket}/o {
 
     match /menu-imports/{restaurantId}/{fileName} {
-      // Only the account that uploaded this object. Objects written before this
-      // rule have no `uid` metadata and are therefore unreadable via the SDK —
-      // deliberate, and harmless: nothing reads old imports that way.
+      // Reads are pinned to whoever uploaded. An object with no `uid` stamp is
+      // readable by nobody through the SDK — the safe default, and harmless:
+      // the OCR worker fetches the download URL, whose `?token=` bypasses rules
+      // entirely, which is how an unauthenticated worker reads it at all.
       allow read: if request.auth != null
+                  && resource.metadata != null
+                  && 'uid' in resource.metadata
                   && resource.metadata.uid == request.auth.uid;
 
+      // Writes deliberately TOLERATE a missing stamp.
+      //
+      // Requiring it here made the rules and the client depend on each other's
+      // deploy order, and Storage rules ship by hand while the client ships from
+      // CI — so the two are never in step. Deploying these rules first with a
+      // strict write check denied every upload from the older client in the
+      // field, which is exactly what happened on 31 Jul 2026.
+      //
+      // What is enforced instead: a stamp, if present, must be honest. A client
+      // cannot claim to be someone else, and an unstamped object is simply
+      // unreadable above. That gets the same protection with no ordering trap.
       allow write: if request.auth != null
                    && request.auth.token.email_verified == true
                    // Mirrors MENU_OCR_MAX_FILE_MB. These were 15 MB and 10 MB,
@@ -40,8 +54,11 @@ service firebase.storage {
                    // the worker minutes later. The client renders pages to a few
                    // hundred KB, so nothing legitimate is anywhere near this.
                    && request.resource.size < 10 * 1024 * 1024
-                   // Stamped so the read rule above has something to check.
-                   && request.resource.metadata.uid == request.auth.uid
+                   && (
+                        request.resource.metadata == null
+                        || !('uid' in request.resource.metadata)
+                        || request.resource.metadata.uid == request.auth.uid
+                      )
                    && (
                         request.resource.contentType.matches('image/.*')
                         || request.resource.contentType == 'application/pdf'
