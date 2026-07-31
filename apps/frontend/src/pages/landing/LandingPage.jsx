@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../auth";
 import { BiteperkMark } from "../../components/brand/BiteperkMark";
 import { BookOnlineModal, isCalcomConfigured } from "../../features/booking/BookOnlineModal";
-import { TIERS, COMPARE_ROWS, FAQ, buildPricingSchema } from "../../data/pricing";
+import { TIERS, COMPARE_ROWS, FAQ, buildPricingSchema, trialLengthLabel } from "../../data/pricing";
 import { track } from "../../lib/analytics";
 import {
   PHONE_DISPLAY,
@@ -617,7 +617,7 @@ export function LandingPage({ navigate }) {
         <div className="lp-wrap lp-closing-content">
           <div className="lp-pill" style={{ marginBottom: 20 }}>
             <span className="lp-dot" />
-            7-day free trial
+            {trialLengthLabel()} free trial
           </div>
           <h2>
             Ready to stop

@@ -41,6 +41,26 @@ import { PHONE_DISPLAY } from "../lib/brand";
  */
 export const GST_RATE = 0.1;
 
+/**
+ * Free trial length, for MARKETING copy on the public site.
+ *
+ * The signup wizard does NOT use this — it reads the real number back from the
+ * API, which is the same value Stripe is given at checkout. This constant only
+ * exists because the landing page renders before anyone is signed in and has no
+ * API call to piggyback on.
+ *
+ * The two are tied together by a test (menuImportPlan.test.js's sibling,
+ * pricing.test.js) that fails if this and the backend default drift apart —
+ * which is exactly what happened before: this file said 7 days while the wizard
+ * and Stripe both said 14.
+ */
+export const TRIAL_DAYS = 7;
+
+/** "7-day" / "one-week" phrasing from one number. */
+export function trialLengthLabel() {
+  return TRIAL_DAYS === 7 ? "7-day" : `${TRIAL_DAYS}-day`;
+}
+
 /** "$80" → "A$88.00". Returns null for non-numeric prices ("Let's talk"). */
 export function priceIncGst(price) {
   const amount = Number(String(price).replace(/[^0-9.]/g, ""));
@@ -193,7 +213,7 @@ export const FAQ = [
     a: "Yes — pay annually and save the equivalent of two months. Talk to us to set it up.",
   },
   {
-    q: "What does the 7-day free trial cover?",
+    q: `What does the ${trialLengthLabel()} free trial cover?`,
     a: "Full access to your chosen plan. No card required. If you don't continue, every booking Bella made for you is still yours.",
   },
 ];

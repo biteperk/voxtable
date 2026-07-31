@@ -125,11 +125,20 @@ const envSchema = z
     .url()
     .default("https://vocotable.web.app/billing"),
   STRIPE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
-  // Self-serve subscription (Phase 3): the $80/mo recurring Price, a 14-day
-  // free trial, the webhook signing secret, and Checkout return URLs.
+  // Self-serve subscription (Phase 3): the $80/mo recurring Price, the free
+  // trial length, the webhook signing secret, and Checkout return URLs.
   STRIPE_PRICE_ID: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_TRIAL_DAYS: z.coerce.number().int().min(0).max(90).default(14),
+  // THE trial length. Stripe reads this at checkout, and the onboarding wizard
+  // reads it back from /api/onboarding/status, so the number a customer is
+  // promised and the number they are granted are the same value by
+  // construction. Before this, the landing page said 7 days, the wizard said
+  // 14, and Stripe granted 14 — three answers to one question.
+  //
+  // Changing it affects NEW checkouts only: Stripe fixes the trial on the
+  // subscription when it is created, so anyone mid-trial keeps what they were
+  // promised.
+  STRIPE_TRIAL_DAYS: z.coerce.number().int().min(0).max(90).default(7),
   STRIPE_CHECKOUT_SUCCESS_URL: z
     .string()
     .url()

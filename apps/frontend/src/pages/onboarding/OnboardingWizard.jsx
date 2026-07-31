@@ -8,6 +8,7 @@ import { ProfileStep } from "./steps/ProfileStep";
 import { AgreementStep } from "./steps/AgreementStep";
 import { MenuStep } from "./steps/MenuStep";
 import { TrialStep } from "./steps/TrialStep";
+import { TRIAL_DAYS } from "../../data/pricing";
 import { PhoneStep } from "./steps/PhoneStep";
 
 // ===== Onboarding wizard (Phase 1) =====
@@ -19,7 +20,10 @@ function OnboardingShell({
   welcome = false,
   currentKey = null,
   reviewing = false,
-  onReturnToCurrent = null
+  onReturnToCurrent = null,
+  // Defaults to the marketing constant only so the pre-status renders (loading,
+  // welcome) have something sane; the real value arrives with the status call.
+  trialDays = TRIAL_DAYS
 }) {
   const total = checklist?.length ?? 0;
   // `currentKey` is the step being *viewed* (may be an earlier, completed step
@@ -37,7 +41,9 @@ function OnboardingShell({
     profile: "Used by Bella on every call — change it anytime",
     agreement: "Your agreement & data choices — takes about two minutes",
     menu: "Lets Bella answer “how much is…” questions",
-    trial: "Card not charged for 14 days · cancel anytime",
+    // Trial length comes from the server, which is the same number Stripe is
+    // given at checkout — never a second copy that can drift.
+    trial: `Card not charged for ${trialDays} days · cancel anytime`,
     phone: "Works with Telstra, Optus & Vodafone"
   };
   const contextLine = ONBOARDING_CONTEXT[currentKey] ?? null;
@@ -134,6 +140,9 @@ const REVIEWABLE_KEYS = ["profile", "agreement", "menu"];
 export function OnboardingWizard({ navigate }) {
   const { memberships, refreshMe } = useAuth();
   const [status, setStatus] = useState(null);
+  // Seeded from the marketing constant so the first paint isn't blank, then
+  // replaced by the server's real value the moment status loads.
+  const [trialDays, setTrialDays] = useState(TRIAL_DAYS);
   const [checklist, setChecklist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -160,6 +169,7 @@ export function OnboardingWizard({ navigate }) {
       const r = await getOnboardingStatus();
       setStatus(r.onboarding_status);
       setChecklist(r.checklist);
+      if (Number.isFinite(r.trial_days)) setTrialDays(r.trial_days);
       // If the real current step moved underneath a review (e.g. the Stripe
       // webhook advanced the tenant), drop review mode so the client isn't
       // left editing a stale card.
@@ -287,7 +297,7 @@ export function OnboardingWizard({ navigate }) {
   } else if (current === "menu") {
     content = <MenuStep onContinue={advance} navigate={navigate} onBack={goBack} />;
   } else if (current === "trial") {
-    content = <TrialStep onRefresh={silentRefresh} onBack={goBack} />;
+    content = <TrialStep onRefresh={silentRefresh} onBack={goBack} trialDays={trialDays} />;
   } else if (current === "phone") {
     content = <PhoneStep onRefresh={silentRefresh} />;
   } else if (current) {
@@ -321,6 +331,7 @@ export function OnboardingWizard({ navigate }) {
       onSignOut={handleSignOut}
       reviewing={reviewing}
       onReturnToCurrent={returnToCurrent}
+      trialDays={trialDays}
     >
       {content}
     </OnboardingShell>

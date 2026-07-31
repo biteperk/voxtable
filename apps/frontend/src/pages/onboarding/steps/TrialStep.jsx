@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createBillingCheckoutSession } from "../../../api";
-import { priceIncGst } from "../../../data/pricing";
+import { priceIncGst, TRIAL_DAYS } from "../../../data/pricing";
 import { Icon } from "../../../components/Icon";
 
 // The self-serve plan this wizard subscribes people to. Kept as one constant so
@@ -13,7 +13,7 @@ import { Icon } from "../../../components/Icon";
 const SELF_SERVE_PRICE = "$80";
 const SELF_SERVE_PRICE_INC_GST = priceIncGst(SELF_SERVE_PRICE);
 
-export function TrialStep({ onRefresh, onBack = null }) {
+export function TrialStep({ onRefresh, onBack = null, trialDays = TRIAL_DAYS }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -65,11 +65,11 @@ export function TrialStep({ onRefresh, onBack = null }) {
     <div className="onboarding-card">
       <div className="onboarding-bella">
         <span className="onboarding-bella-avatar" aria-hidden="true"><Icon name="headset_mic" /></span>
-        <p>Try me free for 14 days. I'll start answering your calls now — your card isn't charged until the trial ends.</p>
+        <p>Try me free for {trialDays} days. I'll start answering your calls now — your card isn't charged until the trial ends.</p>
       </div>
       <h1>Start your free trial</h1>
       <p className="onboarding-lead">
-        Try VoxTable free for 14 days. We'll set up your AI phone host now — cancel anytime.
+        Try VoxTable free for {trialDays} days. We'll set up your AI phone host now — cancel anytime.
       </p>
       <div className="trial-plan">
         <div>
@@ -82,7 +82,7 @@ export function TrialStep({ onRefresh, onBack = null }) {
         </div>
       </div>
       <ul className="trial-reassure">
-        <li><Icon name="check" /> 14-day free trial</li>
+        <li><Icon name="check" /> {trialDays}-day free trial</li>
         <li><Icon name="check" /> Card not charged until the trial ends</li>
         {/* The figure Stripe will actually charge. Our prices are quoted
             ex-GST, so without this the checkout page shows a bigger number
@@ -108,7 +108,7 @@ export function TrialStep({ onRefresh, onBack = null }) {
           </button>
         )}
         <button type="button" className="primary-button" onClick={startTrial} disabled={busy || unavailable}>
-          {busy ? "Opening secure checkout…" : "Start 14-day free trial"}
+          {busy ? "Opening secure checkout…" : `Start ${trialDays}-day free trial`}
           <Icon name="arrow_forward" />
         </button>
       </div>
