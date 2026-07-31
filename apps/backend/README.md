@@ -20,12 +20,21 @@ From the repository root:
 npm install
 cp .env.example .env
 npm run db:migrate
-npm run db:seed
 npm run dev:backend
 npm run dev:worker
 ```
 
 The API listens on `http://localhost:3050` by default.
+
+Seed demo data only on demand in local development:
+
+```bash
+SEED_DATA=true ./deploy/scripts/run-local.sh
+# or, after local migrations:
+npm run db:seed
+```
+
+The seed command is blocked when `APP_ENV=production`.
 
 ## Runtime Split
 
@@ -73,7 +82,6 @@ After a migration-history refactor, reset local Postgres before migrating:
 docker compose down -v
 docker compose up -d postgres
 npm run db:migrate
-npm run db:seed
 ```
 
 Alembic itself is a Python/SQLAlchemy tool, so it is not a natural fit for this

@@ -89,13 +89,12 @@ Verify: `SELECT count(*) FROM schema_migrations;` should be 12.
 (If using `npm run db:migrate:prod` instead and it hits `08P01`, fall back to the
 psql-per-file loop above — see CLAUDE.md migration note.)
 
-## Step 3 — backfill memberships + Natalia's numbers
-```
-sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm api npm run db:seed:prod
-```
-Creates `users` + `restaurant_members` for `DASHBOARD_ALLOWED_EMAILS`, sets the
-existing restaurant's `twilio_phone_number`/`retell_phone_number` from env, marks
-it `live`. Verify: `SELECT count(*) FROM restaurant_members;` ≥ 1.
+## Step 3 — provision production data intentionally
+Do not run seed data in production. Create or update `users`,
+`restaurant_members`, and restaurant phone/status fields through the
+application/admin flow or targeted operational SQL reviewed for this rollout.
+Verify: `SELECT count(*) FROM restaurant_members;` ≥ 1 for the intended
+restaurant.
 
 ## Step 4 — rebuild + force-recreate
 ```

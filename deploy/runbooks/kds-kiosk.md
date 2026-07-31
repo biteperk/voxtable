@@ -6,7 +6,8 @@ How to bring the Kitchen Display System online at Natalia's. Target: a
 ## 0. Prereqs (one-off)
 
 - [ ] Migration `006_kds_schema.sql` has been applied on the prod DB.
-- [ ] `npm run db:seed` has been run on prod — Natalia's menu is in `menu_items`.
+- [ ] Natalia's production menu exists in `menu_items` via the application/admin
+      flow or reviewed operational SQL. Do not run seed data in production.
 - [ ] Backend image rebuilt + redeployed on `core-central-vm` (CORS now allows
       `https://kitchen.vocotable.biteperk.com.au`).
 - [ ] Firebase Hosting site created:

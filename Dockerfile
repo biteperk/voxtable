@@ -1,10 +1,13 @@
 # ---- Stage 1: Builder ----
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
 # Copy package files first for better layer caching
 COPY package.json package-lock.json ./
+COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/frontend/package.json ./apps/frontend/package.json
+COPY apps/kds/package.json ./apps/kds/package.json
 
 # Install all dependencies (including devDependencies for build)
 RUN npm ci
@@ -20,7 +23,7 @@ ENV NODE_OPTIONS=--max-old-space-size=2048
 RUN npm run build:backend
 
 # ---- Stage 2: Runner ----
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 WORKDIR /app
 
@@ -29,14 +32,19 @@ RUN apk add --no-cache wget
 
 # Copy package files
 COPY package.json package-lock.json ./
+COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/frontend/package.json ./apps/frontend/package.json
+COPY apps/kds/package.json ./apps/kds/package.json
 
 # Install production dependencies only
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --workspace=@vocotable/backend --omit=dev --omit=optional && \
+    npm cache clean --force && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 # Copy compiled backend output
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 
-# Copy migration and seed files needed at runtime
+# Copy migration files needed at runtime
 COPY --from=builder /app/apps/backend/db ./apps/backend/db
 
 # Create non-root user and group

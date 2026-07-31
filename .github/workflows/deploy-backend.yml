@@ -1,90 +1,139 @@
 name: Deploy backend to VM
 
-# Push-to-main → build image in CI → push to Artifact Registry → VM pulls + restarts.
-# The VM never builds or pulls source; it only `docker pull`s the prebuilt image.
+# CI builds, scans, and pushes images first. This workflow only deploys the
+# image tag produced by the successful CI run:
+# - integration -> staging, tagged with the commit SHA
+# - main -> production, tagged with package.json semver
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/backend/**"
-      - "package.json"
-      - "package-lock.json"
-      - "Dockerfile"
-      - "docker-compose*.yml"
-      - ".github/workflows/deploy-backend.yml"
-  workflow_dispatch: {} # lets us trigger a deploy by hand from the Actions tab
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [integration, main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      image_tag:
+        description: Optional image tag to deploy. Defaults to commit SHA for staging and package.json version for production.
+        required: false
 
 concurrency:
-  group: deploy-backend
-  cancel-in-progress: false # never interrupt an in-flight prod deploy
+  group: deploy-backend-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
 
-# Keyless auth (WIF): these jobs must be allowed to mint a GitHub OIDC token.
 permissions:
   contents: read
   id-token: write
 
 env:
-  API_IMAGE: us-central1-docker.pkg.dev/vocotable-497209/vocotable/api
-  WORKER_IMAGE: us-central1-docker.pkg.dev/vocotable-497209/vocotable/worker
+  REGISTRY_HOST: australia-southeast1-docker.pkg.dev
+  API_IMAGE: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/api
+  WORKER_IMAGE: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/worker
 
 jobs:
-  check:
-    name: Build gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "20"
-          cache: npm
-      - run: npm ci
-      - run: npm run check # tsc backend + vite build frontend + kds — blocks deploy if red
-
-  build-push:
-    name: Build & push images
-    needs: check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
-      - uses: google-github-actions/setup-gcloud@v2
-      - run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
-      # Two images since the api/worker split: same build stage, different
-      # entrypoints. The api image also carries db/migrations (auto-migrate
-      # runs inside it on the VM).
-      - name: Build and push api (tag with git sha + latest)
-        run: |
-          docker build -f Dockerfile.api -t "$API_IMAGE:${{ github.sha }}" -t "$API_IMAGE:latest" .
-          docker push "$API_IMAGE:${{ github.sha }}"
-          docker push "$API_IMAGE:latest"
-      - name: Build and push worker (tag with git sha + latest)
-        run: |
-          docker build -f Dockerfile.worker -t "$WORKER_IMAGE:${{ github.sha }}" -t "$WORKER_IMAGE:latest" .
-          docker push "$WORKER_IMAGE:${{ github.sha }}"
-          docker push "$WORKER_IMAGE:latest"
-
   deploy:
-    name: Deploy on VM
-    needs: build-push
+    name: Deploy backend
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
+
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve deployment image tag
+        id: deploy-meta
+        env:
+          DISPATCH_ENVIRONMENT: ${{ inputs.environment }}
+          DISPATCH_IMAGE_TAG: ${{ inputs.image_tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DEPLOY_ENV="$DISPATCH_ENVIRONMENT"
+          elif [ "$SOURCE_BRANCH" = "main" ]; then
+            DEPLOY_ENV="production"
+          elif [ "$SOURCE_BRANCH" = "integration" ]; then
+            DEPLOY_ENV="staging"
+          else
+            echo "Unsupported deploy branch: $SOURCE_BRANCH" >&2
+            exit 1
+          fi
+
+          if [ -n "$DISPATCH_IMAGE_TAG" ]; then
+            IMAGE_TAG="$DISPATCH_IMAGE_TAG"
+          elif [ "$DEPLOY_ENV" = "production" ]; then
+            IMAGE_TAG="$(node -p "require('./package.json').version")"
+          else
+            IMAGE_TAG="$SOURCE_SHA"
+          fi
+
+          if ! printf '%s' "$IMAGE_TAG" | grep -Eq '^[0-9A-Za-z._:+-]+$'; then
+            echo "Invalid image tag: $IMAGE_TAG" >&2
+            exit 1
+          fi
+
+          echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
+
       - uses: google-github-actions/setup-gcloud@v2
-      - name: SSH to VM — pull images, restart, migrate, healthcheck
+
+      - name: SSH to VM and deploy images
+        env:
+          APP_DIR: ${{ vars.GCP_APP_DIR || '/opt/vocotable' }}
+          COMPOSE_FILES: ${{ vars.GCP_COMPOSE_FILES || 'docker-compose.yml docker-compose.prod.yml' }}
+          IMAGE_TAG: ${{ steps.deploy-meta.outputs.image_tag }}
+          VM_NAME: ${{ vars.GCP_VM_NAME }}
+          VM_ZONE: ${{ vars.GCP_VM_ZONE }}
         run: |
-          gcloud compute ssh deployer@core-central-vm --zone=us-central1-a --quiet --command='
-            set -e
-            cd /opt/vocotable
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml pull api worker
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml up -d api worker
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api npm run db:migrate:prod
+          set -euo pipefail
+
+          : "${VM_NAME:?Set GCP_VM_NAME in the GitHub environment}"
+          : "${VM_ZONE:?Set GCP_VM_ZONE in the GitHub environment}"
+
+          gcloud compute ssh "deployer@${VM_NAME}" --zone="${VM_ZONE}" --quiet --command="
+            set -euo pipefail
+
+            cd '${APP_DIR}'
+
+            if command -v gcloud >/dev/null 2>&1; then
+              gcloud auth configure-docker '${REGISTRY_HOST}' --quiet || true
+            fi
+
+            printf '%s\n' \
+              'services:' \
+              '  api:' \
+              '    image: ${API_IMAGE}:${IMAGE_TAG}' \
+              '    pull_policy: always' \
+              '  worker:' \
+              '    image: ${WORKER_IMAGE}:${IMAGE_TAG}' \
+              '    pull_policy: always' \
+              > /tmp/vocotable-image-tags.yml
+
+            COMPOSE_ARGS=''
+            for file in ${COMPOSE_FILES}; do
+              COMPOSE_ARGS=\"\${COMPOSE_ARGS} -f \${file}\"
+            done
+
+            docker compose \${COMPOSE_ARGS} -f /tmp/vocotable-image-tags.yml pull api worker
+            docker compose \${COMPOSE_ARGS} -f /tmp/vocotable-image-tags.yml up -d api worker
+            docker compose \${COMPOSE_ARGS} exec -T api node apps/backend/dist/db/migrate.js
             sleep 5
-            curl -fsS http://localhost:3050/health && echo " <- deploy healthy"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-          '
+            curl -fsS http://localhost:3050/health && echo ' <- deploy healthy'
+            docker compose \${COMPOSE_ARGS} ps
+          "

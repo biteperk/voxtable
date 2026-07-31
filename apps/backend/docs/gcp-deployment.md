@@ -113,14 +113,12 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api
 Run migrations:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api npm run db:migrate:prod
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api node apps/backend/dist/db/migrate.js
 ```
 
-Seed only when intended:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api npm run db:seed:prod
-```
+Do not run seed data in production. Production restaurants, menu items, users,
+and memberships should be created through the application/admin flow or targeted
+operational SQL reviewed for that deployment.
 
 ## nginx and TLS
 

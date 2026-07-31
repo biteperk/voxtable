@@ -42,7 +42,7 @@ export function CreateRestaurantStep({ onCreated }) {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Natalia's Bistro"
+            placeholder="e.g. Harbour Bistro"
             autoFocus
             maxLength={120}
             required
@@ -68,4 +68,3 @@ export function CreateRestaurantStep({ onCreated }) {
     </div>
   );
 }
-

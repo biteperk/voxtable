@@ -1,69 +1,71 @@
 name: Deploy frontend + KDS to Firebase
 
-# Push-to-main → build the two Vite apps → firebase deploy --only hosting.
-# Keyless: reuses the backend pipeline's WIF — github-deployer@ is impersonated
-# via OIDC and was granted firebasehosting.admin on the 'vocotable' Firebase
-# project (separate from the compute project vocotable-497209).
+# CI builds the Firebase Hosting artifact first. This workflow only downloads
+# that artifact and deploys it:
+# - integration -> staging Firebase environment
+# - main -> production Firebase environment
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/frontend/**"
-      - "apps/kds/**"
-      - "firebase.json"
-      - ".firebaserc"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/deploy-frontend.yml"
-  workflow_dispatch: {} # manual trigger from the Actions tab
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [integration, main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      source_run_id:
+        description: Successful CI run ID that uploaded the frontend-hosting artifact
+        required: true
 
 concurrency:
-  group: deploy-frontend
-  cancel-in-progress: true # hosting deploys are idempotent — drop stale runs
+  group: deploy-frontend-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
 
-# Keyless auth (WIF) needs the job to mint a GitHub OIDC token.
 permissions:
+  actions: read
   contents: read
   id-token: write
 
 jobs:
-  build-deploy:
-    name: Build & deploy Hosting (app + kds)
+  deploy:
+    name: Deploy Hosting
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
+
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
       - uses: actions/setup-node@v5
         with:
-          node-version: "20" # match the app runtime; the action itself runs on Node 24
-          cache: npm
-      - run: npm ci
-      - name: Build frontend + KDS
-        env:
-          # Public-by-design build values (the Firebase web config + maps key
-          # already ship in the client bundle). Stored as repo variables.
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-          VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
-          # Error reporting. DELIBERATELY UNSET as of 31 Jul 2026 — this is a
-          # decision, not an oversight. Sentry SaaS only offers US (Iowa) and EU
-          # (Frankfurt) regions; there is no Australian one, and an existing org
-          # can't be moved between them. We chose not to send telemetry offshore
-          # while the Iowa→Sydney move is pending.
-          #
-          # The code degrades cleanly: apps/frontend/src/sentry.js no-ops on an
-          # empty DSN, so builds and the ErrorBoundary work fine — we just have
-          # no crash visibility. Set the repo VARIABLE (not secret — a DSN ships
-          # in the bundle and only grants send-events permission) to switch on.
-          # An AU-hosted GlitchTip is DSN-compatible if we want onshore later.
-          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-          VITE_APP_VERSION: ${{ github.sha }}
-        run: |
-          npm run build:frontend
-          npm run build:kds
+          node-version: "24"
+
+      - name: Download frontend hosting artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: frontend-hosting
+          path: .
+          run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
-      - name: Deploy to Firebase Hosting (app + kds)
+
+      - name: Deploy to Firebase Hosting
         env:
-          GOOGLE_CLOUD_QUOTA_PROJECT: vocotable # ADC quota project for the cross-project deploy
-        run: npx --yes --package firebase-tools@15 firebase deploy --only hosting --project vocotable --non-interactive
+          FIREBASE_ONLY: ${{ vars.FIREBASE_ONLY || 'hosting' }}
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT || 'vocotable' }}
+          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT || 'vocotable' }}
+        run: |
+          set -euo pipefail
+          npx --yes --package firebase-tools@15 firebase deploy --only "$FIREBASE_ONLY" --project "$FIREBASE_PROJECT" --non-interactive

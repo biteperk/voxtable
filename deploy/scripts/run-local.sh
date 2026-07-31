@@ -6,7 +6,8 @@
 # Starts the local development platform:
 #   - Ensures .env exists and has Docker Compose Postgres variables
 #   - Starts Postgres with Docker Compose
-#   - Runs database migrations and seed data
+#   - Runs database migrations
+#   - Optionally seeds local demo data on demand
 #   - Starts backend, frontend, and KDS dev servers
 #
 # Usage:
@@ -14,7 +15,7 @@
 #
 # Optional environment variables:
 #   SKIP_INSTALL=true   Skip npm install when node_modules is missing
-#   SKIP_SEED=true      Skip db:seed
+#   SEED_DATA=true      Run local-only db:seed after migrations
 #   START_WORKER=false  Do not start the backend worker process
 #   START_KDS=false     Do not start the KDS dev server
 #
@@ -140,11 +141,11 @@ docker compose up -d postgres
 log "Running database migrations..."
 npm run db:migrate
 
-if [ "${SKIP_SEED:-false}" = "true" ]; then
-  log "Skipping seed data because SKIP_SEED=true."
-else
-  log "Seeding local database..."
+if [ "${SEED_DATA:-false}" = "true" ]; then
+  log "Seeding local database because SEED_DATA=true..."
   npm run db:seed
+else
+  log "Skipping seed data. Run with SEED_DATA=true to seed local demo data."
 fi
 
 log "Starting backend on http://localhost:3050 ..."
