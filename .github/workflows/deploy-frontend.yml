@@ -43,11 +43,17 @@ jobs:
           # already ship in the client bundle). Stored as repo variables.
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
-          # Error reporting. Without this the ErrorBoundary catches crashes and
-          # tells nobody. A Sentry DSN belongs in this public-by-design block:
-          # it ships in the bundle either way, and it only grants permission to
-          # SEND events to one project — it cannot read anything. Storing it as
-          # a secret would imply a confidentiality it doesn't have.
+          # Error reporting. DELIBERATELY UNSET as of 31 Jul 2026 — this is a
+          # decision, not an oversight. Sentry SaaS only offers US (Iowa) and EU
+          # (Frankfurt) regions; there is no Australian one, and an existing org
+          # can't be moved between them. We chose not to send telemetry offshore
+          # while the Iowa→Sydney move is pending.
+          #
+          # The code degrades cleanly: apps/frontend/src/sentry.js no-ops on an
+          # empty DSN, so builds and the ErrorBoundary work fine — we just have
+          # no crash visibility. Set the repo VARIABLE (not secret — a DSN ships
+          # in the bundle and only grants send-events permission) to switch on.
+          # An AU-hosted GlitchTip is DSN-compatible if we want onshore later.
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_APP_VERSION: ${{ github.sha }}
         run: |
