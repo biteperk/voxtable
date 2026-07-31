@@ -3877,6 +3877,43 @@ gmp-place-autocomplete {
   letter-spacing: 0;
 }
 
+/* Shown when a payment lapsed and the router redirected the owner here. This is
+   the first thing they see after losing access, so it has to read as an
+   explanation and a fix — not an alarm. */
+.billing-lapsed-notice {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin: 0 0 24px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--error) 38%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--error) 10%, var(--surface, transparent));
+}
+
+.billing-lapsed-notice > .material-symbols-outlined {
+  flex: none;
+  color: var(--error);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.billing-lapsed-notice strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--on-surface);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.billing-lapsed-notice p {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+  line-height: 21px;
+}
+
 .billing-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));

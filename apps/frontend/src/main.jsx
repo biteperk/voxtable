@@ -274,9 +274,21 @@ function AppRouter({ path, navigate, isDashboard }) {
   // menu (the "Add your menu" step links here), then return to the wizard.
   const allowDuringOnboarding = path === "/manage-menu";
 
+  // A tenant whose payment lapsed ("suspended") has ALREADY finished the wizard
+  // — their only problem is their card. Sending them to /onboarding drops them
+  // into the first-run wizard, where every step they submit is rejected: a hard
+  // lockout for a customer who wants to pay us. Send them to billing instead.
+  const isSuspended = gate.status === "suspended";
+  const isBillingRoute =
+    path === "/manage-plan" || path === "/update-payment-details" || path === "/billing";
+
   useEffect(() => {
     if (!user || loading || meLoading || !isDashboard || gate.loading) return;
     const isLive = gate.status === "live";
+    if (isSuspended) {
+      if (!isBillingRoute) navigate("/manage-plan", { replace: true });
+      return;
+    }
     if (isOnboarding) {
       // Leave the wizard only once we KNOW the tenant is live AND the user
       // actually belongs to a restaurant. A member-less account stays on the
@@ -295,7 +307,7 @@ function AppRouter({ path, navigate, isDashboard }) {
     if ((!hasRestaurant || knownIncomplete) && !allowDuringOnboarding) {
       navigate("/onboarding", { replace: true });
     }
-  }, [user, loading, meLoading, isDashboard, isOnboarding, gate.loading, gate.status, memberships, allowDuringOnboarding, navigate]);
+  }, [user, loading, meLoading, isDashboard, isOnboarding, gate.loading, gate.status, memberships, allowDuringOnboarding, isSuspended, isBillingRoute, navigate]);
 
   // Role-based route guard. Compute the redirect target purely; the effect below
   // does the navigation (never navigate during render). Only meaningful once
@@ -372,7 +384,10 @@ function AppRouter({ path, navigate, isDashboard }) {
   // to /onboarding — render a neutral loader rather than the locked dashboard.
   // Routes flagged allowDuringOnboarding (the menu editor) must still render,
   // otherwise MenuStep's "Add manually" link lands on an infinite loader.
-  const tenantKnownIncomplete = gate.status !== null && gate.status !== "live";
+  // Billing routes must render for a suspended tenant — that's where the effect
+  // above just sent them, and it's the one place they can fix their card.
+  const tenantKnownIncomplete =
+    gate.status !== null && gate.status !== "live" && !(isSuspended && isBillingRoute);
   if (isDashboard && (memberships.length === 0 || (tenantKnownIncomplete && !allowDuringOnboarding))) {
     return <FullPageMessage title="Loading..." />;
   }
@@ -411,7 +426,8 @@ function AppRouter({ path, navigate, isDashboard }) {
   if (path === "/analytics") return <AnalyticsPage navigate={navigate} path={path} />;
   if (path === "/billing")
     return <BillingPage navigate={navigate} path={path} />;
-  if (path === "/manage-plan") return <ManagePlanPage navigate={navigate} path={path} />;
+  if (path === "/manage-plan")
+    return <ManagePlanPage navigate={navigate} path={path} subscriptionLapsed={isSuspended} />;
   if (path === "/update-payment-details")
     return <UpdatePaymentDetailsPage navigate={navigate} path={path} />;
   if (path === "/profile") return <ProfilePage navigate={navigate} path={path} />;
