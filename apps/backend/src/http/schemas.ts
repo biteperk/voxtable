@@ -445,14 +445,26 @@ export const adminProvisioningSchema = z.object({
 // parse blunders (e.g. a phone number read as a price).
 const draftPriceCentsSchema = z.number().int().min(0).max(1_000_000);
 
+/**
+ * A variant/option price DIFFERENCE, which may be negative — a kids or entrée
+ * portion is priced below the dish it belongs to. `menu_item_variants
+ * .price_delta_cents` is signed for exactly this reason (006_kds_schema.sql),
+ * and the manual editing API has always allowed it via signedDeltaCentsSchema.
+ *
+ * Only the OCR draft required deltas to be >= 0, so a model that correctly read
+ * "Kids portion -$3.00" failed the ENTIRE menu with "the menu parser returned an
+ * unexpected shape" — the one row it got right poisoning every row it got right.
+ */
+const draftDeltaCentsSchema = z.number().int().min(-1_000_000).max(1_000_000);
+
 const draftVariantSchema = z.object({
   name: z.string().min(1).max(80),
-  price_delta_cents: draftPriceCentsSchema.default(0)
+  price_delta_cents: draftDeltaCentsSchema.default(0)
 });
 
 const draftModifierOptionSchema = z.object({
   name: z.string().min(1).max(80),
-  price_delta_cents: draftPriceCentsSchema.default(0),
+  price_delta_cents: draftDeltaCentsSchema.default(0),
   is_default: z.boolean().optional()
 });
 
@@ -486,14 +498,40 @@ export const menuDraftSchema = z.object({
 
 export type MenuDraft = z.infer<typeof menuDraftSchema>;
 
-export const startIngestionSchema = z.object({
-  source_url: z.string().url().max(2000),
-  source_kind: z.enum(["image", "pdf"]),
-  sha256: z
-    .string()
-    .regex(/^[a-fA-F0-9]{64}$/, "sha256 must be 64 hex chars")
-    .optional()
-});
+/** Product cap on pages per import: 48 pages = 8 batches of 6 vision calls. */
+export const MENU_INGEST_MAX_PAGES = 48;
+
+/**
+ * Start a menu import.
+ *
+ * `source_urls` is the current shape — one entry per rendered page, in order.
+ * `source_url` is the original single-page shape and is still accepted, because
+ * the frontend and backend deploy independently and an older client must keep
+ * working. Exactly one of the two is required; the transform collapses them so
+ * everything downstream only ever deals with an array.
+ *
+ * The page cap is enforced here AND by a CHECK constraint in migration 023 —
+ * this is the friendly rejection, that one is the guarantee.
+ */
+export const startIngestionSchema = z
+  .object({
+    source_url: z.string().url().max(2000).optional(),
+    source_urls: z.array(z.string().url().max(2000)).min(1).max(MENU_INGEST_MAX_PAGES).optional(),
+    source_kind: z.enum(["image", "pdf"]),
+    sha256: z
+      .string()
+      .regex(/^[a-fA-F0-9]{64}$/, "sha256 must be 64 hex chars")
+      .optional()
+  })
+  .refine((v) => Boolean(v.source_urls?.length) || Boolean(v.source_url), {
+    message: "Provide the uploaded menu page(s).",
+    path: ["source_urls"]
+  })
+  .transform((v) => ({
+    source_kind: v.source_kind,
+    sha256: v.sha256,
+    source_urls: v.source_urls?.length ? v.source_urls : [v.source_url as string]
+  }));
 
 const tableAttributeSchema = z
   .string()

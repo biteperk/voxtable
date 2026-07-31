@@ -102,6 +102,50 @@ export async function createCategory(input: {
   return result.rows[0]!;
 }
 
+/**
+ * Fetch a restaurant's category by name, or create it — never conflicting.
+ *
+ * `menu_categories` carries UNIQUE (restaurant_id, LOWER(name)), and importing a
+ * menu used to plain INSERT every heading it found. A real multi-page menu
+ * repeats headings ("Desserts" on page 4 and page 11), varies their case, and
+ * often collides with a category the owner already typed in by hand. Any of
+ * those raised 23505, rolled back the whole import, and surfaced as
+ * "Something went wrong." — permanently, because every retry did the same thing.
+ *
+ * Matching is on LOWER(name) so it lines up exactly with the index that would
+ * otherwise reject us. Scoped by restaurant_id, so tenant isolation is unchanged.
+ */
+export async function getOrCreateCategory(input: {
+  restaurantId: string;
+  name: string;
+  displayOrder?: number;
+}, db: DbClient = pool): Promise<MenuCategoryRow> {
+  const inserted = await db.query<MenuCategoryRow>(
+    `
+    INSERT INTO menu_categories (restaurant_id, name, display_order, is_active)
+    VALUES ($1, $2, $3, true)
+    ON CONFLICT DO NOTHING
+    RETURNING *
+    `,
+    [input.restaurantId, input.name, input.displayOrder ?? 0]
+  );
+  if (inserted.rows[0]) return inserted.rows[0];
+
+  // Lost the insert — either to an existing row or to a concurrent commit.
+  const existing = await db.query<MenuCategoryRow>(
+    "SELECT * FROM menu_categories WHERE restaurant_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1",
+    [input.restaurantId, input.name]
+  );
+  const row = existing.rows[0];
+  if (!row) {
+    // ON CONFLICT DO NOTHING covers every constraint on the table, so landing
+    // here means we tripped one we can't resolve by name. Say so plainly rather
+    // than returning undefined and failing further down.
+    throw new Error(`Could not create or find menu category "${input.name}"`);
+  }
+  return row;
+}
+
 export async function updateCategory(input: {
   id: string;
   restaurantId: string;

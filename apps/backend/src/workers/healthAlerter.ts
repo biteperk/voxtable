@@ -85,6 +85,7 @@ interface AlertState {
   provisioningStuckAlerted: boolean;
   notificationsStuckAlerted: boolean;
   stripeUnprocessedAlerted: boolean;
+  menuImportsFailedAlerted: boolean;
 }
 
 const state: AlertState = {
@@ -101,7 +102,8 @@ const state: AlertState = {
   funnelSummaryDayKey: null,
   provisioningStuckAlerted: false,
   notificationsStuckAlerted: false,
-  stripeUnprocessedAlerted: false
+  stripeUnprocessedAlerted: false,
+  menuImportsFailedAlerted: false
 };
 
 // D1: how the onboarding funnel reads in the daily summary. Ordered by the
@@ -355,6 +357,7 @@ async function checkPaidCustomerQueues(): Promise<void> {
       provisioning_stuck: string;
       notifications_failed: string;
       stripe_unprocessed: string;
+      menu_imports_failed: string;
     }>(
       `SELECT
          (SELECT count(*) FROM provisioning_jobs
@@ -368,7 +371,12 @@ async function checkPaidCustomerQueues(): Promise<void> {
          -- which was created for exactly this query and had no reader until now.
          (SELECT count(*) FROM stripe_webhook_events
            WHERE processed_at IS NULL AND received_at < now() - interval '15 minutes'
-         ) AS stripe_unprocessed`
+         ) AS stripe_unprocessed,
+         -- A failed menu import is an owner stuck mid-onboarding who has just
+         -- been told to type their whole menu by hand. Nothing watched this.
+         (SELECT count(*) FROM menu_ingestion_jobs
+           WHERE status = 'failed' AND created_at > now() - interval '24 hours'
+         ) AS menu_imports_failed`
     );
     const counts = rows[0];
     if (!counts) return;
@@ -376,6 +384,7 @@ async function checkPaidCustomerQueues(): Promise<void> {
     const provisioningStuck = Number(counts.provisioning_stuck);
     const notificationsFailed = Number(counts.notifications_failed);
     const stripeUnprocessed = Number(counts.stripe_unprocessed);
+    const menuImportsFailed = Number(counts.menu_imports_failed);
 
     if (provisioningStuck > 0 && !state.provisioningStuckAlerted) {
       await postToSlack(
@@ -395,6 +404,16 @@ async function checkPaidCustomerQueues(): Promise<void> {
     } else if (stripeUnprocessed === 0 && state.stripeUnprocessedAlerted) {
       await postToSlack(`:white_check_mark: Stripe webhook backlog clear.`);
       state.stripeUnprocessedAlerted = false;
+    }
+
+    if (menuImportsFailed > 0 && !state.menuImportsFailedAlerted) {
+      await postToSlack(
+        `:warning: ${menuImportsFailed} menu import(s) failed in the last 24h. Each one is an owner mid-onboarding who has just been told to type their menu by hand. Check \`menu_ingestion_jobs.last_error\` — a repeated cause usually means a menu layout the parser can't read.`
+      );
+      state.menuImportsFailedAlerted = true;
+    } else if (menuImportsFailed === 0 && state.menuImportsFailedAlerted) {
+      await postToSlack(`:white_check_mark: Menu imports clear — none failed in the last 24h.`);
+      state.menuImportsFailedAlerted = false;
     }
 
     if (notificationsFailed > 0 && !state.notificationsStuckAlerted) {

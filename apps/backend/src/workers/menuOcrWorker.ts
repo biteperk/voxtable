@@ -10,15 +10,26 @@
 
 import { logger } from "../utils/logger";
 import { AppError } from "../domain/errors";
-import { claimReadyJobs, markFailed, markParsed, markRetry } from "../repositories/menuIngestion";
+import {
+  claimReadyJobs,
+  heartbeatIngestionJob,
+  markFailed,
+  markParsed,
+  markRetry,
+  pagesForJob
+} from "../repositories/menuIngestion";
 import { isMenuOcrEnabled, parseMenu } from "../services/menuOcrClient";
 
 const TICK_INTERVAL_MS = 3_000;
-const BATCH_SIZE = 3;
+/** Menus parsed at once. Replaces the old per-tick batch size — see processBatch. */
+const MAX_CONCURRENT_JOBS = 3;
 const MAX_ATTEMPTS = 4;
 
+/** In-flight job promises, so shutdown can wait for them and capacity is known. */
+const inFlight = new Set<Promise<void>>();
+
 let intervalHandle: NodeJS.Timeout | null = null;
-let tickInFlight = false;
+let claimInFlight = false;
 let currentTick: Promise<void> | null = null;
 
 function backoffMsForAttempt(attempts: number): number {
@@ -27,45 +38,85 @@ function backoffMsForAttempt(attempts: number): number {
   return Math.min(base * 2 ** attempts, max);
 }
 
-// Transient = worth retrying: a 503 AppError (rate-limit / timeout / upstream
-// 5xx) or any unknown throw (don't lose the job). A 502 "bad output" or a 4xx
-// won't fix itself on retry, so it dead-letters to the manual editor.
+/**
+ * Transient = worth retrying: a 503 AppError (rate limit / timeout / upstream
+ * 5xx). A 502 "bad output" or a 4xx won't fix itself, so it dead-letters to the
+ * manual editor.
+ *
+ * Unknown throws used to default to transient "so we don't lose the job". That
+ * was backwards for the case that actually happened: a truncated model reply
+ * threw a raw SyntaxError, which is perfectly deterministic, so the job burned
+ * every retry — four paid vision calls over seven minutes — reproducing the same
+ * error. The parser now raises typed AppErrors for its own failures, so an
+ * unknown throw here is a genuine bug in our code, and repeating it costs money
+ * without ever succeeding. Retry only what we know is worth retrying.
+ */
 function isTransient(error: unknown): boolean {
-  if (error instanceof AppError) return error.statusCode === 503;
-  return true;
+  return error instanceof AppError && error.statusCode === 503;
 }
 
-async function processBatch(): Promise<void> {
-  let jobs;
+/** Run one job to completion, recording the outcome. Never throws. */
+async function runJob(job: Awaited<ReturnType<typeof claimReadyJobs>>[number]): Promise<void> {
   try {
-    jobs = await claimReadyJobs(BATCH_SIZE);
-  } catch (error) {
-    logger.error({ evt: "menu_ocr_claim_failed", error });
-    return;
-  }
-  if (jobs.length === 0) return;
-
-  for (const job of jobs) {
-    try {
-      const draft = await parseMenu({ sourceUrl: job.source_url, sourceKind: job.source_kind });
-      await markParsed(job.id, draft);
+      const pages = pagesForJob(job);
+      const result = await parseMenu({
+        sourceUrls: pages,
+        sourceKind: job.source_kind,
+        // Was omitted, so per-restaurant vision-spend logging always recorded null.
+        restaurantId: job.restaurant_id,
+        // Proves the job is alive between batches. A 48-page menu can run past
+        // the 10-minute stuck-job window, and without this a second worker would
+        // claim a job still in flight: double the vision spend, racing commits.
+        onBatchDone: () => heartbeatIngestionJob(job.id)
+      });
+      await markParsed(job.id, result.draft);
       logger.info({
         evt: "menu_ocr_parsed",
         job_id: job.id,
         restaurant_id: job.restaurant_id,
-        categories: draft.categories.length
+        pages: pages.length,
+        pages_read: result.pagesRead,
+        failed_pages: result.failedPages,
+        categories: result.draft.categories.length
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown error";
-      const transient = isTransient(error);
-      if (transient && job.attempts < MAX_ATTEMPTS) {
-        await markRetry(job.id, message, new Date(Date.now() + backoffMsForAttempt(job.attempts)));
-        logger.warn({ evt: "menu_ocr_retry", job_id: job.id, attempts: job.attempts, error: message });
-      } else {
-        await markFailed(job.id, message);
-        logger.error({ evt: "menu_ocr_failed", job_id: job.id, error: message });
-      }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    const transient = isTransient(error);
+    if (transient && job.attempts < MAX_ATTEMPTS) {
+      await markRetry(job.id, message, new Date(Date.now() + backoffMsForAttempt(job.attempts)));
+      logger.warn({ evt: "menu_ocr_retry", job_id: job.id, attempts: job.attempts, error: message });
+    } else {
+      await markFailed(job.id, message);
+      logger.error({ evt: "menu_ocr_failed", job_id: job.id, error: message });
     }
+  }
+}
+
+/**
+ * Claim and start whatever capacity allows, WITHOUT waiting for the jobs to
+ * finish.
+ *
+ * Jobs used to be claimed in threes and awaited one after another under a single
+ * in-flight flag, so one long import blocked every other restaurant: a 48-page
+ * menu is eight vision calls, and nothing else in the queue moved until it was
+ * done. Now each job runs on its own and the tick returns immediately, with a
+ * concurrency ceiling standing in for the old batch size.
+ */
+async function processBatch(): Promise<void> {
+  const capacity = MAX_CONCURRENT_JOBS - inFlight.size;
+  if (capacity <= 0) return;
+
+  let jobs;
+  try {
+    jobs = await claimReadyJobs(capacity);
+  } catch (error) {
+    logger.error({ evt: "menu_ocr_claim_failed", error });
+    return;
+  }
+
+  for (const job of jobs) {
+    const task = runJob(job).finally(() => inFlight.delete(task));
+    inFlight.add(task);
   }
 }
 
@@ -75,15 +126,17 @@ export function startMenuOcrWorker(): void {
     return;
   }
   if (intervalHandle !== null) return;
-  logger.info({ evt: "menu_ocr_worker_started", tick_ms: TICK_INTERVAL_MS, batch: BATCH_SIZE });
+  logger.info({ evt: "menu_ocr_worker_started", tick_ms: TICK_INTERVAL_MS, max_concurrent: MAX_CONCURRENT_JOBS });
   intervalHandle = setInterval(() => {
-    if (tickInFlight) return;
-    tickInFlight = true;
+    // Guards only the CLAIM, which is fast. The jobs themselves run outside it,
+    // so a long menu no longer stops the next tick from picking up other work.
+    if (claimInFlight) return;
+    claimInFlight = true;
     // See provisioningWorker: an unhandled rejection here kills the process.
     currentTick = processBatch()
       .catch((error) => logger.error({ evt: "menu_ocr_tick_failed", error }))
       .finally(() => {
-        tickInFlight = false;
+        claimInFlight = false;
         currentTick = null;
       });
   }, TICK_INTERVAL_MS);
@@ -95,7 +148,8 @@ export async function stopMenuOcrWorker(): Promise<void> {
     clearInterval(intervalHandle);
     intervalHandle = null;
   }
-  if (currentTick) {
-    await currentTick.catch(() => {});
-  }
+  if (currentTick) await currentTick.catch(() => {});
+  // Let running imports finish rather than orphaning them in 'processing' and
+  // waiting on the 10-minute reaper after a deploy.
+  if (inFlight.size > 0) await Promise.allSettled([...inFlight]);
 }
