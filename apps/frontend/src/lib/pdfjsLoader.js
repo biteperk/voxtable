@@ -15,6 +15,14 @@
  *    iPhones, so without the polyfill below the whole feature throws on the
  *    devices most likely to use it. The version is pinned exactly for the same
  *    reason — a minor bump can raise the browser floor silently.
+ *
+ * 3. Rendering needs a VISIBLE page. `page.render()` is driven by
+ *    requestAnimationFrame, which does not fire while `document.hidden` is
+ *    true — the render promise simply never settles. Parsing (getDocument,
+ *    getPage, getOperatorList) runs in the worker and is unaffected. Worth
+ *    knowing before debugging a "hang": check visibilityState first. It also
+ *    means an automated headless check can verify everything here EXCEPT the
+ *    paint itself.
  */
 
 let pdfjsPromise = null;
@@ -56,37 +64,42 @@ export async function loadPdfjs() {
 }
 
 /**
- * Open a PDF without ever materialising it in memory.
+ * Open a PDF without ever materialising it in JavaScript memory.
  *
  * `file.arrayBuffer()` on the 413 MB menu that started this is the single most
- * likely way to kill a phone tab, so we hand pdf.js a range transport backed by
- * `file.slice()` and let it pull only the bytes it needs. `disableAutoFetch`
- * and `disableStream` stop it helpfully reading the whole thing anyway.
+ * likely way to kill a phone tab, so the file is handed over as a `blob:` URL
+ * and pdf.js fetches from it with its own networking. The browser owns those
+ * bytes; the JS heap only ever holds what pdf.js asks for.
+ *
+ * A hand-rolled PDFDataRangeTransport would also work, but pdf.js's own network
+ * layer is well-tested and needs no interface of ours to stay correct across
+ * upgrades. Fewer moving parts for the same memory behaviour.
+ *
+ * The caller MUST call `release()` when finished, or the blob URL pins the whole
+ * file in memory for the life of the document.
  */
 export async function openPdf(file) {
   const pdfjs = await loadPdfjs();
-  return pdfjs.getDocument({
-    range: new FileRangeTransport(file, pdfjs),
-    disableAutoFetch: true,
-    disableStream: true
-  }).promise;
+  const url = URL.createObjectURL(file);
+  try {
+    const doc = await pdfjs.getDocument({
+      url,
+      // Fetch on demand rather than eagerly pulling the entire document.
+      disableAutoFetch: true,
+      disableStream: false
+    }).promise;
+    doc.__objectUrl = url;
+    return doc;
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
 }
 
-/** Reads a local File in ranges, so only the requested slice is ever decoded. */
-class FileRangeTransport {
-  constructor(file, pdfjs) {
-    // Constructed dynamically because PDFDataRangeTransport only exists once
-    // pdf.js has loaded, and this module must stay importable without it.
-    const Base = pdfjs.PDFDataRangeTransport;
-    const instance = new Base(file.size, new Uint8Array(0));
-    instance.requestDataRange = (begin, end) => {
-      file
-        .slice(begin, end)
-        .arrayBuffer()
-        .then((buffer) => instance.onDataRange(begin, new Uint8Array(buffer)))
-        .catch((error) => instance.onDataProgressiveError?.(error));
-    };
-    instance.abort = () => {};
-    return instance;
-  }
+/** Destroy a document and release the blob URL behind it. */
+export async function closePdf(doc) {
+  if (!doc) return;
+  const url = doc.__objectUrl;
+  await doc.destroy().catch(() => {});
+  if (url) URL.revokeObjectURL(url);
 }

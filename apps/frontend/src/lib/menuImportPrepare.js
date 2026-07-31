@@ -24,7 +24,7 @@ import {
   planPageBudget,
   scaleForViewport
 } from "./menuImportPlan.js";
-import { openPdf } from "./pdfjsLoader.js";
+import { closePdf, openPdf } from "./pdfjsLoader.js";
 
 /** Let the browser paint progress and stay responsive between pages. */
 const yieldToBrowser = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -112,7 +112,7 @@ async function renderPdfPages(file, { onProgress, signal }) {
       // Drop pdf.js's accumulated chunk cache periodically. Re-parsing the xref
       // costs milliseconds; on a bloated Photoshop export the cache does not.
       if (pageNumber > 1 && (pageNumber - 1) % MENU_IMPORT_LIMITS.REOPEN_EVERY_N_PAGES === 0) {
-        await pdf.destroy().catch(() => {});
+        await closePdf(pdf);
         pdf = await openPdf(file);
       }
 
@@ -146,7 +146,7 @@ async function renderPdfPages(file, { onProgress, signal }) {
       await yieldToBrowser();
     }
   } finally {
-    await pdf.destroy().catch(() => {});
+    await closePdf(pdf);
   }
 
   return { pages, truncatedFrom: plan.truncatedFrom };
