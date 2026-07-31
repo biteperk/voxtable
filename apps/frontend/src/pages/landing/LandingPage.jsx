@@ -600,11 +600,11 @@ export function LandingPage({ navigate }) {
               It paid for itself in the first week.
             </div>
             <div className="lp-quote-author">
-              <div className="lp-av">N</div>
+              <div className="lp-av">H</div>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>Natalia</div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>Hospitality owner</div>
                 <div style={{ fontSize: 13, color: "var(--lp-mist)" }}>
-                  Owner · Natalia's Bistro, Sydney
+                  Independent restaurant, Sydney
                 </div>
               </div>
             </div>
