@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # First-time setup
 npm install
 cp .env.example .env                    # then fill real Retell/Twilio creds
+cp apps/frontend/.env.example apps/frontend/.env.local   # REQUIRED — Firebase config; the frontend build refuses to run without it
 npm run db:migrate                      # applies anything new in apps/backend/db/migrations/
 npm run db:seed                         # idempotent — seeds Natalia's Bistro restaurant + tables
 

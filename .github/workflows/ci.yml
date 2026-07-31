@@ -45,6 +45,15 @@ jobs:
       DATABASE_SSL: "false"
       VITE_API_BASE_URL: http://localhost:3050
       VITE_GOOGLE_MAPS_KEY: ""
+      # Placeholders. This job only proves the code compiles, and the build now
+      # refuses to run without a Firebase config (apps/frontend/vite.config.ts).
+      # These are deliberately fake so nothing here can talk to a real project.
+      VITE_FIREBASE_API_KEY: ci-placeholder
+      VITE_FIREBASE_AUTH_DOMAIN: ci-placeholder.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: ci-placeholder
+      VITE_FIREBASE_STORAGE_BUCKET: ci-placeholder.firebasestorage.app
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      VITE_FIREBASE_APP_ID: "1:000000000000:web:ciplaceholder"
 
     steps:
       - uses: actions/checkout@v5
@@ -190,6 +199,16 @@ jobs:
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
+          # THIS job builds the artifact that actually gets deployed. If these
+          # are missing the build fails by design — far better than shipping a
+          # bundle where nobody can sign in and nothing says why.
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
         run: |
           npm run build:frontend
           npm run build:kds
