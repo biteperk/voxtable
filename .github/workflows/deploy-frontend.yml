@@ -1,7 +1,7 @@
 name: Deploy frontend + KDS to Firebase
 
-# CI builds the Firebase Hosting artifact first. This workflow only downloads
-# that artifact and deploys it:
+# CI builds the Firebase Hosting artifact first and uploads it to GCS. This
+# workflow only downloads that artifact and deploys it:
 # - integration -> staging Firebase environment
 # - main -> production Firebase environment
 on:
@@ -19,16 +19,15 @@ on:
           - staging
           - production
         default: staging
-      source_run_id:
-        description: Successful CI run ID that uploaded the frontend-hosting artifact
-        required: true
+      artifact_tag:
+        description: Artifact tag to deploy. Required for manual deploys unless deploying production from the checked-out package version.
+        required: false
 
 concurrency:
   group: deploy-frontend-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 permissions:
-  actions: read
   contents: read
   id-token: write
 
@@ -48,18 +47,54 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Download frontend hosting artifact
-        uses: actions/download-artifact@v5
-        with:
-          name: frontend-hosting
-          path: .
-          run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
-          github-token: ${{ github.token }}
+      - name: Resolve Firebase Hosting artifact tag
+        id: hosting-artifact
+        env:
+          DISPATCH_ARTIFACT_TAG: ${{ inputs.artifact_tag }}
+          DISPATCH_ENVIRONMENT: ${{ inputs.environment }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$DISPATCH_ARTIFACT_TAG" ]; then
+            ARTIFACT_TAG="$DISPATCH_ARTIFACT_TAG"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_ENVIRONMENT" = "production" ]; then
+            ARTIFACT_TAG="$(node -p "require('./package.json').version")"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ARTIFACT_TAG="$SOURCE_SHA"
+          elif [ "$SOURCE_BRANCH" = "main" ]; then
+            ARTIFACT_TAG="$(node -p "require('./package.json').version")"
+          else
+            ARTIFACT_TAG="$SOURCE_SHA"
+          fi
+
+          if ! printf '%s' "$ARTIFACT_TAG" | grep -Eq '^[0-9A-Za-z._:+-]+$'; then
+            echo "Invalid artifact tag: $ARTIFACT_TAG" >&2
+            exit 1
+          fi
+
+          echo "artifact_tag=$ARTIFACT_TAG" >> "$GITHUB_OUTPUT"
 
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
+          workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-frontend-artifacts@bp-shared-artifacts.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download Firebase Hosting artifact from GCS
+        env:
+          ARTIFACT_TAG: ${{ steps.hosting-artifact.outputs.artifact_tag }}
+          FRONTEND_ARTIFACT_BUCKET: ${{ vars.FRONTEND_ARTIFACT_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          : "${FRONTEND_ARTIFACT_BUCKET:?Set FRONTEND_ARTIFACT_BUCKET in the GitHub environment}"
+
+          gcloud storage cp "gs://${FRONTEND_ARTIFACT_BUCKET}/firebase-hosting/${ARTIFACT_TAG}.tgz" /tmp/frontend-hosting.tgz
+          tar -xzf /tmp/frontend-hosting.tgz
 
       - name: Deploy to Firebase Hosting
         env:

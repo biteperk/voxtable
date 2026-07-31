@@ -172,6 +172,9 @@ jobs:
     needs: validate
     if: github.event_name == 'push' && (github.ref == 'refs/heads/integration' || github.ref == 'refs/heads/main')
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v5
@@ -191,12 +194,39 @@ jobs:
           npm run build:frontend
           npm run build:kds
 
-      - name: Upload Firebase Hosting artifact
-        uses: actions/upload-artifact@v5
+      - name: Resolve Firebase Hosting artifact tag
+        id: hosting-artifact
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            ARTIFACT_TAG="$(node -p "require('./package.json').version")"
+          else
+            ARTIFACT_TAG="${{ github.sha }}"
+          fi
+
+          if ! printf '%s' "$ARTIFACT_TAG" | grep -Eq '^[0-9A-Za-z._:+-]+$'; then
+            echo "Invalid artifact tag: $ARTIFACT_TAG" >&2
+            exit 1
+          fi
+
+          echo "artifact_tag=$ARTIFACT_TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
         with:
-          name: frontend-hosting
-          path: |
-            apps/frontend/dist
-            apps/kds/dist
-          if-no-files-found: error
-          retention-days: 7
+          workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-frontend-artifacts@bp-shared-artifacts.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload Firebase Hosting artifact to GCS
+        env:
+          ARTIFACT_TAG: ${{ steps.hosting-artifact.outputs.artifact_tag }}
+          FRONTEND_ARTIFACT_BUCKET: ${{ vars.FRONTEND_ARTIFACT_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          : "${FRONTEND_ARTIFACT_BUCKET:?Set FRONTEND_ARTIFACT_BUCKET in the GitHub environment}"
+
+          tar -czf /tmp/frontend-hosting.tgz apps/frontend/dist apps/kds/dist
+          gcloud storage cp /tmp/frontend-hosting.tgz "gs://${FRONTEND_ARTIFACT_BUCKET}/firebase-hosting/${ARTIFACT_TAG}.tgz"
