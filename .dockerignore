@@ -14,8 +14,12 @@ apps/backend/dist
 .env.local
 .env.*.local
 
-# Frontend (not needed for backend Docker build)
-apps/frontend
+# Frontend/KDS source (not needed for backend Docker build), but keep package
+# manifests so npm workspaces can install backend dependencies correctly.
+apps/frontend/*
+!apps/frontend/package.json
+apps/kds/*
+!apps/kds/package.json
 
 # IDE / Editor
 .vscode
