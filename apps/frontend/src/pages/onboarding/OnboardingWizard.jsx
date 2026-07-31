@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../auth";
 import { signOutUser } from "../../firebase";
 import { getOnboardingStatus } from "../../api";
@@ -12,9 +12,24 @@ import { PhoneStep } from "./steps/PhoneStep";
 
 // ===== Onboarding wizard (Phase 1) =====
 
-function OnboardingShell({ checklist, children, onSignOut, welcome = false, currentKey = null }) {
+function OnboardingShell({
+  checklist,
+  children,
+  onSignOut,
+  welcome = false,
+  currentKey = null,
+  reviewing = false,
+  onReturnToCurrent = null
+}) {
   const total = checklist?.length ?? 0;
-  const currentIndex = checklist ? checklist.findIndex((s) => s.status === "current") : -1;
+  // `currentKey` is the step being *viewed* (may be an earlier, completed step
+  // in review mode) — the header tracks it, while the segments keep the
+  // server-reported statuses so overall progress never appears to regress.
+  const currentIndex = checklist
+    ? currentKey
+      ? checklist.findIndex((s) => s.key === currentKey)
+      : checklist.findIndex((s) => s.status === "current")
+    : -1;
   const current = currentIndex >= 0 ? checklist[currentIndex] : null;
   const doneCount = checklist ? checklist.filter((s) => s.status === "done").length : 0;
   const allDone = total > 0 && doneCount === total;
@@ -64,7 +79,7 @@ function OnboardingShell({ checklist, children, onSignOut, welcome = false, curr
               {checklist.map((s) => (
                 <span
                   key={s.key}
-                  className={`onboarding-progress-seg is-${s.status}`}
+                  className={`onboarding-progress-seg is-${s.status}${reviewing && s.key === currentKey ? " is-viewing" : ""}`}
                   aria-label={`${s.label} — ${s.status === "done" ? "completed" : s.status === "current" ? "in progress" : "not started"}`}
                 />
               ))}
@@ -79,6 +94,15 @@ function OnboardingShell({ checklist, children, onSignOut, welcome = false, curr
                 <Icon name="check" />
                 {contextLine}
               </p>
+            )}
+            {reviewing && (
+              <div className="onboarding-review-banner" role="status">
+                <Icon name="history" />
+                <span>You're revisiting a completed step — your answers are saved.</span>
+                <button type="button" className="onboarding-review-return" onClick={onReturnToCurrent}>
+                  Return to current step <Icon name="arrow_forward" />
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -102,12 +126,22 @@ function ComingSoonStep({ title, body }) {
   );
 }
 
+// Steps a client may navigate back to once completed. Trial/Phone hold no
+// reviewable answers, and the pre-checklist CreateRestaurant screen has
+// nothing before it (the name is editable again on the Profile step).
+const REVIEWABLE_KEYS = ["profile", "agreement", "menu"];
+
 export function OnboardingWizard({ navigate }) {
   const { memberships, refreshMe } = useAuth();
   const [status, setStatus] = useState(null);
   const [checklist, setChecklist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // When set, the wizard shows this completed step instead of the server's
+  // `current` one (review mode). Purely client-side: the server checklist
+  // alone decides the real current step, so this can never skip forward.
+  const [reviewKey, setReviewKey] = useState(null);
+  const lastServerCurrent = useRef(null);
 
   const hasRestaurant = (memberships?.length ?? 0) > 0;
 
@@ -126,6 +160,14 @@ export function OnboardingWizard({ navigate }) {
       const r = await getOnboardingStatus();
       setStatus(r.onboarding_status);
       setChecklist(r.checklist);
+      // If the real current step moved underneath a review (e.g. the Stripe
+      // webhook advanced the tenant), drop review mode so the client isn't
+      // left editing a stale card.
+      const serverCurrentNow = r.checklist?.find((s) => s.status === "current")?.key ?? null;
+      if (serverCurrentNow !== lastServerCurrent.current) {
+        lastServerCurrent.current = serverCurrentNow;
+        setReviewKey(null);
+      }
       window.dispatchEvent(
         new CustomEvent("vocotable:onboarding-status-changed", {
           detail: { status: r.onboarding_status }
@@ -188,17 +230,64 @@ export function OnboardingWizard({ navigate }) {
     );
   }
 
-  const current = checklist?.find((s) => s.status === "current")?.key ?? null;
+  const serverCurrent = checklist?.find((s) => s.status === "current")?.key ?? null;
+
+  // A step is only revisitable when the server says it's already done —
+  // review mode can therefore never render a "todo" step (no skipping ahead).
+  const isReviewable = (key) =>
+    REVIEWABLE_KEYS.includes(key) &&
+    checklist?.find((s) => s.key === key)?.status === "done";
+
+  const reviewing = reviewKey != null && isReviewable(reviewKey);
+  const current = reviewing ? reviewKey : serverCurrent;
+
+  // The Back target is the completed step immediately before the one on
+  // screen (checklist order), when there is one worth revisiting.
+  const viewedIndex = checklist?.findIndex((s) => s.key === current) ?? -1;
+  const backTarget =
+    viewedIndex > 0 && isReviewable(checklist[viewedIndex - 1].key)
+      ? checklist[viewedIndex - 1]
+      : null;
+
+  // Saving any step (normally or from review mode) returns the client to the
+  // real current step with a fresh checklist.
+  const advance = () => {
+    setReviewKey(null);
+    return load();
+  };
+  const returnToCurrent = () => setReviewKey(null);
+  // Rendered inside each step card's action row, next to the primary button.
+  const goBack = backTarget ? () => setReviewKey(backTarget.key) : null;
 
   let content;
-  if (current === "profile") {
-    content = <ProfileStep onSaved={load} />;
+  if (reviewing && current === "menu") {
+    // MenuStep is an upload/OCR flow with no prefill — revisiting it should
+    // point at the saved menu, not restart the upload wizard.
+    content = (
+      <div className="onboarding-card">
+        <h1>Your menu is saved</h1>
+        <p className="onboarding-lead">
+          Bella already uses it to answer price questions. To review or edit
+          items, open Manage menu — your place in setup is kept.
+        </p>
+        <div className="onboarding-actions">
+          <button type="button" className="ghost-button" onClick={() => navigate("/manage-menu")}>
+            Open Manage menu <Icon name="arrow_forward" />
+          </button>
+          <button type="button" className="primary-button" onClick={returnToCurrent}>
+            Back to my current step
+          </button>
+        </div>
+      </div>
+    );
+  } else if (current === "profile") {
+    content = <ProfileStep onSaved={advance} />;
   } else if (current === "agreement") {
-    content = <AgreementStep onSaved={load} />;
+    content = <AgreementStep onSaved={advance} onBack={goBack} />;
   } else if (current === "menu") {
-    content = <MenuStep onContinue={load} navigate={navigate} />;
+    content = <MenuStep onContinue={advance} navigate={navigate} onBack={goBack} />;
   } else if (current === "trial") {
-    content = <TrialStep onRefresh={silentRefresh} />;
+    content = <TrialStep onRefresh={silentRefresh} onBack={goBack} />;
   } else if (current === "phone") {
     content = <PhoneStep onRefresh={silentRefresh} />;
   } else if (current) {
@@ -226,7 +315,13 @@ export function OnboardingWizard({ navigate }) {
   }
 
   return (
-    <OnboardingShell checklist={checklist} currentKey={current} onSignOut={handleSignOut}>
+    <OnboardingShell
+      checklist={checklist}
+      currentKey={current}
+      onSignOut={handleSignOut}
+      reviewing={reviewing}
+      onReturnToCurrent={returnToCurrent}
+    >
       {content}
     </OnboardingShell>
   );

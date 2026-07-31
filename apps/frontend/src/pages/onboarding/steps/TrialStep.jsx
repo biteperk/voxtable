@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createBillingCheckoutSession } from "../../../api";
 import { Icon } from "../../../components/Icon";
 
-export function TrialStep({ onRefresh }) {
+export function TrialStep({ onRefresh, onBack = null }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -82,6 +82,11 @@ export function TrialStep({ onRefresh }) {
       )}
       {error && <p className="onboarding-error">{error}</p>}
       <div className="onboarding-actions">
+        {onBack && (
+          <button type="button" className="ghost-button" onClick={onBack} disabled={busy}>
+            <Icon name="arrow_back" /> Back
+          </button>
+        )}
         <button type="button" className="primary-button" onClick={startTrial} disabled={busy || unavailable}>
           {busy ? "Opening secure checkout…" : "Start 14-day free trial"}
           <Icon name="arrow_forward" />

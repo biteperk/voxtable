@@ -93,7 +93,7 @@ function MenuDraftReview({ draft, onCommit, onCancel, committing }) {
   );
 }
 
-export function MenuStep({ onContinue, navigate }) {
+export function MenuStep({ onContinue, navigate, onBack = null }) {
   const { activeRestaurantId } = useAuth();
   // phase: choose | uploading | parsing | review | committing
   const [phase, setPhase] = useState("choose");
@@ -236,6 +236,11 @@ export function MenuStep({ onContinue, navigate }) {
             />
           </label>
           <div className="onboarding-actions" style={{ marginTop: 14 }}>
+            {onBack && (
+              <button type="button" className="ghost-button" onClick={onBack} disabled={busy}>
+                <Icon name="arrow_back" /> Back
+              </button>
+            )}
             <button type="button" className="ghost-button" onClick={() => navigate("/manage-menu")}>
               <Icon name="restaurant_menu" /> Add manually
             </button>

@@ -793,6 +793,51 @@ button {
   color: var(--secondary-container, #00eefc);
 }
 
+/* ---- Review mode (revisit a completed step) ---- */
+.onboarding-progress-seg.is-viewing {
+  outline: 1px solid var(--on-surface, #e5e2e1);
+  outline-offset: 2px;
+}
+.onboarding-review-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border: 1px solid var(--outline-variant, #414755);
+  border-radius: var(--ob-radius-input);
+  background: var(--surface-container-low, #1c1b1b);
+  font: 400 12.5px/1.4 "Inter", system-ui, sans-serif;
+  color: var(--on-surface-variant, #c1c6d7);
+}
+.onboarding-review-banner > .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--secondary-container, #00eefc);
+}
+.onboarding-review-return {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: var(--primary, #f5c418);
+  font: 600 12.5px/1.2 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+}
+.onboarding-review-return:hover {
+  text-decoration: underline;
+}
+.onboarding-review-return:focus-visible {
+  outline: none;
+  box-shadow: var(--ob-focus-ring);
+}
+.onboarding-review-return .material-symbols-outlined {
+  font-size: 15px;
+}
+
 /* ---- The spotlit card ---- */
 .onboarding-main {
   min-width: 0;
@@ -1424,6 +1469,8 @@ gmp-place-autocomplete {
   .phone-number-box > strong { font-size: 22px; }
   .phone-steps code { font-size: 13px; }
   .menu-review { max-height: none; }
+  .onboarding-review-banner { align-items: flex-start; }
+  .onboarding-review-return { margin-left: 0; }
 }
 
 /* ---- Reduced motion ---- */

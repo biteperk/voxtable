@@ -14,7 +14,7 @@ const SERVICE_LABELS = {
   voxconcierge: "VoxConcierge — front of house"
 };
 
-export function AgreementStep({ onSaved }) {
+export function AgreementStep({ onSaved, onBack = null }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -275,9 +275,16 @@ export function AgreementStep({ onSaved }) {
         </div>
 
         {error && <p className="onboarding-error">{error}</p>}
-        <button type="submit" className="primary-button" disabled={busy}>
-          {busy ? "Saving…" : "Agree & continue"} <Icon name="arrow_forward" />
-        </button>
+        <div className="onboarding-actions">
+          {onBack && (
+            <button type="button" className="ghost-button" onClick={onBack} disabled={busy}>
+              <Icon name="arrow_back" /> Back
+            </button>
+          )}
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Saving…" : "Agree & continue"} <Icon name="arrow_forward" />
+          </button>
+        </div>
       </form>
     </div>
   );
