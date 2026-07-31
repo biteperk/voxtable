@@ -108,8 +108,8 @@ jobs:
       - uses: google-github-actions/auth@v2
         if: env.SHOULD_PUSH == 'true'
         with:
-          workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
+          workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: registry@bp-shared-artifacts.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
         if: env.SHOULD_PUSH == 'true'
