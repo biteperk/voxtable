@@ -1,7 +1,15 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+for (const envPath of [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "../../.env")]) {
+  if (existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 
 const LOCAL_DEFAULT_RESTAURANT_ID = "11111111-1111-4111-8111-111111111111";
 

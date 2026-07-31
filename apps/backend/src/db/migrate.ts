@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { closePool, pool } from "./pool";
@@ -46,7 +47,9 @@ export async function discoverMigrations(migrationsDir: string): Promise<Migrati
 }
 
 export async function migrate(): Promise<void> {
-  const migrationsDir = path.resolve(__dirname, "../../db/migrations");
+  const migrationsDir =
+    [path.resolve(process.cwd(), "db/migrations"), path.resolve(process.cwd(), "apps/backend/db/migrations")]
+      .find((candidate) => existsSync(candidate)) ?? path.resolve(process.cwd(), "db/migrations");
   const migrations = await discoverMigrations(migrationsDir);
 
   await pool.query(`
@@ -84,7 +87,10 @@ export async function migrate(): Promise<void> {
   }
 }
 
-if (require.main === module) {
+const entryScript = process.argv[1] ? path.resolve(process.argv[1]).split(path.sep).join("/") : "";
+const isMain = entryScript.endsWith("/src/db/migrate.ts") || entryScript.endsWith("/dist/db/migrate.js");
+
+if (isMain) {
   migrate()
     .then(async () => {
       await closePool();

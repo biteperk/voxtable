@@ -3,11 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "description": "Voice AI booking platform for restaurants.",
+  "workspaces": [
+    "apps/backend",
+    "apps/frontend",
+    "apps/kds"
+  ],
   "engines": {
-    "node": ">=20.0.0",
-    "npm": ">=10.0.0"
+    "node": ">=22 <25",
+    "npm": ">=10"
   },
   "scripts": {
+<<<<<<< HEAD
     "dev:backend": "tsx watch apps/backend/src/server.ts",
     "dev:worker": "tsx watch apps/backend/src/worker.ts",
     "dev:frontend": "vite --config apps/frontend/vite.config.ts",
@@ -73,5 +79,32 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
+=======
+    "dev": "npm run dev:backend",
+    "dev:backend": "npm run dev --workspace=@vocotable/backend",
+    "dev:worker": "npm run dev:worker --workspace=@vocotable/backend",
+    "dev:frontend": "npm run dev --workspace=@vocotable/frontend",
+    "dev:kds": "npm run dev --workspace=@vocotable/kds",
+    "build": "npm run build:backend && npm run build:frontend && npm run build:kds",
+    "build:backend": "npm run build --workspace=@vocotable/backend",
+    "build:frontend": "npm run build --workspace=@vocotable/frontend",
+    "build:kds": "npm run build --workspace=@vocotable/kds",
+    "test": "npm run test:backend",
+    "test:backend": "npm run test --workspace=@vocotable/backend",
+    "check": "npm run build && npm run test",
+    "start:backend": "npm run start --workspace=@vocotable/backend",
+    "start:worker": "npm run start:worker --workspace=@vocotable/backend",
+    "db:migrate": "npm run db:migrate --workspace=@vocotable/backend",
+    "db:seed": "npm run db:seed --workspace=@vocotable/backend",
+    "db:migrate:prod": "npm run db:migrate:prod --workspace=@vocotable/backend",
+    "preview:frontend": "npm run preview --workspace=@vocotable/frontend",
+    "preview:kds": "npm run preview --workspace=@vocotable/kds",
+    "audit:backend": "npm audit --workspace=@vocotable/backend --omit=dev --omit=optional",
+    "audit:frontend": "npm audit --workspace=@vocotable/frontend --omit=dev",
+    "audit:kds": "npm audit --workspace=@vocotable/kds --omit=dev",
+    "audit:production": "npm run audit:backend && npm run audit:frontend && npm run audit:kds",
+    "audit:all": "npm audit",
+    "firebase": "firebase"
+>>>>>>> 2991e46 (chore: checkpoint before dependency remediation)
   }
 }

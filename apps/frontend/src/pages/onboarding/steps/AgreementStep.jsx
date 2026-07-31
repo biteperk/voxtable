@@ -14,7 +14,35 @@ const SERVICE_LABELS = {
   voxconcierge: "VoxConcierge — front of house"
 };
 
+<<<<<<< HEAD
 export function AgreementStep({ onSaved, onBack = null }) {
+=======
+const ABN_WEIGHTS = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19];
+
+function isValidAbn(value) {
+  const digits = value.replace(/\s+/g, "");
+  if (!/^\d{11}$/.test(digits)) return false;
+
+  const sum = ABN_WEIGHTS.reduce((total, weight, index) => {
+    const digit = Number(digits[index]) - (index === 0 ? 1 : 0);
+    return total + digit * weight;
+  }, 0);
+  return sum % 89 === 0;
+}
+
+function fieldErrorMessage(error) {
+  const fieldErrors = error?.details?.fieldErrors;
+  if (!fieldErrors || typeof fieldErrors !== "object") return error.message;
+
+  const first = Object.entries(fieldErrors).find(([, messages]) => messages?.length);
+  if (!first) return error.message;
+
+  const [field, messages] = first;
+  return `${field.replaceAll("_", " ")}: ${messages[0]}`;
+}
+
+export function AgreementStep({ onSaved }) {
+>>>>>>> 2991e46 (chore: checkpoint before dependency remediation)
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -85,6 +113,10 @@ export function AgreementStep({ onSaved, onBack = null }) {
       setError("Select at least one service.");
       return;
     }
+    if (!isValidAbn(form.client_abn)) {
+      setError("ABN must be a valid 11-digit Australian Business Number.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setFieldErrors({});
@@ -108,6 +140,7 @@ export function AgreementStep({ onSaved, onBack = null }) {
       await submitAgreement(payload);
       await onSaved();
     } catch (e) {
+<<<<<<< HEAD
       // The API returns per-field detail alongside the summary
       // (`{ error: { message, details: { fieldErrors } } }`). Pin what we can
       // to its input so the owner sees which box to fix; anything we can't
@@ -120,6 +153,9 @@ export function AgreementStep({ onSaved, onBack = null }) {
       );
       setFieldErrors(placed);
       setError(e.message);
+=======
+      setError(fieldErrorMessage(e));
+>>>>>>> 2991e46 (chore: checkpoint before dependency remediation)
       setBusy(false);
     }
   };

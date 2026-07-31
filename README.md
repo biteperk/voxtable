@@ -29,12 +29,21 @@ Caller ──► Twilio (AU number) ──► Retell AI voice agent ("Bella")
 npm install
 cp .env.example .env        # fill Postgres + (optionally) Retell/Twilio/Cal.com/Stripe creds
 npm run db:migrate
-npm run db:seed             # idempotent — seeds Natalia's Bistro + tables
 
 npm run dev:backend         # API on http://localhost:3050
 npm run dev:frontend        # dashboard on http://localhost:3051
 npm run dev:kds             # kitchen display (separate Vite app)
 ```
+
+Seed demo data only when you explicitly want local sample data:
+
+```bash
+SEED_DATA=true ./deploy/scripts/run-local.sh
+# or, after local migrations:
+npm run db:seed
+```
+
+Seed data is local-only and is blocked in `APP_ENV=production`.
 
 Keep all webhook signature flags (`RETELL_VERIFY_SIGNATURE`, `TWILIO_VALIDATE_SIGNATURE`, …) `false` in dev, or use the smoke scripts below.
 

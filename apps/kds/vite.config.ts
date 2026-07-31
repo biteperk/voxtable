@@ -5,7 +5,7 @@ const devHost = process.env.VITE_DEV_HOST ?? "0.0.0.0";
 
 export default defineConfig({
   plugins: [react()],
-  root: "apps/kds",
+  root: ".",
   server: {
     host: devHost,
     port: 3052,

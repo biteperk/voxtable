@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
-import admin from "firebase-admin";
+import { applicationDefault, getApp, initializeApp, type App } from "firebase-admin/app";
+import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
@@ -9,9 +10,9 @@ import type { TenantContext } from "./tenantContext";
 
 let initialized = false;
 
-function ensureInitialized(): admin.app.App {
+function ensureInitialized(): App {
   if (initialized) {
-    return admin.app();
+    return getApp();
   }
 
   if (!env.FIREBASE_PROJECT_ID) {
@@ -22,12 +23,12 @@ function ensureInitialized(): admin.app.App {
     );
   }
 
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
+  initializeApp({
+    credential: applicationDefault(),
     projectId: env.FIREBASE_PROJECT_ID
   });
   initialized = true;
-  return admin.app();
+  return getApp();
 }
 
 // Parse a comma-separated allowlist into a lowercase, trimmed, deduped Set for
@@ -53,7 +54,7 @@ const kitchenEmails = parseEmailSet(env.DASHBOARD_KITCHEN_EMAILS);
 const adminEmails = parseEmailSet(env.DASHBOARD_ADMIN_EMAILS);
 
 export interface AuthenticatedRequest extends Request {
-  firebaseUser?: admin.auth.DecodedIdToken;
+  firebaseUser?: DecodedIdToken;
   // Populated by resolveTenant (multi-tenant dashboard routes). Optional because
   // requireFirebaseAuth runs on routes that don't resolve a tenant (e.g. /api/me
   // before a restaurant exists, onboarding create).
@@ -93,7 +94,7 @@ export function isAllowlistedEmail(email: string | null | undefined): boolean {
  * The Firebase Admin app, for the rare service that must write to Firebase
  * Auth itself (e.g. the verification-code flow marking an email verified).
  */
-export function getAdminApp(): admin.app.App {
+export function getAdminApp(): App {
   return ensureInitialized();
 }
 
@@ -124,10 +125,10 @@ async function firebaseAuthMiddleware(
   // transient DB failure was reported as 401 INVALID_TOKEN — the frontend then
   // force-refreshed a perfectly good token, got 401 again, and signed the user
   // out. A DB blip must be a 5xx, not a mass sign-out.)
-  let decoded: admin.auth.DecodedIdToken;
+  let decoded: DecodedIdToken;
   try {
     const app = ensureInitialized();
-    decoded = await app.auth().verifyIdToken(match[1]!);
+    decoded = await getAuth(app).verifyIdToken(match[1]!);
   } catch {
     return next(new AppError(401, "INVALID_TOKEN", "ID token verification failed."));
   }

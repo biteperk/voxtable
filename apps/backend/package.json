@@ -1,0 +1,55 @@
+{
+  "name": "@vocotable/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "start:worker": "node dist/worker.js",
+    "test": "APP_ENV=test DATABASE_URL=postgres://test:test@localhost:5432/test tsx --test \"src/**/*.test.ts\"",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
+    "db:migrate:prod": "node dist/db/migrate.js",
+    "smoke:backend": "tsx scripts/smoke-local.ts",
+    "smoke:retell": "tsx scripts/smoke-retell.ts",
+    "smoke:retell-signed": "tsx scripts/smoke-retell-signed.ts",
+    "smoke:twilio": "tsx scripts/smoke-twilio.ts",
+    "smoke:calcom": "tsx scripts/smoke-calcom.ts",
+    "smoke:retell-dates": "tsx scripts/smoke-retell-dates.ts",
+    "smoke:orders": "tsx scripts/smoke-orders.ts",
+    "smoke:retell-orders": "tsx scripts/smoke-retell-orders.ts",
+    "smoke:isolation": "tsx scripts/smoke-onboarding-isolation.ts",
+    "smoke:legal": "tsx scripts/smoke-legal.ts",
+    "smoke:verify-email": "tsx scripts/smoke-verify-email.ts"
+  },
+  "dependencies": {
+    "@opentelemetry/core": "^2.10.0",
+    "@sentry/node": "^10.54.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.5.2",
+    "firebase-admin": "^14.2.0",
+    "libphonenumber-js": "^1.13.3",
+    "pg": "^8.13.1",
+    "retell-sdk": "^5.26.1",
+    "stripe": "^18.5.0",
+    "twilio": "^6.0.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}
