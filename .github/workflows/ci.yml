@@ -133,6 +133,16 @@ jobs:
       - name: Build worker image
         run: docker build -f Dockerfile.worker -t vocotable-worker:ci .
 
+      # A built image is not a working image: on 1 Aug 2026 a green pipeline
+      # shipped containers that died on their first line (CommonJS output run
+      # as ESM), because nothing ever executed a file out of dist/. This step
+      # loads the real module graph inside each freshly built image — if the
+      # compiled output can't run, CI fails here instead of production.
+      - name: Boot-check compiled images
+        run: |
+          docker run --rm -e APP_ENV=test -e DATABASE_URL=postgres://test:test@localhost:5432/test vocotable-api:ci node apps/backend/dist/bootCheck.js
+          docker run --rm -e APP_ENV=test -e DATABASE_URL=postgres://test:test@localhost:5432/test vocotable-worker:ci node apps/backend/dist/bootCheck.js
+
       - name: Scan api image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
