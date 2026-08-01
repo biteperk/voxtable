@@ -1,7 +1,7 @@
 {
-  "name": "Natalia's Kitchen",
+  "name": "Kitchen Display",
   "short_name": "Kitchen",
-  "description": "Kitchen Display System for Natalia's Bistro — voice + dashboard + waiter orders, in real time.",
+  "description": "Kitchen Display System — voice, dashboard and waiter orders, in real time.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "landscape",
