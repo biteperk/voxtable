@@ -1,7 +1,20 @@
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { logger } from "../utils/logger";
-import { menuDraftSchema, type MenuDraft } from "../http/schemas";
+import { menuOcrBatchSchema, menuOcrVerifySchema, type MenuDraft } from "../http/schemas";
+import {
+  buildPageResults,
+  lastCategoryOf,
+  mergeAttributed,
+  normaliseBatchOutput,
+  parsePriceText,
+  planBatches,
+  unaccountedPages,
+  verificationTargets,
+  type PagePart,
+  type PageResult,
+  type PageStatus
+} from "./menuPageAccounting";
 
 /**
  * Vision-LLM menu parser. Kept behind a small interface + kill switch so the
@@ -9,8 +22,13 @@ import { menuDraftSchema, type MenuDraft } from "../http/schemas";
  * calls Anthropic's Messages API (no SDK dependency — plain fetch).
  *
  * Money discipline: the prompt forces integer cents, and the result is
- * re-validated by menuDraftSchema (which also rejects absurd prices), so a
+ * re-validated by menuOcrBatchSchema (which also rejects absurd prices), so a
  * hallucinated "$1,299" can't silently land as a real price.
+ *
+ * Reading discipline: the model is asked to account for every page it was given,
+ * and any page that yields nothing is re-read on its own before we call the
+ * import done. See menuPageAccounting.ts for why — an import that loses a whole
+ * page and reports success is worse than one that fails.
  */
 
 export function isMenuOcrEnabled(): boolean {
@@ -18,13 +36,21 @@ export function isMenuOcrEnabled(): boolean {
 }
 
 /**
- * Pages per vision call. A real designed menu is 12+ pages and its structured
- * JSON far exceeds any single response, so pages are read in batches and merged.
- * Six keeps each response comfortably inside the output budget below while
- * preserving enough context for a category heading to govern the items that
- * follow it onto the next page.
+ * Pages per vision call.
+ *
+ * Was six. Reduced to three after a five-page import lost its MIDDLE page
+ * entirely — the canonical position for attention loss in a long multimodal
+ * context. The change is very nearly free: every page is sent exactly once
+ * either way, so a smaller batch only re-pays the ~700-token system prompt per
+ * extra call (fractions of a cent on a 12-page menu).
+ *
+ * What a larger batch bought was cross-page context for a heading that governs
+ * items running onto the next page. That is now handled deterministically by
+ * carrying the previous batch's last category forward as text (lastCategoryOf),
+ * which is more reliable than hoping the model re-reads an image four pages back
+ * and survives batch boundaries that don't align with the menu's own sections.
  */
-export const PAGES_PER_BATCH = 6;
+export const PAGES_PER_BATCH = 3;
 
 /**
  * Output token allowance, derived from how many pages a call is actually
@@ -52,21 +78,43 @@ const SYSTEM_PROMPT = [
   "You receive one or more pages of a restaurant menu and must extract their",
   "structure as STRICT JSON. Output ONLY the JSON object, no prose, no code",
   "fences. Schema:",
-  '{ "categories": [ { "name": string, "items": [ {',
-  '  "name": string, "description"?: string, "price_cents": integer,',
-  '  "confidence": number (0..1, your certainty for this row),',
-  '  "variants"?: [ { "name": string, "price_delta_cents": integer } ],',
-  '  "modifier_groups"?: [ { "group_name": string, "min_select": integer,',
-  '    "max_select": integer, "options": [ { "name": string, "price_delta_cents": integer } ] } ]',
-  "} ] } ] }",
+  '{ "pages": [ { "page": integer, "page_kind": "items"|"cover"|"contact"|"hours"|"photos"|"other",',
+  '  "categories": [ { "name": string, "items": [ {',
+  '   "name": string, "description"?: string, "price_cents": integer,',
+  '   "variants"?: [ { "name": string, "price_delta_cents": integer } ],',
+  '   "modifier_groups"?: [ { "group_name": string, "min_select": integer,',
+  '     "max_select": integer, "options": [ { "name": string, "price_delta_cents": integer } ] } ]',
+  "} ] } ] } ] }",
   "Rules: price_cents and price_delta_cents are INTEGER CENTS (e.g. $12.50 -> 1250).",
-  "Never invent items or prices. If a price is unreadable, set price_cents to 0",
-  "and confidence below 0.4. Group items under the categories printed on the menu.",
+  "Never invent items or prices. If a price is unreadable, set price_cents to 0.",
+  "Group items under the categories printed on the menu.",
+  // --- account for every page ---
+  // The envelope is a checklist. A model that must emit an entry per page skips
+  // fewer of them, and an omitted entry is as informative as a zero-item one.
+  'Return one entry in "pages" for EVERY page you were given, in label order,',
+  "using the page number printed in that page's label — including pages with no",
+  'items, which get "categories": []. Never omit a page and never merge two',
+  "pages into one entry.",
+  "Before you finish a page, sweep it once more for any price you have not yet",
+  "written down. A page is done only when every price printed on it appears in",
+  "your output for that page.",
   // --- reading real menu layouts ---
   "Pages are given in order. Read a multi-column page one full column at a time,",
   "top to bottom, left column before right — never straight across the page.",
-  "Cover, branding, contact, opening-hours and full-page photo pages contain no",
-  "items: return no categories for them rather than inventing any.",
+  // This paragraph replaces a rule that said cover/branding/contact/photo pages
+  // contain no items. On a real import it fired on a page carrying six priced
+  // dishes — the page had a giant MENU wordmark, a welcome sentence, six food
+  // photographs and a phone/address footer, so it LOOKED like a cover, and the
+  // classification happened before the reading. Presence of a price is now the
+  // decisive test, and styling is explicitly not.
+  "Judge every page by what is printed on it, never by how it is styled. If a",
+  "page shows any dish with a price beside it, that page HAS items and you must",
+  "extract every one of them — however much the rest of the page looks like a",
+  "cover. A large restaurant wordmark, a welcome sentence, food photographs, a",
+  "phone number, an address and opening hours do NOT cancel priced dishes printed",
+  "on the same page; a page can be a title page and an item page at once.",
+  "Only a page carrying no dish-and-price anywhere on it is a non-item page. For",
+  "that page return an empty categories array, and invent nothing to fill it.",
   "A heading on one page governs the items that follow it, including onto the",
   "next page. If items appear before any heading, use the category name 'Menu'.",
   "Short parenthesised codes after a name (GF, DF, VG, VGN, V, N, I) are dietary",
@@ -190,12 +238,44 @@ function guessMediaType(url: string): string {
   return "image/jpeg";
 }
 
+/**
+ * Page labels, absolute across the whole menu.
+ *
+ * These used to read `Page ${i + 1} of ${files.length}` where `i` was the index
+ * WITHIN the batch — so on a 12-page menu the second batch was also labelled
+ * "Page 1 of 6" … "Page 6 of 6". Any scheme where the model tells us which page
+ * an item came from is worthless until this is right, and the model was being
+ * asked to reason about a page ordering that didn't exist.
+ */
+interface PageLabels {
+  firstPageNumber: number;
+  totalPages: number;
+  /** Category the previous batch ended inside, if any. */
+  carryCategory?: string | null;
+}
+
+function labelFor(i: number, labels: PageLabels): { type: string; text: string } {
+  return { type: "text", text: `Page ${labels.firstPageNumber + i} of ${labels.totalPages}:` };
+}
+
+/** The instruction that closes every call, plus any heading carried forward. */
+function closingInstruction(labels: PageLabels): { type: string; text: string } {
+  const carry = labels.carryCategory
+    ? ` The page before Page ${labels.firstPageNumber} ended inside the category "${labels.carryCategory}"; if this batch opens with dishes under no heading, they continue that category.`
+    : "";
+  return { type: "text", text: `Digitise this menu. Output only the JSON object.${carry}` };
+}
+
 // --- Anthropic-native (Messages API) content blocks ---
 // One block per page, in order, each labelled so the model can attribute a
 // heading on page 4 to the items running onto page 5.
-function anthropicContentBlocks(files: FetchedFile[], sourceKind: "image" | "pdf"): unknown[] {
+function anthropicContentBlocks(
+  files: FetchedFile[],
+  sourceKind: "image" | "pdf",
+  labels: PageLabels
+): unknown[] {
   return files.flatMap((file, i) => {
-    const label = { type: "text", text: `Page ${i + 1} of ${files.length}:` };
+    const label = labelFor(i, labels);
     const media =
       sourceKind === "pdf" || file.mediaType === "application/pdf"
         ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: file.base64 } }
@@ -210,19 +290,26 @@ function anthropicContentBlocks(files: FetchedFile[], sourceKind: "image" | "pdf
 // image_url; PDFs are not universally supported on this shape, so we send them
 // via the `file` block that OpenRouter/Gemini accept, falling back to image_url
 // for image sources.
-function openaiContentBlocks(files: FetchedFile[], sourceKind: "image" | "pdf"): unknown[] {
+function openaiContentBlocks(
+  files: FetchedFile[],
+  sourceKind: "image" | "pdf",
+  labels: PageLabels
+): unknown[] {
   const pages = files.flatMap((file, i) => {
-    const label = { type: "text", text: `Page ${i + 1} of ${files.length}:` };
+    const label = labelFor(i, labels);
     const media =
       sourceKind === "pdf" || file.mediaType === "application/pdf"
         ? {
             type: "file",
-            file: { filename: `menu-${i + 1}.pdf`, file_data: `data:application/pdf;base64,${file.base64}` }
+            file: {
+              filename: `menu-${labels.firstPageNumber + i}.pdf`,
+              file_data: `data:application/pdf;base64,${file.base64}`
+            }
           }
         : { type: "image_url", image_url: { url: `data:${file.mediaType};base64,${file.base64}` } };
     return [label, media];
   });
-  return [...pages, { type: "text", text: "Digitise this menu. Output only the JSON object." }];
+  return [...pages, closingInstruction(labels)];
 }
 
 interface OcrResponse {
@@ -238,11 +325,23 @@ interface OcrResponse {
   truncated: boolean;
 }
 
-async function callAnthropic(
-  files: FetchedFile[],
-  sourceKind: "image" | "pdf",
-  signal: AbortSignal
-): Promise<OcrResponse> {
+/**
+ * One request, whichever provider dialect is configured. The system prompt and
+ * model are parameters rather than constants so the recovery pass can ask a
+ * different question of a different model over the same transport.
+ */
+interface CallOptions {
+  files: FetchedFile[];
+  sourceKind: "image" | "pdf";
+  labels: PageLabels;
+  system: string;
+  model: string;
+  maxTokens: number;
+  signal: AbortSignal;
+}
+
+async function callAnthropic(opts: CallOptions): Promise<OcrResponse> {
+  const { files, sourceKind, labels, signal } = opts;
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     signal,
@@ -252,16 +351,13 @@ async function callAnthropic(
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
-      model: env.MENU_OCR_MODEL,
-      max_tokens: outputTokenBudget(files.length),
-      system: SYSTEM_PROMPT,
+      model: opts.model,
+      max_tokens: opts.maxTokens,
+      system: opts.system,
       messages: [
         {
           role: "user",
-          content: [
-            ...anthropicContentBlocks(files, sourceKind),
-            { type: "text", text: "Digitise this menu. Output only the JSON object." }
-          ]
+          content: [...anthropicContentBlocks(files, sourceKind, labels), closingInstruction(labels)]
         }
       ]
     })
@@ -280,11 +376,8 @@ async function callAnthropic(
   };
 }
 
-async function callOpenAiCompatible(
-  files: FetchedFile[],
-  sourceKind: "image" | "pdf",
-  signal: AbortSignal
-): Promise<OcrResponse> {
+async function callOpenAiCompatible(opts: CallOptions): Promise<OcrResponse> {
+  const { files, sourceKind, labels, signal } = opts;
   const base = env.MENU_OCR_BASE_URL!.replace(/\/$/, "");
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
@@ -294,11 +387,11 @@ async function callOpenAiCompatible(
       authorization: `Bearer ${env.MENU_OCR_API_KEY!}`
     },
     body: JSON.stringify({
-      model: env.MENU_OCR_MODEL,
-      max_tokens: outputTokenBudget(files.length),
+      model: opts.model,
+      max_tokens: opts.maxTokens,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: openaiContentBlocks(files, sourceKind) }
+        { role: "system", content: opts.system },
+        { role: "user", content: openaiContentBlocks(files, sourceKind, labels) }
       ]
     })
   });
@@ -352,64 +445,86 @@ function extractJson(text: string): unknown {
   }
 }
 
-/** Case/whitespace-insensitive key so "Desserts", "DESSERTS" and " desserts " merge. */
-function categoryKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
-}
+/**
+ * The recovery pass: one page, re-read on its own, after the first pass got
+ * nothing from it.
+ *
+ * Two things this prompt must do that the main one does not. It has to make
+ * "there is nothing here" an explicitly CORRECT answer — a verifier told only
+ * "list the priced dishes" and handed a genuine cover page will invent some,
+ * which would turn a missing-items bug into an invented-items bug. And it asks
+ * for the price exactly as printed alongside the cents, so a conversion slip can
+ * be caught by a pure function rather than by a person.
+ */
+const VERIFY_SYSTEM_PROMPT = [
+  "You are checking ONE page of a restaurant menu. A first pass read this page as",
+  "containing no dishes, and that may have been a mistake. Your only job is to",
+  "find every dish on this page that has a price printed next to it.",
+  "Output ONLY this JSON object. No prose, no code fences.",
+  '{ "has_priced_items": boolean, "page_note": string,',
+  '  "categories": [ { "name": string, "items": [ { "name": string,',
+  '    "description"?: string, "price_text": string, "price_cents": integer } ] } ] }',
+  "Read the whole page, corner to corner. Include text set over or beside",
+  "photographs, text in very large display type, and text in the margins.",
+  "A dish counts if a name and a price appear together in any layout: side by",
+  "side, price on the line below, price in a circle or badge, or joined by a",
+  "line of dots.",
+  '"price_text" is the price EXACTLY as printed, character for character (for',
+  'example "$10", "10.-", "12,50", "99.–"). "price_cents" is that same price as',
+  'integer cents: $10 -> 1000, "12,50" -> 1250, "99.–" means ninety-nine dollars',
+  "-> 9900.",
+  "Use the category headings printed on this page. If the page has priced dishes",
+  "but no heading, use the single category name 'Menu'.",
+  "Describe only this page. Do not carry anything over from other pages.",
+  "If, after reading the whole page, there is genuinely no name-with-a-price",
+  'anywhere on it, return "has_priced_items": false with "categories": [] and say',
+  'plainly what the page is in "page_note" — for example "cover page", "contact',
+  'details", "opening hours", "photographs only". An empty answer is a correct',
+  "answer here. Never invent a dish or a price to fill the page.",
+  "Never guess a price you cannot read. If a name is clearly a dish but its price",
+  'is illegible, include it with "price_text": "" and "price_cents": 0.'
+].join(" ");
 
 /**
- * Fold per-batch results into one draft.
- *
- * Categories are matched on a normalised name because a heading legitimately
- * recurs across pages ("Desserts" on page 4 and page 11) and because the model
- * may differ in casing between calls. Without this the commit later hits the
- * `UNIQUE (restaurant_id, LOWER(name))` index and the whole import dies with
- * "Something went wrong."
- *
- * Item order is preserved, and an item already present under the same category
- * (same normalised name) is dropped — a page-straddling heading can otherwise
- * make the model repeat the last row of the previous page.
+ * A shared ceiling over every call one job makes — first pass, halving retries
+ * and recovery together. Exhaustion is never silent: the caller turns it into
+ * `unverified` pages, which the owner is told about.
  */
-export function mergeDrafts(parts: MenuDraft[]): MenuDraft {
-  const byKey = new Map<string, { name: string; items: MenuDraft["categories"][number]["items"] }>();
-  for (const part of parts) {
-    for (const category of part.categories) {
-      const key = categoryKey(category.name);
-      const existing = byKey.get(key);
-      const target = existing ?? { name: category.name, items: [] };
-      if (!existing) byKey.set(key, target);
-      const seen = new Set(target.items.map((i) => categoryKey(i.name)));
-      for (const item of category.items) {
-        const itemKey = categoryKey(item.name);
-        if (seen.has(itemKey)) continue;
-        seen.add(itemKey);
-        target.items.push(item);
+function createCallBudget(maxCalls: number, budgetMs: number) {
+  const deadline = Date.now() + budgetMs;
+  let spent = 0;
+  let exhausted = false;
+  return {
+    tryClaim(): boolean {
+      if (spent >= maxCalls || Date.now() >= deadline) {
+        exhausted = true;
+        return false;
       }
+      spent += 1;
+      return true;
+    },
+    get calls(): number {
+      return spent;
+    },
+    get isExhausted(): boolean {
+      return exhausted;
     }
-  }
-  return { categories: [...byKey.values()].filter((c) => c.items.length > 0) };
+  };
 }
 
-/** One vision call over a contiguous run of pages. */
-async function parseBatch(input: {
-  pageUrls: string[];
-  sourceKind: "image" | "pdf";
-  restaurantId?: string;
-  firstPageNumber: number;
-}): Promise<MenuDraft> {
-  const files: FetchedFile[] = [];
-  for (const url of input.pageUrls) files.push(await fetchAsBase64(url));
+type CallBudget = ReturnType<typeof createCallBudget>;
 
+/** Shared transport for both prompts. Throws AppError; classification unchanged. */
+async function dispatch(opts: Omit<CallOptions, "signal">): Promise<OcrResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), env.MENU_OCR_REQUEST_TIMEOUT_MS);
-  let result: OcrResponse;
   try {
     // Dispatch on the configured provider dialect — Anthropic-native or any
     // OpenAI-compatible host (open-weight VLMs). Both return a uniform shape.
-    result =
-      env.MENU_OCR_PROVIDER === "openai"
-        ? await callOpenAiCompatible(files, input.sourceKind, controller.signal)
-        : await callAnthropic(files, input.sourceKind, controller.signal);
+    const withSignal = { ...opts, signal: controller.signal };
+    return env.MENU_OCR_PROVIDER === "openai"
+      ? await callOpenAiCompatible(withSignal)
+      : await callAnthropic(withSignal);
   } catch (error) {
     if (error instanceof AppError) throw error;
     if (error instanceof Error && error.name === "AbortError") {
@@ -420,6 +535,37 @@ async function parseBatch(input: {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** One vision call over a contiguous run of pages. */
+async function parseBatch(input: {
+  pageUrls: string[];
+  sourceKind: "image" | "pdf";
+  restaurantId?: string;
+  firstPageNumber: number;
+  totalPages: number;
+  batchPages: number[];
+  carryCategory: string | null;
+  budget: CallBudget;
+}): Promise<{ parts: PagePart[]; attributed: boolean }> {
+  if (!input.budget.tryClaim()) {
+    throw new AppError(502, "MENU_OCR_BUDGET_EXHAUSTED", "This menu needed more reading than we allow.");
+  }
+  const files: FetchedFile[] = [];
+  for (const url of input.pageUrls) files.push(await fetchAsBase64(url));
+
+  const result = await dispatch({
+    files,
+    sourceKind: input.sourceKind,
+    labels: {
+      firstPageNumber: input.firstPageNumber,
+      totalPages: input.totalPages,
+      carryCategory: input.carryCategory
+    },
+    system: SYSTEM_PROMPT,
+    model: env.MENU_OCR_MODEL,
+    maxTokens: outputTokenBudget(files.length)
+  });
 
   // Cost attribution: tokens, not dollars, to stay provider-price-agnostic.
   logger.info({
@@ -442,7 +588,7 @@ async function parseBatch(input: {
     throw new AppError(502, "MENU_OCR_TRUNCATED", "The menu parser ran out of room on these pages.");
   }
 
-  const parsed = menuDraftSchema.safeParse(extractJson(result.text));
+  const parsed = menuOcrBatchSchema.safeParse(extractJson(result.text));
   if (!parsed.success) {
     logger.error({
       evt: "menu_ocr_schema_mismatch",
@@ -451,30 +597,136 @@ async function parseBatch(input: {
     });
     throw new AppError(502, "MENU_OCR_BAD_OUTPUT", "The menu parser returned an unexpected shape.");
   }
-  return parsed.data;
+
+  const normalised = normaliseBatchOutput(parsed.data, input.batchPages);
+  if (!normalised.attributed) {
+    // Usable items, no idea which page they came from. Said out loud so a
+    // provider quietly ignoring the envelope shows up in the logs rather than
+    // as every page mysteriously needing verification.
+    logger.warn({
+      evt: "menu_ocr_unattributed_batch",
+      first_page: input.firstPageNumber,
+      pages: input.batchPages.length
+    });
+  }
+  return normalised;
+}
+
+/**
+ * Re-read one page that produced nothing. Returns the items found, or an
+ * explicit "there is nothing on this page" with the verifier's own description.
+ *
+ * Recovered rows are marked low-confidence on purpose: they come from a page the
+ * first pass missed entirely, so they are exactly the rows worth a human glance,
+ * and the review screen already flags anything under 0.5.
+ */
+async function verifyPage(input: {
+  pageUrl: string;
+  page: number;
+  totalPages: number;
+  sourceKind: "image" | "pdf";
+  restaurantId?: string;
+  budget: CallBudget;
+}): Promise<{ categories: MenuDraft["categories"]; note?: string }> {
+  if (!input.budget.tryClaim()) {
+    throw new AppError(502, "MENU_OCR_BUDGET_EXHAUSTED", "This menu needed more reading than we allow.");
+  }
+  const file = await fetchAsBase64(input.pageUrl);
+  const model = env.MENU_OCR_VERIFY_MODEL || env.MENU_OCR_MODEL;
+
+  const result = await dispatch({
+    files: [file],
+    sourceKind: input.sourceKind,
+    labels: { firstPageNumber: input.page, totalPages: input.totalPages, carryCategory: null },
+    system: VERIFY_SYSTEM_PROMPT,
+    model,
+    maxTokens: 8_000
+  });
+
+  logger.info({
+    evt: "menu_ocr_verify_call",
+    provider: env.MENU_OCR_PROVIDER,
+    model,
+    restaurant_id: input.restaurantId ?? null,
+    page: input.page,
+    input_tokens: result.inputTokens,
+    output_tokens: result.outputTokens,
+    truncated: result.truncated
+  });
+
+  if (result.truncated) {
+    throw new AppError(502, "MENU_OCR_TRUNCATED", "The menu parser ran out of room on this page.");
+  }
+
+  const parsed = menuOcrVerifySchema.safeParse(extractJson(result.text));
+  if (!parsed.success) {
+    throw new AppError(502, "MENU_OCR_BAD_OUTPUT", "The menu parser returned an unexpected shape.");
+  }
+
+  const categories: MenuDraft["categories"] = parsed.data.categories.map((category) => ({
+    name: category.name,
+    items: category.items.map(({ price_text, ...item }) => {
+      // The printed text and the model's own cents should agree. When they
+      // don't, keep the model's number but drop the row's confidence further —
+      // we can detect the disagreement, we can't adjudicate it.
+      const fromText = parsePriceText(price_text ?? "");
+      const mismatch = fromText !== null && fromText !== item.price_cents;
+      if (mismatch) {
+        logger.warn({
+          evt: "menu_ocr_price_text_mismatch",
+          page: input.page,
+          price_text,
+          price_cents: item.price_cents,
+          parsed_cents: fromText
+        });
+      }
+      return { ...item, confidence: mismatch ? 0.25 : 0.4 };
+    })
+  }));
+
+  return parsed.data.page_note ? { categories, note: parsed.data.page_note } : { categories };
 }
 
 export interface ParseMenuResult {
   draft: MenuDraft;
-  /** 1-based page numbers we could not read. Empty on a clean run. */
-  failedPages: number[];
-  pagesRead: number;
+  /** One entry per source page, in order. Never partial, never inferred. */
+  pageResults: PageResult[];
+}
+
+
+/** Page order for the final merge, so recovered items sit where they belong. */
+function inPageOrder(parts: PagePart[]): PagePart[] {
+  return [...parts].sort((a, b) => (a.page ?? Number.MAX_SAFE_INTEGER) - (b.page ?? Number.MAX_SAFE_INTEGER));
 }
 
 /**
- * Read a whole menu — one page or fifty — and return a single merged draft.
+ * Read a whole menu — one page or fifty — and return a merged draft plus an
+ * honest account of every page.
  *
- * Pages are processed in batches so output never has to fit one response, and
- * `onBatchDone` is awaited between batches so the caller can prove the job is
- * still alive (see heartbeatIngestionJob: the claim query re-claims anything
- * sitting in 'processing' for ten minutes, and a long menu legitimately exceeds
- * that).
+ * Two passes. The first reads in batches so output never has to fit one
+ * response. The second re-reads, one page at a time and with a different prompt
+ * (and usually a different model), only the pages the first pass got NOTHING
+ * from. That second pass is the point of this function: a cover-page heuristic
+ * that fires on a page full of priced dishes has to be recoverable, and the only
+ * way to tell "this page was blank" from "I missed this page" is to look again.
  *
- * A batch that reports truncation is split in half and retried once; that is a
- * signal we asked for too much at once, not a failure. A batch that still fails
- * is recorded in `failedPages` and the rest of the menu is kept — losing an
- * entire 12-page import because page 7 was a photo collage would be worse than
- * telling the owner which pages to add by hand.
+ * `onBatchDone` is awaited after every call so the caller can prove the job is
+ * alive — the claim query re-claims anything sitting in 'processing' for ten
+ * minutes, and a long menu plus a recovery pass legitimately exceeds that.
+ *
+ * Error handling is deliberately asymmetric between the passes:
+ *
+ *   - Pass 1, 503 (rate limit, upstream 5xx, timeout) → throw, so the worker's
+ *     backoff retries the whole job rather than dropping pages that would have
+ *     worked a minute later. Unchanged from before.
+ *   - Pass 1, truncation → halve the batch and retry once. Unchanged.
+ *   - Pass 1, anything else → those pages are `unread` and we carry on.
+ *   - Pass 2 NEVER throws. We already hold a good draft; throwing would re-run
+ *     and re-pay for the entire first pass. A 503 stops the phase (the next call
+ *     would 503 too) and the remaining pages become `unverified`.
+ *
+ * Running out of budget is never silently converted into "there was nothing on
+ * that page" — that is the same lie in a cheaper costume.
  */
 export async function parseMenu(input: {
   sourceUrls: string[];
@@ -489,67 +741,123 @@ export async function parseMenu(input: {
     throw new AppError(400, "MENU_SOURCE_URL_INVALID", "No menu pages to read.");
   }
 
-  const batches: Array<{ urls: string[]; firstPage: number }> = [];
-  for (let i = 0; i < input.sourceUrls.length; i += PAGES_PER_BATCH) {
-    batches.push({ urls: input.sourceUrls.slice(i, i + PAGES_PER_BATCH), firstPage: i + 1 });
-  }
+  const totalPages = input.sourceUrls.length;
+  const budget = createCallBudget(env.MENU_OCR_MAX_CALLS_PER_JOB, env.MENU_OCR_JOB_BUDGET_MS);
+  const parts: PagePart[] = [];
+  const outcomes = new Map<number, { status: PageStatus; note?: string }>();
+  const markUnread = (pages: number[]) => {
+    for (const page of pages) outcomes.set(page, { status: "unread" });
+  };
+  const urlsFor = (pages: number[]) => pages.map((page) => input.sourceUrls[page - 1]!);
 
-  const parts: MenuDraft[] = [];
-  const failedPages: number[] = [];
-  let pagesRead = 0;
-
-  for (const batch of batches) {
+  // --- Pass 1: batches, in order -------------------------------------------
+  for (const batch of planBatches(totalPages, PAGES_PER_BATCH)) {
     try {
-      parts.push(
-        await parseBatch({
-          pageUrls: batch.urls,
-          sourceKind: input.sourceKind,
-          restaurantId: input.restaurantId,
-          firstPageNumber: batch.firstPage
-        })
-      );
-      pagesRead += batch.urls.length;
+      const got = await parseBatch({
+        pageUrls: urlsFor(batch.pages),
+        sourceKind: input.sourceKind,
+        restaurantId: input.restaurantId,
+        firstPageNumber: batch.firstPage,
+        totalPages,
+        batchPages: batch.pages,
+        carryCategory: lastCategoryOf(parts),
+        budget
+      });
+      parts.push(...got.parts);
     } catch (error) {
       const truncated = error instanceof AppError && error.code === "MENU_OCR_TRUNCATED";
-      if (truncated && batch.urls.length > 1) {
+      if (truncated && batch.pages.length > 1) {
         // Too much asked for at once — halve and retry the two halves.
-        const mid = Math.ceil(batch.urls.length / 2);
-        for (const [offset, half] of [
-          [0, batch.urls.slice(0, mid)],
-          [mid, batch.urls.slice(mid)]
-        ] as Array<[number, string[]]>) {
+        const mid = Math.ceil(batch.pages.length / 2);
+        for (const half of [batch.pages.slice(0, mid), batch.pages.slice(mid)]) {
           try {
-            parts.push(
-              await parseBatch({
-                pageUrls: half,
-                sourceKind: input.sourceKind,
-                restaurantId: input.restaurantId,
-                firstPageNumber: batch.firstPage + offset
-              })
-            );
-            pagesRead += half.length;
+            const got = await parseBatch({
+              pageUrls: urlsFor(half),
+              sourceKind: input.sourceKind,
+              restaurantId: input.restaurantId,
+              firstPageNumber: half[0]!,
+              totalPages,
+              batchPages: half,
+              carryCategory: lastCategoryOf(parts),
+              budget
+            });
+            parts.push(...got.parts);
           } catch {
-            half.forEach((_, i) => failedPages.push(batch.firstPage + offset + i));
+            // Not re-thrown even when transient: re-running the job would re-pay
+            // for every earlier batch. These pages fall through to pass 2, and
+            // if that can't reach them either they are reported, not hidden.
+            markUnread(half);
           }
         }
       } else if (error instanceof AppError && error.statusCode === 503) {
-        // Genuinely transient (rate limit, upstream 5xx, timeout) — let the
-        // worker's backoff handle the whole job rather than silently dropping
-        // pages that would have worked a minute later.
         throw error;
       } else {
-        batch.urls.forEach((_, i) => failedPages.push(batch.firstPage + i));
+        markUnread(batch.pages);
       }
     }
     if (input.onBatchDone) await input.onBatchDone();
   }
 
-  const draft = mergeDrafts(parts);
-  const itemCount = draft.categories.reduce((n, c) => n + c.items.length, 0);
+  // --- Which pages gave us nothing? ----------------------------------------
+  // Asked of the MERGED draft, not the raw responses: a page whose every row was
+  // deduped away contributed nothing the owner will see, and must be treated the
+  // same as a page that returned nothing at all.
+  let merged = mergeAttributed(inPageOrder(parts));
+  const { targets, skipped } = verificationTargets(
+    totalPages,
+    merged.perPage,
+    env.MENU_OCR_MAX_VERIFY_PAGES
+  );
+  for (const page of skipped) outcomes.set(page, { status: "unverified" });
+
+  // --- Pass 2: recovery. Never throws. -------------------------------------
+  let stopVerifying = false;
+  for (const page of targets) {
+    if (stopVerifying) {
+      outcomes.set(page, { status: "unverified" });
+      continue;
+    }
+    try {
+      const found = await verifyPage({
+        pageUrl: input.sourceUrls[page - 1]!,
+        page,
+        totalPages,
+        sourceKind: input.sourceKind,
+        restaurantId: input.restaurantId,
+        budget
+      });
+      const items = found.categories.reduce((n, c) => n + c.items.length, 0);
+      if (items > 0) {
+        parts.push({ page, categories: found.categories });
+        outcomes.set(page, { status: "recovered" });
+      } else {
+        // A positive determination, not an absence of evidence — this is the
+        // one path allowed to mark a page fine without producing any items.
+        outcomes.set(
+          page,
+          found.note ? { status: "empty_confirmed", note: found.note } : { status: "empty_confirmed" }
+        );
+      }
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 503) stopVerifying = true;
+      outcomes.set(page, { status: "unverified" });
+    }
+    if (input.onBatchDone) await input.onBatchDone();
+  }
+
+  if (targets.length > 0) merged = mergeAttributed(inPageOrder(parts));
+
+  // Note a recovered page can still show 0 items here: everything on it was
+  // already in the draft under another page. The dishes reach the owner either
+  // way, so the page stays accounted for rather than reporting a phantom loss.
+  const pageResults = buildPageResults(totalPages, merged.perPage, outcomes);
+  const itemCount = merged.draft.categories.reduce((n, c) => n + c.items.length, 0);
 
   // Zero items is a failure, not a success. It used to pass validation and land
   // the owner on a review screen reading "I read 0 items — everything looked
   // clear" with the continue button disabled: a dead end that claimed success.
+  // Checked AFTER recovery, so a menu whose only item page looked like a cover
+  // is rescued rather than dead-lettered.
   if (itemCount === 0) {
     throw new AppError(
       502,
@@ -561,12 +869,15 @@ export async function parseMenu(input: {
   logger.info({
     evt: "menu_ocr_complete",
     restaurant_id: input.restaurantId ?? null,
-    pages_total: input.sourceUrls.length,
-    pages_read: pagesRead,
-    failed_pages: failedPages,
-    categories: draft.categories.length,
+    pages_total: totalPages,
+    calls: budget.calls,
+    budget_exhausted: budget.isExhausted,
+    verified_pages: targets.length,
+    recovered_pages: pageResults.filter((p) => p.status === "recovered").map((p) => p.page),
+    unaccounted_pages: unaccountedPages(pageResults),
+    categories: merged.draft.categories.length,
     items: itemCount
   });
 
-  return { draft, failedPages, pagesRead };
+  return { draft: merged.draft, pageResults };
 }
