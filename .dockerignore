@@ -5,6 +5,11 @@ node_modules
 dist
 apps/backend/dist
 
+# Menu fixtures — ~2 MB of test images per menu. The runner stage only copies
+# dist/ and db/, so they never reach the image, but they would bloat the build
+# context and bust the layer cache on every CI run.
+apps/backend/fixtures
+
 # Version control
 .git
 .gitignore

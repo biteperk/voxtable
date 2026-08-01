@@ -130,10 +130,21 @@ const SYSTEM_PROMPT = [
   "items and not categories — put them in the description if useful."
 ].join(" ");
 
-interface FetchedFile {
+export interface FetchedFile {
   base64: string;
   mediaType: string;
 }
+
+/**
+ * How a page's bytes are obtained, by 1-based absolute page number.
+ *
+ * This is the seam the fixture harness uses to feed pages from disk. The SSRF
+ * allowlist deliberately lives in `parseMenu`, the only caller reachable from a
+ * request — NOT here — so the check can never be turned off by configuration.
+ * Nothing that handles user input constructs a loader; the one in production is
+ * built from the job's own allowlisted URLs.
+ */
+export type PageLoader = (page: number) => Promise<FetchedFile>;
 
 /**
  * `source_url` is supplied by the client, and we then fetch it server-side —
@@ -539,7 +550,7 @@ async function dispatch(opts: Omit<CallOptions, "signal">): Promise<OcrResponse>
 
 /** One vision call over a contiguous run of pages. */
 async function parseBatch(input: {
-  pageUrls: string[];
+  loadPage: PageLoader;
   sourceKind: "image" | "pdf";
   restaurantId?: string;
   firstPageNumber: number;
@@ -552,7 +563,7 @@ async function parseBatch(input: {
     throw new AppError(502, "MENU_OCR_BUDGET_EXHAUSTED", "This menu needed more reading than we allow.");
   }
   const files: FetchedFile[] = [];
-  for (const url of input.pageUrls) files.push(await fetchAsBase64(url));
+  for (const page of input.batchPages) files.push(await input.loadPage(page));
 
   const result = await dispatch({
     files,
@@ -621,7 +632,7 @@ async function parseBatch(input: {
  * and the review screen already flags anything under 0.5.
  */
 async function verifyPage(input: {
-  pageUrl: string;
+  loadPage: PageLoader;
   page: number;
   totalPages: number;
   sourceKind: "image" | "pdf";
@@ -631,7 +642,7 @@ async function verifyPage(input: {
   if (!input.budget.tryClaim()) {
     throw new AppError(502, "MENU_OCR_BUDGET_EXHAUSTED", "This menu needed more reading than we allow.");
   }
-  const file = await fetchAsBase64(input.pageUrl);
+  const file = await input.loadPage(input.page);
   const model = env.MENU_OCR_VERIFY_MODEL || env.MENU_OCR_MODEL;
 
   const result = await dispatch({
@@ -740,21 +751,50 @@ export async function parseMenu(input: {
   if (input.sourceUrls.length === 0) {
     throw new AppError(400, "MENU_SOURCE_URL_INVALID", "No menu pages to read.");
   }
+  return parseMenuPages({
+    totalPages: input.sourceUrls.length,
+    // Every page still goes through the allowlisted fetcher. This wrapper is
+    // the only path a request can reach, so the SSRF check cannot be bypassed
+    // by configuration — see PageLoader.
+    loadPage: (page) => fetchAsBase64(input.sourceUrls[page - 1]!),
+    sourceKind: input.sourceKind,
+    restaurantId: input.restaurantId,
+    onBatchDone: input.onBatchDone
+  });
+}
 
-  const totalPages = input.sourceUrls.length;
+/**
+ * The orchestration, over pages obtained however the caller likes.
+ *
+ * Split out from parseMenu so the fixture corpus (scripts/smoke-menu-ocr.ts)
+ * can drive the real batching, merging, recovery and accounting against menus
+ * on disk. Everything except the fetch is exercised; the fetch has its own
+ * tests in menuOcrClient.test.ts.
+ *
+ * Note there is deliberately no kill-switch check here: MENU_OCR_ENABLED is a
+ * product rollout flag, not a "is the parser configured" flag, and the corpus
+ * must be runnable whatever the rollout state.
+ */
+export async function parseMenuPages(input: {
+  totalPages: number;
+  loadPage: PageLoader;
+  sourceKind: "image" | "pdf";
+  restaurantId?: string;
+  onBatchDone?: () => Promise<void>;
+}): Promise<ParseMenuResult> {
+  const totalPages = input.totalPages;
   const budget = createCallBudget(env.MENU_OCR_MAX_CALLS_PER_JOB, env.MENU_OCR_JOB_BUDGET_MS);
   const parts: PagePart[] = [];
   const outcomes = new Map<number, { status: PageStatus; note?: string }>();
   const markUnread = (pages: number[]) => {
     for (const page of pages) outcomes.set(page, { status: "unread" });
   };
-  const urlsFor = (pages: number[]) => pages.map((page) => input.sourceUrls[page - 1]!);
 
   // --- Pass 1: batches, in order -------------------------------------------
   for (const batch of planBatches(totalPages, PAGES_PER_BATCH)) {
     try {
       const got = await parseBatch({
-        pageUrls: urlsFor(batch.pages),
+        loadPage: input.loadPage,
         sourceKind: input.sourceKind,
         restaurantId: input.restaurantId,
         firstPageNumber: batch.firstPage,
@@ -772,7 +812,7 @@ export async function parseMenu(input: {
         for (const half of [batch.pages.slice(0, mid), batch.pages.slice(mid)]) {
           try {
             const got = await parseBatch({
-              pageUrls: urlsFor(half),
+              loadPage: input.loadPage,
               sourceKind: input.sourceKind,
               restaurantId: input.restaurantId,
               firstPageNumber: half[0]!,
@@ -819,7 +859,7 @@ export async function parseMenu(input: {
     }
     try {
       const found = await verifyPage({
-        pageUrl: input.sourceUrls[page - 1]!,
+        loadPage: input.loadPage,
         page,
         totalPages,
         sourceKind: input.sourceKind,

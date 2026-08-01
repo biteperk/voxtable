@@ -1,0 +1,60 @@
+{
+  "slug": "template-sampler-5pg",
+  "source": "Five unrelated stock menu templates in one PDF. Uploaded by Sam on 1 Aug 2026; page 3 produced zero items and six dishes were lost. No customer data — these are design templates, so they are safe to commit.",
+  "source_kind": "image",
+  "covers": [
+    "landscape three-column layout",
+    "every item on a page priced identically",
+    "an item page styled exactly like a cover (the incident)",
+    "handwritten script with '99.-' pricing and no currency symbol",
+    "dense four-category layout on one page"
+  ],
+  "notes": "Expectations were written by reading the printed pages at 300 dpi, NOT by copying parser output. Prices on page 4 use the continental convention where the dash stands in for the cents: '99.-' is ninety-nine dollars.",
+  "pages": [
+    {
+      "page": 1,
+      "kind": "menu",
+      "min_items": 18,
+      "note": "Landscape, three columns, six headings. Every dish is $12.00 — real, and a trap for any 'all prices identical looks wrong' heuristic."
+    },
+    {
+      "page": 2,
+      "kind": "menu",
+      "min_items": 8,
+      "note": "Portrait, single column, three headings."
+    },
+    {
+      "page": 3,
+      "kind": "menu",
+      "min_items": 6,
+      "note": "THE INCIDENT. Giant MENU wordmark, welcome sentence, six circular food photos, phone/address footer — reads as a cover, but carries six priced dishes. Also prints BURGER three times at two different prices, which name-only dedupe collapsed to one row."
+    },
+    {
+      "page": 4,
+      "kind": "menu",
+      "min_items": 5,
+      "note": "Handwritten script set on curves, prices as '99.-' with no currency symbol."
+    },
+    {
+      "page": 5,
+      "kind": "menu",
+      "min_items": 28,
+      "note": "Landscape, four headings, 28 rows. The densest page in the corpus."
+    }
+  ],
+  "must_include": [
+    { "name": "Classic Caesar Salad", "price_cents": 1200, "page": 1 },
+    { "name": "Gyoza", "price_cents": 599, "page": 2 },
+    { "name": "Tonkotsu Ramen", "price_cents": 1349, "page": 2 },
+    { "name": "Pizza", "price_cents": 5000, "page": 3 },
+    { "name": "Sandwich", "price_cents": 3000, "page": 3 },
+    { "name": "Potatoes and Pork Ribs", "price_cents": 17800, "page": 4 },
+    { "name": "Crispy Chicken", "price_cents": 1099, "page": 5 },
+    { "name": "Belgian Waffles", "price_cents": 725, "page": 5 }
+  ],
+  "totals": {
+    "min_items": 65,
+    "max_items": 75,
+    "min_categories": 14
+  }
+}
