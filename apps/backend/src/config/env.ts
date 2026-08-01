@@ -1,7 +1,15 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+for (const envPath of [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "../../.env")]) {
+  if (existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 
 const LOCAL_DEFAULT_RESTAURANT_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -162,6 +170,23 @@ const envSchema = z
   MENU_OCR_MAX_FILE_MB: z.coerce.number().int().positive().default(10),
   MENU_OCR_MAX_JOBS_PER_DAY: z.coerce.number().int().positive().default(25),
   MENU_OCR_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+
+  // Model for the recovery pass — the single-page re-read of a page the first
+  // pass got nothing from. Defaults to MENU_OCR_MODEL, but SHOULD be set to
+  // something stronger in production: asking the same model the same question
+  // twice is a correlated second opinion, and the whole value of this pass is
+  // that it is independent of the one that just missed the page.
+  MENU_OCR_VERIFY_MODEL: z.string().optional(),
+  // Ceiling on recovery calls per job, so a menu that is genuinely 40 pages of
+  // photographs can't fan out into 40 extra calls.
+  MENU_OCR_MAX_VERIFY_PAGES: z.coerce.number().int().min(0).default(8),
+  // Every model call for one job — first pass, halving retries and recovery
+  // share this counter. 48 pages at 3 per batch is 16; the slack absorbs retries.
+  MENU_OCR_MAX_CALLS_PER_JOB: z.coerce.number().int().positive().default(24),
+  // Wall clock for one parse, checked before each call is dispatched. Must stay
+  // under the frontend's 10-minute polling ceiling or the owner is watching a
+  // spinner for work that is still running.
+  MENU_OCR_JOB_BUDGET_MS: z.coerce.number().int().positive().default(420_000),
 
   // Hosts the menu importer is allowed to fetch from (comma-separated, exact
   // hostname match). The client uploads to Firebase Storage and hands us the

@@ -3,16 +3,22 @@ import test from "node:test";
 
 import {
   classifySelection,
+  describeAddLimit,
+  describeCommitBlock,
   describeFailure,
+  describeImportSummary,
   describeJobFailure,
-  describePartialPages,
+  describeReviewConcerns,
+  describeStartOverConfirm,
   formatBytes,
   MENU_IMPORT_LIMITS,
   nextEncodeAttempt,
   orderFiles,
+  pageListSentence,
   planPageBudget,
   progressCopy,
   scaleForViewport,
+  summarisePages,
   validateSelection
 } from "./menuImportPlan.js";
 
@@ -260,10 +266,142 @@ test("backend messages already written for people are passed through", () => {
   assert.equal(describeFailure({ code: "MENU_OCR_RATE_LIMITED", message: msg }), msg);
 });
 
-test("partial page failures are surfaced, not hidden", () => {
-  assert.equal(describePartialPages([]), null);
-  assert.match(describePartialPages([7]), /page 7/);
-  assert.match(describePartialPages([2, 5, 9, 11]), /and others/);
+// ---------------------------------------------------------------------------
+// The review screen.
+//
+// A real import read 59 of 65 items — one whole page produced nothing — and the
+// screen said "everything looked clear". These tests exist to make that sentence
+// unsayable again.
+// ---------------------------------------------------------------------------
+
+const page = (n, status) => ({ page: n, status, items: status === "items" ? 3 : 0 });
+const CLEAN = [1, 2, 3, 4, 5].map((n) => page(n, "items"));
+const MISSED_ONE = [page(1, "items"), page(2, "items"), page(3, "unverified"), page(4, "items")];
+const UNREADABLE_ONE = [page(1, "items"), page(2, "items"), page(3, "items"), page(4, "unread")];
+
+/** Every shape the headline can take, so the negative assertions cover them all. */
+const ALL_HEADLINES = [
+  describeImportSummary({ itemCount: 59, pageResults: [] }),
+  describeImportSummary({ itemCount: 1, pageResults: [] }),
+  describeImportSummary({ itemCount: 59, pageResults: CLEAN }),
+  describeImportSummary({ itemCount: 59, pageResults: MISSED_ONE }),
+  describeImportSummary({ itemCount: 59, pageResults: UNREADABLE_ONE }),
+  describeImportSummary({ itemCount: 59, pageResults: [...MISSED_ONE, page(9, "unread")] })
+];
+
+test("no headline ever promises the menu is complete", () => {
+  for (const line of ALL_HEADLINES) {
+    assert.doesNotMatch(line, /everything looked clear/i, line);
+    assert.doesNotMatch(line, /all clear|nothing missing|got everything/i, line);
+  }
+});
+
+test("every headline says the list is the limit of what the agent knows", () => {
+  for (const line of ALL_HEADLINES) {
+    assert.match(line, /only know the dishes on this list/, line);
+  }
+});
+
+test("an import with no page information makes no claim about pages", () => {
+  const line = describeImportSummary({ itemCount: 59, pageResults: [] });
+  assert.doesNotMatch(line, /all \d+ pages/, "unknown must never be reported as clean");
+  assert.match(line, /59 items/);
+});
+
+test("a clean multi-page import says how many pages it actually read", () => {
+  assert.match(describeImportSummary({ itemCount: 59, pageResults: CLEAN }), /across all 5 pages/);
+});
+
+test("a page that produced nothing is named in the headline", () => {
+  const line = describeImportSummary({ itemCount: 59, pageResults: MISSED_ONE });
+  assert.match(line, /page 3/);
+  assert.match(line, /nothing/);
+});
+
+test("an unreadable page is named, and reads differently from an empty one", () => {
+  const unread = describeImportSummary({ itemCount: 59, pageResults: UNREADABLE_ONE });
+  const missed = describeImportSummary({ itemCount: 59, pageResults: MISSED_ONE });
+  assert.match(unread, /page 4/);
+  assert.match(unread, /wouldn't read/);
+  assert.notEqual(unread, missed, "the two failures must not be described identically");
+});
+
+test("a cover page the parser confirmed is never reported as a problem", () => {
+  // The prompt tells the model to return nothing for covers and photo pages.
+  // Reporting those trains owners to ignore the notice that matters.
+  const withCover = [page(1, "empty_confirmed"), page(2, "items"), page(3, "items")];
+  assert.match(describeImportSummary({ itemCount: 22, pageResults: withCover }), /across all 3 pages/);
+  assert.deepEqual(describeReviewConcerns({ pageResults: withCover }), []);
+});
+
+test("a page recovered on the second pass is not reported as a problem", () => {
+  const recovered = [page(1, "items"), page(2, "recovered"), page(3, "items")];
+  assert.deepEqual(describeReviewConcerns({ pageResults: recovered }), []);
+});
+
+test("items with no price are called out with the consequence, not just a count", () => {
+  const one = describeReviewConcerns({ pageResults: CLEAN, unpricedCount: 1 });
+  assert.match(one.join(" "), /free/, "the owner needs to know Bella will say it's free");
+  assert.match(one.join(" "), /1 item has/);
+  const many = describeReviewConcerns({ pageResults: CLEAN, unpricedCount: 3 });
+  assert.match(many.join(" "), /3 items have/);
+});
+
+test("a clean import has nothing to acknowledge", () => {
+  assert.deepEqual(describeReviewConcerns({ pageResults: CLEAN, unpricedCount: 0 }), []);
+  assert.deepEqual(describeReviewConcerns({ pageResults: [], unpricedCount: 0 }), []);
+  assert.deepEqual(describeReviewConcerns(), []);
+});
+
+test("concerns put the worst thing first", () => {
+  const mixed = [page(1, "unread"), page(2, "unverified"), page(3, "items")];
+  const lines = describeReviewConcerns({ pageResults: mixed, unpricedCount: 2 });
+  assert.match(lines[0], /couldn't read/, "a page we never read outranks one that came back empty");
+  assert.match(lines[1], /got nothing/);
+  assert.match(lines[2], /free/);
+});
+
+test("no page is silently dropped from the concerns list", () => {
+  const many = [1, 2, 3, 4, 5, 6].map((n) => page(n, "unverified"));
+  const lines = describeReviewConcerns({ pageResults: many });
+  assert.equal(lines.length, 5, "four pages plus an honest count of the rest");
+  assert.match(lines[4], /2 more pages/);
+});
+
+test("page lists read like a sentence", () => {
+  assert.equal(pageListSentence([3]), "page 3");
+  assert.equal(pageListSentence([3, 7]), "pages 3 and 7");
+  assert.equal(pageListSentence([7, 3, 11]), "pages 3, 7 and 11");
+  assert.equal(pageListSentence([11, 2, 3, 7]), "pages 2, 3, 7 and 1 other");
+  assert.equal(pageListSentence([]), "");
+});
+
+test("pages we know nothing about are not counted as read", () => {
+  assert.equal(summarisePages([]).hasInfo, false);
+  assert.equal(summarisePages([]).allAccounted, true, "vacuously true — hasInfo is the guard");
+  assert.equal(summarisePages(MISSED_ONE).allAccounted, false);
+  assert.deepEqual(summarisePages(MISSED_ONE).missed, [3]);
+  assert.deepEqual(summarisePages(UNREADABLE_ONE).unreadable, [4]);
+});
+
+test("only a blank name blocks the import — everything else is acknowledged", () => {
+  assert.equal(describeCommitBlock({}), null);
+  assert.equal(describeCommitBlock({ unnamedCount: 0, unnamedCategoryCount: 0 }), null);
+  assert.match(describeCommitBlock({ unnamedCount: 1 }), /One row still has no name/);
+  assert.match(describeCommitBlock({ unnamedCount: 3 }), /3 rows/);
+  assert.match(describeCommitBlock({ unnamedCategoryCount: 1 }), /section/);
+});
+
+test("starting over says exactly what will be lost", () => {
+  assert.match(describeStartOverConfirm(59), /59 items/);
+  assert.match(describeStartOverConfirm(59), /anything you've added/);
+  assert.match(describeStartOverConfirm(1), /1 item I read/);
+});
+
+test("hitting an add limit points at where the rest can go", () => {
+  assert.match(describeAddLimit("item"), /Manage menu/);
+  assert.match(describeAddLimit("item"), new RegExp(String(MENU_IMPORT_LIMITS.MAX_ITEMS_PER_CATEGORY)));
+  assert.match(describeAddLimit("category"), new RegExp(String(MENU_IMPORT_LIMITS.MAX_CATEGORIES)));
 });
 
 test("byte formatting reads like a person wrote it", () => {

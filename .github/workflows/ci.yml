@@ -1,0 +1,251 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY_HOST: australia-southeast1-docker.pkg.dev
+  API_IMAGE: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/api
+  WORKER_IMAGE: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/worker
+
+jobs:
+  validate:
+    name: Validate code and migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgres://test:test@localhost:5432/test
+      DATABASE_SSL: "false"
+      VITE_API_BASE_URL: http://localhost:3050
+      VITE_GOOGLE_MAPS_KEY: ""
+      # Placeholders. This job only proves the code compiles, and the build now
+      # refuses to run without a Firebase config (apps/frontend/vite.config.ts).
+      # These are deliberately fake so nothing here can talk to a real project.
+      VITE_FIREBASE_API_KEY: ci-placeholder
+      VITE_FIREBASE_AUTH_DOMAIN: ci-placeholder.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: ci-placeholder
+      VITE_FIREBASE_STORAGE_BUCKET: ci-placeholder.firebasestorage.app
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      VITE_FIREBASE_APP_ID: "1:000000000000:web:ciplaceholder"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Build backend
+        run: npm run build:backend
+
+      - name: Apply migrations to a fresh database
+        run: npm run db:migrate
+
+      - name: Re-run migrations to verify idempotency
+        run: npm run db:migrate
+
+      - name: Run backend tests
+        run: npm run test:backend
+
+      - name: Build frontend
+        run: npm run build:frontend
+
+      - name: Build KDS
+        run: npm run build:kds
+
+      - name: Audit production dependencies
+        run: npm run audit:production
+
+  docker-images:
+    name: Build, scan, and publish Docker images
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      PUSH_SHA_IMAGES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/integration' }}
+      PUSH_VERSION_IMAGES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      SHOULD_PUSH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/integration' || github.ref == 'refs/heads/main') }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read package version
+        id: package-version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "package.json version must be semantic versioning, got: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
+        if: env.SHOULD_PUSH == 'true'
+        with:
+          workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: registry@bp-shared-artifacts.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: env.SHOULD_PUSH == 'true'
+
+      - name: Configure Artifact Registry auth
+        if: env.SHOULD_PUSH == 'true'
+        run: gcloud auth configure-docker "$REGISTRY_HOST" --quiet
+
+      - name: Build api image
+        run: docker build -f Dockerfile.api -t vocotable-api:ci .
+
+      - name: Build worker image
+        run: docker build -f Dockerfile.worker -t vocotable-worker:ci .
+
+      - name: Scan api image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: vocotable-api:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      - name: Scan worker image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: vocotable-worker:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      - name: Push commit hash images from integration
+        if: env.PUSH_SHA_IMAGES == 'true'
+        run: |
+          docker tag vocotable-api:ci "$API_IMAGE:${{ github.sha }}"
+          docker tag vocotable-worker:ci "$WORKER_IMAGE:${{ github.sha }}"
+          docker push "$API_IMAGE:${{ github.sha }}"
+          docker push "$WORKER_IMAGE:${{ github.sha }}"
+
+      - name: Push semantic version images from main
+        if: env.PUSH_VERSION_IMAGES == 'true'
+        run: |
+          docker tag vocotable-api:ci "$API_IMAGE:${{ steps.package-version.outputs.version }}"
+          docker tag vocotable-worker:ci "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
+          docker push "$API_IMAGE:${{ steps.package-version.outputs.version }}"
+          docker push "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
+
+      - name: Tag release commit
+        if: env.PUSH_VERSION_IMAGES == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.package-version.outputs.version }}"
+          git push origin "${{ steps.package-version.outputs.version }}"
+
+  frontend-artifacts:
+    name: Build frontend deploy artifact
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/integration' || github.ref == 'refs/heads/main')
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build frontend + KDS
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
+          # THIS job builds the artifact that actually gets deployed. If these
+          # are missing the build fails by design — far better than shipping a
+          # bundle where nobody can sign in and nothing says why.
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
+        run: |
+          npm run build:frontend
+          npm run build:kds
+
+      - name: Resolve Firebase Hosting artifact tag
+        id: hosting-artifact
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            ARTIFACT_TAG="$(node -p "require('./package.json').version")"
+          else
+            ARTIFACT_TAG="${{ github.sha }}"
+          fi
+
+          if ! printf '%s' "$ARTIFACT_TAG" | grep -Eq '^[0-9A-Za-z._:+-]+$'; then
+            echo "Invalid artifact tag: $ARTIFACT_TAG" >&2
+            exit 1
+          fi
+
+          echo "artifact_tag=$ARTIFACT_TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-frontend-artifacts@bp-shared-artifacts.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload Firebase Hosting artifact to GCS
+        env:
+          ARTIFACT_TAG: ${{ steps.hosting-artifact.outputs.artifact_tag }}
+          FRONTEND_ARTIFACT_BUCKET: ${{ vars.FRONTEND_ARTIFACT_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          : "${FRONTEND_ARTIFACT_BUCKET:?Set FRONTEND_ARTIFACT_BUCKET in the GitHub environment}"
+
+          tar -czf /tmp/frontend-hosting.tgz apps/frontend/dist apps/kds/dist
+          gcloud storage cp /tmp/frontend-hosting.tgz "gs://${FRONTEND_ARTIFACT_BUCKET}/firebase-hosting/${ARTIFACT_TAG}.tgz"

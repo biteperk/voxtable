@@ -1,4 +1,5 @@
-import admin from "firebase-admin";
+import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
 import { env } from "../config/env";
 import { DEFAULT_OPENING_HOURS } from "../domain/types";
@@ -21,6 +22,10 @@ const voiceConfig = {
 };
 
 async function seed(): Promise<void> {
+  if (env.APP_ENV === "production") {
+    throw new Error("Refusing to run seed data in production. Seeding is local-only and must be requested with SEED_DATA=true in deploy/scripts/run-local.sh.");
+  }
+
   const restaurantId = env.DEFAULT_RESTAURANT_ID;
 
   // Voice-routing numbers (migration 007) are stored normalized to E.164 so the
@@ -164,9 +169,9 @@ async function backfillMultitenancy(restaurantId: string): Promise<void> {
   }
 
   try {
-    if (admin.apps.length === 0) {
-      admin.initializeApp({
-        credential: admin.credential.applicationDefault(),
+    if (getApps().length === 0) {
+      initializeApp({
+        credential: applicationDefault(),
         projectId: env.FIREBASE_PROJECT_ID
       });
     }
@@ -178,7 +183,7 @@ async function backfillMultitenancy(restaurantId: string): Promise<void> {
   let created = 0;
   for (const email of allowed) {
     try {
-      const fbUser = await admin.auth().getUserByEmail(email);
+      const fbUser = await getAuth().getUserByEmail(email);
       const role = managers.has(email)
         ? "manager"
         : kitchen.has(email)

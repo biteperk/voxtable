@@ -11,6 +11,7 @@
  */
 
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { getAuth } from "firebase-admin/auth";
 
 import { env } from "../config/env";
 import { getAdminApp } from "../auth/firebaseAuth";
@@ -149,7 +150,7 @@ export async function confirmVerificationCode(uid: string, code: string): Promis
   // Dev escape hatch: with auth verification off there's no real Firebase user
   // (and often no Admin credentials) — skip the Admin write, matching me.ts.
   if (env.APP_ENV === "production" || env.DASHBOARD_VERIFY_AUTH) {
-    await getAdminApp().auth().updateUser(uid, { emailVerified: true });
+    await getAuth(getAdminApp()).updateUser(uid, { emailVerified: true });
   }
 
   logger.info({ evt: "verify_code_confirmed", uid });

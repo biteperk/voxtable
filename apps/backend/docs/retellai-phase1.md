@@ -208,7 +208,7 @@ using `retell-sdk`.
 
 ## Smoke Test
 
-1. Run backend migrations and seed data.
+1. Run backend migrations. Provision production data intentionally; seed data is local-only.
 2. Deploy the backend to the GCP VM (see [GCP Deployment Guide](./gcp-deployment.md)).
 3. Configure Twilio number/SIP routing if using Twilio telephony.
 4. Configure RetellAI webhook URL.

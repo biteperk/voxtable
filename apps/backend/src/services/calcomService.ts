@@ -438,7 +438,7 @@ export async function processInboxEvent(event: CalcomWebhookPayload): Promise<vo
     return;
   }
   if (parsed.kind === "rescheduled") {
-    // Conservative for v1: treat as cancel + ignore. Natalia can manually
+    // Conservative for v1: treat as cancel + ignore. Staff can manually
     // re-book if Cal.com reschedules. Documented limitation.
     logger.info({
       evt: "calcom_inbox_reschedule_ignored",

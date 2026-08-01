@@ -5,6 +5,11 @@ node_modules
 dist
 apps/backend/dist
 
+# Menu fixtures — ~2 MB of test images per menu. The runner stage only copies
+# dist/ and db/, so they never reach the image, but they would bloat the build
+# context and bust the layer cache on every CI run.
+apps/backend/fixtures
+
 # Version control
 .git
 .gitignore
@@ -14,8 +19,12 @@ apps/backend/dist
 .env.local
 .env.*.local
 
-# Frontend (not needed for backend Docker build)
-apps/frontend
+# Frontend/KDS source (not needed for backend Docker build), but keep package
+# manifests so npm workspaces can install backend dependencies correctly.
+apps/frontend/*
+!apps/frontend/package.json
+apps/kds/*
+!apps/kds/package.json
 
 # IDE / Editor
 .vscode

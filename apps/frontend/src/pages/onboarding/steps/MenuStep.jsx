@@ -2,9 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../../auth";
 import { sha256OfPages, uploadMenuPage } from "../../../firebase";
 import {
+  MENU_IMPORT_LIMITS,
+  REVIEW_ACK_HINT,
+  REVIEW_ACK_LABEL,
+  REVIEW_CONCERNS_HEADING,
+  describeAddLimit,
+  describeCommitBlock,
   describeFailure,
+  describeImportSummary,
   describeJobFailure,
-  describePartialPages,
+  describeReviewConcerns,
+  describeStartOverConfirm,
   progressCopy,
   validateSelection
 } from "../../../lib/menuImportPlan";
@@ -48,9 +56,26 @@ export function rowsToDraft(cats) {
   };
 }
 
+/**
+ * A row the owner is about to type into.
+ *
+ * Deliberately carries no `confidence`: a row a person typed is not something
+ * the parser was unsure about, and giving it one would render it flagged.
+ */
+const blankRow = () => ({ uid: nextUid(), name: "", price_cents: 0, priceText: "" });
+
+/** A price we would read aloud as free. See the concerns panel. */
+const isUnpriced = (item) => !Number.isFinite(item.price_cents) || item.price_cents <= 0;
+
 // `cats` lives in the parent so a failed save can't destroy the user's edits —
 // this component unmounts the moment a commit starts.
-function MenuDraftReview({ cats, setCats, onCommit, onCancel, committing }) {
+function MenuDraftReview({ cats, setCats, onCommit, onCancel, committing, pageResults }) {
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [limitNote, setLimitNote] = useState(null);
+  /** uid of a row we just created, so the caret lands in it rather than off-screen. */
+  const [focusUid, setFocusUid] = useState(null);
+
   const setItem = (ci, ii, patch) =>
     setCats((prev) =>
       prev.map((c, i) =>
@@ -61,22 +86,75 @@ function MenuDraftReview({ cats, setCats, onCommit, onCancel, committing }) {
     setCats((prev) => prev.map((c, i) => (i !== ci ? c : { ...c, items: c.items.filter((_, j) => j !== ii) })));
   const setCatName = (ci, name) => setCats((prev) => prev.map((c, i) => (i !== ci ? c : { ...c, name })));
 
+  const addItem = (ci) => {
+    if (cats[ci].items.length >= MENU_IMPORT_LIMITS.MAX_ITEMS_PER_CATEGORY) {
+      setLimitNote(describeAddLimit("item"));
+      return;
+    }
+    const row = blankRow();
+    setLimitNote(null);
+    setFocusUid(row.uid);
+    setCats((prev) => prev.map((c, i) => (i !== ci ? c : { ...c, items: [...c.items, row] })));
+  };
+
+  const addCategory = () => {
+    if (cats.length >= MENU_IMPORT_LIMITS.MAX_CATEGORIES) {
+      setLimitNote(describeAddLimit("category"));
+      return;
+    }
+    // Seeded with one row, so a category with no dishes is never representable —
+    // an empty one would otherwise commit as a real, dishless section.
+    const cat = { uid: nextUid(), name: "", items: [blankRow()] };
+    setLimitNote(null);
+    setFocusUid(cat.uid);
+    setCats((prev) => [...prev, cat]);
+  };
+
+  /** Move the caret into a just-added row. Fires once; clears itself. */
+  const focusNew = (uid) => (el) => {
+    if (!el || uid !== focusUid) return;
+    el.focus();
+    el.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    setFocusUid(null);
+  };
+
   const itemCount = cats.reduce((n, c) => n + c.items.length, 0);
-  const lowConfidence = cats.some((c) => c.items.some((it) => typeof it.confidence === "number" && it.confidence < 0.5));
+  const unpricedCount = cats.reduce((n, c) => n + c.items.filter(isUnpriced).length, 0);
+  const unnamedCount = cats.reduce((n, c) => n + c.items.filter((it) => !it.name.trim()).length, 0);
+  const unnamedCategoryCount = cats.filter((c) => !c.name.trim()).length;
+
+  const concerns = describeReviewConcerns({ pageResults, unpricedCount });
+  const commitBlock = describeCommitBlock({ unnamedCount, unnamedCategoryCount });
+  // An import with something worth checking is committable — but as a decision,
+  // not a default. Blocking outright would leave "Start over" as the only way
+  // out, and that re-uploads the same file and returns the same job.
+  const needsAck = concerns.length > 0;
+  const canCommit = !committing && itemCount > 0 && !commitBlock && (!needsAck || acknowledged);
 
   return (
     <div className="onboarding-card onboarding-card-wide">
       <h1>Review your menu</h1>
-      <p className="onboarding-lead">
-        I read {itemCount} item{itemCount === 1 ? "" : "s"} from your menu. Check the names and prices —
-        {lowConfidence ? " I've flagged a few I wasn't sure about." : " everything looked clear."}
-      </p>
-      {lowConfidence && (
-        <div className="onboarding-bella">
-          <span className="onboarding-bella-avatar" aria-hidden="true"><Icon name="headset_mic" /></span>
-          <p>Give the highlighted rows a quick double-check — I wasn't 100% sure on those prices.</p>
+      <p className="onboarding-lead">{describeImportSummary({ itemCount, pageResults })}</p>
+
+      {needsAck && (
+        <div className="menu-review-concerns">
+          <h2>{REVIEW_CONCERNS_HEADING}</h2>
+          <ul>
+            {concerns.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <label className="onboarding-consent">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+            />
+            <span>{REVIEW_ACK_LABEL}</span>
+          </label>
         </div>
       )}
+
       <div className="menu-review">
         {cats.map((c, ci) => (
           <div key={c.uid} className="menu-review-cat">
@@ -84,16 +162,24 @@ function MenuDraftReview({ cats, setCats, onCommit, onCancel, committing }) {
               className="menu-review-catname"
               value={c.name}
               aria-label="Category name"
+              placeholder="e.g. Pizzas"
+              ref={focusNew(c.uid)}
               onChange={(e) => setCatName(ci, e.target.value)}
             />
             {c.items.map((it, ii) => {
               const unsure = typeof it.confidence === "number" && it.confidence < 0.5;
+              const unpriced = isUnpriced(it);
               return (
-                <div key={it.uid} className={`menu-review-row${unsure ? " is-unsure" : ""}`}>
+                <div
+                  key={it.uid}
+                  className={`menu-review-row${unsure ? " is-unsure" : ""}${unpriced ? " is-unpriced" : ""}`}
+                >
                   <input
                     className="menu-review-name"
                     value={it.name}
                     aria-label="Item name"
+                    placeholder="Dish name"
+                    ref={focusNew(it.uid)}
                     onChange={(e) => setItem(ci, ii, { name: e.target.value })}
                   />
                   <div className="menu-review-price">
@@ -102,6 +188,7 @@ function MenuDraftReview({ cats, setCats, onCommit, onCancel, committing }) {
                       type="text"
                       inputMode="decimal"
                       value={it.priceText}
+                      placeholder="0.00"
                       aria-label={`Price for ${it.name || "this item"} in dollars`}
                       onChange={(e) =>
                         setItem(ci, ii, {
@@ -116,6 +203,7 @@ function MenuDraftReview({ cats, setCats, onCommit, onCancel, committing }) {
                       ⚠
                     </span>
                   )}
+                  {unpriced && <span className="menu-review-nopricetag">No price</span>}
                   <button
                     type="button"
                     className="menu-review-del"
@@ -127,23 +215,68 @@ function MenuDraftReview({ cats, setCats, onCommit, onCancel, committing }) {
                 </div>
               );
             })}
+            <button type="button" className="menu-review-add" onClick={() => addItem(ci)}>
+              <Icon name="add" aria-hidden="true" /> Add an item
+            </button>
           </div>
         ))}
       </div>
-      <div className="onboarding-actions">
-        <button type="button" className="ghost-button" onClick={onCancel} disabled={committing}>
-          Start over
-        </button>
-        <button
-          type="button"
-          className="primary-button"
-          onClick={onCommit}
-          disabled={committing || itemCount === 0}
-        >
-          {committing ? "Saving…" : `Looks good — import ${itemCount} item${itemCount === 1 ? "" : "s"}`}
-          <Icon name="arrow_forward" />
-        </button>
-      </div>
+      {/*
+        Outside .menu-review on purpose — that list is a scroll container capped
+        at 52vh, and anything at the bottom of it is below the fold. This is the
+        button an owner needs when a whole section was dropped, so it must not be
+        the least discoverable thing on the screen.
+      */}
+      <button type="button" className="menu-review-add menu-review-addcat" onClick={addCategory}>
+        <Icon name="add" aria-hidden="true" /> Add a category
+      </button>
+
+      {limitNote && (
+        <p className="onboarding-note" role="status">
+          {limitNote}
+        </p>
+      )}
+      {commitBlock && (
+        <p className="onboarding-note" role="status">
+          {commitBlock}
+        </p>
+      )}
+      {needsAck && !acknowledged && !commitBlock && (
+        <p className="onboarding-note" role="status">
+          {REVIEW_ACK_HINT}
+        </p>
+      )}
+
+      {confirmingReset ? (
+        <>
+          <p className="onboarding-note" role="alert">
+            {describeStartOverConfirm(itemCount)}
+          </p>
+          <div className="onboarding-actions">
+            <button type="button" className="ghost-button" onClick={() => setConfirmingReset(false)}>
+              Keep editing
+            </button>
+            <button type="button" className="primary-button" onClick={onCancel}>
+              Yes, start over
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="onboarding-actions">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => setConfirmingReset(true)}
+            disabled={committing}
+          >
+            Start over
+          </button>
+          <button type="button" className="primary-button" onClick={onCommit} disabled={!canCommit}>
+            {committing ? "Saving…" : `Looks good — import ${itemCount} item${itemCount === 1 ? "" : "s"}`}
+            <Icon name="arrow_forward" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -158,6 +291,8 @@ export function MenuStep({ onContinue, navigate, onBack = null }) {
   // state died with it and ten minutes of price corrections silently reverted
   // to the raw OCR output.
   const [cats, setCats] = useState(null);
+  /** Per-page parse outcomes from the backend; [] means "not reported". */
+  const [pageResults, setPageResults] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [ocrUnavailable, setOcrUnavailable] = useState(false);
@@ -198,7 +333,10 @@ export function MenuStep({ onContinue, navigate, onBack = null }) {
         const r = await getMenuIngestion(id);
         if (r.status === "parsed") {
           setCats(draftToRows(r.draft ?? { categories: [] }));
-          setNotice(describePartialPages(r.failed_pages));
+          // Absent until the parser reports per-page outcomes. An empty array
+          // means "we know nothing about the pages" — which the review copy
+          // says plainly rather than reading as "all fine".
+          setPageResults(r.page_results ?? []);
           setPhase("review");
           return;
         }
@@ -367,11 +505,13 @@ export function MenuStep({ onContinue, navigate, onBack = null }) {
         <MenuDraftReview
           cats={cats}
           setCats={setCats}
+          pageResults={pageResults}
           committing={phase === "committing" || busy}
           onCommit={handleCommit}
           onCancel={() => {
             committedRef.current = false;
             setCats(null);
+            setPageResults([]);
             setJobId(null);
             setPhase("choose");
           }}

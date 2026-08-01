@@ -1,69 +1,106 @@
 name: Deploy frontend + KDS to Firebase
 
-# Push-to-main → build the two Vite apps → firebase deploy --only hosting.
-# Keyless: reuses the backend pipeline's WIF — github-deployer@ is impersonated
-# via OIDC and was granted firebasehosting.admin on the 'vocotable' Firebase
-# project (separate from the compute project vocotable-497209).
+# CI builds the Firebase Hosting artifact first and uploads it to GCS. This
+# workflow only downloads that artifact and deploys it:
+# - integration -> staging Firebase environment
+# - main -> production Firebase environment
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/frontend/**"
-      - "apps/kds/**"
-      - "firebase.json"
-      - ".firebaserc"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/deploy-frontend.yml"
-  workflow_dispatch: {} # manual trigger from the Actions tab
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [integration, main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      artifact_tag:
+        description: Artifact tag to deploy. Required for manual deploys unless deploying production from the checked-out package version.
+        required: false
 
 concurrency:
-  group: deploy-frontend
-  cancel-in-progress: true # hosting deploys are idempotent — drop stale runs
+  group: deploy-frontend-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
 
-# Keyless auth (WIF) needs the job to mint a GitHub OIDC token.
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  build-deploy:
-    name: Build & deploy Hosting (app + kds)
+  deploy:
+    name: Deploy Hosting
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
+
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
       - uses: actions/setup-node@v5
         with:
-          node-version: "20" # match the app runtime; the action itself runs on Node 24
-          cache: npm
-      - run: npm ci
-      - name: Build frontend + KDS
+          node-version: "24"
+
+      - name: Resolve Firebase Hosting artifact tag
+        id: hosting-artifact
         env:
-          # Public-by-design build values (the Firebase web config + maps key
-          # already ship in the client bundle). Stored as repo variables.
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-          VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
-          # Error reporting. DELIBERATELY UNSET as of 31 Jul 2026 — this is a
-          # decision, not an oversight. Sentry SaaS only offers US (Iowa) and EU
-          # (Frankfurt) regions; there is no Australian one, and an existing org
-          # can't be moved between them. We chose not to send telemetry offshore
-          # while the Iowa→Sydney move is pending.
-          #
-          # The code degrades cleanly: apps/frontend/src/sentry.js no-ops on an
-          # empty DSN, so builds and the ErrorBoundary work fine — we just have
-          # no crash visibility. Set the repo VARIABLE (not secret — a DSN ships
-          # in the bundle and only grants send-events permission) to switch on.
-          # An AU-hosted GlitchTip is DSN-compatible if we want onshore later.
-          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-          VITE_APP_VERSION: ${{ github.sha }}
+          DISPATCH_ARTIFACT_TAG: ${{ inputs.artifact_tag }}
+          DISPATCH_ENVIRONMENT: ${{ inputs.environment }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          npm run build:frontend
-          npm run build:kds
+          set -euo pipefail
+
+          if [ -n "$DISPATCH_ARTIFACT_TAG" ]; then
+            ARTIFACT_TAG="$DISPATCH_ARTIFACT_TAG"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_ENVIRONMENT" = "production" ]; then
+            ARTIFACT_TAG="$(node -p "require('./package.json').version")"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ARTIFACT_TAG="$SOURCE_SHA"
+          elif [ "$SOURCE_BRANCH" = "main" ]; then
+            ARTIFACT_TAG="$(node -p "require('./package.json').version")"
+          else
+            ARTIFACT_TAG="$SOURCE_SHA"
+          fi
+
+          if ! printf '%s' "$ARTIFACT_TAG" | grep -Eq '^[0-9A-Za-z._:+-]+$'; then
+            echo "Invalid artifact tag: $ARTIFACT_TAG" >&2
+            exit 1
+          fi
+
+          echo "artifact_tag=$ARTIFACT_TAG" >> "$GITHUB_OUTPUT"
+
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
-      - name: Deploy to Firebase Hosting (app + kds)
+          workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-frontend-artifacts@bp-shared-artifacts.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download Firebase Hosting artifact from GCS
         env:
-          GOOGLE_CLOUD_QUOTA_PROJECT: vocotable # ADC quota project for the cross-project deploy
-        run: npx --yes --package firebase-tools@15 firebase deploy --only hosting --project vocotable --non-interactive
+          ARTIFACT_TAG: ${{ steps.hosting-artifact.outputs.artifact_tag }}
+          FRONTEND_ARTIFACT_BUCKET: ${{ vars.FRONTEND_ARTIFACT_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          : "${FRONTEND_ARTIFACT_BUCKET:?Set FRONTEND_ARTIFACT_BUCKET in the GitHub environment}"
+
+          gcloud storage cp "gs://${FRONTEND_ARTIFACT_BUCKET}/firebase-hosting/${ARTIFACT_TAG}.tgz" /tmp/frontend-hosting.tgz
+          tar -xzf /tmp/frontend-hosting.tgz
+
+      - name: Deploy to Firebase Hosting
+        env:
+          FIREBASE_ONLY: ${{ vars.FIREBASE_ONLY || 'hosting' }}
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT || 'vocotable' }}
+          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT || 'vocotable' }}
+        run: |
+          set -euo pipefail
+          npx --yes --package firebase-tools@15 firebase deploy --only "$FIREBASE_ONLY" --project "$FIREBASE_PROJECT" --non-interactive

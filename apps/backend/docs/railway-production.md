@@ -68,9 +68,13 @@ If the PostgreSQL service name is not `Postgres`, use the actual service namespa
 `railway.json` is configured for production:
 
 - build: `npm ci && npm run build:backend`
-- pre-deploy: `npm run db:migrate:prod && npm run db:seed:prod`
+- pre-deploy: `npm run db:migrate:prod`
 - start: `npm run start:backend`
 - healthcheck: `/health`
+
+Production deploys must not run seed data. Create or update restaurants, menu
+items, users, and memberships through the application/admin flow or targeted
+operational SQL reviewed for that deployment.
 
 The `/health` endpoint verifies both the API process and PostgreSQL connection.
 
@@ -102,7 +106,8 @@ Run these checks after deployment:
 
 1. `GET https://<your-railway-domain>/health` returns `status: ok` and `database: ok`.
 2. Railway deploy logs show migrations completed before the app starts.
-3. Railway deploy logs show `Seeded Natalia restaurant <production-uuid>`.
+3. Production restaurant, menu, and membership data has been provisioned
+   intentionally for that deployment.
 4. RetellAI custom function smoke call can check availability.
 5. RetellAI custom function smoke call can create a booking.
 6. Twilio status callback writes a `call_logs` row.
