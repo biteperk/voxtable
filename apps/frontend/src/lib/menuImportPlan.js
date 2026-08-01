@@ -23,6 +23,13 @@ export const MENU_IMPORT_LIMITS = {
   MAX_FILES: 12,
   /** Must match MENU_INGEST_MAX_PAGES on the backend. */
   MAX_PAGES: 48,
+  /**
+   * Must match menuDraftSchema on the backend. Enforced here so that adding a
+   * 121st dish disables the button, rather than failing the save with a zod
+   * message no restaurant owner can act on.
+   */
+  MAX_CATEGORIES: 40,
+  MAX_ITEMS_PER_CATEGORY: 120,
   /** Ceiling on the whole upload, to bound how long it takes on mobile data. */
   TOTAL_BUDGET_BYTES: 24 * 1024 * 1024,
   /** No single page may exceed this — comfortably under the 10 MB storage cap. */
@@ -300,9 +307,152 @@ export function describeJobFailure(job) {
   return "Still reading — this is taking longer than usual.";
 }
 
-/** Shown after a partial success, so missed pages aren't discovered later. */
-export function describePartialPages(failedPages) {
-  if (!failedPages?.length) return null;
-  const list = failedPages.length > 3 ? `${failedPages.slice(0, 3).join(", ")} and others` : failedPages.join(", ");
-  return `I couldn't read page ${list}. Check those items are here, and add anything missing in the editor.`;
+// ---------------------------------------------------------------------------
+// The review screen.
+//
+// This screen used to end on "everything looked clear", which was a completeness
+// claim the system had no basis for making. A real 5-page import dropped an
+// entire page — six priced dishes — and said exactly that, because the only
+// signal it consulted was a model confidence score that comes back 1.0 for every
+// row. The owner had nothing to go on, and Bella then told callers the
+// restaurant didn't sell pizza.
+//
+// So: stop promising, start bounding. Every headline ends on the one sentence
+// that is true in every case — the list is the limit of what the agent knows.
+// ---------------------------------------------------------------------------
+
+const KNOWLEDGE_LIMIT = "I'll only know the dishes on this list.";
+
+/** Page outcomes that need no comment. Anything else is worth telling them. */
+const PAGE_STATUS_FINE = new Set(["items", "recovered", "empty_confirmed"]);
+
+/** "page 3" · "pages 3 and 7" · "pages 3, 7 and 11" · "pages 3, 7, 11 and 2 others" */
+export function pageListSentence(pages) {
+  const list = [...new Set(pages ?? [])].sort((a, b) => a - b);
+  if (!list.length) return "";
+  if (list.length === 1) return `page ${list[0]}`;
+  if (list.length <= 3) {
+    return `pages ${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+  }
+  const rest = list.length - 3;
+  return `pages ${list.slice(0, 3).join(", ")} and ${rest} other${rest === 1 ? "" : "s"}`;
+}
+
+/**
+ * Bucket the per-page outcomes into the two things worth saying out loud.
+ *
+ * `hasInfo` is load-bearing: an empty array means we know NOTHING about the
+ * pages, not that they were all fine. Every caller has to be able to tell those
+ * apart, because collapsing "unknown" into "clean" is the original bug.
+ */
+export function summarisePages(pageResults) {
+  const pages = Array.isArray(pageResults) ? pageResults : [];
+  const missed = [];
+  const unreadable = [];
+  for (const p of pages) {
+    if (!p || typeof p.page !== "number") continue;
+    if (p.status === "unread") unreadable.push(p.page);
+    else if (!PAGE_STATUS_FINE.has(p.status)) missed.push(p.page);
+  }
+  return {
+    total: pages.length,
+    hasInfo: pages.length > 0,
+    allAccounted: missed.length === 0 && unreadable.length === 0,
+    missed: missed.sort((a, b) => a - b),
+    unreadable: unreadable.sort((a, b) => a - b)
+  };
+}
+
+/**
+ * The review headline. Never claims completeness — the most it will say is how
+ * many pages it managed to read, and it always names the ones it didn't.
+ *
+ * Pages the parser positively determined were covers or photos are NOT
+ * mentioned: they are the expected case, and reporting them would train owners
+ * to skip the notice that matters.
+ */
+export function describeImportSummary({ itemCount, pageResults }) {
+  const n = `${itemCount} item${itemCount === 1 ? "" : "s"}`;
+  const { total, hasInfo, allAccounted, missed, unreadable } = summarisePages(pageResults);
+
+  if (hasInfo && !allAccounted) {
+    const parts = [];
+    if (unreadable.length) parts.push(`${pageListSentence(unreadable)} wouldn't read at all`);
+    if (missed.length) parts.push(`I got nothing from ${pageListSentence(missed)}`);
+    return `I read ${n}, but ${parts.join(", and ")}. Add whatever's missing below — ${KNOWLEDGE_LIMIT}`;
+  }
+  if (hasInfo && total > 1) {
+    return `I read ${n} across all ${total} pages. Have a quick look — ${KNOWLEDGE_LIMIT}`;
+  }
+  return `I read ${n} from your menu. Have a quick look — ${KNOWLEDGE_LIMIT}`;
+}
+
+export const REVIEW_CONCERNS_HEADING = "Before you import";
+
+/**
+ * The things worth a second look, worst first. Empty array means nothing to say
+ * — which is also what hides the acknowledgement tickbox.
+ *
+ * Page rows carry no "fix this" button on purpose. We know page 3 came back
+ * empty; we do NOT know which category it belonged to, and a button that guesses
+ * is the same class of confident-but-wrong that put us here.
+ */
+export function describeReviewConcerns({ pageResults, unpricedCount = 0 } = {}) {
+  const { missed, unreadable } = summarisePages(pageResults);
+  const pageRows = [
+    ...unreadable.map((page) => `Page ${page} — I couldn't read this one at all`),
+    ...missed.map((page) => `Page ${page} — I got nothing from this one`)
+  ];
+
+  const out = pageRows.slice(0, 4);
+  // Never silently drop a page from the list: how many are unshown is itself
+  // the number the owner needs.
+  if (pageRows.length > 4) {
+    const rest = pageRows.length - 4;
+    out.push(`…and ${rest} more page${rest === 1 ? "" : "s"} to check`);
+  }
+
+  if (unpricedCount > 0) {
+    out.push(
+      unpricedCount === 1
+        ? "1 item has no price — I'd tell callers it's free"
+        : `${unpricedCount} items have no price — I'd tell callers they're free`
+    );
+  }
+  return out;
+}
+
+export const REVIEW_ACK_LABEL = "I've checked these — import my menu as it is.";
+export const REVIEW_ACK_HINT = "Tick the box above and I'll import what's here.";
+
+/**
+ * The one thing that genuinely blocks a commit, because the backend rejects it
+ * and its rejection is unreadable. Everything else is acknowledged, not blocked:
+ * a hard block leaves the owner nowhere to go but "Start over", which re-uploads
+ * the same file and returns the same job.
+ */
+export function describeCommitBlock({ unnamedCount = 0, unnamedCategoryCount = 0 } = {}) {
+  if (unnamedCount > 0) {
+    return unnamedCount === 1
+      ? "One row still has no name — give it one or remove it."
+      : `${unnamedCount} rows still have no name — name them or remove them.`;
+  }
+  if (unnamedCategoryCount > 0) {
+    return unnamedCategoryCount === 1
+      ? "One section still has no name — give it one, or remove the items under it."
+      : `${unnamedCategoryCount} sections still have no name — name them, or remove the items under them.`;
+  }
+  return null;
+}
+
+/** Shown when adding would exceed what one import can carry. */
+export function describeAddLimit(kind) {
+  return kind === "category"
+    ? `That's the most categories I can take in one import (${MENU_IMPORT_LIMITS.MAX_CATEGORIES}). Import these, then add the rest in Manage menu.`
+    : `That's the most items I can take in one category (${MENU_IMPORT_LIMITS.MAX_ITEMS_PER_CATEGORY}). Import these, then add the rest in Manage menu.`;
+}
+
+/** Starting over now discards typed-in work too, so it has to be asked. */
+export function describeStartOverConfirm(itemCount) {
+  return `Start over? I'll forget the ${itemCount} item${itemCount === 1 ? "" : "s"} I read, and anything you've added.`;
 }
