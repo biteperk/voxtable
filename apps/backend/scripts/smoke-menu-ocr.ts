@@ -19,14 +19,12 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { parseMenuPages, type FetchedFile } from "../src/services/menuOcrClient";
 import { env } from "../src/config/env";
 import type { PageResult } from "../src/services/menuPageAccounting";
 
-// The package is ESM, so there is no __dirname.
-const FIXTURE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/menus");
+const FIXTURE_ROOT = path.resolve(__dirname, "../fixtures/menus");
 
 interface ExpectedPage {
   page: number;
