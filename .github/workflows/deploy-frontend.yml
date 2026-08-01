@@ -99,8 +99,14 @@ jobs:
       - name: Deploy to Firebase Hosting
         env:
           FIREBASE_ONLY: ${{ vars.FIREBASE_ONLY || 'hosting' }}
-          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT || 'vocotable' }}
-          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT || 'vocotable' }}
+          # No fallback project on purpose: a missing variable must fail the
+          # deploy, not silently ship to whichever project the fallback names.
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT }}
+          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT }}
         run: |
           set -euo pipefail
+
+          : "${FIREBASE_PROJECT:?Set FIREBASE_PROJECT in the GitHub environment}"
+          : "${GOOGLE_CLOUD_QUOTA_PROJECT:?Set GOOGLE_CLOUD_QUOTA_PROJECT in the GitHub environment}"
+
           npx --yes --package firebase-tools@15 firebase deploy --only "$FIREBASE_ONLY" --project "$FIREBASE_PROJECT" --non-interactive
