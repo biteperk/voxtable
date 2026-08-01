@@ -258,7 +258,13 @@ menuRouter.get(
       job_id: job.id,
       status: job.status,
       draft: job.parsed_draft,
-      last_error: job.last_error
+      last_error: job.last_error,
+      // [] means "we know nothing about the pages", NOT "every page was fine".
+      // The review screen keeps those apart and says so — see
+      // describeImportSummary in apps/frontend/src/lib/menuImportPlan.js.
+      // One entry per source page, so its length IS the page count; there is no
+      // separate pages_total to drift out of step with it.
+      page_results: job.page_results ?? []
     });
   })
 );

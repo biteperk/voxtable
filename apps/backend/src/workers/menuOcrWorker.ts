@@ -19,6 +19,7 @@ import {
   pagesForJob
 } from "../repositories/menuIngestion";
 import { isMenuOcrEnabled, parseMenu } from "../services/menuOcrClient";
+import { unaccountedPages } from "../services/menuPageAccounting";
 
 const TICK_INTERVAL_MS = 3_000;
 /** Menus parsed at once. Replaces the old per-tick batch size — see processBatch. */
@@ -69,16 +70,27 @@ async function runJob(job: Awaited<ReturnType<typeof claimReadyJobs>>[number]): 
         // claim a job still in flight: double the vision spend, racing commits.
         onBatchDone: () => heartbeatIngestionJob(job.id)
       });
-      await markParsed(job.id, result.draft);
+      await markParsed(job.id, result.draft, result.pageResults);
+      const unaccounted = unaccountedPages(result.pageResults);
       logger.info({
         evt: "menu_ocr_parsed",
         job_id: job.id,
         restaurant_id: job.restaurant_id,
         pages: pages.length,
-        pages_read: result.pagesRead,
-        failed_pages: result.failedPages,
+        // The ops metric for this whole class of problem: how often are we
+        // handing an owner a menu with pages we could not account for?
+        unaccounted_pages: unaccounted,
+        page_statuses: result.pageResults.map((p) => p.status),
         categories: result.draft.categories.length
       });
+      if (unaccounted.length > 0) {
+        logger.warn({
+          evt: "menu_ocr_unaccounted_pages",
+          job_id: job.id,
+          restaurant_id: job.restaurant_id,
+          pages: unaccounted
+        });
+      }
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     const transient = isTransient(error);

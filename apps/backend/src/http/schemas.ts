@@ -498,8 +498,69 @@ export const menuDraftSchema = z.object({
 
 export type MenuDraft = z.infer<typeof menuDraftSchema>;
 
-/** Product cap on pages per import: 48 pages = 8 batches of 6 vision calls. */
+/** Product cap on pages per import. */
 export const MENU_INGEST_MAX_PAGES = 48;
+
+// --- What ONE vision call returns ------------------------------------------
+//
+// Deliberately a different type from MenuDraft. The draft is what we persist
+// and what the owner edits; this is only ever the model's answer, and the two
+// must be free to diverge. Page attribution in particular lives here and is
+// never written to the draft — `PATCH /api/menu/ingest/:jobId/draft` re-parses
+// the owner's edits through menuDraftSchema, so anything not in that schema is
+// stripped on their first save.
+
+/**
+ * One page's worth of an answer.
+ *
+ * Every field fails SOFT. A batch is an expensive, already-paid-for vision
+ * call, and rejecting the whole thing because the model mislabelled one page
+ * number would turn a small slip into a total loss — the exact shape of the bug
+ * that made a negative variant price fail an entire menu (see
+ * draftDeltaCentsSchema above). Out-of-range page numbers become 0 here and are
+ * treated as "unattributed" downstream, never clamped onto a real page.
+ */
+const ocrPageSchema = z.object({
+  page: z.number().int().catch(0),
+  page_kind: z.enum(["items", "cover", "contact", "hours", "photos", "other"]).optional().catch(undefined),
+  categories: z.array(draftCategorySchema).max(40).catch([])
+});
+
+/**
+ * Page-grouped output, with the old flat shape still accepted.
+ *
+ * The envelope makes "page 3 produced nothing" structural rather than inferred:
+ * the model must emit an entry per page it was given, so an omission is as
+ * informative as a zero. The union is not optional politeness — a model that
+ * ignores the envelope has to degrade to "attribution unknown" (which forces
+ * verification) rather than to a failed batch.
+ */
+export const menuOcrBatchSchema = z.union([
+  z.object({ pages: z.array(ocrPageSchema).min(1).max(MENU_INGEST_MAX_PAGES) }),
+  menuDraftSchema
+]);
+
+export type MenuOcrBatch = z.infer<typeof menuOcrBatchSchema>;
+
+/**
+ * The single-page recovery call. `price_text` is the price exactly as printed,
+ * so a pure parse of it can be checked against the cents the model computed —
+ * the one place we can catch a conversion slip without a human.
+ */
+const verifyItemSchema = draftItemSchema.extend({
+  price_text: z.string().max(40).optional()
+});
+
+export const menuOcrVerifySchema = z.object({
+  has_priced_items: z.boolean().catch(false),
+  page_note: z.string().max(160).optional().catch(undefined),
+  categories: z
+    .array(z.object({ name: z.string().min(1).max(80), items: z.array(verifyItemSchema).max(120) }))
+    .max(40)
+    .catch([])
+});
+
+export type MenuOcrVerify = z.infer<typeof menuOcrVerifySchema>;
 
 /**
  * Start a menu import.

@@ -1,5 +1,7 @@
 import { DbClient, pool } from "../db/pool";
 import type { MenuDraft } from "../http/schemas";
+import { logger } from "../utils/logger";
+import type { PageResult } from "../services/menuPageAccounting";
 
 export type MenuIngestionStatus =
   | "pending"
@@ -28,6 +30,14 @@ export interface MenuIngestionJob {
   attempts: number;
   next_attempt_at: string;
   parsed_draft: MenuDraft | null;
+  /**
+   * Per-page parse outcome, one entry per source page (migration 024).
+   *
+   * NULL/absent means UNKNOWN, not "all pages fine" — a job parsed before this
+   * column existed has no page information and none can be reconstructed. Every
+   * reader has to keep those two apart; collapsing them is the original bug.
+   */
+  page_results?: PageResult[] | null;
   last_error: string | null;
   created_at: string;
   updated_at: string;
@@ -164,11 +174,30 @@ export async function claimReadyJobs(limit: number, db: DbClient = pool): Promis
   return result.rows;
 }
 
-export async function markParsed(id: string, draft: MenuDraft): Promise<void> {
-  await pool.query(
-    "UPDATE menu_ingestion_jobs SET status = 'parsed', parsed_draft = $2::jsonb, last_error = NULL WHERE id = $1",
-    [id, JSON.stringify(draft)]
-  );
+export async function markParsed(
+  id: string,
+  draft: MenuDraft,
+  pageResults: PageResult[] | null
+): Promise<void> {
+  try {
+    await pool.query(
+      `UPDATE menu_ingestion_jobs
+          SET status = 'parsed', parsed_draft = $2::jsonb, page_results = $3::jsonb, last_error = NULL
+        WHERE id = $1`,
+      [id, JSON.stringify(draft), pageResults ? JSON.stringify(pageResults) : null]
+    );
+  } catch (error) {
+    // deploy-backend.yml restarts containers BEFORE migrating, so for a few
+    // minutes this code runs against a schema without page_results. Losing an
+    // already-paid-for vision parse to a missing column would be a worse bug
+    // than the one this column exists to fix — save the draft and say so.
+    if ((error as { code?: string })?.code !== "42703") throw error;
+    logger.warn({ evt: "menu_page_results_column_missing", job_id: id });
+    await pool.query(
+      "UPDATE menu_ingestion_jobs SET status = 'parsed', parsed_draft = $2::jsonb, last_error = NULL WHERE id = $1",
+      [id, JSON.stringify(draft)]
+    );
+  }
 }
 
 export async function markRetry(id: string, error: string, nextAttemptAt: Date): Promise<void> {
@@ -185,6 +214,11 @@ export async function markFailed(id: string, error: string): Promise<void> {
   );
 }
 
+/**
+ * Save the owner's edits. Deliberately does NOT touch `page_results`: the draft
+ * records what they did, page_results records what we found, and deleting a row
+ * must never erase the evidence that page 3 came back empty.
+ */
 export async function updateDraft(
   id: string,
   restaurantId: string,
