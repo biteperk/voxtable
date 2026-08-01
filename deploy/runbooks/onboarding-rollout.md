@@ -40,7 +40,7 @@ Host github.com
   IdentitiesOnly yes
 EOF
 # Point the repo at SSH (was HTTPS, which had no creds):
-sudo git -C /opt/vocotable remote set-url origin git@github.com:biteperk/vocotable.git
+sudo git -C /opt/vocotable remote set-url origin git@github.com:biteperk/voxtable.git
 sudo git -C /opt/vocotable ls-remote origin -h refs/heads/main   # verify access
 ```
 
