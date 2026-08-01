@@ -180,10 +180,15 @@ jobs:
       - name: Tag release commit
         if: env.PUSH_VERSION_IMAGES == 'true'
         run: |
+          VERSION="${{ steps.package-version.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null; then
+            echo "::notice::Tag $VERSION already exists on origin — skipping. Bump the version in package.json when a release should get its own tag."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.package-version.outputs.version }}"
-          git push origin "${{ steps.package-version.outputs.version }}"
+          git tag "$VERSION"
+          git push origin "$VERSION"
 
   frontend-artifacts:
     name: Build frontend deploy artifact
