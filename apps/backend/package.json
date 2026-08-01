@@ -27,7 +27,8 @@
     "smoke:retell-orders": "tsx scripts/smoke-retell-orders.ts",
     "smoke:isolation": "tsx scripts/smoke-onboarding-isolation.ts",
     "smoke:legal": "tsx scripts/smoke-legal.ts",
-    "smoke:verify-email": "tsx scripts/smoke-verify-email.ts"
+    "smoke:verify-email": "tsx scripts/smoke-verify-email.ts",
+    "smoke:menu-ocr": "tsx scripts/smoke-menu-ocr.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",
