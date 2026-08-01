@@ -13,9 +13,9 @@
 # when the version bumps, or substitute an exact SHA for a specific build.
 services:
   api:
-    image: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/api:0.1.0
+    image: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/api:0.1.1
     pull_policy: always
 
   worker:
-    image: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/worker:0.1.0
+    image: australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/worker:0.1.1
     pull_policy: always
