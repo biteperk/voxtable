@@ -132,8 +132,15 @@ export function unixSecondsToYmd(seconds: number, timeZone: string): string {
 }
 
 export function tomorrowInTz(timeZone: string, now: Date = new Date()): string {
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  return ymdInTz(tomorrow, timeZone);
+  // Calendar arithmetic, NOT "+24 hours". A DST day is 23 or 25 hours long, so
+  // adding a fixed 24h skipped a date every October (23h day) and returned the
+  // SAME date as today every April (25h day) — the agent would then offer
+  // "tomorrow" and book today. Date.UTC handles month/year rollover for us.
+  const [y, m, d] = ymdInTz(now, timeZone).split("-").map(Number);
+  const next = new Date(Date.UTC(y!, m! - 1, d! + 1));
+  const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(next.getUTCDate()).padStart(2, "0");
+  return `${next.getUTCFullYear()}-${mm}-${dd}`;
 }
 
 export function nowTimeInTz(timeZone: string, now: Date = new Date()): string {
@@ -153,16 +160,56 @@ export function dayNameInTz(timeZone: string, now: Date = new Date()): string {
 // per call so AEST/AEDT switching is transparent.
 
 /**
+ * Given a real instant, return the timezone's offset from UTC at that instant,
+ * in milliseconds (+10h for AEST, +11h for AEDT). Derived by formatting the
+ * instant in the zone and reading the result back as if it were UTC.
+ */
+function tzOffsetMsAt(instant: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(new Date(instant));
+  const y = parts.find((p) => p.type === "year")?.value;
+  const mo = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  let h = parts.find((p) => p.type === "hour")?.value;
+  const mi = parts.find((p) => p.type === "minute")?.value;
+  // Intl quirk: some zones format midnight as "24" rather than "00".
+  if (h === "24") h = "00";
+  const asUtc = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
+  return asUtc - instant;
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
  * Convert "YYYY-MM-DD" + "HH:MM" + IANA timezone → UTC ISO 8601.
  *
- * Algorithm (the canonical Intl trick):
- *   1. Build an "as-if-UTC" timestamp from the wall-clock parts.
- *   2. Format it BACK in the target tz — this tells us the wall-clock that
- *      our assumed-UTC moment would have in that tz.
- *   3. The difference between the requested wall-clock and the formatted one
- *      is the tz offset. Apply it.
+ * The offset must be evaluated at the INSTANT WE ARE SOLVING FOR, not at the
+ * wall clock treated as UTC. The previous version did the latter, which sits
+ * 10–11 hours later in Sydney; whenever a DST changeover fell inside that gap
+ * it applied the offset from the wrong side of the transition. Every booking in
+ * a ~10-hour window before each changeover — the whole Saturday dinner service,
+ * twice a year — was mirrored to Cal.com an hour out.
  *
- * Throws if the date/time/tz are unparseable.
+ * So: build the candidate instants implied by the offsets either side of a
+ * possible transition, and keep the ones that actually format back to the
+ * requested wall clock.
+ *   - exactly one survivor  → the normal case
+ *   - two survivors         → an ambiguous time (clocks went back; it happened
+ *                             twice). Take the earlier, which is the convention
+ *                             Postgres and the common libraries follow.
+ *   - none                  → a nonexistent time (clocks went forward and this
+ *                             wall clock was skipped). Shift forward past the
+ *                             gap rather than silently landing an hour BEFORE
+ *                             the requested time, which is what used to happen.
+ *
+ * Throws if the date/time are unparseable.
  */
 export function zonedWallClockToUtcISO(date: string, time: string, timeZone: string): string {
   const ymd = date.split("-").map(Number);
@@ -176,32 +223,31 @@ export function zonedWallClockToUtcISO(date: string, time: string, timeZone: str
     throw new Error(`Invalid date/time: ${date} ${time}`);
   }
 
-  // Step 1: as-if-UTC.
-  const utcGuess = Date.UTC(year, month - 1, day, hour, minute);
+  const wallAsUtc = Date.UTC(year, month - 1, day, hour, minute);
 
-  // Step 2: format that moment in the target tz.
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).formatToParts(new Date(utcGuess));
-  const y = parts.find((p) => p.type === "year")?.value;
-  const mo = parts.find((p) => p.type === "month")?.value;
-  const d = parts.find((p) => p.type === "day")?.value;
-  let h = parts.find((p) => p.type === "hour")?.value;
-  const mi = parts.find((p) => p.type === "minute")?.value;
-  // Intl quirk: some tz format hour as "24" at midnight rather than "00".
-  if (h === "24") h = "00";
+  // Offsets sampled a day either side cover any transition near this wall clock.
+  const offsets = new Set([
+    tzOffsetMsAt(wallAsUtc - 24 * HOUR_MS, timeZone),
+    tzOffsetMsAt(wallAsUtc, timeZone),
+    tzOffsetMsAt(wallAsUtc + 24 * HOUR_MS, timeZone)
+  ]);
 
-  // Step 3: compute the offset by parsing the tz-formatted wall-clock as UTC
-  // and diffing against our assumed-UTC.
-  const formattedAsUtc = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
-  const offset = utcGuess - formattedAsUtc;
-  return new Date(utcGuess + offset).toISOString();
+  const valid: number[] = [];
+  for (const offset of offsets) {
+    const candidate = wallAsUtc - offset;
+    // Round-trip: does this instant actually read back as the wall clock asked for?
+    if (tzOffsetMsAt(candidate, timeZone) === offset) valid.push(candidate);
+  }
+
+  if (valid.length > 0) {
+    return new Date(Math.min(...valid)).toISOString();
+  }
+
+  // Nonexistent wall clock (inside a spring-forward gap). Use the offset in
+  // effect AFTER the transition, which maps the request to the first real
+  // instant at or past the time that was asked for.
+  const afterGap = wallAsUtc - Math.min(...offsets);
+  return new Date(afterGap).toISOString();
 }
 
 /**
