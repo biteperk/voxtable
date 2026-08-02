@@ -97,13 +97,12 @@ const envSchema = z
   // provisioning console (/api/admin/*). Distinct from per-restaurant roles.
   DASHBOARD_ADMIN_EMAILS: z.string().optional(),
 
-  // Multi-tenancy rollout bridge. When true, an authenticated user with no
-  // restaurant_members row but whose email is in DASHBOARD_ALLOWED_EMAILS is
-  // granted access to DEFAULT_RESTAURANT_ID (role from DASHBOARD_MANAGER_EMAILS).
-  // This keeps existing allowlisted users working between deploying the
-  // multi-tenant code and running the membership backfill. Remove once the
-  // backfill is verified. Mirrors the CALCOM_SYNC_ENABLED enum→bool pattern.
-  MULTITENANCY_LEGACY_FALLBACK: boolFlag(),
+  // MULTITENANCY_LEGACY_FALLBACK was removed on 2 Aug 2026 (migration 027).
+  // It granted any allowlisted user with no restaurant_members row access to
+  // DEFAULT_RESTAURANT_ID — a rollout bridge that stayed on for months and
+  // acted as a second, unrecorded authorisation path. Access is now the
+  // membership table and nothing else. Setting it in a .env is harmless; it is
+  // simply ignored.
 
   // Cal.com hybrid integration — all optional in dev, conditionally required
   // in production when CALCOM_SYNC_ENABLED=true.

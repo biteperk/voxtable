@@ -4,7 +4,7 @@ import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { logger } from "../utils/logger";
 import { getUserMemberships, type MemberRole, type Membership } from "../repositories/members";
-import { AuthenticatedRequest, isAllowlistedEmail, isKitchenEmail, isManagerEmail } from "./firebaseAuth";
+import { AuthenticatedRequest } from "./firebaseAuth";
 
 export interface TenantContext {
   restaurantId: string;
@@ -33,9 +33,7 @@ export function tenantId(request: Request): string {
  *
  * Resolution precedence:
  *   1. Dev escape hatch (DASHBOARD_VERIFY_AUTH=false) → DEFAULT_RESTAURANT_ID as owner.
- *   2. Load the user's memberships. (Legacy bridge: pre-backfill allowlisted
- *      users with no membership get DEFAULT_RESTAURANT_ID when
- *      MULTITENANCY_LEGACY_FALLBACK=true.)
+ *   2. Load the user's memberships.
  *   3. No memberships → 403 NO_RESTAURANT_MEMBERSHIP (frontend routes to onboarding).
  *   4. Active restaurant = X-Restaurant-Id header (validated against membership —
  *      never trusted blindly) → else the sole membership → else
@@ -43,6 +41,13 @@ export function tenantId(request: Request): string {
  *
  * The header is validated against membership on every request: a member of
  * restaurant A can never act on restaurant B by spoofing the header.
+ *
+ * `restaurant_members` is now the ONLY source of access. Until migration 027
+ * there was a second one: MULTITENANCY_LEGACY_FALLBACK granted any allowlisted
+ * user with no membership row the default restaurant, at a role derived from
+ * the manager/kitchen email lists. It was a bridge for the multi-tenant rollout
+ * and it stayed on for months — an authorisation path that reading the
+ * membership table would never reveal. If someone needs access, give them a row.
  */
 export async function resolveTenant(
   request: AuthenticatedRequest,
@@ -70,26 +75,7 @@ export async function resolveTenant(
   }
 
   try {
-    let memberships = await getUserMemberships(user.uid);
-
-    if (memberships.length === 0 && env.MULTITENANCY_LEGACY_FALLBACK && isAllowlistedEmail(user.email)) {
-      // Legacy bridge for pre-backfill ALLOWLISTED operators only. With
-      // SELF_SERVE_SIGNUP_ENABLED, requireFirebaseAuth skips the allowlist, so
-      // a brand-new self-serve account also lands here member-less — it must
-      // fall through to 403 NO_RESTAURANT_MEMBERSHIP (the onboarding wizard),
-      // never be granted the default tenant. Role derives from the
-      // manager/kitchen allowlists (the KDS kiosk needs 'kitchen' to read the
-      // role-gated /api/orders/*).
-      const role: MemberRole = isManagerEmail(user.email)
-        ? "manager"
-        : isKitchenEmail(user.email)
-          ? "kitchen"
-          : "staff";
-      memberships = [
-        { restaurantId: env.DEFAULT_RESTAURANT_ID, restaurantName: "", role }
-      ];
-      logger.warn({ evt: "tenant_legacy_fallback", uid: user.uid });
-    }
+    const memberships = await getUserMemberships(user.uid);
 
     if (memberships.length === 0) {
       next(

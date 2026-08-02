@@ -129,8 +129,10 @@ async function seed(): Promise<void> {
  *   - skips silently if tenancy tables are absent,
  *   - skips if no allowlist is configured (dev = any verified account),
  *   - skips an email if Firebase Admin can't resolve its uid (no service
- *     account locally, or the user hasn't signed in yet). The
- *     MULTITENANCY_LEGACY_FALLBACK bridge keeps those users working until then.
+ *     account locally, or the user hasn't signed in yet). Since the
+ *     MULTITENANCY_LEGACY_FALLBACK bridge was removed (migration 027) there is
+ *     nothing behind this: such a user gets 403 NO_RESTAURANT_MEMBERSHIP until
+ *     they sign in once and the seed is re-run, or a row is inserted by hand.
  */
 async function backfillMultitenancy(restaurantId: string): Promise<void> {
   const tablesExist = await pool.query<{ exists: boolean }>(

@@ -39,16 +39,11 @@ const parseEmailSet = (csv: string | undefined): Set<string> =>
 
 const allowedEmails = parseEmailSet(env.DASHBOARD_ALLOWED_EMAILS);
 
-// Manager allowlist — gates menu CRUD, payment toggles, and order cancellation.
-// The kitchen kiosk account is NOT in this set; kitchen staff can read the
-// menu and update order status but can't edit prices or refund payments.
-// Phase 2 upgrades this to Firebase custom claims (`role: manager`).
-const managerEmails = parseEmailSet(env.DASHBOARD_MANAGER_EMAILS);
-
-// Kitchen-kiosk allowlist — derives the 'kitchen' role for the KDS account in
-// the legacy/no-membership fallback (tenantContext) so the kitchen display can
-// read role-gated /api/orders/* before an invite-based membership exists.
-const kitchenEmails = parseEmailSet(env.DASHBOARD_KITCHEN_EMAILS);
+// DASHBOARD_MANAGER_EMAILS and DASHBOARD_KITCHEN_EMAILS are no longer read
+// here. They used to derive a role for a user with no membership row, via the
+// MULTITENANCY_LEGACY_FALLBACK bridge that migration 027 retired. Roles now
+// come from restaurant_members and nowhere else. Both vars survive as seed
+// input only (db/seed.ts), which writes real membership rows from them.
 
 // Platform admins (VoxTable staff) — gate the cross-tenant provisioning console.
 const adminEmails = parseEmailSet(env.DASHBOARD_ADMIN_EMAILS);
@@ -62,28 +57,9 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Is this email in the manager allowlist? Used by the multi-tenancy legacy
- * bridge (tenantContext) to assign a role to pre-backfill allowlisted users.
- */
-export function isManagerEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return managerEmails.has(email.toLowerCase());
-}
-
-/**
- * Is this email a kitchen-kiosk account? Used by the legacy bridge
- * (tenantContext) to assign the 'kitchen' role to a pre-backfill KDS account.
- */
-export function isKitchenEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return kitchenEmails.has(email.toLowerCase());
-}
-
-/**
- * Is this email in the platform bootstrap allowlist? Used by the multi-tenancy
- * legacy bridge (tenantContext): with SELF_SERVE_SIGNUP_ENABLED, passing
- * requireFirebaseAuth no longer implies allowlisted, so the bridge must check
- * for itself before granting the default tenant.
+ * Is this email in the platform bootstrap allowlist? The allowlist still gates
+ * who may authenticate at all (see `enforceAllowlist` below); it no longer
+ * decides what anyone may do once inside — restaurant_members does that.
  */
 export function isAllowlistedEmail(email: string | null | undefined): boolean {
   if (!email) return false;
