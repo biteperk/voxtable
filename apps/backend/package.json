@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",
-    "test": "APP_ENV=test DATABASE_URL=postgres://test:test@localhost:5432/test tsx --test $(find src -name '*.test.ts' -print)",
+    "test": "APP_ENV=test DATABASE_URL=postgres://test:test@localhost:5432/test CALCOM_WEBHOOK_SECRET=test-calcom-webhook-secret tsx --test $(find src -name '*.test.ts' -print)",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:migrate:prod": "node dist/db/migrate.js",

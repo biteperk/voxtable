@@ -22,6 +22,7 @@ import { stripeWebhookRouter } from "./routes/stripeWebhook";
 import { twilioRouter } from "./routes/twilio";
 import { errorHandler } from "./http/errorHandler";
 import { requestLogger } from "./http/requestLogger";
+import { logger } from "./utils/logger";
 
 type RequestWithRawBody = express.Request & { rawBody?: string };
 
@@ -84,12 +85,49 @@ export function createApp() {
   );
   app.use(requestLogger);
 
+  const isWebhookPath = (path: string): boolean =>
+    path.startsWith("/retell/") ||
+    path.startsWith("/twilio/") ||
+    path.startsWith("/cal/") ||
+    path.startsWith("/stripe/");
+
+  // Webhook paths used to be exempt from rate limiting entirely, on the grounds
+  // that they are HMAC-gated and burst legitimately. But the HMAC check runs
+  // per request, so an unauthenticated caller could still spend our CPU and our
+  // log volume without limit — and until the Cal.com verifier was fixed, each
+  // one of those requests raised.
+  //
+  // So: a separate, much higher ceiling rather than no ceiling. 1200/min per IP
+  // matches what nginx already allows these paths (20r/s), which makes this a
+  // backstop for anything that reaches the app without going through nginx
+  // rather than a new constraint on real provider traffic. If it ever does
+  // trip, that is a genuine surprise, so say so loudly.
+  app.use(
+    rateLimit({
+      windowMs: 60_000,
+      limit: 1200,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      skip: (request) => !isWebhookPath(request.path),
+      handler: (request, response) => {
+        logger.warn({
+          evt: "webhook_rate_limited",
+          path: request.path,
+          // A real provider tripping this means dropped bookings, so this line
+          // is the difference between noticing and not.
+          note: "webhook path exceeded 1200 req/min for this IP"
+        });
+        response.status(429).json({ error: "Too many requests." });
+      }
+    })
+  );
+
   // Audit M5: app-level rate limit as a second line of defence behind nginx.
-  // Skips webhook endpoints (HMAC-gated, legitimate retell/twilio bursts), the
-  // health probe (load-balancer poll), and the root landing page. 120 req/min
-  // per IP is generous enough that a logged-in dashboard polling at 5s won't
-  // trip it, but caps abuse if someone discovers a reservation UUID and tries
-  // to brute-cancel.
+  // Skips the health probe (load-balancer poll), the root landing page, and the
+  // webhook paths (handled by their own higher limit above). 120 req/min per IP
+  // is generous enough that a logged-in dashboard polling at 5s won't trip it,
+  // but caps abuse if someone discovers a reservation UUID and tries to
+  // brute-cancel.
   app.use(
     rateLimit({
       windowMs: 60_000,
@@ -98,14 +136,7 @@ export function createApp() {
       legacyHeaders: false,
       skip: (request) => {
         const path = request.path;
-        return (
-          path === "/" ||
-          path === "/health" ||
-          path.startsWith("/retell/") ||
-          path.startsWith("/twilio/") ||
-          path.startsWith("/cal/") ||
-          path.startsWith("/stripe/")
-        );
+        return path === "/" || path === "/health" || isWebhookPath(path);
       }
     })
   );

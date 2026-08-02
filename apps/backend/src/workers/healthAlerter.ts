@@ -172,7 +172,7 @@ async function checkKds(): Promise<void> {
     // 7) Tablet heartbeat. Each kiosk pings every 60s. We only alert AFTER
     //    we've ever seen at least one heartbeat — otherwise a venue that
     //    hasn't deployed the kiosk yet would page on every check.
-    const heartbeats = getKdsHeartbeats();
+    const heartbeats = getKdsHeartbeats(env.DEFAULT_RESTAURANT_ID);
     if (heartbeats.length > 0) {
       state.kdsHasSeenAnyHeartbeat = true;
     }
