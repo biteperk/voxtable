@@ -82,7 +82,8 @@ Feature flags stay off until their credentials and runbooks are ready:
 - `MENU_OCR_ENABLED`
 - `NOTIFICATIONS_ENABLED`
 - `PROVISIONING_AUTO_ENABLED`
-- `MULTITENANCY_LEGACY_FALLBACK`
+
+(`MULTITENANCY_LEGACY_FALLBACK` was removed on 2 Aug 2026 by migration 027. Dashboard access is `restaurant_members` and nothing else.)
 
 When a flag is enabled in production, `config/env.ts` enforces the matching credentials.
 

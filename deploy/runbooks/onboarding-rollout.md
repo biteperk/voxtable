@@ -8,7 +8,10 @@
 Turnkey, reversible procedure to ship `feat/stripe-billing` to production once
 the VM git is reconciled (see `onboarding-vm-assessment.md`). Everything ships
 **inert** behind kill-switches; the only always-on change is the multi-tenancy
-foundation, which is protected by `MULTITENANCY_LEGACY_FALLBACK=true`.
+foundation. (This runbook was written while `MULTITENANCY_LEGACY_FALLBACK` still
+existed. It was removed on 2 Aug 2026 by migration 027 — access is
+`restaurant_members` and nothing else, so the backfill below is now the whole
+story rather than a belt beside a brace.)
 
 Migrations are **additive and non-destructive** (new tables, nullable columns, a
 status column defaulted then back-filled to `live` for existing rows, one
@@ -65,7 +68,6 @@ From here on, deploys are a clean `sudo git -C /opt/vocotable pull` — no file 
 
 ## Step 1 — env (VM `/opt/vocotable/.env`), feature flags OFF
 ```
-MULTITENANCY_LEGACY_FALLBACK=true   # existing allowlisted users keep working pre-backfill
 MENU_OCR_ENABLED=false
 STRIPE_BILLING_ENABLED=false
 NOTIFICATIONS_ENABLED=false
@@ -125,7 +127,8 @@ prod webhook), `MENU_OCR_ENABLED` (vision-LLM key), `NOTIFICATIONS_ENABLED`
   (or revert the merge + rebuild). Target ≤5 min (see `rollback.md`).
 - **Migrations**: additive — safe to leave in place even on code rollback (old
   code ignores the new tables/columns). Do NOT drop them reactively.
-- **Auth regression** (existing users 403'd): confirm `MULTITENANCY_LEGACY_FALLBACK=true`
-  is set AND the Step-3 backfill ran. Either alone keeps existing users working.
+- **Auth regression** (existing users 403'd): confirm the Step-3 backfill ran.
+  Since 2 Aug 2026 that is the only thing keeping them working — there is no
+  longer a flag that also grants access, so a missing membership row is a 403.
 - **Data**: if a migration left the DB wrong, restore from the Step-0 `pg_dump`
   (see `backup-restore.md`).

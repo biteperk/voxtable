@@ -39,7 +39,6 @@ part of this, not before.
    DASHBOARD_ALLOWED_EMAILS=<owner,staff,...>
    DASHBOARD_MANAGER_EMAILS=<owner,...>
    DASHBOARD_ADMIN_EMAILS=<vocotable-staff,...>
-   MULTITENANCY_LEGACY_FALLBACK=true     # existing allowlisted users → default restaurant w/o backfill
    TWILIO_PHONE_NUMBER=+61...            # Natalia's real number
    RETELL_PHONE_NUMBER=+61...
    # feature flags stay OFF:

@@ -58,7 +58,7 @@ test("feature flags still default to false — a gate default must not leak into
   assert.equal(result.success, true);
   assert.equal(result.data!.CALCOM_SYNC_ENABLED, false);
   assert.equal(result.data!.STRIPE_BILLING_ENABLED, false);
-  assert.equal(result.data!.MULTITENANCY_LEGACY_FALLBACK, false);
+  assert.equal(result.data!.MENU_OCR_ENABLED, false);
 });
 
 test("on localhost the gates may be turned off — that is the dev escape hatch", () => {
