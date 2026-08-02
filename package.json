@@ -35,6 +35,7 @@
     "preview:kds": "npm run preview --workspace=@vocotable/kds",
     "smoke:menu-ocr": "npm run smoke:menu-ocr --workspace=@vocotable/backend",
     "smoke:double-booking": "npm run smoke:double-booking --workspace=@vocotable/backend",
+    "smoke:tenant-attribution": "npm run smoke:tenant-attribution --workspace=@vocotable/backend",
     "audit:backend": "npm audit --workspace=@vocotable/backend --omit=dev --omit=optional",
     "audit:frontend": "npm audit --workspace=@vocotable/frontend --omit=dev",
     "audit:kds": "npm audit --workspace=@vocotable/kds --omit=dev",

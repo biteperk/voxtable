@@ -88,6 +88,13 @@ jobs:
       - name: Prove double-booking is impossible
         run: npm run smoke:double-booking
 
+      # Two restaurants, two numbers: each call must land on the venue that was
+      # actually dialled. Both Twilio handlers used to write the default tenant
+      # unconditionally, which is invisible with one customer and files every
+      # venue's calls against restaurant #1 the moment there are two.
+      - name: Prove calls are attributed to the right restaurant
+        run: npm run smoke:tenant-attribution
+
       - name: Build frontend
         run: npm run build:frontend
 
