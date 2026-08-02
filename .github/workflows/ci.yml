@@ -80,6 +80,14 @@ jobs:
       - name: Run backend tests
         run: npm run test:backend
 
+      # The product's core promise. This runs against the Postgres service
+      # container above and exercises the real booking service, so it covers the
+      # advisory lock, the availability query and the database constraint
+      # together. Two bugs that reached production had no automated coverage at
+      # all before this existed.
+      - name: Prove double-booking is impossible
+        run: npm run smoke:double-booking
+
       - name: Build frontend
         run: npm run build:frontend
 
