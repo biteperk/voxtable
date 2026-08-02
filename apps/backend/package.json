@@ -28,7 +28,8 @@
     "smoke:legal": "tsx scripts/smoke-legal.ts",
     "smoke:verify-email": "tsx scripts/smoke-verify-email.ts",
     "smoke:menu-ocr": "tsx scripts/smoke-menu-ocr.ts",
-    "smoke:double-booking": "tsx scripts/smoke-double-booking.ts"
+    "smoke:double-booking": "tsx scripts/smoke-double-booking.ts",
+    "smoke:tenant-attribution": "tsx scripts/smoke-tenant-attribution.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",

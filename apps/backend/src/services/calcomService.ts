@@ -541,6 +541,15 @@ async function handleBookingCreated(
     });
   }
 
+  // NOT the same class of bug as the Twilio call-log leak that was fixed
+  // alongside this. Cal.com is configured with a SINGLE global
+  // CALCOM_EVENT_TYPE_ID and there is no per-restaurant Cal.com config in the
+  // schema, so today every inbound web booking genuinely does belong to the
+  // default restaurant — there is nothing to resolve against.
+  //
+  // This becomes a real cross-tenant bug the moment Cal.com config goes
+  // per-restaurant. At that point resolve the tenant from the event type on the
+  // webhook payload, the way twilioService resolves from the dialed number.
   const restaurantTimezone = await getRestaurantTimezone(env.DEFAULT_RESTAURANT_ID);
   const { date, time } = utcIsoToZonedWallClock(startTime, restaurantTimezone);
 
