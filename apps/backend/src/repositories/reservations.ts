@@ -48,6 +48,10 @@ export async function createReservation(input: {
   source: BookingSource;
   notes?: string;
   callLogId?: string;
+  // Snapshot of the restaurant's booking duration at the moment of booking.
+  // Stored per reservation so that changing the setting later cannot silently
+  // re-length existing bookings and open overlap windows against them.
+  durationMinutes: number;
 }, db: DbClient = pool): Promise<ReservationRow> {
   const result = await db.query<ReservationRow>(
     `
@@ -61,9 +65,10 @@ export async function createReservation(input: {
       status,
       source,
       notes,
-      created_from_call_log_id
+      created_from_call_log_id,
+      duration_minutes
     )
-    VALUES ($1, $2, $3, $4::date, $5::time, $6, 'confirmed', $7, $8, $9)
+    VALUES ($1, $2, $3, $4::date, $5::time, $6, 'confirmed', $7, $8, $9, $10)
     RETURNING *
     `,
     [
@@ -75,7 +80,8 @@ export async function createReservation(input: {
       input.partySize,
       input.source,
       input.notes ?? null,
-      input.callLogId ?? null
+      input.callLogId ?? null,
+      input.durationMinutes
     ]
   );
 

@@ -21,11 +21,17 @@ import {
 import { formatVoiceTime, isWithinOpeningHours, todayInTz } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 
-// The DB-level safety-net unique index (migration 003) catches double-booking
-// races that bypass application logic. Surface as a clean availability message
-// rather than a generic 500; pass anything else through.
+// The DB-level safety net catches double-booking races that bypass application
+// logic. Surface as a clean availability message rather than a generic 500;
+// pass anything else through.
+//
+// `reservations_no_overlap` (migration 025) is the real guard: a gist exclusion
+// constraint over the booking's timestamp range, so it rejects any overlap, not
+// just two bookings starting at the same minute. The older
+// `idx_reservations_no_double_book` name is still matched so this keeps working
+// during a rollback to an image built before that migration.
 function rethrowAsDoubleBookConflict(error: unknown): never {
-  if (error instanceof Error && /idx_reservations_no_double_book/.test(error.message)) {
+  if (error instanceof Error && /reservations_no_overlap|idx_reservations_no_double_book/.test(error.message)) {
     throw new AppError(
       409,
       "TABLE_JUST_TAKEN",
@@ -98,10 +104,15 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
 
   try {
     await lockClient.query("BEGIN");
-    // Per-slot advisory lock (was per-day). Two callers booking different
-    // times on the same day no longer block each other.
+    // Per-DAY advisory lock. This was per-slot (restaurant:date:time), which
+    // looked more granular but could not serialise the bookings that actually
+    // conflict: a 19:00 booking lasting 90 minutes and a 19:30 booking on the
+    // same table took different lock keys, ran concurrently, and both committed.
+    // Bookings overlap across start times, so the lock has to span the day.
+    // At ~10 calls/day the reduced concurrency costs nothing; the exclusion
+    // constraint in migration 025 is the real guarantee either way.
     await lockClient.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [
-      `${input.restaurantId}:${input.date}:${input.time}`
+      `${input.restaurantId}:${input.date}`
     ]);
 
     const callLogId =
@@ -119,8 +130,15 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
 
     let tableId: string;
 
+    // Loaded once, before the branch, because the duration is now stored ON the
+    // reservation. Snapshotting it means a later change to the restaurant's
+    // booking duration cannot retroactively re-length or re-shorten bookings
+    // that were already taken — which would silently open or close overlap
+    // windows against them.
+    const settings = await getRestaurantSettings(input.restaurantId, lockClient);
+    const durationMinutes = settings.bookingDurationMinutes;
+
     if (input.tableId) {
-      const settings = await getRestaurantSettings(input.restaurantId, lockClient);
       if (!isWithinOpeningHours(input.date, input.time, settings.bookingDurationMinutes, settings.openingHours)) {
         throw new AppError(
           409,
@@ -187,7 +205,8 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
         partySize: input.partySize,
         source: input.source,
         notes: input.notes,
-        callLogId
+        callLogId,
+        durationMinutes
       },
       lockClient
     );
@@ -261,12 +280,16 @@ export async function modifyBooking(input: {
       const shouldRecheckAvailability =
         input.date !== undefined || input.time !== undefined || input.partySize !== undefined;
 
-      // Lock the DESTINATION slot whenever the slot is changing, so a
-      // concurrent createBooking on (restaurant, nextDate, nextTime) blocks
-      // until we commit (or rolls back if it lost the race).
+      // Lock the DESTINATION DAY whenever the slot is changing, so a concurrent
+      // createBooking on that day blocks until we commit (or rolls back if it
+      // lost the race). Keyed on the day rather than the exact time for the same
+      // reason as createBooking: overlapping bookings have different start
+      // times, so a per-time key never made the conflicting writers meet.
+      // Only the destination needs locking — vacating the old slot can only free
+      // capacity, never create an overlap.
       if (shouldRecheckAvailability) {
         await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [
-          `${current.restaurant_id}:${nextDate}:${nextTime}`
+          `${current.restaurant_id}:${nextDate}`
         ]);
       }
 

@@ -44,8 +44,21 @@ export async function findAvailableTable(params: {
           AND r.reservation_date = $3::date
           AND r.status IN ('pending', 'confirmed')
           AND ($6::uuid IS NULL OR r.id <> $6::uuid)
-          AND r.start_time < ($4::time + ($5::text || ' minutes')::interval)
-          AND (r.start_time + ($5::text || ' minutes')::interval) > $4::time
+          -- Overlap is computed on full timestamps, not bare TIME values.
+          -- '23:00'::time + interval '90 minutes' wraps to 00:30 the SAME day,
+          -- so a late booking looked like it ended before it started and every
+          -- overlap test returned false. Anchoring both intervals to the date
+          -- makes 23:00 + 90 minutes land on 00:30 the NEXT day, as it should.
+          -- The existing reservation uses its own snapshotted duration rather
+          -- than the restaurant's current setting, so changing that setting can
+          -- no longer retroactively shorten bookings that were already sold.
+          AND (
+            ($3::date + r.start_time,
+             $3::date + r.start_time + make_interval(mins => r.duration_minutes))
+            OVERLAPS
+            ($3::date + $4::time,
+             $3::date + $4::time + make_interval(mins => $5::int))
+          )
       )
     ORDER BY
       CASE
@@ -121,8 +134,21 @@ export async function listAvailableTables(params: {
           AND r.reservation_date = $3::date
           AND r.status IN ('pending', 'confirmed')
           AND ($6::uuid IS NULL OR r.id <> $6::uuid)
-          AND r.start_time < ($4::time + ($5::text || ' minutes')::interval)
-          AND (r.start_time + ($5::text || ' minutes')::interval) > $4::time
+          -- Overlap is computed on full timestamps, not bare TIME values.
+          -- '23:00'::time + interval '90 minutes' wraps to 00:30 the SAME day,
+          -- so a late booking looked like it ended before it started and every
+          -- overlap test returned false. Anchoring both intervals to the date
+          -- makes 23:00 + 90 minutes land on 00:30 the NEXT day, as it should.
+          -- The existing reservation uses its own snapshotted duration rather
+          -- than the restaurant's current setting, so changing that setting can
+          -- no longer retroactively shorten bookings that were already sold.
+          AND (
+            ($3::date + r.start_time,
+             $3::date + r.start_time + make_interval(mins => r.duration_minutes))
+            OVERLAPS
+            ($3::date + $4::time,
+             $3::date + $4::time + make_interval(mins => $5::int))
+          )
       )
     ORDER BY t.max_capacity ASC, t.label ASC
     `,
