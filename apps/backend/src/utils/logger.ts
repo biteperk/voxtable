@@ -9,19 +9,19 @@
  *      `request_id` (when available via AsyncLocalStorage).
  *
  *   2. PII / secret redaction by default. Two layers:
- *      a. KEY-level: any field whose key matches a sensitive-name pattern
- *         (`/phone|email|attendee|authorization|api[_-]?key|token|secret/i`)
- *         is replaced with "[REDACTED]" entirely.
- *      b. VALUE-level: every string value is scanned for E.164-shaped numbers
- *         and key-shaped strings; matches are masked in place.
+ *      a. KEY-level: any field whose key ENDS in a sensitive name (phone,
+ *         email, token, secret, signature, transcript, special_requests,
+ *         caller_name, …) is replaced with "[REDACTED]" entirely.
+ *      b. VALUE-level: every string value is scanned for phone-, email-,
+ *         JWT- and key-shaped strings; matches are masked in place.
  *
  *   3. No `console.error(error)` foot-gun — passing an Error object spreads
  *      ONLY `name`/`message`/short `stack`, never the whole prototype chain
  *      (which can carry request bodies + auth headers from fetch-style errors).
  *
  * Call from inside a request handler and request_id is automatically attached.
- * Call from a worker tick: provide your own `request_id` (worker.ts generates
- * a per-batch UUID).
+ * Worker ticks run outside any context, so their lines carry
+ * `request_id: undefined` — see `withLogContext` for how to give a batch one.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -53,8 +53,17 @@ export function currentRequestId(): string | undefined {
 // Redaction
 // ---------------------------------------------------------------------------
 
+// Matched against the key with `_`/`-` stripped and lowercased, so
+// `caller_phone`, `callerPhone` and `CALLER-PHONE` are one rule. An optional
+// leading qualifier means `customer_phone`, `to_email`, `webhook_secret` and
+// `x_cal_signature` are covered without listing each one; anchoring the END
+// keeps `email_verified` and `tokens_used` readable.
 const SENSITIVE_KEY_PATTERN =
-  /^(phone|phoneNumber|customer_phone|caller_phone|email|customerEmail|attendee|attendees|authorization|api[_-]?key|token|secret|password|webhook_secret|signature)$/i;
+  /^[a-z0-9]*(?:phone|phonenumber|email|attendee|attendees|authorization|apikey|token|secret|password|signature|transcript|specialrequest|specialrequests|callername)$/;
+
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEY_PATTERN.test(key.toLowerCase().replace(/[_-]/g, ""));
+}
 
 // Patterns that look like real secrets/PII in free-form text.
 // - Cal.com API keys: cal_live_<32 hex>
@@ -62,11 +71,25 @@ const SENSITIVE_KEY_PATTERN =
 // - Stripe API keys:  sk_live_/sk_test_/rk_live_/rk_test_<24+ base62>. Must
 //   never reach stdout — a leaked secret key is full account access. A
 //   StripeAuthenticationError can echo the key it was called with.
+// - Stripe webhook secrets: whsec_<base62>. Forging a webhook with this is
+//   forging a payment event.
 // - Bearer tokens:    "Bearer <anything>" (greedy until whitespace/quote)
-// - E.164 phones:     +<10-15 digits>, or raw 10-15 digit strings with country prefix
+// - Bare JWTs:        eyJ… . … . … — a Firebase ID token quoted in an error
+//   message arrives without the "Bearer " prefix, so the rule above misses it,
+//   and it is a working credential until it expires.
+// - Email addresses:  every caller and every dashboard user has one, and they
+//   turn up inside error strings ("no membership for sam@example.com").
+// - E.164 phones:     +<10-15 digits>
 // - AU local phones:  0<digit>XXXXXXXX — mobile (04..) and landline (02/03/07/08..).
 //   Audit L5: catches the form libphonenumber sees BEFORE normalisation, e.g.
 //   when an error stack quotes the raw input.
+// - AU phones with the country code but no plus: 61<9 digits>, the other shape
+//   raw caller input arrives in.
+//
+// Deliberately NOT here: a generic "any 10-15 digit run" rule. It would mask
+// epoch milliseconds, order totals in cents and row counts — the numbers an
+// incident is actually read with — for phone shapes the four rules above
+// already cover.
 const REDACTION_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
   { regex: /cal_live_[a-zA-Z0-9]{16,}/g, replacement: "cal_live_[REDACTED]" },
   { regex: /\bkey_[a-zA-Z0-9]{16,}\b/g, replacement: "key_[REDACTED]" },
@@ -74,9 +97,19 @@ const REDACTION_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
     regex: /\b(sk|rk)_(live|test)_[a-zA-Z0-9]{16,}\b/g,
     replacement: "$1_$2_[REDACTED]"
   },
+  { regex: /\bwhsec_[a-zA-Z0-9]{16,}\b/g, replacement: "whsec_[REDACTED]" },
   { regex: /Bearer\s+[A-Za-z0-9._\-]+/g, replacement: "Bearer [REDACTED]" },
+  {
+    regex: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+    replacement: "[REDACTED-JWT]"
+  },
+  {
+    regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+    replacement: "[REDACTED-EMAIL]"
+  },
   { regex: /\+\d{10,15}\b/g, replacement: "+[REDACTED-PHONE]" },
-  { regex: /\b0[234578]\d{8}\b/g, replacement: "[REDACTED-PHONE]" }
+  { regex: /\b0[234578]\d{8}\b/g, replacement: "[REDACTED-PHONE]" },
+  { regex: /\b61[234578]\d{8}\b/g, replacement: "[REDACTED-PHONE]" }
 ];
 
 function redactString(input: string): string {
@@ -105,7 +138,7 @@ function redact(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown 
 
   const out: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
+    if (isSensitiveKey(key)) {
       out[key] = "[REDACTED]";
     } else {
       out[key] = redact(raw, seen);

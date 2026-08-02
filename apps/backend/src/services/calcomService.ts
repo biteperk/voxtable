@@ -366,8 +366,23 @@ export function verifyCalcomSignature(rawBody: string, header: string | undefine
     .update(rawBody)
     .digest("hex");
   const provided = header.replace(/^sha256=/, "").trim();
+
+  // Reject anything that isn't hex before decoding. This used to length-check
+  // the STRINGS and then timingSafeEqual the BUFFERS, and Buffer.from(s, "hex")
+  // stops at the first character that isn't a hex digit — so a 64-character
+  // signature of garbage decoded to 0 bytes, timingSafeEqual threw RangeError
+  // on the length mismatch, and an unauthenticated caller got a 500 out of the
+  // webhook endpoint for the price of one request.
+  if (!/^[0-9a-fA-F]+$/.test(provided)) return false;
   if (expected.length !== provided.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(provided, "hex"));
+
+  const expectedBytes = Buffer.from(expected, "hex");
+  const providedBytes = Buffer.from(provided, "hex");
+  // Belt and braces: equal hex length already implies equal byte length, but
+  // timingSafeEqual throws rather than returning false if that ever stops
+  // holding, and this function must never be the thing that raises.
+  if (expectedBytes.length !== providedBytes.length) return false;
+  return crypto.timingSafeEqual(expectedBytes, providedBytes);
 }
 
 /**

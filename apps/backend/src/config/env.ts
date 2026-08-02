@@ -13,14 +13,28 @@ for (const envPath of [path.resolve(process.cwd(), ".env"), path.resolve(process
 
 const LOCAL_DEFAULT_RESTAURANT_ID = "11111111-1111-4111-8111-111111111111";
 
-// Every boolean env var is a "true"/"false" string that defaults to false and
-// is coerced to a real boolean — kill-switches, signature gates, feature flags.
+// Feature flags and kill-switches: a "true"/"false" string that defaults to
+// FALSE, so new scaffolding ships inert until someone deliberately turns it on.
 const boolFlag = () =>
   z.enum(["true", "false"]).default("false").transform((value) => value === "true");
 
+// Security gates: same shape, opposite default. An env file that forgets to
+// mention one gets signature verification and dashboard auth, not an open API.
+// Forgetting a feature flag costs a feature; forgetting a gate costs every
+// tenant's data, so the two must not share a default.
+const gateFlag = () =>
+  z.enum(["true", "false"]).default("true").transform((value) => value === "true");
+
 const envSchema = z
   .object({
-  APP_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // No default. Which environment this is decides how the whole file behaves,
+  // so it has to be stated, not assumed — the old default meant a .env that
+  // never mentioned APP_ENV silently got the development ruleset.
+  APP_ENV: z.enum(["development", "test", "production"], {
+    required_error:
+      "APP_ENV must be set explicitly (development | test | production). " +
+      "There is no default — see .env.example."
+  }),
   APP_VERSION: z.string().default("0.1.0"),
   PORT: z.coerce.number().int().positive().default(3050),
   PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:3050"),
@@ -45,21 +59,21 @@ const envSchema = z
   // variables must be refreshed by hand, which is how they went stale before.
   RETELL_LLM_ID: z.string().optional(),
   RETELL_PHONE_NUMBER: z.string().optional(),
-  RETELL_VERIFY_SIGNATURE: boolFlag(),
+  RETELL_VERIFY_SIGNATURE: gateFlag(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
   TWILIO_TERMINATION_URI: z.string().optional(),
   TWILIO_RETELL_SIP_URI: z.string().default("sip:sip.retellai.com"),
-  TWILIO_VALIDATE_SIGNATURE: boolFlag(),
+  TWILIO_VALIDATE_SIGNATURE: gateFlag(),
   FIREBASE_PROJECT_ID: z.string().optional(),
   GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
 
-  // Dashboard auth gate. Defaults to OFF in dev so smoke scripts and local
-  // curl probes work without minting a Firebase ID token (mirrors the
-  // RETELL_VERIFY_SIGNATURE / TWILIO_VALIDATE_SIGNATURE pattern). Production
-  // is forced ON by superRefine below.
-  DASHBOARD_VERIFY_AUTH: boolFlag(),
+  // Dashboard auth gate. Defaults ON. Turning it off is a local-development
+  // convenience — it lets smoke scripts and curl probes skip minting a Firebase
+  // ID token — and superRefine below refuses to boot with it off on any host
+  // that isn't localhost.
+  DASHBOARD_VERIFY_AUTH: gateFlag(),
 
   // Comma-separated list of email addresses allowed to hit the dashboard /
   // booking-mutation endpoints. Empty means "any verified Google account" —
@@ -262,6 +276,59 @@ const envSchema = z
   SERVICES_VOXCONCIERGE_ENABLED: boolFlag()
   })
   .superRefine((value, ctx) => {
+    const publicUrl = new URL(value.PUBLIC_API_BASE_URL);
+    const isLocalhost = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(publicUrl.hostname);
+
+    // ---- Checked in EVERY APP_ENV ------------------------------------------
+    //
+    // Everything below this block returns early unless APP_ENV=production, and
+    // that block used to be the only thing forcing the security gates on. So a
+    // deployed .env that said `APP_ENV=development` — one word — served every
+    // tenant's reservations, call transcripts and customer phone numbers to
+    // anonymous callers, with no log line, no alert, and /health still green.
+    //
+    // The gates are bound to the URL instead of to APP_ENV: if this process is
+    // reachable at something other than localhost, they are not optional, and
+    // no value of APP_ENV can make them optional.
+    if (!isLocalhost) {
+      const gates = [
+        ["RETELL_VERIFY_SIGNATURE", "Retell webhook signatures"],
+        ["TWILIO_VALIDATE_SIGNATURE", "Twilio request signatures"],
+        ["DASHBOARD_VERIFY_AUTH", "dashboard authentication"]
+      ] as const;
+
+      for (const [key, what] of gates) {
+        if (!value[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message:
+              `${key} must be true when PUBLIC_API_BASE_URL is not localhost ` +
+              `(it is ${value.PUBLIC_API_BASE_URL}). Turning off ${what} on a ` +
+              `reachable host exposes every tenant's data to anonymous callers.`
+          });
+        }
+      }
+
+      // An empty allowlist means "any verified Google account", which on a
+      // reachable host is the same breach one sign-up later.
+      const allowlist = (value.DASHBOARD_ALLOWED_EMAILS ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (allowlist.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["DASHBOARD_ALLOWED_EMAILS"],
+          message:
+            "DASHBOARD_ALLOWED_EMAILS must list at least one email (comma-separated) " +
+            "when PUBLIC_API_BASE_URL is not localhost — an empty list admits any " +
+            "verified Google account."
+        });
+      }
+    }
+
+    // ---- Production-only from here -----------------------------------------
     if (value.APP_ENV !== "production") {
       return;
     }
@@ -274,9 +341,7 @@ const envSchema = z
       }
     };
 
-    const publicUrl = new URL(value.PUBLIC_API_BASE_URL);
-
-    if (["localhost", "127.0.0.1", "::1"].includes(publicUrl.hostname)) {
+    if (isLocalhost) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["PUBLIC_API_BASE_URL"],
@@ -286,25 +351,11 @@ const envSchema = z
 
     requireInProd("RETELL_API_KEY", "RETELL_API_KEY is required in production.");
     requireInProd("RETELL_AGENT_ID", "RETELL_AGENT_ID is required in production.");
-    requireInProd("RETELL_VERIFY_SIGNATURE", "RETELL_VERIFY_SIGNATURE must be true in production.");
     requireInProd("TWILIO_ACCOUNT_SID", "TWILIO_ACCOUNT_SID is required in production.");
     requireInProd("TWILIO_AUTH_TOKEN", "TWILIO_AUTH_TOKEN is required in production.");
     requireInProd("TWILIO_PHONE_NUMBER", "TWILIO_PHONE_NUMBER is required in production.");
-    requireInProd("TWILIO_VALIDATE_SIGNATURE", "TWILIO_VALIDATE_SIGNATURE must be true in production.");
-    requireInProd("DASHBOARD_VERIFY_AUTH", "DASHBOARD_VERIFY_AUTH must be true in production.");
-
-    const allowlist = (value.DASHBOARD_ALLOWED_EMAILS ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (allowlist.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["DASHBOARD_ALLOWED_EMAILS"],
-        message:
-          "DASHBOARD_ALLOWED_EMAILS must list at least one email in production (comma-separated)."
-      });
-    }
+    // The three signature/auth gates and the allowlist are enforced above for
+    // every APP_ENV, keyed on the public URL rather than on this branch.
 
     // Cal.com integration — only enforce credential presence when the flag is on.
     // Lets us deploy the scaffolding to production with the flag OFF for one
@@ -412,4 +463,29 @@ const envSchema = z
     }
   });
 
-export const env = envSchema.parse(process.env);
+/**
+ * Validate a raw environment without touching `process.env` or exiting. Exists
+ * so the boot rules above can be tested — the module-level load below is the
+ * one that actually runs in a server.
+ */
+export function validateEnv(raw: Record<string, unknown>) {
+  return envSchema.safeParse(raw);
+}
+
+function loadEnv() {
+  const result = envSchema.safeParse(process.env);
+  if (result.success) {
+    return result.data;
+  }
+  // A Zod stack trace at boot is not a useful thing to page someone with at
+  // 6am. Print the field, the problem, and stop.
+  const problems = result.error.issues
+    .map((issue) => `  - ${issue.path.join(".") || "(env)"}: ${issue.message}`)
+    .join("\n");
+  process.stderr.write(
+    `Refusing to start: the environment is not safe to boot.\n${problems}\n`
+  );
+  process.exit(1);
+}
+
+export const env = loadEnv();
