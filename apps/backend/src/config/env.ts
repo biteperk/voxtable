@@ -38,6 +38,12 @@ const envSchema = z
   // (older single-key accounts).
   RETELL_WEBHOOK_SECRET: z.string().optional(),
   RETELL_AGENT_ID: z.string().optional(),
+  // The LLM behind the agent. Only needed so the retell-variables worker can
+  // keep `today`/`tomorrow` fresh on the LLM's default_dynamic_variables — the
+  // values Retell falls back to when a number uses a static inbound_agent_id
+  // rather than our /retell/inbound webhook. Unset → the worker no-ops and the
+  // variables must be refreshed by hand, which is how they went stale before.
+  RETELL_LLM_ID: z.string().optional(),
   RETELL_PHONE_NUMBER: z.string().optional(),
   RETELL_VERIFY_SIGNATURE: boolFlag(),
   TWILIO_ACCOUNT_SID: z.string().optional(),

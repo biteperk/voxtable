@@ -5,6 +5,10 @@ import { startHealthAlerter, stopHealthAlerter } from "../workers/healthAlerter"
 import { startMenuOcrWorker, stopMenuOcrWorker } from "../workers/menuOcrWorker";
 import { startNotificationWorker, stopNotificationWorker } from "../workers/notificationWorker";
 import { startProvisioningWorker, stopProvisioningWorker } from "../workers/provisioningWorker";
+import {
+  startRetellVariablesWorker,
+  stopRetellVariablesWorker
+} from "../workers/retellVariablesWorker";
 
 export interface BackendWorker {
   name: string;
@@ -18,7 +22,12 @@ export const backendWorkers: BackendWorker[] = [
   { name: "cleanup", start: startCleanupWorker, stop: stopCleanupWorker },
   { name: "menu-ocr", start: startMenuOcrWorker, stop: stopMenuOcrWorker },
   { name: "notifications", start: startNotificationWorker, stop: stopNotificationWorker },
-  { name: "provisioning", start: startProvisioningWorker, stop: stopProvisioningWorker }
+  { name: "provisioning", start: startProvisioningWorker, stop: stopProvisioningWorker },
+  {
+    name: "retell-variables",
+    start: startRetellVariablesWorker,
+    stop: stopRetellVariablesWorker
+  }
 ];
 
 interface StartBackendWorkersOptions {
