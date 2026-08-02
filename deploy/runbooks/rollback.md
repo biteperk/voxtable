@@ -106,8 +106,48 @@ sudo docker exec vocotable-postgres-1 psql -U vocotable -d vocotable \
 ```
 
 **If the migration is NOT reversible (e.g. ALTER TYPE ADD VALUE, data lost to DROP COLUMN):**
-- Restore from the most recent daily pg_dump. See `backup-restore.md` (TODO — coming in Sweep H follow-up).
-- Coordinate with Ali before doing this — there may be writes since the backup.
+- Restore from the most recent daily pg_dump. See `backup-restore.md`.
+- Coordinate with Abhishek before doing this — there may be writes since the backup.
+
+---
+
+## Failure mode 4 — someone deleted or force-pushed `main`
+
+**This happened on 2 Aug 2026.** A promotion PR was opened with `main` as its *head* branch
+(`main → integration`); merging it offered the usual "Delete branch" button, and that button
+deleted `main` itself. Production kept serving — the VM does not read GitHub — but every
+deploy dispatch failed with `HTTP 422: No ref found for: main` until the branch was restored.
+
+**Prevention:** never open a PR whose head branch is `main`. To bring `main`'s history back
+into `integration`, merge locally and push, or branch off `main` first and PR that branch.
+(Branch protection would block the deletion outright, but it needs a paid plan on private
+repos — revisit before the production cutover.)
+
+**Recovery — find the real commit first.** Do not assume the newest release tag is right:
+tags are pushed only when the version in `package.json` changes, so a promotion that reuses a
+version leaves its commit untagged. On 2 Aug, tag `0.1.0` pointed at the *previous*
+promotion; restoring from it would have resurrected the crash-looping build.
+
+```bash
+# The authoritative answer: what did the last SUCCESSFUL production deploy actually deploy?
+gh run list --repo biteperk/voxtable --workflow deploy-backend.yml \
+  --status success --limit 5 --json headSha,createdAt,displayTitle
+
+# Cross-check against the merge commit of the last promotion PR (base main).
+gh pr list --repo biteperk/voxtable --base main --state merged --limit 3 \
+  --json number,mergeCommit,title
+
+# Restore the branch at that commit (deleting a branch never deletes its commits).
+git push origin <full-sha>:refs/heads/main
+
+# Confirm, then re-dispatch the deploy if one was blocked.
+git ls-remote origin main
+```
+
+**Durable anchors.** `prod-YYYY-MM-DD` tags mark exactly what production ran on a given day
+and never collide with the semver tags CI pushes. `prod-2026-08-02` marks the currently
+deployed commit. Keep cutting one at each promotion; `git tag --points-at origin/main` should
+never come back empty.
 
 ---
 
@@ -133,6 +173,6 @@ If you forgot to tag before deploying, look at `docker image history` to see if 
 
 1. **Flip the Cal.com flag off first** — that's free and reversible.
 2. **Roll the api image back second** — known good baseline.
-3. **Only touch the DB last** — and only after telling Ali in chat.
+3. **Only touch the DB last** — and only after telling Abhishek in chat.
 
 You'll always be able to take voice bookings as long as Postgres + api are up. Cal.com mirror is a nice-to-have, not a service.
