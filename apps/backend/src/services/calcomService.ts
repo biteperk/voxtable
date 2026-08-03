@@ -164,6 +164,42 @@ async function loadReservationForPush(
 // services/calcomSchemas.ts (imported at top) — replaces the prior untyped
 // `as CalcomCreateResponse` cast that silently allowed schema drift.
 
+/**
+ * Shared tail of every push that yields a booking uid (create AND
+ * reschedule — Cal.com's reschedule creates a NEW booking with a new uid).
+ * Extract the uid, stamp it on the reservation inside the worker's txn, log,
+ * and report the outcome. A response we can't extract a uid from is a loud
+ * dead-letter, not a success: a lost uid is what makes later cancels
+ * silently miss and leave a ghost booking.
+ */
+async function recordPushedUid(
+  reservation: ReservationWithCustomer,
+  response: { data: unknown; status: number; durationMs: number },
+  op: "create" | "reschedule",
+  db: DbClient,
+  extraLog: Record<string, unknown> = {}
+): Promise<OutboxExecutionResult> {
+  const uid = extractUidFromCreateResponse(response.data);
+  if (!uid) {
+    return {
+      outcome: "permanent",
+      error: `Cal.com ${op} returned no uid (status=${response.status}); refusing to retry`
+    };
+  }
+  if (uid !== reservation.calcom_booking_uid) {
+    await updateReservationCalcomUid(reservation.id, uid, db);
+  }
+  logger.info({
+    evt: "calcom_push_success",
+    op,
+    reservation_id: reservation.id,
+    calcom_uid: uid,
+    latency_ms: response.durationMs,
+    ...extraLog
+  });
+  return { outcome: "succeeded" };
+}
+
 async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult> {
   // Loop guard: if the reservation already has a uid (an earlier attempt
   // succeeded on Cal.com but we crashed before COMMIT), treat as success
@@ -211,23 +247,9 @@ async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<Outb
       // (matched by this key) instead of creating a duplicate calendar event.
       idempotencyKey: `vocotable-outbox-${row.id}`
     });
-    const uid = extractUidFromCreateResponse(response.data);
-    if (!uid) {
-      return {
-        outcome: "permanent",
-        error: `Cal.com create returned no uid (status=${response.status}); refusing to retry`
-      };
-    }
-    await updateReservationCalcomUid(reservation.id, uid, db);
-    logger.info({
-      evt: "calcom_push_success",
-      op: "create",
-      reservation_id: reservation.id,
-      calcom_uid: uid,
-      latency_ms: response.durationMs,
+    return await recordPushedUid(reservation, response, "create", db, {
       phone_redacted: redactPhone(reservation.customer_phone)
     });
-    return { outcome: "succeeded" };
   } catch (error) {
     return classifyCalcomError(error, "create");
   }
@@ -333,28 +355,10 @@ async function executeReschedule(row: OutboxExecutorRow, db: DbClient): Promise<
       idempotencyKey: `vocotable-outbox-${row.id}`
     });
     // Cal.com's reschedule creates a NEW booking (new uid) and retires the
-    // old one. If we don't record the new uid, every later cancel re-reads a
-    // stale uid, Cal.com 404s it, we shrug "already gone" — and the ghost is
-    // back. A response we can't extract a uid from is therefore a loud
-    // dead-letter, not a success.
-    const newUid = extractUidFromCreateResponse(response.data);
-    if (!newUid) {
-      return {
-        outcome: "permanent",
-        error: `Cal.com reschedule returned no uid (status=${response.status}); mirror uid is now stale — fix by hand`
-      };
-    }
-    if (newUid !== reservation.calcom_booking_uid) {
-      await updateReservationCalcomUid(reservation.id, newUid, db);
-    }
-    logger.info({
-      evt: "calcom_push_success",
-      op: "reschedule",
-      reservation_id: reservation.id,
-      calcom_uid: newUid,
-      latency_ms: response.durationMs
-    });
-    return { outcome: "succeeded" };
+    // old one. recordPushedUid stamps the new uid — without that, every later
+    // cancel re-reads a stale uid, Cal.com 404s it, we shrug "already gone",
+    // and the ghost is back.
+    return await recordPushedUid(reservation, response, "reschedule", db);
   } catch (error) {
     if (error instanceof CalcomPermanentError && error.status === 404) {
       // The uid no longer exists on Cal.com (cancelled there out-of-band).
