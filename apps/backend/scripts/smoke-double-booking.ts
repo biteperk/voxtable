@@ -26,70 +26,16 @@
  */
 import { pool } from "../src/db/pool";
 import { createBooking } from "../src/services/bookingService";
+import {
+  assert,
+  cleanupSmokeRestaurant,
+  createSmokeRestaurant,
+  reportAndExit,
+  SMOKE_DATE as DATE,
+  SMOKE_SUFFIX as SUFFIX
+} from "./lib/smoke-harness";
 
-let failures = 0;
-function assert(label: string, ok: boolean, detail?: unknown): void {
-  if (!ok) failures += 1;
-  console.log(`[${ok ? "PASS" : "FAIL"}] ${label}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ""}`);
-}
-
-const SUFFIX = process.pid.toString(36);
 const DURATION_MINUTES = 90;
-// Computed rather than hard-coded: comfortably in the future so it clears the
-// "date in the past" guard, but inside createBooking's one-year-ahead limit —
-// and it can never go stale the way a literal date would. Collision with real
-// data is impossible regardless, since this test books against a restaurant it
-// creates itself.
-const DATE = new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
-async function setup(): Promise<{ restaurantId: string; tableId: string }> {
-  const restaurant = await pool.query<{ id: string }>(
-    `INSERT INTO restaurants (name, timezone, phone_number)
-     VALUES ($1, 'Australia/Sydney', '+61255500000')
-     RETURNING id`,
-    [`smoke-double-booking-${SUFFIX}`]
-  );
-  const restaurantId = restaurant.rows[0]!.id;
-
-  // 10:00 → 02:00, i.e. a window that crosses midnight. This matters: the
-  // late-night scenario books 23:00 for 90 minutes, ending at 00:30 the next
-  // day. Under an all-day 00:00–23:59 window that booking would be refused by
-  // the opening-hours guard, and the test would "pass" without ever exercising
-  // the overlap check it exists to prove.
-  const hours = JSON.stringify(
-    Object.fromEntries(
-      ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((d) => [
-        d,
-        [{ open: "10:00", close: "02:00" }]
-      ])
-    )
-  );
-  await pool.query(
-    `INSERT INTO restaurant_settings (restaurant_id, booking_duration_minutes, opening_hours_json)
-     VALUES ($1, $2, $3::jsonb)
-     ON CONFLICT (restaurant_id) DO UPDATE
-       SET booking_duration_minutes = EXCLUDED.booking_duration_minutes,
-           opening_hours_json = EXCLUDED.opening_hours_json`,
-    [restaurantId, DURATION_MINUTES, hours]
-  );
-
-  // Exactly ONE table, so any second booking that survives is a double-booking.
-  const table = await pool.query<{ id: string }>(
-    `INSERT INTO tables (restaurant_id, label, min_capacity, max_capacity, is_active)
-     VALUES ($1, 'T1', 1, 4, true)
-     RETURNING id`,
-    [restaurantId]
-  );
-
-  return { restaurantId, tableId: table.rows[0]!.id };
-}
-
-async function cleanup(restaurantId: string): Promise<void> {
-  // reservations/tables/settings cascade from restaurants; customers do not.
-  await pool.query(`DELETE FROM reservations WHERE restaurant_id = $1`, [restaurantId]);
-  await pool.query(`DELETE FROM customers WHERE restaurant_id = $1`, [restaurantId]);
-  await pool.query(`DELETE FROM restaurants WHERE id = $1`, [restaurantId]);
-}
 
 function book(restaurantId: string, time: string, phone: string) {
   return createBooking({
@@ -113,7 +59,21 @@ async function activeCount(restaurantId: string): Promise<number> {
 }
 
 async function main(): Promise<void> {
-  const { restaurantId, tableId } = await setup();
+  // 10:00 → 02:00, i.e. a window that crosses midnight. This matters: the
+  // late-night scenario books 23:00 for 90 minutes, ending at 00:30 the next
+  // day. Under an all-day 00:00-23:59 window that booking would be refused by
+  // the opening-hours guard, and the test would "pass" without ever exercising
+  // the overlap check it exists to prove. Exactly ONE table, so any second
+  // booking that survives is a double-booking.
+  const { restaurantId, tableIds } = await createSmokeRestaurant({
+    name: `smoke-double-booking-${SUFFIX}`,
+    phoneNumber: "+61255500000",
+    open: "10:00",
+    close: "02:00",
+    durationMinutes: DURATION_MINUTES,
+    tables: [{ label: "T1", minCapacity: 1, maxCapacity: 4 }]
+  });
+  const tableId = tableIds[0]!;
 
   try {
     // ---- Scenario 1: late-night overlap, sequential. No race required. ----
@@ -177,12 +137,11 @@ async function main(): Promise<void> {
     }
     assert("a genuinely free later slot is still bookable", laterAccepted);
   } finally {
-    await cleanup(restaurantId);
+    await cleanupSmokeRestaurant(restaurantId);
     await pool.end();
   }
 
-  console.log(failures === 0 ? "\nAll double-booking checks passed." : `\n${failures} check(s) FAILED.`);
-  process.exit(failures === 0 ? 0 : 1);
+  reportAndExit("double-booking");
 }
 
 main().catch(async (error) => {
