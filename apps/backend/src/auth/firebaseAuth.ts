@@ -6,6 +6,7 @@ import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { getUserMemberships } from "../repositories/members";
 import { logger } from "../utils/logger";
+import { withTimeout } from "../utils/withTimeout";
 import type { TenantContext } from "./tenantContext";
 
 let initialized = false;
@@ -101,11 +102,24 @@ async function firebaseAuthMiddleware(
   // transient DB failure was reported as 401 INVALID_TOKEN — the frontend then
   // force-refreshed a perfectly good token, got 401 again, and signed the user
   // out. A DB blip must be a 5xx, not a mass sign-out.)
+  //
+  // Same reasoning forces the timeout to be a 503, not a 401: verifyIdToken
+  // fetches Google's signing certs on a cold cache, and that fetch has no
+  // deadline of its own — a hung cert endpoint would otherwise hang every
+  // dashboard request behind it.
   let decoded: DecodedIdToken;
   try {
     const app = ensureInitialized();
-    decoded = await getAuth(app).verifyIdToken(match[1]!);
-  } catch {
+    decoded = await withTimeout(
+      getAuth(app).verifyIdToken(match[1]!),
+      env.FIREBASE_AUTH_TIMEOUT_MS,
+      () => new AppError(503, "AUTH_UNAVAILABLE", "Token verification timed out — please retry.")
+    );
+  } catch (error) {
+    if (error instanceof AppError && error.statusCode === 503) {
+      logger.warn({ evt: "auth_verify_timeout", timeout_ms: env.FIREBASE_AUTH_TIMEOUT_MS });
+      return next(error);
+    }
     return next(new AppError(401, "INVALID_TOKEN", "ID token verification failed."));
   }
 

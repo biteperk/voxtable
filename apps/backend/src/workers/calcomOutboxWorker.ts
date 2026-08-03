@@ -200,10 +200,15 @@ export function startOutboxWorker(): void {
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;
-    currentTick = processBatch().finally(() => {
-      tickInFlight = false;
-      currentTick = null;
-    });
+    // processBatch's own try/catch starts AFTER `pool.connect()` — a pool
+    // exhaustion or connect timeout rejects outside it, and an unhandled
+    // rejection kills the whole worker process (see provisioningWorker).
+    currentTick = processBatch()
+      .catch((error) => logger.error({ evt: "outbox_tick_failed", error }))
+      .finally(() => {
+        tickInFlight = false;
+        currentTick = null;
+      });
   }, TICK_INTERVAL_MS);
   // Don't keep Node alive purely for this interval — server.close() should be
   // the thing that ends the process lifecycle.

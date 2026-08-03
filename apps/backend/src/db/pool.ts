@@ -26,12 +26,12 @@ types.setTypeParser(1082, (value) => value);
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,
   ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
-  max: 40,
+  max: env.PG_POOL_MAX_WRITE,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
   statement_timeout: 15_000,
   query_timeout: 15_000,
-  application_name: "vocotable-api-write"
+  application_name: `${env.PG_APPLICATION_NAME}-write`
 });
 
 // Read pool — analytics, dashboard list endpoints, /api/ops/* — so dashboard
@@ -40,12 +40,12 @@ export const pool = new Pool({
 export const readPool = new Pool({
   connectionString: env.DATABASE_URL,
   ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
-  max: 10,
+  max: env.PG_POOL_MAX_READ,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
   statement_timeout: 10_000,
   query_timeout: 10_000,
-  application_name: "vocotable-api-read"
+  application_name: `${env.PG_APPLICATION_NAME}-read`
 });
 
 export interface DbClient {

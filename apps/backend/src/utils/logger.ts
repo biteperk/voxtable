@@ -20,8 +20,10 @@
  *      (which can carry request bodies + auth headers from fetch-style errors).
  *
  * Call from inside a request handler and request_id is automatically attached.
- * Worker ticks run outside any context, so their lines carry
- * `request_id: undefined` — see `withLogContext` for how to give a batch one.
+ * Worker ticks run outside any context, so every worker log line carries
+ * `request_id: undefined` today — no worker calls `withLogContext`. Per-batch
+ * correlation ids are planned platform work; until they land, do not expect a
+ * request_id on any line emitted from the worker process.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -37,9 +39,12 @@ interface LogContext {
 const contextStorage = new AsyncLocalStorage<LogContext>();
 
 /**
- * Run `fn` inside a fresh logging context. Used by the requestLogger
- * middleware to set request_id at the top of each HTTP handler chain, and by
- * the outbox worker to set a per-batch id.
+ * Run `fn` inside a fresh logging context. Its ONLY caller today is the
+ * requestLogger middleware, which sets request_id at the top of each HTTP
+ * handler chain. No worker uses it — worker lines carry
+ * `request_id: undefined`. (An earlier version of this comment claimed the
+ * outbox worker sets a per-batch id; it never did, and trusting that during
+ * an incident would send you hunting for a correlation that does not exist.)
  */
 export function withLogContext<T>(context: LogContext, fn: () => T): T {
   return contextStorage.run(context, fn);

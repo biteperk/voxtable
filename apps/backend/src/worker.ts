@@ -1,5 +1,6 @@
 import { env } from "./config/env";
 import { closePool } from "./db/pool";
+import { installProcessGuards } from "./runtime/processGuards";
 import { startBackendWorkers, stopBackendWorkers } from "./runtime/workers";
 import { verifyCalcomSchemasAgainstFixtures } from "./services/calcomSchemas";
 import { initSentry } from "./utils/sentry";
@@ -7,6 +8,9 @@ import { initSentry } from "./utils/sentry";
 let shuttingDown = false;
 
 async function main(): Promise<void> {
+  // One stray rejection in any of the seven workers must not take the other
+  // six down. Guards go in before anything can schedule async work.
+  installProcessGuards("worker");
   initSentry();
 
   try {
