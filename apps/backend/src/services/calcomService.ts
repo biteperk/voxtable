@@ -160,6 +160,26 @@ async function loadReservationForPush(
   return result.rows[0] ?? null;
 }
 
+/**
+ * Shared prologue of create and reschedule: load the reservation fresh, or
+ * dead-letter the row if it no longer exists. Callers discriminate with
+ * `"outcome" in result`.
+ */
+async function loadReservationOrDeadLetter(
+  row: OutboxExecutorRow,
+  op: "push" | "reschedule",
+  db: DbClient
+): Promise<ReservationWithCustomer | OutboxExecutionResult> {
+  const reservation = await loadReservationForPush(row.reservation_id, db);
+  if (!reservation) {
+    return {
+      outcome: "permanent",
+      error: `Reservation ${row.reservation_id} no longer exists; skipping ${op}`
+    };
+  }
+  return reservation;
+}
+
 // Cal.com response uid extraction goes through the validated schema in
 // services/calcomSchemas.ts (imported at top) — replaces the prior untyped
 // `as CalcomCreateResponse` cast that silently allowed schema drift.
@@ -201,17 +221,13 @@ async function recordPushedUid(
 }
 
 async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult> {
+  const loaded = await loadReservationOrDeadLetter(row, "push", db);
+  if ("outcome" in loaded) return loaded;
+  const reservation = loaded;
   // Loop guard: if the reservation already has a uid (an earlier attempt
   // succeeded on Cal.com but we crashed before COMMIT), treat as success
   // without re-pushing. The unique index on calcom_booking_uid means we
   // can't accidentally double-attach.
-  const reservation = await loadReservationForPush(row.reservation_id, db);
-  if (!reservation) {
-    return {
-      outcome: "permanent",
-      error: `Reservation ${row.reservation_id} no longer exists; skipping push`
-    };
-  }
   if (reservation.calcom_booking_uid) {
     return { outcome: "succeeded" };
   }
@@ -238,21 +254,33 @@ async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<Outb
   });
 
   try {
-    const response = await calcomRequest<unknown>({
-      method: "POST",
-      path: "/bookings",
-      body: payload,
-      // Audit Sweep F: per-outbox-row idempotency key. If the worker crashes
-      // mid-POST and another tick retries, Cal.com returns the SAME booking
-      // (matched by this key) instead of creating a duplicate calendar event.
-      idempotencyKey: `vocotable-outbox-${row.id}`
-    });
+    const response = await pushWithRowIdempotency("/bookings", payload, row);
     return await recordPushedUid(reservation, response, "create", db, {
       phone_redacted: redactPhone(reservation.customer_phone)
     });
   } catch (error) {
     return classifyCalcomError(error, "create");
   }
+}
+
+/**
+ * POST to Cal.com under this outbox row's idempotency key (Audit Sweep F):
+ * if the worker crashes mid-POST and another tick retries, Cal.com returns
+ * the SAME booking (matched by the key) instead of creating a duplicate
+ * calendar event. Shared by create and reschedule — both are booking-minting
+ * calls with the same crash-retry hazard.
+ */
+function pushWithRowIdempotency(
+  path: string,
+  body: Record<string, unknown>,
+  row: OutboxExecutorRow
+): Promise<{ data: unknown; status: number; durationMs: number }> {
+  return calcomRequest<unknown>({
+    method: "POST",
+    path,
+    body,
+    idempotencyKey: `vocotable-outbox-${row.id}`
+  });
 }
 
 async function executeCancel(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult> {
@@ -316,13 +344,9 @@ async function executeReschedule(row: OutboxExecutorRow, db: DbClient): Promise<
   // ("this reservation moved"), not a time snapshot. If the booking moved
   // twice before this row was processed, one push lands the latest truth and
   // the enqueue-time de-dup means there was only ever one pending row.
-  const reservation = await loadReservationForPush(row.reservation_id, db);
-  if (!reservation) {
-    return {
-      outcome: "permanent",
-      error: `Reservation ${row.reservation_id} no longer exists; skipping reschedule`
-    };
-  }
+  const loaded = await loadReservationOrDeadLetter(row, "reschedule", db);
+  if ("outcome" in loaded) return loaded;
+  const reservation = loaded;
   if (reservation.status === "cancelled") {
     // The cancel op owns the mirror from here.
     return { outcome: "succeeded" };
@@ -343,17 +367,11 @@ async function executeReschedule(row: OutboxExecutorRow, db: DbClient): Promise<
   );
 
   try {
-    const response = await calcomRequest<unknown>({
-      method: "POST",
-      path: `/bookings/${encodeURIComponent(reservation.calcom_booking_uid)}/reschedule`,
-      body: {
-        start: startIso,
-        reschedulingReason: "Rescheduled via VoxTable"
-      },
-      // Same per-row idempotency as create: a crash between POST and COMMIT
-      // must not reschedule twice.
-      idempotencyKey: `vocotable-outbox-${row.id}`
-    });
+    const response = await pushWithRowIdempotency(
+      `/bookings/${encodeURIComponent(reservation.calcom_booking_uid)}/reschedule`,
+      { start: startIso, reschedulingReason: "Rescheduled via VoxTable" },
+      row
+    );
     // Cal.com's reschedule creates a NEW booking (new uid) and retires the
     // old one. recordPushedUid stamps the new uid — without that, every later
     // cancel re-reads a stale uid, Cal.com 404s it, we shrug "already gone",
