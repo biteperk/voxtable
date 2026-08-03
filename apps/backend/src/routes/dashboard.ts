@@ -29,8 +29,8 @@ import { normalizePartySize, tableAvailabilityQuerySchema, tablePayloadSchema, u
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
 import { isWithinOpeningHours, todayInTz } from "../utils/time";
-import { getBreakerState } from "../services/calcomClient";
-import { quotaSnapshot } from "../services/calcomQuotaTracker";
+import { getOpsState } from "../repositories/opsState";
+import { quotaSnapshotFromDb } from "../services/calcomQuotaTracker";
 import { pool } from "../db/pool";
 
 export const dashboardRouter = Router();
@@ -349,8 +349,18 @@ dashboardRouter.get(
         [restaurantId]
       )
     ]);
-    const breaker = getBreakerState();
-    const quota = quotaSnapshot();
+    // The breaker and quota are DRIVEN in the worker process; this endpoint
+    // used to read the API process's own module instances, which are
+    // permanently "closed" / zero — the rollback runbook told the on-call to
+    // trust numbers that could not move. Both now come from the ops_state
+    // mirror the worker maintains.
+    const breakerRow = await getOpsState("calcom-breaker");
+    const breaker = {
+      state: String(breakerRow?.state ?? "closed"),
+      consecutiveFailures: Number(breakerRow?.consecutiveFailures ?? 0),
+      openedAt: typeof breakerRow?.openedAt === "number" ? (breakerRow.openedAt as number) : null
+    };
+    const quota = await quotaSnapshotFromDb();
     const callsToday = Number(costRow.rows[0]?.calls_today ?? "0");
     const bookingsToday = Number(costRow.rows[0]?.bookings_today ?? "0");
     const durationSecToday = Number(costRow.rows[0]?.duration_seconds_today ?? "0");

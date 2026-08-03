@@ -14,6 +14,7 @@ import {
   updateOrderStatusRequestSchema,
   updatePaymentStatusRequestSchema
 } from "../http/schemas";
+import { recordKdsHeartbeat } from "../services/kdsHeartbeats";
 import {
   createOrder,
   getActiveOrders,
@@ -188,66 +189,12 @@ ordersRouter.get(
   })
 );
 
-// In-memory heartbeats so the alerter can warn if no tablet has pinged
-// recently. Tiny, restart-tolerant; not worth a DB table for v1.
-//
-// Two things this map used to get wrong. It was keyed on a caller-supplied
-// string with no eviction and no ceiling, so any account that could reach the
-// endpoint could grow it a row at a time until the api ran out of memory. And
-// the key was the tablet id alone, so two venues that both name a tablet
-// "kitchen-1" would overwrite each other and each mask the other's outage.
-const HEARTBEAT_TTL_MS = 15 * 60 * 1000;
-const MAX_HEARTBEATS = 200;
-
-interface Heartbeat {
-  restaurantId: string;
-  tabletId: string;
-  at: number;
-}
-
-const HEARTBEATS = new Map<string, Heartbeat>();
-
-function pruneHeartbeats(now: number): void {
-  for (const [key, beat] of HEARTBEATS) {
-    if (now - beat.at > HEARTBEAT_TTL_MS) {
-      HEARTBEATS.delete(key);
-    }
-  }
-  // A flood of fresh ids survives the TTL sweep, so hold a hard ceiling too:
-  // drop the least recently seen until we are back under it. Losing the oldest
-  // heartbeat costs at most one stale alert; losing the process costs service.
-  if (HEARTBEATS.size > MAX_HEARTBEATS) {
-    const byAge = [...HEARTBEATS.entries()].sort((a, b) => a[1].at - b[1].at);
-    for (const [key] of byAge.slice(0, HEARTBEATS.size - MAX_HEARTBEATS)) {
-      HEARTBEATS.delete(key);
-    }
-  }
-}
-
-export function recordKdsHeartbeat(
-  restaurantId: string,
-  tabletId: string,
-  now: number = Date.now()
-): void {
-  HEARTBEATS.set(`${restaurantId}:${tabletId}`, { restaurantId, tabletId, at: now });
-  pruneHeartbeats(now);
-}
-
-export function getKdsHeartbeats(
-  restaurantId: string,
-  now: number = Date.now()
-): Array<{ tablet_id: string; last_seen_ms_ago: number }> {
-  pruneHeartbeats(now);
-  return [...HEARTBEATS.values()]
-    .filter((beat) => beat.restaurantId === restaurantId)
-    .map((beat) => ({ tablet_id: beat.tabletId, last_seen_ms_ago: now - beat.at }));
-}
-
-/** Test seam — the map is module state with no other way to clear it. */
-export function resetKdsHeartbeats(): void {
-  HEARTBEATS.clear();
-}
-
+// Heartbeats live in ops_state (services/kdsHeartbeats.ts) — this used to be
+// a module-level Map here, which the health alerter imported from the WORKER
+// process and got its own permanently empty copy, so the tablet-offline alert
+// could never fire. The DB store keeps the map's hardening: tenant-scoped
+// keys, a length-capped tablet id, and stale rows filtered on read + purged
+// by the cleanup worker.
 ordersRouter.post(
   "/api/ops/kds-heartbeat",
   requireFirebaseAuth,
@@ -256,7 +203,7 @@ ordersRouter.post(
   asyncHandler(async (request, response) => {
     const tabletId = String(request.query.tablet_id ?? request.body?.tablet_id ?? "").slice(0, 64);
     if (!tabletId) throw new AppError(400, "TABLET_ID_REQUIRED", "tablet_id is required.");
-    recordKdsHeartbeat(tenantId(request), tabletId);
+    await recordKdsHeartbeat(tenantId(request), tabletId);
     response.json({ ok: true });
   })
 );

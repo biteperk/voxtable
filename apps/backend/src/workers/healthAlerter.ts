@@ -33,7 +33,8 @@ import { getBreakerState } from "../services/calcomClient";
 import { quotaSnapshot, shouldFireQuotaAlert } from "../services/calcomQuotaTracker";
 import { kdsHealthSnapshot } from "../services/orderService";
 import { retellAuthSnapshot } from "../services/retellAuthHealth";
-import { getKdsHeartbeats } from "../routes/orders";
+import { getKdsHeartbeats } from "../services/kdsHeartbeats";
+import { getOpsState, setOpsState } from "../repositories/opsState";
 import { logger, withTickLogContext } from "../utils/logger";
 
 const CHECK_INTERVAL_MS = 60_000; // every minute
@@ -88,7 +89,7 @@ interface AlertState {
   menuImportsFailedAlerted: boolean;
 }
 
-const state: AlertState = {
+const DEFAULT_STATE: AlertState = {
   outboxDepthBreaches: 0,
   outboxDepthAlerted: false,
   breakerAlerted: false,
@@ -105,6 +106,30 @@ const state: AlertState = {
   stripeUnprocessedAlerted: false,
   menuImportsFailedAlerted: false
 };
+
+const state: AlertState = { ...DEFAULT_STATE };
+
+// The edge-trigger latches used to be memory-only, so every worker restart
+// re-posted every open alert and the once-a-day funnel summary. They now
+// round-trip through ops_state: loaded before each tick, saved after. Only
+// keys present in the stored row are applied, so adding a latch later needs
+// no migration and a corrupt row degrades to the defaults.
+const LATCHES_KEY = "health-alerter-latches";
+
+async function loadAlertLatches(): Promise<void> {
+  const stored = await getOpsState(LATCHES_KEY);
+  if (!stored) return;
+  for (const key of Object.keys(DEFAULT_STATE) as Array<keyof AlertState>) {
+    const value = stored[key];
+    if (typeof value === typeof DEFAULT_STATE[key] || (key === "funnelSummaryDayKey" && (value === null || typeof value === "string"))) {
+      (state as unknown as Record<string, unknown>)[key] = value;
+    }
+  }
+}
+
+async function saveAlertLatches(): Promise<void> {
+  await setOpsState(LATCHES_KEY, { ...state });
+}
 
 // D1: how the onboarding funnel reads in the daily summary. Ordered by the
 // real signup sequence so a glance shows where signups pile up / drop off.
@@ -172,7 +197,7 @@ async function checkKds(): Promise<void> {
     // 7) Tablet heartbeat. Each kiosk pings every 60s. We only alert AFTER
     //    we've ever seen at least one heartbeat — otherwise a venue that
     //    hasn't deployed the kiosk yet would page on every check.
-    const heartbeats = getKdsHeartbeats(env.DEFAULT_RESTAURANT_ID);
+    const heartbeats = await getKdsHeartbeats(env.DEFAULT_RESTAURANT_ID);
     if (heartbeats.length > 0) {
       state.kdsHasSeenAnyHeartbeat = true;
     }
@@ -286,7 +311,7 @@ async function checkCalcom(): Promise<void> {
 
 async function checkRetellAuth(): Promise<void> {
   try {
-    const snap = retellAuthSnapshot();
+    const snap = await retellAuthSnapshot();
 
     // 8) Retell auth-failure storm. The voice agent answers normally but every
     //    tool call 401s at the signature gate, so bookings silently vanish.
@@ -431,6 +456,16 @@ async function checkPaidCustomerQueues(): Promise<void> {
 }
 
 async function checkOnce(): Promise<void> {
+  // Latches round-trip through ops_state so a worker restart doesn't re-page
+  // every open alert. A failed load runs the tick on current in-memory state
+  // (worst case: one duplicate page); a failed save is logged and retried by
+  // the next tick's save.
+  try {
+    await loadAlertLatches();
+  } catch (error) {
+    logger.warn({ evt: "health_alerter_latch_load_failed", error: (error as Error).message });
+  }
+
   // KDS + Retell auth always run when slack is configured. Cal.com gated by its
   // env flag.
   await checkKds();
@@ -439,6 +474,12 @@ async function checkOnce(): Promise<void> {
   await checkPaidCustomerQueues();
   if (env.CALCOM_SYNC_ENABLED) {
     await checkCalcom();
+  }
+
+  try {
+    await saveAlertLatches();
+  } catch (error) {
+    logger.warn({ evt: "health_alerter_latch_save_failed", error: (error as Error).message });
   }
 }
 
