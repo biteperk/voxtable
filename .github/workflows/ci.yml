@@ -117,6 +117,13 @@ jobs:
       - name: Prove a solo diner can book
         run: npm run smoke:solo-diner
 
+      # Cross-process ops state (migration 028): the KDS heartbeat store and
+      # Retell auth-failure window written by the api must be readable by the
+      # alerter in the worker — module memory made both alerts structurally
+      # unfirable. Also proves counter-bucket atomicity and the purge hooks.
+      - name: Prove ops state crosses the process boundary
+        run: npm run smoke:ops-state
+
       - name: Build frontend
         run: npm run build:frontend
 

@@ -12,16 +12,16 @@
  *
  * The first test walks the router rather than checking one route, because the
  * class of bug is "someone adds an ops route and forgets the middleware".
+ *
+ * The heartbeat-map behaviour tests that used to live here moved to
+ * scripts/smoke-ops-state.ts when the store became DB-backed (ops_state,
+ * migration 028) — tenant scoping, overwrite-on-reping and TTL aging are now
+ * asserted against a live Postgres.
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  getKdsHeartbeats,
-  ordersRouter,
-  recordKdsHeartbeat,
-  resetKdsHeartbeats
-} from "./orders";
+import { ordersRouter } from "./orders";
 
 interface RouterLayer {
   route?: { path: string; stack: Array<{ name: string }> };
@@ -51,64 +51,4 @@ test("every /api/ route on this router resolves a tenant", () => {
     }
   }
   assert.deepEqual(tenantBlind, [], `tenant-blind routes: ${tenantBlind.join(", ")}`);
-});
-
-test("two venues can use the same tablet name without shadowing each other", () => {
-  resetKdsHeartbeats();
-  const now = 1_000_000;
-  recordKdsHeartbeat("restaurant-a", "kitchen-1", now);
-  recordKdsHeartbeat("restaurant-b", "kitchen-1", now);
-
-  assert.deepEqual(getKdsHeartbeats("restaurant-a", now), [
-    { tablet_id: "kitchen-1", last_seen_ms_ago: 0 }
-  ]);
-  assert.deepEqual(getKdsHeartbeats("restaurant-b", now), [
-    { tablet_id: "kitchen-1", last_seen_ms_ago: 0 }
-  ]);
-});
-
-test("a venue never sees another venue's tablets", () => {
-  resetKdsHeartbeats();
-  const now = 1_000_000;
-  recordKdsHeartbeat("restaurant-a", "pass", now);
-  recordKdsHeartbeat("restaurant-b", "grill", now);
-
-  assert.deepEqual(
-    getKdsHeartbeats("restaurant-a", now).map((h) => h.tablet_id),
-    ["pass"]
-  );
-  assert.deepEqual(getKdsHeartbeats("restaurant-c", now), []);
-});
-
-test("a re-ping updates the existing entry rather than adding one", () => {
-  resetKdsHeartbeats();
-  recordKdsHeartbeat("restaurant-a", "pass", 1_000_000);
-  recordKdsHeartbeat("restaurant-a", "pass", 1_060_000);
-  const beats = getKdsHeartbeats("restaurant-a", 1_060_000);
-  assert.equal(beats.length, 1);
-  assert.equal(beats[0]!.last_seen_ms_ago, 0);
-});
-
-test("a tablet that stops pinging ages out instead of accumulating", () => {
-  resetKdsHeartbeats();
-  recordKdsHeartbeat("restaurant-a", "pass", 1_000_000);
-  // Still there inside the window — the alerter needs to see it as silent, not
-  // as absent, or it can never report "no tablet has checked in".
-  const stillThere = getKdsHeartbeats("restaurant-a", 1_000_000 + 10 * 60_000);
-  assert.equal(stillThere.length, 1);
-  assert.equal(stillThere[0]!.last_seen_ms_ago, 10 * 60_000);
-
-  assert.deepEqual(getKdsHeartbeats("restaurant-a", 1_000_000 + 20 * 60_000), []);
-});
-
-test("a flood of invented tablet ids cannot grow the map without limit", () => {
-  resetKdsHeartbeats();
-  const now = 1_000_000;
-  for (let i = 0; i < 1000; i += 1) {
-    recordKdsHeartbeat("restaurant-a", `spoof-${i}`, now + i);
-  }
-  const beats = getKdsHeartbeats("restaurant-a", now + 1000);
-  assert.ok(beats.length <= 200, `map grew to ${beats.length}`);
-  // The ceiling drops the least recently seen, so the newest ping survives.
-  assert.ok(beats.some((h) => h.tablet_id === "spoof-999"));
 });

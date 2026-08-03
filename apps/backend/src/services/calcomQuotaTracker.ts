@@ -21,6 +21,8 @@
  */
 
 import { env } from "../config/env";
+import { getOpsState, incrementOpsCounter } from "../repositories/opsState";
+import { logger } from "../utils/logger";
 
 // Cal.com free tier ≈ 100k/month — give us 80% × (100k / 30) = 2666/day as
 // the default warning line. Tunable via env when ops wants tighter alarms.
@@ -58,6 +60,36 @@ function ensureCurrentWindow(): void {
 export function recordCalcomRequest(): void {
   ensureCurrentWindow();
   state.count += 1;
+  // Mirror into ops_state so /api/ops/calcom-health (API process) can report
+  // the real count instead of its own permanently-zero module instance.
+  // Best-effort: the in-worker counter stays authoritative for the alerter,
+  // and a quota mirror must never fail a Cal.com push.
+  void incrementOpsCounter(`calcom-quota:${state.dayKey}`).catch((error) => {
+    logger.warn({ evt: "calcom_quota_mirror_failed", error: (error as Error).message });
+  });
+}
+
+/**
+ * DB-backed snapshot for processes that do NOT drive the Cal.com client
+ * (the API's ops endpoint). Reads today's mirrored counter; the in-process
+ * `quotaSnapshot()` remains the authority inside the worker.
+ */
+export async function quotaSnapshotFromDb(): Promise<{
+  day_key: string;
+  count: number;
+  daily_threshold: number;
+  above_threshold: boolean;
+}> {
+  const dayKey = new Date().toISOString().slice(0, 10);
+  const row = await getOpsState(`calcom-quota:${dayKey}`);
+  const count = Number(row?.count ?? 0);
+  const threshold = env.CALCOM_DAILY_QUOTA_THRESHOLD ?? DEFAULT_DAILY_THRESHOLD;
+  return {
+    day_key: dayKey,
+    count,
+    daily_threshold: threshold,
+    above_threshold: count > threshold
+  };
 }
 
 export function quotaSnapshot(): {

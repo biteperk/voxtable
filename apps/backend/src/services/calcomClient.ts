@@ -26,6 +26,7 @@
 
 import { env } from "../config/env";
 import { logger } from "../utils/logger";
+import { setOpsState } from "../repositories/opsState";
 import { recordCalcomRequest } from "./calcomQuotaTracker";
 
 export class CalcomTransientError extends Error {
@@ -84,6 +85,7 @@ function recordSuccess(): void {
     openedAt = null;
     // Audit L3: log breaker recovery so ops can correlate with Cal.com outages.
     logger.info({ evt: "calcom_breaker_closed" });
+    mirrorBreakerState();
   }
 }
 
@@ -99,6 +101,7 @@ function recordTransientFailure(): void {
     breakerState = "open";
     openedAt = now;
     logger.warn({ evt: "calcom_breaker_reopened", reason: "half_open_probe_failed" });
+    mirrorBreakerState();
     return;
   }
 
@@ -119,10 +122,28 @@ function recordTransientFailure(): void {
       window_ms: BREAKER_FAILURE_WINDOW_MS
     });
   }
+  mirrorBreakerState();
 }
 
 export function getBreakerState(): { state: BreakerState; consecutiveFailures: number; openedAt: number | null } {
   return { state: breakerState, consecutiveFailures, openedAt };
+}
+
+// Fire-and-forget mirror of the breaker into ops_state. The worker is the
+// only process that drives the breaker, so its module state stays the source
+// of truth; the row exists because /api/ops/calcom-health runs in the API
+// process, whose own breaker instance is permanently "closed" — the rollback
+// runbook told the on-call to trust an endpoint that could not tell the
+// truth. Best-effort by design: a breaker that trips BECAUSE the network is
+// down must never block, or fail, on another write.
+function mirrorBreakerState(): void {
+  void setOpsState("calcom-breaker", {
+    state: breakerState,
+    consecutiveFailures,
+    openedAt
+  }).catch((error) => {
+    logger.warn({ evt: "calcom_breaker_mirror_failed", error: (error as Error).message });
+  });
 }
 
 // Exposed only for tests; resets every counter and reopens the gate.

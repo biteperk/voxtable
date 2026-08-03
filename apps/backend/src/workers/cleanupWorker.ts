@@ -20,6 +20,9 @@
 
 import { pool } from "../db/pool";
 import { logger } from "../utils/logger";
+import { purgeOpsStateByPrefix } from "../repositories/opsState";
+import { purgeStaleKdsHeartbeats } from "../services/kdsHeartbeats";
+import { purgeStaleRetellAuthBuckets } from "../services/retellAuthHealth";
 import { cancelAbandonedOnboarding } from "../repositories/restaurants";
 
 const TICK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
@@ -84,12 +87,26 @@ async function tick(): Promise<void> {
       logger.warn({ evt: "cleanup_worker_phase6_skipped", error });
     }
 
+    // Phase 7: ops_state hygiene (migration 028). Heartbeats and auth-failure
+    // buckets only mean anything fresh; quota mirrors age out after two
+    // months. Guarded like phase 5 so a pre-028 database stays harmless.
+    let opsStatePurged = 0;
+    try {
+      opsStatePurged =
+        (await purgeStaleKdsHeartbeats()) +
+        (await purgeStaleRetellAuthBuckets()) +
+        (await purgeOpsStateByPrefix("calcom-quota:", "60 days"));
+    } catch (error) {
+      logger.warn({ evt: "cleanup_worker_phase7_skipped", error });
+    }
+
     logger.info({
       evt: "cleanup_worker_tick",
       outbox_deleted: outbox.rows[0]?.deleted ?? 0,
       inbox_deleted: inbox.rows[0]?.deleted ?? 0,
       notifications_deleted: notificationsDeleted,
-      abandoned_cancelled: abandonedCancelled
+      abandoned_cancelled: abandonedCancelled,
+      ops_state_purged: opsStatePurged
     });
   } catch (error) {
     logger.warn({ evt: "cleanup_worker_failed", error });
