@@ -12,7 +12,7 @@ import {
   normalizeModifyBookingArgs,
   normalizePartySize
 } from "../http/schemas";
-import { getRestaurantIdByProviderCallId, upsertCallLog } from "../repositories/callLogs";
+import { getCallLogIdByProviderCallId, getRestaurantIdByProviderCallId, upsertCallLog } from "../repositories/callLogs";
 import {
   getRestaurantIdByDialedNumber,
   getRestaurantName,
@@ -30,7 +30,7 @@ import {
 import { checkAvailability } from "./availabilityService";
 import { createBooking, modifyBooking } from "./bookingService";
 import { getMenu, lookupMenu } from "./menuService";
-import { createOrder } from "./orderService";
+import { createOrder, orderContentFingerprint } from "./orderService";
 
 type RetellPayload = Record<string, any>;
 
@@ -363,15 +363,35 @@ export async function handleRetellFunction(
       });
     }
 
+    const specialInstructions =
+      parsed.data.special_instructions ?? parsed.data.specialInstructions;
+
+    // Audit B8: the key used to be the bare call_id, so ONE call could only
+    // ever place ONE order — the guest added a Coke mid-call, heard the
+    // confirmation (built from the FIRST order's items), and the Coke was
+    // never made or billed. Keying on call + content keeps true retries of
+    // the same tool call idempotent while letting a second, different order
+    // in the same call go through.
+    const idempotencyKey = callId
+      ? `${callId}:${orderContentFingerprint(resolvedItems, specialInstructions)}`
+      : undefined;
+
+    // The audit-trail FK that existed since the KDS schema but was never
+    // written on the voice path. persistRetellCall upserted the call log at
+    // the top of this handler, so the row exists by now.
+    const callLogId = providerCallId
+      ? await getCallLogIdByProviderCallId("retell", providerCallId, restaurantId)
+      : null;
+
     const result = await createOrder({
       restaurantId,
       reservationId,
       source: "voice",
       items: resolvedItems,
-      specialInstructions: parsed.data.special_instructions ?? parsed.data.specialInstructions,
-      idempotencyKey: callId,
+      specialInstructions,
+      idempotencyKey,
       createdBy: "voice:retell",
-      createdFromCallLogId: undefined
+      createdFromCallLogId: callLogId ?? undefined
     });
 
     return {
