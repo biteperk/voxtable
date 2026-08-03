@@ -216,7 +216,10 @@ async function main(): Promise<void> {
     `✓ happy path → ${happy.body.confirmation_message}`
   );
 
-  // 7) Replay same call_id → same order
+  // 7) IDENTICAL replay of the same tool call → same order (true retry dedup).
+  //    The payload must match step 6 exactly — the idempotency key is now
+  //    call_id + a fingerprint of the order's content, so only a genuine
+  //    retry (same items, same requests) collapses onto the existing order.
   const replay = await callTool(
     "create_order",
     {
@@ -227,19 +230,48 @@ async function main(): Promise<void> {
           name: "Fish & Chips",
           quantity: 1,
           variant_name: "Large",
-          modifier_choices: { Drink: "Coke" }
+          modifier_choices: { Drink: "Coke" },
+          special_requests: "smoke test"
         }
-      ]
+      ],
+      special_instructions: "Smoke happy-path order from smoke-retell-orders.ts"
     },
     callId
   );
   assert(replay.status === 200, `replay status ${replay.status}: ${JSON.stringify(replay.body)}`);
   assert(
     replay.body.order_id === happy.body.order_id,
-    `replay should return same order_id (got ${replay.body.order_id}, want ${happy.body.order_id})`
+    `identical replay should return same order_id (got ${replay.body.order_id}, want ${happy.body.order_id})`
   );
-  assert(replay.body.is_replay === true, "replay must report is_replay=true");
-  console.log("✓ idempotent replay returns same order_id");
+  assert(replay.body.is_replay === true, "identical replay must report is_replay=true");
+  console.log("✓ identical replay returns same order_id");
+
+  // 8) A SECOND, DIFFERENT order in the same call → NEW order. This was
+  //    audit B8: the key used to be the bare call_id, so the guest's added
+  //    Coke was confirmed to them, then silently never made or billed.
+  const second = await callTool(
+    "create_order",
+    {
+      call_id: callId,
+      reservation_id: bookingId,
+      items: [
+        {
+          name: "Fish & Chips",
+          quantity: 2,
+          variant_name: "Large",
+          modifier_choices: { Drink: "Coke" }
+        }
+      ]
+    },
+    callId
+  );
+  assert(second.status === 200, `second order status ${second.status}: ${JSON.stringify(second.body)}`);
+  assert(
+    second.body.order_id && second.body.order_id !== happy.body.order_id,
+    `a different order in the same call must create a NEW order (got ${second.body.order_id})`
+  );
+  assert(second.body.is_replay !== true, "a different order must not be a replay");
+  console.log("✓ different order in the same call creates a new order (B8)");
 
   console.log("\nALL CHECKS PASSED");
 }

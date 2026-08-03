@@ -265,6 +265,24 @@ export async function getRestaurantIdByProviderCallId(
   return result.rows[0]?.restaurant_id ?? null;
 }
 
+/**
+ * Resolve the call_logs.id for a provider call, scoped to the tenant. Used by
+ * the voice-order path to populate orders.created_from_call_log_id — the
+ * audit-trail FK that existed since the KDS schema but was never written.
+ */
+export async function getCallLogIdByProviderCallId(
+  provider: string,
+  providerCallId: string,
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<string | null> {
+  const result = await db.query<{ id: string }>(
+    "SELECT id FROM call_logs WHERE provider = $1 AND provider_call_id = $2 AND restaurant_id = $3 LIMIT 1",
+    [provider, providerCallId, restaurantId]
+  );
+  return result.rows[0]?.id ?? null;
+}
+
 export interface CallLogStats {
   total_calls: number;
   handled: number;
