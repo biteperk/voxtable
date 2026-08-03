@@ -72,15 +72,23 @@ export function orderContentFingerprint(
   items: CreateOrderItemInput[],
   specialInstructions?: string
 ): string {
+  // Code-point comparison, NOT localeCompare and NOT the default sort — a
+  // fingerprint must order identically on every machine, and locale-aware
+  // collation does not promise that.
+  const byCodePoint = (x: string, y: string): number => {
+    if (x < y) return -1;
+    if (x > y) return 1;
+    return 0;
+  };
   const normalised = items
     .map((item) => ({
       m: item.menuItemId,
       v: item.variantId ?? "",
       q: item.quantity,
-      mods: [...(item.modifierIds ?? [])].sort(),
+      mods: [...(item.modifierIds ?? [])].sort(byCodePoint),
       s: item.specialRequests ?? ""
     }))
-    .sort((a, b) => `${a.m}|${a.v}|${a.s}`.localeCompare(`${b.m}|${b.v}|${b.s}`));
+    .sort((a, b) => byCodePoint(`${a.m}|${a.v}|${a.s}`, `${b.m}|${b.v}|${b.s}`));
   return crypto
     .createHash("sha256")
     .update(JSON.stringify({ items: normalised, si: specialInstructions ?? "" }))
