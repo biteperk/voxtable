@@ -36,10 +36,13 @@ export function createApp() {
       origin:
         env.APP_ENV === "production"
           ? [
-              // Branded production URLs — canonical surface for customers.
-              "https://vocotable.biteperk.com.au",
+              // Canonical branded surfaces (see deploy/runbooks/domain-migration.md).
+              "https://app.biteperk.com.au",
+              "https://kds.biteperk.com.au",
               "https://biteperk.com.au",
-              // Kitchen Display System — separate Firebase Hosting target.
+              // Previous branded hostnames, retained through the domain
+              // migration so in-flight sessions and bookmarks keep working.
+              "https://vocotable.biteperk.com.au",
               "https://kitchen.vocotable.biteperk.com.au",
               "https://vocotable-kds.web.app",
               "https://vocotable-kds.firebaseapp.com",

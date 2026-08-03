@@ -80,7 +80,7 @@ npm run smoke:isolation     # multi-tenant onboarding isolation
 
 ## Deployment (summary)
 
-- **Backend**: GCP VM `core-central-vm` (project `vocotable-497209`) via `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`, fronted by nginx + certbot at `https://vocotable.algorythmos.com.au`.
+- **Backend**: GCP VM `core-central-vm` (project `vocotable-497209`) via `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`, fronted by nginx + certbot at `https://api.biteperk.com.au` (migrating from `vocotable.algorythmos.com.au` — see `deploy/runbooks/domain-migration.md`).
 - **Frontend**: Firebase Hosting target `app` (`vocotable.web.app`, branded production URLs allowed by CORS). Build with `VITE_API_BASE_URL` pointing at the API before `firebase deploy --only hosting:app`.
 - **KDS**: Firebase Hosting target `kds`, deployed separately with `npm run build:kds && firebase deploy --only hosting:kds`.
 - Production builds: `npm run build:backend` / `build:frontend` / `build:kds`; run with `start:backend`; migrate with `db:migrate:prod`.
