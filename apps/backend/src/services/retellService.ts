@@ -20,7 +20,7 @@ import {
   getRetellAgentId
 } from "../repositories/restaurants";
 import { normalizePhone } from "../utils/phone";
-import { logger } from "../utils/logger";
+import { enrichLogContext, logger } from "../utils/logger";
 import {
   dayNameInTz,
   nowTimeInTz,
@@ -86,6 +86,7 @@ export async function handleRetellWebhook(body: unknown): Promise<void> {
     return;
   }
 
+  enrichLogContext({ provider_call_id: String(call.call_id) });
   await persistRetellCall(event, call, payload);
 }
 
@@ -114,6 +115,11 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
         }
       }
     };
+  }
+
+  const inboundCallId = getProviderCallId(inbound);
+  if (inboundCallId) {
+    enrichLogContext({ provider_call_id: inboundCallId });
   }
 
   const callerPhoneRaw = inbound.from_number ?? null;
@@ -170,6 +176,15 @@ export async function handleRetellFunction(
   const call = payload.call as RetellPayload | undefined;
   const args = extractFunctionArgs(payload);
   const providerCallId = getProviderCallId(call);
+
+  // Pin the call id to the log context: every line logged while serving this
+  // tool call — including the errorHandler's, if it throws — now carries
+  // provider_call_id, the one id Retell's dashboard also shows. Before this,
+  // "which call did that 500 belong to?" had no answer.
+  if (providerCallId) {
+    enrichLogContext({ provider_call_id: providerCallId });
+  }
+  logger.info({ evt: "retell_tool_call", tool: name });
 
   if (call?.call_id) {
     await persistRetellCall("function_call", call, { event: "function_call" });

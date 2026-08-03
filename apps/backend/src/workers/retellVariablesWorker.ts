@@ -27,7 +27,7 @@ import Retell from "retell-sdk";
 
 import { env } from "../config/env";
 import { getRestaurantTimezone } from "../repositories/restaurants";
-import { logger } from "../utils/logger";
+import { logger, withTickLogContext } from "../utils/logger";
 import { dayNameInTz, todayInTz, tomorrowInTz } from "../utils/time";
 
 const TICK_INTERVAL_MS = 15 * 60 * 1000; // 15 min
@@ -97,9 +97,9 @@ export function startRetellVariablesWorker(): void {
   logger.info({ evt: "retell_variables_worker_starting", tick_interval_ms: TICK_INTERVAL_MS });
   // Push once on boot so a container restart immediately corrects anything that
   // drifted while it was down.
-  currentTick = tick();
+  currentTick = withTickLogContext("retell-variables", () => tick());
   intervalHandle = setInterval(() => {
-    currentTick = tick();
+    currentTick = withTickLogContext("retell-variables", () => tick());
   }, TICK_INTERVAL_MS);
   intervalHandle.unref();
 }

@@ -8,7 +8,7 @@
  * else dead-letters to 'failed' so the owner falls back to the manual editor.
  */
 
-import { logger } from "../utils/logger";
+import { logger, withTickLogContext } from "../utils/logger";
 import { AppError } from "../domain/errors";
 import {
   claimReadyJobs,
@@ -157,7 +157,7 @@ export function startMenuOcrWorker(): void {
     if (claimInFlight) return;
     claimInFlight = true;
     // See provisioningWorker: an unhandled rejection here kills the process.
-    currentTick = processBatch()
+    currentTick = withTickLogContext("menu-ocr", () => processBatch())
       .catch((error) => logger.error({ evt: "menu_ocr_tick_failed", error }))
       .finally(() => {
         claimInFlight = false;

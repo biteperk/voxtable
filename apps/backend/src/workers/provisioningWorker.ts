@@ -15,7 +15,7 @@
  */
 
 import { env } from "../config/env";
-import { logger } from "../utils/logger";
+import { logger, withTickLogContext } from "../utils/logger";
 import {
   advanceProvisioningStep,
   claimReadyProvisioningJobs,
@@ -193,7 +193,7 @@ export function startProvisioningWorker(): void {
     // processBatch awaits DB writes outside its own try/catch, so a database
     // blip there rejects. An unhandled rejection kills the worker process on
     // Node >= 15 — taking notifications and provisioning down with it.
-    currentTick = processBatch()
+    currentTick = withTickLogContext("provisioning", () => processBatch())
       .catch((error) => logger.error({ evt: "provisioning_tick_failed", error }))
       .finally(() => {
         tickInFlight = false;
