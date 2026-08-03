@@ -31,8 +31,13 @@ export const errorHandler: ErrorRequestHandler = (error, request, response, _nex
     // Recurrence guard: feed the Retell auth-failure counter so healthAlerter
     // can page when a wrong/stale RETELL_API_KEY starts 401ing the signed
     // surface. Covers tool calls, the inbound webhook, and the post-call hook.
+    // Fire-and-forget: the counter is DB-backed now (the alerter reads it
+    // from the worker process), and the error response must not stall — or
+    // fail — on an observability write.
     if (fromRetell && (error.statusCode === 401 || error.statusCode === 403)) {
-      recordRetellAuthFailure();
+      void recordRetellAuthFailure().catch((recordError) => {
+        logger.warn({ evt: "retell_auth_failure_record_failed", error: (recordError as Error).message });
+      });
     }
 
     response.status(error.statusCode).json({
