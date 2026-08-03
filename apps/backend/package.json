@@ -30,7 +30,9 @@
     "smoke:menu-ocr": "tsx scripts/smoke-menu-ocr.ts",
     "smoke:double-booking": "tsx scripts/smoke-double-booking.ts",
     "smoke:tenant-attribution": "tsx scripts/smoke-tenant-attribution.ts",
-    "smoke:calcom-mirror": "CALCOM_SYNC_ENABLED=true tsx scripts/smoke-calcom-mirror.ts"
+    "smoke:calcom-mirror": "CALCOM_SYNC_ENABLED=true tsx scripts/smoke-calcom-mirror.ts",
+    "smoke:outbox-deadletter": "tsx scripts/smoke-outbox-deadletter.ts",
+    "smoke:solo-diner": "tsx scripts/smoke-solo-diner.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",

@@ -22,12 +22,18 @@ import {
   markProvisioningDone,
   markProvisioningFailed,
   markProvisioningRetry,
+  clearProvisioningPayloadKey,
   patchProvisioningPayload,
   type ProvisioningJob
 } from "../repositories/provisioning";
 import { getOnboardingStatus, getRestaurantProfile, setProvisioningBindings } from "../repositories/restaurants";
 import { notifyRestaurant } from "../services/notificationService";
-import { buyAuNumber, configureVoiceWebhook } from "../services/twilioProvisioning";
+import {
+  configureVoiceWebhook,
+  isDefinitelyNotPurchased,
+  purchaseAuNumber,
+  searchAuNumber
+} from "../services/twilioProvisioning";
 import { createAgentForRestaurant, importNumberToRetell } from "../services/retellProvisioning";
 
 const TICK_INTERVAL_MS = 5_000;
@@ -85,10 +91,28 @@ async function runStep(job: ProvisioningJob): Promise<void> {
             `buy another one.`
         );
       }
-      await patchProvisioningPayload(job.id, { buy_started_at: new Date().toISOString() });
 
-      const { phoneNumber, sid } = await buyAuNumber();
-      await advanceProvisioningStep(job.id, "configure_voice", { twilio_number: phoneNumber, twilio_sid: sid });
+      // Search OUTSIDE the marker — it's read-only, and a 429 on the search
+      // used to trip the marker: the retry then found buy_started_at set,
+      // concluded "possible double-purchase", and permanently failed a paying
+      // customer's provisioning over a rate-limit blip. The marker's job is to
+      // guard the one call that spends money, nothing else.
+      const candidate = await searchAuNumber();
+
+      await patchProvisioningPayload(job.id, { buy_started_at: new Date().toISOString() });
+      try {
+        const { phoneNumber, sid } = await purchaseAuNumber(candidate);
+        await advanceProvisioningStep(job.id, "configure_voice", { twilio_number: phoneNumber, twilio_sid: sid });
+      } catch (error) {
+        // A 4xx (incl. 429) means Twilio REJECTED the purchase — nothing was
+        // bought, so clear the marker and let the normal retry policy run.
+        // 5xx / network stays ambiguous: the marker holds and the next
+        // attempt halts for a human, exactly as designed for crash windows.
+        if (isDefinitelyNotPurchased(error)) {
+          await clearProvisioningPayloadKey(job.id, "buy_started_at");
+        }
+        throw error;
+      }
       return;
     }
     case "configure_voice": {

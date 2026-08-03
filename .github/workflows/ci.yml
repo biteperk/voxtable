@@ -103,6 +103,20 @@ jobs:
       - name: Prove the Cal.com mirror converges
         run: npm run smoke:calcom-mirror
 
+      # The outbox retry policy's throw path: a throwing row must dead-letter
+      # at the attempts ceiling, and a row whose executor aborts the batch
+      # transaction must still get its retry recorded (per-row savepoints) —
+      # the old behaviour was an infinite 2-second re-claim loop invisible to
+      # the failed_at alert.
+      - name: Prove throwing outbox rows dead-letter
+        run: npm run smoke:outbox-deadletter
+
+      # min_capacity is a seating preference, not a booking gate. A solo diner
+      # at an empty restaurant must be seated even when every table has
+      # min_capacity=2; a party bigger than the biggest table stays refused.
+      - name: Prove a solo diner can book
+        run: npm run smoke:solo-diner
+
       - name: Build frontend
         run: npm run build:frontend
 

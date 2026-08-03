@@ -24,7 +24,12 @@ function voiceUrl(): string {
   return `${env.PUBLIC_API_BASE_URL.replace(/\/$/, "")}/twilio/voice`;
 }
 
-export async function buyAuNumber(): Promise<{ phoneNumber: string; sid: string }> {
+/**
+ * Read-only search for a purchasable AU number. Split from the purchase so
+ * the worker's crash-window marker can wrap ONLY the call that spends money —
+ * a 429 on this search used to trip the marker and permanently brick the job.
+ */
+export async function searchAuNumber(): Promise<string> {
   const c = client();
   const available = await c
     .availablePhoneNumbers("AU")
@@ -38,12 +43,33 @@ export async function buyAuNumber(): Promise<{ phoneNumber: string; sid: string 
   if (!candidate) {
     throw new AppError(502, "NO_NUMBER_AVAILABLE", "No Twilio number available to purchase.");
   }
+  return candidate.phoneNumber;
+}
+
+/** The one call that spends money. Kept minimal so the caller's crash-window
+ *  marker brackets nothing but this HTTP request. */
+export async function purchaseAuNumber(
+  candidatePhoneNumber: string
+): Promise<{ phoneNumber: string; sid: string }> {
+  const c = client();
   const purchased = await c.incomingPhoneNumbers.create({
-    phoneNumber: candidate.phoneNumber,
+    phoneNumber: candidatePhoneNumber,
     voiceUrl: voiceUrl(),
     voiceMethod: "POST"
   });
   return { phoneNumber: purchased.phoneNumber, sid: purchased.sid };
+}
+
+/**
+ * Did this error PROVABLY happen before Twilio executed the purchase?
+ * 4xx (including 429 rate-limit) means the request was rejected — no number
+ * was allocated, so retrying cannot double-buy and the crash-window marker
+ * can be cleared. 5xx and network errors are genuinely ambiguous (the
+ * purchase may have gone through) — the marker must stay.
+ */
+export function isDefinitelyNotPurchased(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null | undefined)?.status;
+  return typeof status === "number" && status >= 400 && status < 500;
 }
 
 /** Ensure the number's Voice webhook points at our TwiML handler (idempotent). */
