@@ -46,18 +46,96 @@ Must return `136.113.35.88` and nothing Cloudflare-proxied (no `104.21.*` /
 
 ## Phase 2 — TLS + nginx (additive)
 
-One certificate covering both hostnames, so the vendor cutover has no gap:
+**Order matters, and the obvious order does not work.** Certbot cannot validate
+`api.biteperk.com.au` until nginx has a server block that answers for that name
+on port 80 — but `vocotable.conf` cannot be installed first, because it points
+`ssl_certificate` at a lineage that does not exist yet, so `nginx -t` fails.
+Break the cycle with a minimal port-80 edit first.
+
+Two facts about `core-central-vm` that the rest of this phase depends on:
+
+- The live config is the **regular file** `/etc/nginx/sites-enabled/vocotable`.
+  It is *not* a symlink into `sites-available/`. Editing `sites-available/`
+  changes nothing — nginx loads it as a duplicate and discards it with
+  `conflicting server name ... ignored`.
+- The port-80 block is Certbot-generated and ends in a bare, server-level
+  `return 404;`. Server-level `return` runs in the **rewrite** phase, before
+  location matching, so simply adding the hostname to `server_name` is not
+  enough: the 404 still pre-empts the ACME location. The `return 404` has to
+  become `location / { return 404; }`.
+
+### 2a — minimal port-80 edit
+
+Back up first; `nginx -t` must pass before any reload.
+
+```bash
+sudo cp -a /etc/nginx/sites-enabled/vocotable \
+  /root/nginx-backups/vocotable.pre-api.$(date +%Y%m%d-%H%M%S)
+```
+
+Rewrite only the port-80 server block so it reads:
+
+```nginx
+server {
+    if ($host = vocotable.algorythmos.com.au) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+    listen 80;
+    server_name vocotable.algorythmos.com.au api.biteperk.com.au;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 404;
+    }
+}
+```
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Prove the challenge path actually routes before spending a rate limit — drop a
+probe file in the webroot and fetch it with each Host header:
+
+```bash
+echo probe-ok | sudo tee /var/www/certbot/.well-known/acme-challenge/probe-test
+for h in api.biteperk.com.au vocotable.algorythmos.com.au; do
+  curl -s -o /dev/null -w "$h %{http_code}\n" -H "Host: $h" \
+    http://127.0.0.1/.well-known/acme-challenge/probe-test
+done
+sudo rm -f /var/www/certbot/.well-known/acme-challenge/probe-test
+```
+
+Expect `api.biteperk.com.au 200` and `vocotable.algorythmos.com.au 301` — the
+legacy 301 is fine, Let's Encrypt follows redirects and the 443 block serves the
+same webroot.
+
+### 2b — issue the certificate
+
+Always dry-run first; the staging CA has no meaningful rate limit.
 
 ```bash
 sudo certbot certonly --webroot -w /var/www/certbot \
   --cert-name api.biteperk.com.au \
-  -d api.biteperk.com.au -d vocotable.algorythmos.com.au
+  -d api.biteperk.com.au -d vocotable.algorythmos.com.au --dry-run
 ```
 
-Then copy `deploy/nginx/vocotable.conf` (already updated for both hostnames) to
-the VM, and:
+Only when that reports `The dry run was successful`, repeat without `--dry-run`.
+
+Note this creates a **new** lineage named `api.biteperk.com.au` covering both
+names. The old `vocotable.algorythmos.com.au` lineage keeps renewing separately
+— leave it as the rollback path until Phase 6.
+
+### 2c — install the full config
 
 ```bash
+sudo cp -a /etc/nginx/sites-enabled/vocotable \
+  /root/nginx-backups/vocotable.pre-fullconf.$(date +%Y%m%d-%H%M%S)
+sudo cp vocotable.conf /etc/nginx/sites-enabled/vocotable   # NOT sites-available
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
@@ -66,6 +144,16 @@ Verify **both** still answer:
 curl -sf https://api.biteperk.com.au/health
 curl -sf https://vocotable.algorythmos.com.au/health
 ```
+
+Reload is graceful, but a request issued in the same instant can still fail —
+re-test once before concluding anything is broken.
+
+> **Do not diagnose TLS or port 80 from a sandboxed shell.** An intercepting
+> egress proxy can rewrite the certificate chain, upgrade `http://` to
+> `https://`, and return its own 503. During this migration it produced a
+> fabricated `*.biteperk.com.au` certificate, a phantom 301 on the ACME path and
+> a spurious 503 — three separate false readings. Verify from the VM itself, or
+> with `curl -v`, which reports the true origin certificate.
 
 ## Phase 3 — Backend env
 
@@ -134,3 +222,24 @@ The Firebase **project id** (`vocotable` / `vocotable-497209`), the Artifact
 Registry path, the `vocotable_number` API field and event/storage keys stay as
 they are — renaming those is a far larger migration with no customer-visible
 benefit. This runbook only moves the hostnames customers and vendors touch.
+
+## Record — Phases 1-3 completed 3 Aug 2026
+
+- **Phase 1.** `api.biteperk.com.au A 136.113.35.88`, DNS-only, added to the
+  `biteperk.com.au` zone. Confirmed on 1.1.1.1, 8.8.8.8 and 9.9.9.9 with no
+  proxy addresses.
+- **Phase 2.** Port-80 block rewritten per 2a; stale `sites-enabled/vocotable.bak`
+  symlink removed, clearing both `conflicting server name` warnings. Certificate
+  issued covering both names, expires 2026-11-01, auto-renew registered. Full
+  `vocotable.conf` installed to `sites-enabled/vocotable`, verified byte-identical
+  to the repo by sha256. Both hostnames serve HTTP/2 200.
+- **Phase 3.** `PUBLIC_API_BASE_URL=https://api.biteperk.com.au` in
+  `/opt/vocotable/.env`; `api` and `worker` force-recreated. Both containers
+  report the new value, zero errors since boot, both hostnames still 200.
+- Backups: `/root/nginx-backups/vocotable.pre-api.*`,
+  `/root/nginx-backups/vocotable.pre-fullconf.*`,
+  `/root/vocotable-backups/env.pre-domain.*`.
+
+**Phase 4 has not started.** No vendor has been repointed; Stripe, Cal.com,
+Retell and Twilio all still call `vocotable.algorythmos.com.au`, which serves
+normally.
