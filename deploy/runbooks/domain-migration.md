@@ -173,9 +173,32 @@ localhost and that the containers came up healthy (a bad value refuses to boot).
 Migrate, verify, then move on. **Rollback for every step is identical:** point
 the vendor URL back at `vocotable.algorythmos.com.au`, which is still serving.
 
-1. **Stripe** — Workbench → the `vocotable-billing` destination → endpoint URL →
-   `https://api.biteperk.com.au/stripe/webhook`.
-   Verify: send a test event; expect 200 and a delivery row.
+1. **Stripe** — Workbench → the `vocotable-billing` destination → Edit
+   destination → endpoint URL → `https://api.biteperk.com.au/stripe/webhook`.
+   **Done 3 Aug 2026.** Confirm afterwards that the destination is still
+   `Active`, still listening to the same 6 events, and that the signing secret
+   was **not** rolled — rolling it would break `STRIPE_WEBHOOK_SECRET`.
+
+   **There is no "send test event" in live mode** — synthetic triggers are a
+   test-mode feature, and the `...` menu offers only Disable / Roll secret /
+   Delete. So verification is indirect:
+
+   ```bash
+   # From the VM. 400 invalid_signature proves the route is reachable AND the
+   # signature check is active (200 here would mean the check is off).
+   curl -s -X POST https://api.biteperk.com.au/stripe/webhook \
+     -H 'Content-Type: application/json' -d '{}'
+
+   # Publicly resolvable, and the chain an external client will see.
+   dig +short api.biteperk.com.au        # → 136.113.35.88
+   echo | openssl s_client -connect 136.113.35.88:443 \
+     -servername api.biteperk.com.au 2>&1 | grep 'Verify return code'
+   ```
+
+   End-to-end delivery is only proven by a **real** event — the next trial
+   checkout. Check it under Event deliveries; expect a 200. A synthetic event
+   would be safe to send if one were possible: `handleBillingWebhook` returns
+   `"unattributed"` (200, no state change) when the customer matches no tenant.
 2. **Cal.com** — webhook URL → `https://api.biteperk.com.au/cal/webhook`.
    Verify: `GET /api/ops/calcom-health` (inbox failures must stay flat).
 3. **Retell** — `/retell/inbound`, `/retell/webhook`, and the two
