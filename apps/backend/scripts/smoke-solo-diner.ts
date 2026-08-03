@@ -23,11 +23,19 @@ function assert(label: string, ok: boolean, detail?: unknown): void {
 const SUFFIX = process.pid.toString(36);
 const DATE = new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
+// Deterministic per-run phone digits (Sonar S2245 flags Math.random even in
+// scripts; pid-derived digits are also traceable back to a run).
+let phoneSeq = 0;
+function nextPhone(): string {
+  phoneSeq += 1;
+  return `+61255${String(10000 + ((process.pid * 10 + phoneSeq) % 90000)).padStart(5, "0")}`;
+}
+
 async function setupRestaurant(name: string): Promise<string> {
   const restaurant = await pool.query<{ id: string }>(
     `INSERT INTO restaurants (name, timezone, phone_number)
      VALUES ($1, 'Australia/Sydney', $2) RETURNING id`,
-    [name, `+6125550${Math.floor(Math.random() * 900) + 100}`]
+    [name, nextPhone()]
   );
   const restaurantId = restaurant.rows[0]!.id;
   const hours = JSON.stringify(
