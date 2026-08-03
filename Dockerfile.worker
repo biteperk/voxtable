@@ -35,4 +35,12 @@ RUN addgroup -g 1001 -S appgroup && \
 
 USER appuser
 
+# Smaller pool allocation than the api: api (40+10) + worker (30+5) = 85 must
+# stay under Postgres' 97 usable connections — see src/config/env.ts. The
+# application_name override makes pg_stat_activity distinguish the two
+# processes during an incident.
+ENV PG_POOL_MAX_WRITE=30 \
+    PG_POOL_MAX_READ=5 \
+    PG_APPLICATION_NAME=vocotable-worker
+
 CMD ["node", "apps/backend/dist/worker.js"]

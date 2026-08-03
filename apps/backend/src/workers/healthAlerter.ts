@@ -458,10 +458,16 @@ export function startHealthAlerter(): void {
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;
-    currentTick = checkOnce().finally(() => {
-      tickInFlight = false;
-      currentTick = null;
-    });
+    // Each check function wraps itself in try/catch today, but that is
+    // discipline, not a guarantee — one `await` added outside a `try` in any
+    // of the five checks would kill the whole worker process. Backstop here,
+    // same pattern as provisioningWorker.
+    currentTick = checkOnce()
+      .catch((error) => logger.error({ evt: "health_alerter_tick_failed", error }))
+      .finally(() => {
+        tickInFlight = false;
+        currentTick = null;
+      });
   }, CHECK_INTERVAL_MS);
   intervalHandle.unref();
 }

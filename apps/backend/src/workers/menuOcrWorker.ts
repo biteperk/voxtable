@@ -94,12 +94,20 @@ async function runJob(job: Awaited<ReturnType<typeof claimReadyJobs>>[number]): 
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     const transient = isTransient(error);
-    if (transient && job.attempts < MAX_ATTEMPTS) {
-      await markRetry(job.id, message, new Date(Date.now() + backoffMsForAttempt(job.attempts)));
-      logger.warn({ evt: "menu_ocr_retry", job_id: job.id, attempts: job.attempts, error: message });
-    } else {
-      await markFailed(job.id, message);
-      logger.error({ evt: "menu_ocr_failed", job_id: job.id, error: message });
+    // The outcome writes themselves can reject (a DB blip during error
+    // handling), which would make "Never throws" above a lie — and an
+    // unhandled rejection from the per-job chain kills the worker process.
+    // Swallow-and-log: the 10-minute stuck-job reaper reclaims the job.
+    try {
+      if (transient && job.attempts < MAX_ATTEMPTS) {
+        await markRetry(job.id, message, new Date(Date.now() + backoffMsForAttempt(job.attempts)));
+        logger.warn({ evt: "menu_ocr_retry", job_id: job.id, attempts: job.attempts, error: message });
+      } else {
+        await markFailed(job.id, message);
+        logger.error({ evt: "menu_ocr_failed", job_id: job.id, error: message });
+      }
+    } catch (recordError) {
+      logger.error({ evt: "menu_ocr_outcome_write_failed", job_id: job.id, error: recordError });
     }
   }
 }
@@ -127,7 +135,11 @@ async function processBatch(): Promise<void> {
   }
 
   for (const job of jobs) {
-    const task = runJob(job).finally(() => inFlight.delete(task));
+    // Belt-and-braces on top of runJob's internal handling: the per-job chain
+    // runs detached from the tick, so a rejection here has nothing above it.
+    const task = runJob(job)
+      .catch((error) => logger.error({ evt: "menu_ocr_job_crashed", job_id: job.id, error }))
+      .finally(() => inFlight.delete(task));
     inFlight.add(task);
   }
 }
