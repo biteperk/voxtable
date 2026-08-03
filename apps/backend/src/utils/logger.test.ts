@@ -114,3 +114,49 @@ test("nested objects and arrays are redacted too", () => {
   );
   assert.deepEqual(line.customer, { email: "[REDACTED]", name: "Sam" });
 });
+
+// ---------------------------------------------------------------------------
+// Log-context correlation (Block 5: provider_call_id + worker tick ids)
+// ---------------------------------------------------------------------------
+
+import { enrichLogContext, withLogContext, withTickLogContext } from "./logger";
+
+test("provider_call_id pinned via enrichLogContext appears on every line", () => {
+  const line = captureLine(() => {
+    withLogContext({ request_id: "req-1" }, () => {
+      enrichLogContext({ provider_call_id: "call_abc123" });
+      logger.info({ evt: "retell_tool_call", tool: "create_booking" });
+    });
+  });
+  assert.equal(line.request_id, "req-1");
+  assert.equal(line.provider_call_id, "call_abc123");
+});
+
+test("lines outside a Retell context carry no provider_call_id key", () => {
+  const line = captureLine(() => {
+    withLogContext({ request_id: "req-2" }, () => {
+      logger.info({ evt: "http_request" });
+    });
+  });
+  assert.equal("provider_call_id" in line, false);
+});
+
+test("enrichLogContext outside any context is a safe no-op", () => {
+  enrichLogContext({ provider_call_id: "call_orphan" });
+  const line = captureLine(() => {
+    logger.info({ evt: "no_context" });
+  });
+  assert.equal("provider_call_id" in line, false);
+});
+
+test("worker ticks get a distinguishable, monotonic request_id", () => {
+  const first = captureLine(() => {
+    withTickLogContext("health-alerter", () => logger.info({ evt: "tick" }));
+  });
+  const second = captureLine(() => {
+    withTickLogContext("health-alerter", () => logger.info({ evt: "tick" }));
+  });
+  assert.match(String(first.request_id), /^health-alerter#\d+$/);
+  assert.match(String(second.request_id), /^health-alerter#\d+$/);
+  assert.notEqual(first.request_id, second.request_id);
+});

@@ -34,7 +34,7 @@ import { quotaSnapshot, shouldFireQuotaAlert } from "../services/calcomQuotaTrac
 import { kdsHealthSnapshot } from "../services/orderService";
 import { retellAuthSnapshot } from "../services/retellAuthHealth";
 import { getKdsHeartbeats } from "../routes/orders";
-import { logger } from "../utils/logger";
+import { logger, withTickLogContext } from "../utils/logger";
 
 const CHECK_INTERVAL_MS = 60_000; // every minute
 const OUTBOX_DEPTH_THRESHOLD = 100;
@@ -462,7 +462,7 @@ export function startHealthAlerter(): void {
     // discipline, not a guarantee — one `await` added outside a `try` in any
     // of the five checks would kill the whole worker process. Backstop here,
     // same pattern as provisioningWorker.
-    currentTick = checkOnce()
+    currentTick = withTickLogContext("health-alerter", () => checkOnce())
       .catch((error) => logger.error({ evt: "health_alerter_tick_failed", error }))
       .finally(() => {
         tickInFlight = false;

@@ -19,7 +19,7 @@
  */
 
 import { pool } from "../db/pool";
-import { logger } from "../utils/logger";
+import { logger, withTickLogContext } from "../utils/logger";
 import { cancelAbandonedOnboarding } from "../repositories/restaurants";
 
 const TICK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
@@ -110,8 +110,8 @@ export function startCleanupWorker(): void {
     retention: RETENTION_INTERVAL_SQL
   });
   firstTickTimer = setTimeout(() => {
-    void tick();
-    intervalHandle = setInterval(() => void tick(), TICK_INTERVAL_MS);
+    void withTickLogContext("cleanup", () => tick());
+    intervalHandle = setInterval(() => void withTickLogContext("cleanup", () => tick()), TICK_INTERVAL_MS);
     intervalHandle.unref();
   }, INITIAL_DELAY_MS);
   firstTickTimer.unref();

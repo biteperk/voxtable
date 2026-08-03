@@ -20,10 +20,11 @@
  *      (which can carry request bodies + auth headers from fetch-style errors).
  *
  * Call from inside a request handler and request_id is automatically attached.
- * Worker ticks run outside any context, so every worker log line carries
- * `request_id: undefined` today — no worker calls `withLogContext`. Per-batch
- * correlation ids are planned platform work; until they land, do not expect a
- * request_id on any line emitted from the worker process.
+ * Worker ticks run inside `withTickLogContext`, so their lines carry
+ * `request_id: "<worker>#<seq>"`. Retell handlers additionally pin
+ * `provider_call_id` via `enrichLogContext`, so every line logged while
+ * serving a tool call traces back to one phone call. (Correlation that
+ * survives a hop into a queue is Block 8 platform work.)
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -34,17 +35,18 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 interface LogContext {
   request_id: string;
+  // The Retell call this request belongs to. Set by the /retell/* handlers
+  // via enrichLogContext, so EVERY line logged while serving a tool call —
+  // including errorHandler's — can be traced back to one phone call.
+  provider_call_id?: string;
 }
 
 const contextStorage = new AsyncLocalStorage<LogContext>();
 
 /**
- * Run `fn` inside a fresh logging context. Its ONLY caller today is the
- * requestLogger middleware, which sets request_id at the top of each HTTP
- * handler chain. No worker uses it — worker lines carry
- * `request_id: undefined`. (An earlier version of this comment claimed the
- * outbox worker sets a per-batch id; it never did, and trusting that during
- * an incident would send you hunting for a correlation that does not exist.)
+ * Run `fn` inside a fresh logging context. Two callers: the requestLogger
+ * middleware (request_id at the top of each HTTP handler chain) and
+ * `withTickLogContext` (per-tick ids for the workers).
  */
 export function withLogContext<T>(context: LogContext, fn: () => T): T {
   return contextStorage.run(context, fn);
@@ -52,6 +54,28 @@ export function withLogContext<T>(context: LogContext, fn: () => T): T {
 
 export function currentRequestId(): string | undefined {
   return contextStorage.getStore()?.request_id;
+}
+
+/**
+ * Add fields to the CURRENT log context (no-op outside one). Used by the
+ * Retell handlers to pin provider_call_id once the call is identified, so a
+ * mid-call incident is greppable by the one id Retell's dashboard also shows.
+ */
+export function enrichLogContext(fields: Partial<Omit<LogContext, "request_id">>): void {
+  const store = contextStorage.getStore();
+  if (!store) return;
+  Object.assign(store, fields);
+}
+
+// Worker ticks used to log with `request_id: undefined` — no way to tell two
+// interleaved ticks apart. A per-tick context gives every line the worker
+// name and a monotonic sequence. (Correlation that survives a hop into the
+// outbox is Block 8 platform work; this is the in-process half.)
+let tickSequence = 0;
+
+export function withTickLogContext<T>(worker: string, fn: () => T): T {
+  tickSequence += 1;
+  return withLogContext({ request_id: `${worker}#${tickSequence}` }, fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -194,10 +218,12 @@ const MIN_LEVEL: number =
 
 function emit(level: LogLevel, fields: Record<string, unknown>): void {
   if (LEVELS[level] < MIN_LEVEL) return;
+  const context = contextStorage.getStore();
   const line = {
     ts: new Date().toISOString(),
     level,
-    request_id: currentRequestId(),
+    request_id: context?.request_id,
+    ...(context?.provider_call_id ? { provider_call_id: context.provider_call_id } : {}),
     ...(redact(fields) as Record<string, unknown>)
   };
   const json = JSON.stringify(line);

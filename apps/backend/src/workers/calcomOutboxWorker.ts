@@ -24,7 +24,7 @@ import {
   markOutboxRetry,
   markOutboxSucceeded
 } from "../repositories/outbox";
-import { logger } from "../utils/logger";
+import { logger, withTickLogContext } from "../utils/logger";
 
 const TICK_INTERVAL_MS = 2_000;
 const BATCH_SIZE = 20;
@@ -230,7 +230,7 @@ export function startOutboxWorker(): void {
     // processBatch's own try/catch starts AFTER `pool.connect()` — a pool
     // exhaustion or connect timeout rejects outside it, and an unhandled
     // rejection kills the whole worker process (see provisioningWorker).
-    currentTick = processBatch()
+    currentTick = withTickLogContext("calcom-outbox", () => processBatch())
       .catch((error) => logger.error({ evt: "outbox_tick_failed", error }))
       .finally(() => {
         tickInFlight = false;

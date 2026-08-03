@@ -8,7 +8,7 @@
 import twilio from "twilio";
 
 import { env } from "../config/env";
-import { logger } from "../utils/logger";
+import { logger, withTickLogContext } from "../utils/logger";
 import {
   claimReadyNotifications,
   markNotificationFailed,
@@ -153,7 +153,7 @@ export function startNotificationWorker(): void {
     if (tickInFlight) return;
     tickInFlight = true;
     // See provisioningWorker: an unhandled rejection here kills the process.
-    currentTick = processBatch()
+    currentTick = withTickLogContext("notifications", () => processBatch())
       .catch((error) => logger.error({ evt: "notification_tick_failed", error }))
       .finally(() => {
         tickInFlight = false;
