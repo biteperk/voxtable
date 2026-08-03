@@ -91,7 +91,7 @@ export async function claimReadyOutbox(limit: number, db: DbClient): Promise<Out
      WHERE succeeded_at IS NULL
        AND failed_at IS NULL
        AND next_attempt_at <= now()
-     ORDER BY next_attempt_at
+     ORDER BY next_attempt_at, created_at, id
      LIMIT $1
      FOR UPDATE SKIP LOCKED
     `,

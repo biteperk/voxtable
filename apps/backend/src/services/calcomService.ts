@@ -179,6 +179,18 @@ async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<Outb
   if (reservation.calcom_booking_uid) {
     return { outcome: "succeeded" };
   }
+  // Cancelled before this create ever pushed (a cancel within one worker tick
+  // of the create). Pushing anyway would put a booking on Cal.com that
+  // nothing will ever cancel — the cancel op sees no uid and, once this row
+  // is terminal, correctly concludes nothing reached Cal.com.
+  if (reservation.status === "cancelled") {
+    logger.info({
+      evt: "calcom_push_skipped_cancelled",
+      op: "create",
+      reservation_id: reservation.id
+    });
+    return { outcome: "succeeded" };
+  }
 
   const restaurantTimezone = await getRestaurantTimezone(reservation.restaurant_id);
   const payload = buildCreatePayload({
@@ -222,9 +234,40 @@ async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<Outb
 }
 
 async function executeCancel(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult> {
-  const uid = (row.payload as { calcom_booking_uid?: string }).calcom_booking_uid;
+  // Re-read the uid at push time. The enqueue-time snapshot in the payload is
+  // NULL whenever the cancel landed within one worker tick of the create (the
+  // create hadn't pushed yet) — and treating that as "nothing to cancel"
+  // marked the intent succeeded while the create went on to push anyway: a
+  // permanent ghost booking on Cal.com. The payload uid is kept only as a
+  // fallback for a reservation row that has since been deleted.
+  const fresh = await db.query<{ calcom_booking_uid: string | null }>(
+    "SELECT calcom_booking_uid FROM reservations WHERE id = $1",
+    [row.reservation_id]
+  );
+  const uid =
+    fresh.rows[0]?.calcom_booking_uid ??
+    (row.payload as { calcom_booking_uid?: string }).calcom_booking_uid;
   if (!uid) {
-    // Nothing to cancel — the reservation never made it to Cal.com.
+    const pendingCreate = await db.query(
+      `
+      SELECT 1 FROM outbox_calcom
+       WHERE reservation_id = $1 AND op = 'create'
+         AND succeeded_at IS NULL AND failed_at IS NULL
+       LIMIT 1
+      `,
+      [row.reservation_id]
+    );
+    if (pendingCreate.rowCount) {
+      // The create hasn't resolved yet. It will see status='cancelled' and
+      // no-op (or, if it already pushed, stamp the uid) — either way the next
+      // attempt of this row sees the truth. "Hasn't reached Cal.com YET" must
+      // not be conflated with "never will".
+      return {
+        outcome: "transient",
+        error: "create op for this reservation still pending; retrying cancel until it resolves"
+      };
+    }
+    // No uid and no pending create — the reservation never reached Cal.com.
     return { outcome: "succeeded" };
   }
   try {
@@ -246,15 +289,80 @@ async function executeCancel(row: OutboxExecutorRow, db: DbClient): Promise<Outb
   }
 }
 
-async function executeReschedule(_row: OutboxExecutorRow, _db: DbClient): Promise<OutboxExecutionResult> {
-  // Reschedule is implemented as cancel + create at the bookingService layer;
-  // by the time we reach the worker we'll be processing those two ops
-  // independently. If a 'reschedule' op ever lands here directly, dead-letter
-  // it loudly so we notice.
-  return {
-    outcome: "permanent",
-    error: "Direct 'reschedule' ops are not implemented; reschedule via cancel + create."
-  };
+async function executeReschedule(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult> {
+  // Loads the reservation FRESH, like executeCreate — the row carries intent
+  // ("this reservation moved"), not a time snapshot. If the booking moved
+  // twice before this row was processed, one push lands the latest truth and
+  // the enqueue-time de-dup means there was only ever one pending row.
+  const reservation = await loadReservationForPush(row.reservation_id, db);
+  if (!reservation) {
+    return {
+      outcome: "permanent",
+      error: `Reservation ${row.reservation_id} no longer exists; skipping reschedule`
+    };
+  }
+  if (reservation.status === "cancelled") {
+    // The cancel op owns the mirror from here.
+    return { outcome: "succeeded" };
+  }
+  if (!reservation.calcom_booking_uid) {
+    // The create hasn't pushed yet. When it does, executeCreate reads the
+    // CURRENT row — which already holds the new time — so there is nothing
+    // separate to reschedule. And if no create row exists at all, this
+    // reservation was never mirrored.
+    return { outcome: "succeeded" };
+  }
+
+  const restaurantTimezone = await getRestaurantTimezone(reservation.restaurant_id);
+  const startIso = zonedWallClockToUtcISO(
+    reservation.reservation_date,
+    reservation.start_time.slice(0, 5),
+    restaurantTimezone
+  );
+
+  try {
+    const response = await calcomRequest<unknown>({
+      method: "POST",
+      path: `/bookings/${encodeURIComponent(reservation.calcom_booking_uid)}/reschedule`,
+      body: {
+        start: startIso,
+        reschedulingReason: "Rescheduled via VoxTable"
+      },
+      // Same per-row idempotency as create: a crash between POST and COMMIT
+      // must not reschedule twice.
+      idempotencyKey: `vocotable-outbox-${row.id}`
+    });
+    // Cal.com's reschedule creates a NEW booking (new uid) and retires the
+    // old one. If we don't record the new uid, every later cancel re-reads a
+    // stale uid, Cal.com 404s it, we shrug "already gone" — and the ghost is
+    // back. A response we can't extract a uid from is therefore a loud
+    // dead-letter, not a success.
+    const newUid = extractUidFromCreateResponse(response.data);
+    if (!newUid) {
+      return {
+        outcome: "permanent",
+        error: `Cal.com reschedule returned no uid (status=${response.status}); mirror uid is now stale — fix by hand`
+      };
+    }
+    if (newUid !== reservation.calcom_booking_uid) {
+      await updateReservationCalcomUid(reservation.id, newUid, db);
+    }
+    logger.info({
+      evt: "calcom_push_success",
+      op: "reschedule",
+      reservation_id: reservation.id,
+      calcom_uid: newUid,
+      latency_ms: response.durationMs
+    });
+    return { outcome: "succeeded" };
+  } catch (error) {
+    if (error instanceof CalcomPermanentError && error.status === 404) {
+      // The uid no longer exists on Cal.com (cancelled there out-of-band).
+      // The inbox cancel handler owns that state change; nothing to move.
+      return { outcome: "succeeded" };
+    }
+    return classifyCalcomError(error, "reschedule");
+  }
 }
 
 function classifyCalcomError(error: unknown, op: string): OutboxExecutionResult {
@@ -276,7 +384,11 @@ function classifyCalcomError(error: unknown, op: string): OutboxExecutionResult 
   return { outcome: "transient", error: message };
 }
 
-const realExecutor = {
+// Exported so the calcom-mirror smoke test can drive the REAL op handlers
+// against a live Postgres — the B5 short-circuit paths (cancel-before-create,
+// create-after-cancel) resolve before any network call, so they are testable
+// without a Cal.com stub.
+export const calcomOutboxExecutor = {
   async execute(row: OutboxExecutorRow, db: DbClient): Promise<OutboxExecutionResult> {
     switch (row.op) {
       case "create":
@@ -298,7 +410,7 @@ const realExecutor = {
  */
 export function installCalcomExecutor(): void {
   if (!env.CALCOM_SYNC_ENABLED) return;
-  setOutboxExecutor(realExecutor);
+  setOutboxExecutor(calcomOutboxExecutor);
   logger.info({ evt: "calcom_executor_installed" });
 }
 
@@ -344,7 +456,32 @@ export async function enqueueCancelForReservation(
     {
       reservationId,
       op: "cancel",
+      // The uid here is only a fallback for a reservation row deleted before
+      // the push — the executor re-reads the live uid at push time, because
+      // this snapshot is NULL whenever the cancel lands before the create op
+      // has pushed (see executeCancel).
       payload: { calcom_booking_uid: calcomUid ?? undefined, reason }
+    },
+    db
+  );
+}
+
+/**
+ * Enqueue a reschedule — used by `bookingService.modifyBooking` INSIDE its
+ * transaction whenever the reservation's date or time changed. Payload is
+ * empty by design: the executor loads the reservation fresh at push time, so
+ * the row is pure intent and self-heals across multiple moves.
+ */
+export async function enqueueRescheduleForReservation(
+  reservationId: string,
+  db: DbClient
+): Promise<void> {
+  if (!env.CALCOM_SYNC_ENABLED) return;
+  await enqueueOutbox(
+    {
+      reservationId,
+      op: "reschedule",
+      payload: {}
     },
     db
   );
@@ -488,11 +625,16 @@ async function handleBookingCreated(
     return;
   }
 
-  // Reconcile: did the outbox push succeed but Cal.com webhook beat the
-  // commit? Scan pending outbox rows matching this booking's start time.
-  // (We rely on the unique index to ensure uid uniqueness — if we find a
-  // match here, we're stamping our own row.)
-  const reconciled = await tryReconcileOutboxRow(uid);
+  // Reconcile by the metadata WE stamped on every outbound push
+  // (buildCreatePayload sets `vocotable_reservation_id`). If the key is
+  // present, this webhook is the echo of our own push — the outbox worker's
+  // commit may simply not have landed yet — so attach the uid and stop.
+  // Absence of the key positively identifies a genuine web booking. The old
+  // reconciler matched on nothing but "exactly one pending create row", so a
+  // stranger's web booking arriving while a voice push was in flight got its
+  // uid stamped onto the voice reservation — and the stranger's later
+  // cancellation cancelled the voice caller's table.
+  const reconciled = await reconcileMirroredBooking(data.metadata, uid);
   if (reconciled) return;
 
   // Genuine web-channel booking. Funnel through bookingService so capacity
@@ -646,33 +788,45 @@ async function handleBookingCancelled(
 }
 
 /**
- * Reconciler: a BOOKING_CREATED arrived for a uid we don't have. Maybe our
- * own outbox push succeeded but the commit hasn't landed yet OR a worker
- * mis-stamping bug. Look for pending create-ops whose stored payload-implied
- * (date,time) matches the webhook. If exactly one matches, attach the uid.
+ * Reconciler: a BOOKING_CREATED arrived for a uid we don't hold. If the
+ * webhook's metadata carries the `vocotable_reservation_id` we stamp on every
+ * outbound push, it is OUR booking echoed back (typically the webhook beating
+ * the outbox worker's commit) — attach the uid to exactly that reservation.
  *
- * Returns true if reconciled (caller should NOT create a new reservation).
+ * Returns true if this event is ours (caller must NOT create a reservation) —
+ * including when the target row is already stamped or has vanished, because
+ * a metadata-bearing event is never a genuine web booking.
+ *
+ * Exported for the calcom-mirror smoke test.
  */
-async function tryReconcileOutboxRow(uid: string): Promise<boolean> {
-  // Pessimistic scan — the outbox is usually small, and this only runs for
-  // unmatched BOOKING_CREATED events. If the table gets huge we'll add an
-  // index on (op, succeeded_at).
-  const result = await readPool.query<{ reservation_id: string }>(
-    `
-    SELECT o.reservation_id
-      FROM outbox_calcom o
-      JOIN reservations r ON r.id = o.reservation_id
-     WHERE o.op = 'create'
-       AND o.succeeded_at IS NULL
-       AND o.failed_at IS NULL
-       AND r.calcom_booking_uid IS NULL
-     ORDER BY o.created_at DESC
-     LIMIT 5
-    `
+export async function reconcileMirroredBooking(
+  metadata: Record<string, unknown> | undefined,
+  uid: string
+): Promise<boolean> {
+  const reservationId =
+    metadata && typeof metadata["vocotable_reservation_id"] === "string"
+      ? (metadata["vocotable_reservation_id"] as string)
+      : null;
+  if (!reservationId) return false;
+
+  const result = await pool.query<{ id: string; calcom_booking_uid: string | null }>(
+    "SELECT id, calcom_booking_uid FROM reservations WHERE id = $1",
+    [reservationId]
   );
-  if (result.rows.length !== 1) return false;
-  const reservationId = result.rows[0]!.reservation_id;
-  await updateReservationCalcomUid(reservationId, uid);
-  logger.info({ evt: "calcom_inbox_reconciled", uid, reservation_id: reservationId });
+  const row = result.rows[0];
+  if (!row) {
+    // Ours, but the reservation is gone (deleted between push and webhook).
+    // Still not a web booking — swallow rather than double-create.
+    logger.warn({ evt: "calcom_inbox_reconcile_missing_reservation", uid, reservation_id: reservationId });
+    return true;
+  }
+  if (row.calcom_booking_uid) {
+    // Already stamped (the worker's commit won the race, or a reschedule
+    // echo). Idempotent skip.
+    logger.info({ evt: "calcom_inbox_reconcile_already_stamped", uid, reservation_id: row.id });
+    return true;
+  }
+  await updateReservationCalcomUid(row.id, uid);
+  logger.info({ evt: "calcom_inbox_reconciled", uid, reservation_id: row.id });
   return true;
 }

@@ -16,7 +16,8 @@ import { listAvailableTables } from "../repositories/availability";
 import { checkAvailability, requireAvailableTable } from "./availabilityService";
 import {
   enqueueCancelForReservation,
-  enqueueCreateForReservation
+  enqueueCreateForReservation,
+  enqueueRescheduleForReservation
 } from "./calcomService";
 import { formatVoiceTime, isWithinOpeningHours, todayInTz } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
@@ -322,6 +323,26 @@ export async function modifyBooking(input: {
         },
         db
       );
+
+      // Cal.com mirror — inside the same transaction, like create and cancel.
+      // Until this existed, a moved booking NEVER propagated: the calendar
+      // kept the old time forever, and a dashboard cancel via PATCH status
+      // skipped the mirror entirely (only POST /bookings/:id/cancel enqueued).
+      const becameCancelled =
+        input.status === "cancelled" && current.status !== "cancelled";
+      const dateOrTimeChanged =
+        (input.date !== undefined && input.date !== current.reservation_date) ||
+        (input.time !== undefined && input.time !== current.start_time.slice(0, 5));
+      if (becameCancelled) {
+        await enqueueCancelForReservation(
+          current.id,
+          current.calcom_booking_uid,
+          "Cancelled via VoxTable",
+          db
+        );
+      } else if (dateOrTimeChanged) {
+        await enqueueRescheduleForReservation(current.id, db);
+      }
 
       // Name correction — only fire the UPDATE if the name actually changed.
       // Fetch current customer name inside the txn so it shares the snapshot.
