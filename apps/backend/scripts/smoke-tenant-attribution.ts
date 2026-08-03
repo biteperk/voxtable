@@ -15,14 +15,7 @@
  */
 import { pool } from "../src/db/pool";
 import { handleTwilioIncomingCall, handleTwilioStatusCallback } from "../src/services/twilioService";
-
-let failures = 0;
-function assert(label: string, ok: boolean, detail?: unknown): void {
-  if (!ok) failures += 1;
-  console.log(`[${ok ? "PASS" : "FAIL"}] ${label}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ""}`);
-}
-
-const SUFFIX = process.pid.toString(36);
+import { assert, reportAndExit, SMOKE_SUFFIX as SUFFIX } from "./lib/smoke-harness";
 // Distinct, clearly-fake AU numbers so they cannot collide with real rows.
 const NUMBER_A = "+61255500001";
 const NUMBER_B = "+61255500002";
@@ -91,8 +84,7 @@ async function main(): Promise<void> {
     await pool.end();
   }
 
-  console.log(failures === 0 ? "\nAll tenant-attribution checks passed." : `\n${failures} check(s) FAILED.`);
-  process.exit(failures === 0 ? 0 : 1);
+  reportAndExit("tenant-attribution");
 }
 
 main().catch(async (error) => {

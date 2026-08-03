@@ -19,14 +19,12 @@ import {
   processOutboxBatchOnce,
   setOutboxExecutor
 } from "../src/workers/calcomOutboxWorker";
-
-let failures = 0;
-function assert(label: string, ok: boolean, detail?: unknown): void {
-  if (!ok) failures += 1;
-  console.log(`[${ok ? "PASS" : "FAIL"}] ${label}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ""}`);
-}
-
-const SUFFIX = process.pid.toString(36);
+import {
+  assert,
+  cleanupSmokeRestaurant,
+  reportAndExit,
+  SMOKE_SUFFIX as SUFFIX
+} from "./lib/smoke-harness";
 
 interface OutboxState {
   attempts: number;
@@ -70,12 +68,6 @@ async function setup(): Promise<{ restaurantId: string; reservationId: string }>
     [restaurantId, customer.rows[0]!.id]
   );
   return { restaurantId, reservationId: reservation.rows[0]!.id };
-}
-
-async function cleanup(restaurantId: string): Promise<void> {
-  await pool.query("DELETE FROM reservations WHERE restaurant_id = $1", [restaurantId]);
-  await pool.query("DELETE FROM customers WHERE restaurant_id = $1", [restaurantId]);
-  await pool.query("DELETE FROM restaurants WHERE id = $1", [restaurantId]);
 }
 
 async function main(): Promise<void> {
@@ -126,15 +118,11 @@ async function main(): Promise<void> {
       s3
     );
   } finally {
-    await cleanup(restaurantId);
+    await cleanupSmokeRestaurant(restaurantId);
     await pool.end();
   }
 
-  if (failures > 0) {
-    console.error(`\n${failures} check(s) FAILED`);
-    process.exit(1);
-  }
-  console.log("\nAll outbox dead-letter checks passed.");
+  reportAndExit("outbox dead-letter");
 }
 
 void main().catch((error) => {

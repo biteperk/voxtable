@@ -36,6 +36,7 @@
     "smoke:menu-ocr": "npm run smoke:menu-ocr --workspace=@vocotable/backend",
     "smoke:double-booking": "npm run smoke:double-booking --workspace=@vocotable/backend",
     "smoke:tenant-attribution": "npm run smoke:tenant-attribution --workspace=@vocotable/backend",
+    "smoke:calcom-mirror": "npm run smoke:calcom-mirror --workspace=@vocotable/backend",
     "smoke:outbox-deadletter": "npm run smoke:outbox-deadletter --workspace=@vocotable/backend",
     "smoke:solo-diner": "npm run smoke:solo-diner --workspace=@vocotable/backend",
     "audit:backend": "npm audit --workspace=@vocotable/backend --omit=dev --omit=optional",

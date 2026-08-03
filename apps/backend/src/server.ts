@@ -2,14 +2,17 @@ import { env } from "./config/env";
 import { createApp } from "./app";
 import { closePool } from "./db/pool";
 import { warmRestaurantCache } from "./repositories/restaurants";
+import { installProcessGuards } from "./runtime/processGuards";
 import { verifyCalcomSchemasAgainstFixtures } from "./services/calcomSchemas";
 import { initSentry } from "./utils/sentry";
 
 const SHUTDOWN_HTTP_TIMEOUT_MS = 15_000;
 
 async function main(): Promise<void> {
-  // Sentry first — wires the global unhandled-rejection / uncaught-exception
-  // hooks before anything else runs. No-op without SENTRY_DSN.
+  // Guards first — a rejection escaping anything below must be logged, not
+  // silently exit the process. (Sentry does NOT wire these hooks when
+  // SENTRY_DSN is unset, which an earlier comment here wrongly assumed.)
+  installProcessGuards("api");
   initSentry();
 
   // Fail-loud check: every Zod schema for an external Cal.com payload must

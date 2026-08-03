@@ -40,6 +40,16 @@ const envSchema = z
   PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:3050"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   DATABASE_SSL: boolFlag(),
+  // Per-process pool ceilings. Both containers import db/pool at boot, so the
+  // TOTAL across api + worker must stay under Postgres' usable connections
+  // (default max_connections=100 minus 3 superuser-reserved = 97). Defaults:
+  // api keeps 40+10 = 50; Dockerfile.worker overrides to 30+5 = 35 → 85
+  // total, leaving headroom for migrations and a psql session.
+  PG_POOL_MAX_WRITE: z.coerce.number().int().positive().default(40),
+  PG_POOL_MAX_READ: z.coerce.number().int().positive().default(10),
+  // Shows up in pg_stat_activity. The worker overrides this in its image so
+  // "who is holding connections" is answerable during an incident.
+  PG_APPLICATION_NAME: z.string().default("vocotable-api"),
   DEFAULT_RESTAURANT_ID: z
     .string()
     .uuid()
@@ -68,6 +78,11 @@ const envSchema = z
   TWILIO_VALIDATE_SIGNATURE: gateFlag(),
   FIREBASE_PROJECT_ID: z.string().optional(),
   GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
+  // Deadline on verifyIdToken — the ONLY external call in the request path
+  // with no timeout of its own. If Google's cert endpoint hangs, every
+  // dashboard request hangs with it. Timeouts map to 503, never 401, so a
+  // Google outage can't mass-sign-out the dashboard.
+  FIREBASE_AUTH_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
 
   // Dashboard auth gate. Defaults ON. Turning it off is a local-development
   // convenience — it lets smoke scripts and curl probes skip minting a Firebase

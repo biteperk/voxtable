@@ -95,6 +95,14 @@ jobs:
       - name: Prove calls are attributed to the right restaurant
         run: npm run smoke:tenant-attribution
 
+      # The calendar mirror's three divergence bugs: a moved booking that never
+      # propagated, a cancel-racing-create that left a permanent ghost booking
+      # on Cal.com, and a reconciler that could stamp a stranger's web booking
+      # onto a voice reservation. Every asserted path short-circuits before the
+      # network, so this needs no Cal.com credentials.
+      - name: Prove the Cal.com mirror converges
+        run: npm run smoke:calcom-mirror
+
       # The outbox retry policy's throw path: a throwing row must dead-letter
       # at the attempts ceiling, and a row whose executor aborts the batch
       # transaction must still get its retry recorded (per-row savepoints) —

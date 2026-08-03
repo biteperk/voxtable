@@ -13,15 +13,14 @@
  */
 import { pool } from "../src/db/pool";
 import { createBooking } from "../src/services/bookingService";
-
-let failures = 0;
-function assert(label: string, ok: boolean, detail?: unknown): void {
-  if (!ok) failures += 1;
-  console.log(`[${ok ? "PASS" : "FAIL"}] ${label}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ""}`);
-}
-
-const SUFFIX = process.pid.toString(36);
-const DATE = new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+import {
+  assert,
+  cleanupSmokeRestaurant,
+  createSmokeRestaurant,
+  reportAndExit,
+  SMOKE_DATE as DATE,
+  SMOKE_SUFFIX as SUFFIX
+} from "./lib/smoke-harness";
 
 // Deterministic per-run phone digits (Sonar S2245 flags Math.random even in
 // scripts; pid-derived digits are also traceable back to a run).
@@ -29,52 +28,6 @@ let phoneSeq = 0;
 function nextPhone(): string {
   phoneSeq += 1;
   return `+61255${String(10000 + ((process.pid * 10 + phoneSeq) % 90000)).padStart(5, "0")}`;
-}
-
-async function setupRestaurant(name: string): Promise<string> {
-  const restaurant = await pool.query<{ id: string }>(
-    `INSERT INTO restaurants (name, timezone, phone_number)
-     VALUES ($1, 'Australia/Sydney', $2) RETURNING id`,
-    [name, nextPhone()]
-  );
-  const restaurantId = restaurant.rows[0]!.id;
-  const hours = JSON.stringify(
-    Object.fromEntries(
-      ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((d) => [
-        d,
-        [{ open: "10:00", close: "23:00" }]
-      ])
-    )
-  );
-  await pool.query(
-    `INSERT INTO restaurant_settings (restaurant_id, booking_duration_minutes, opening_hours_json)
-     VALUES ($1, 90, $2::jsonb)
-     ON CONFLICT (restaurant_id) DO UPDATE
-       SET booking_duration_minutes = EXCLUDED.booking_duration_minutes,
-           opening_hours_json = EXCLUDED.opening_hours_json`,
-    [restaurantId, hours]
-  );
-  return restaurantId;
-}
-
-async function addTable(
-  restaurantId: string,
-  label: string,
-  minCapacity: number,
-  maxCapacity: number
-): Promise<string> {
-  const r = await pool.query<{ id: string }>(
-    `INSERT INTO tables (restaurant_id, label, min_capacity, max_capacity, is_active)
-     VALUES ($1, $2, $3, $4, true) RETURNING id`,
-    [restaurantId, label, minCapacity, maxCapacity]
-  );
-  return r.rows[0]!.id;
-}
-
-async function cleanup(restaurantId: string): Promise<void> {
-  await pool.query("DELETE FROM reservations WHERE restaurant_id = $1", [restaurantId]);
-  await pool.query("DELETE FROM customers WHERE restaurant_id = $1", [restaurantId]);
-  await pool.query("DELETE FROM restaurants WHERE id = $1", [restaurantId]);
 }
 
 function book(restaurantId: string, time: string, partySize: number, phone: string) {
@@ -91,8 +44,11 @@ function book(restaurantId: string, time: string, partySize: number, phone: stri
 
 async function main(): Promise<void> {
   // ---- 1: empty restaurant, only two-tops with min_capacity=2 ------------
-  const strict = await setupRestaurant(`smoke-solo-strict-${SUFFIX}`);
-  await addTable(strict, "T1", 2, 4);
+  const { restaurantId: strict } = await createSmokeRestaurant({
+    name: `smoke-solo-strict-${SUFFIX}`,
+    phoneNumber: nextPhone(),
+    tables: [{ label: "T1", minCapacity: 2, maxCapacity: 4 }]
+  });
   try {
     const solo = await book(strict, "12:00", 1, "+61255511021").then(
       (r) => ({ ok: true as const, r }),
@@ -111,16 +67,22 @@ async function main(): Promise<void> {
     );
     assert("a party of five is still refused when the biggest table seats four", oversized === false);
   } finally {
-    await cleanup(strict);
+    await cleanupSmokeRestaurant(strict);
   }
 
   // ---- 2: preference — the min-satisfied table wins over the under-filled -
-  const mixed = await setupRestaurant(`smoke-solo-mixed-${SUFFIX}`);
-  // Insert the big-minimum table FIRST and with an earlier label so any
+  // The big-minimum table comes FIRST and with an earlier label so any
   // insertion-order or label-order accident would pick it — only the
-  // min-satisfied ranking can choose T2.
-  const bigMin = await addTable(mixed, "A-big", 2, 4);
-  const soloFit = await addTable(mixed, "B-solo", 1, 2);
+  // min-satisfied ranking can choose the solo-fit table.
+  const { restaurantId: mixed, tableIds } = await createSmokeRestaurant({
+    name: `smoke-solo-mixed-${SUFFIX}`,
+    phoneNumber: nextPhone(),
+    tables: [
+      { label: "A-big", minCapacity: 2, maxCapacity: 4 },
+      { label: "B-solo", minCapacity: 1, maxCapacity: 2 }
+    ]
+  });
+  const [bigMin, soloFit] = [tableIds[0]!, tableIds[1]!];
   try {
     const seated = await book(mixed, "12:00", 1, "+61255511023");
     const row = await pool.query<{ table_id: string }>(
@@ -133,16 +95,12 @@ async function main(): Promise<void> {
       { got: row.rows[0]!.table_id, want: soloFit, notWant: bigMin }
     );
   } finally {
-    await cleanup(mixed);
+    await cleanupSmokeRestaurant(mixed);
   }
 
   await pool.end();
 
-  if (failures > 0) {
-    console.error(`\n${failures} check(s) FAILED`);
-    process.exit(1);
-  }
-  console.log("\nAll solo-diner capacity checks passed.");
+  reportAndExit("solo-diner capacity");
 }
 
 void main().catch((error) => {

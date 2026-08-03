@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import { AppError } from "../domain/errors";
 import { DbClient, pool, withTransaction } from "../db/pool";
 import {
@@ -56,6 +58,45 @@ export interface CreateOrderResult {
 }
 
 /**
+ * Stable fingerprint of an order's CONTENT, for building idempotency keys
+ * that distinguish "the same tool call retried" from "a second order in the
+ * same call". The voice path used to key on the bare Retell call_id, so one
+ * call could only ever place one order — the guest added a Coke, heard it
+ * confirmed, and it was never made or billed (audit B8).
+ *
+ * Normalised so equivalent orders collide on purpose: item order and
+ * modifier order don't change the fingerprint; quantity, variant, and
+ * special requests do.
+ */
+export function orderContentFingerprint(
+  items: CreateOrderItemInput[],
+  specialInstructions?: string
+): string {
+  // Code-point comparison, NOT localeCompare and NOT the default sort — a
+  // fingerprint must order identically on every machine, and locale-aware
+  // collation does not promise that.
+  const byCodePoint = (x: string, y: string): number => {
+    if (x < y) return -1;
+    if (x > y) return 1;
+    return 0;
+  };
+  const normalised = items
+    .map((item) => ({
+      m: item.menuItemId,
+      v: item.variantId ?? "",
+      q: item.quantity,
+      mods: [...(item.modifierIds ?? [])].sort(byCodePoint),
+      s: item.specialRequests ?? ""
+    }))
+    .sort((a, b) => byCodePoint(`${a.m}|${a.v}|${a.s}`, `${b.m}|${b.v}|${b.s}`));
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify({ items: normalised, si: specialInstructions ?? "" }))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+/**
  * Create an order with full concurrency hardening:
  *   1. Idempotency: same key returns the existing order, never inserts twice.
  *   2. Advisory lock per reservation (or per table+minute for walk-ins) so
@@ -79,15 +120,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   // Hydrate via the read pool happens AFTER the txn commits — the read pool
   // can't see uncommitted writes from the write pool's txn.
   const result = await withTransaction(async (db): Promise<{ orderId: string; isReplay: boolean }> => {
-    // 1) Idempotency: return existing order if this key was already used.
-    if (input.idempotencyKey) {
-      const existing = await findOrderByIdempotencyKey(input.restaurantId, input.idempotencyKey, db);
-      if (existing) {
-        return { orderId: existing.id, isReplay: true };
-      }
-    }
-
-    // 2) Advisory lock keyed on reservation (or walk-in slot) to serialise
+    // 1) Advisory lock keyed on reservation (or walk-in slot) to serialise
     //    concurrent create-order attempts for the same booking.
     const lockKey = input.reservationId
       ? `order:reservation:${input.reservationId}`
@@ -98,6 +131,18 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`,
       [lockKey]
     );
+
+    // 2) Idempotency: return existing order if this key was already used.
+    //    AFTER the lock, not before — two concurrent retries of the same tool
+    //    call used to both pass this check and race the INSERT, surfacing the
+    //    unique-index violation as a raw 500 on the phone. Behind the lock the
+    //    loser blocks, then sees the winner's committed row here.
+    if (input.idempotencyKey) {
+      const existing = await findOrderByIdempotencyKey(input.restaurantId, input.idempotencyKey, db);
+      if (existing) {
+        return { orderId: existing.id, isReplay: true };
+      }
+    }
 
     // 3) Load + lock menu items, variants, modifiers inside the txn.
     const uniqueItemIds = Array.from(new Set(input.items.map((i) => i.menuItemId)));
