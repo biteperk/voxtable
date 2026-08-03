@@ -103,6 +103,12 @@ function backoffMsForAttempt(attempts: number): number {
   return Math.min(base * 2 ** attempts, max);
 }
 
+/**
+ * Run exactly one claim-and-process batch. Exported (aliased below) so the
+ * dead-letter smoke test can drive the REAL retry/dead-letter policy against
+ * a live Postgres with an injected executor — the throw path's missing
+ * attempts ceiling shipped precisely because nothing could exercise it.
+ */
 async function processBatch(): Promise<void> {
   // One outer transaction per tick so SKIP LOCKED can do its job.
   const client = await pool.connect();
@@ -120,6 +126,16 @@ async function processBatch(): Promise<void> {
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index]!;
       if (index > 0) await delay(intervalBetweenPushesMs);
+
+      // Per-row savepoint: if the executor throws a Postgres error, the batch
+      // transaction is aborted and EVERY later query on this client fails —
+      // including the markOutboxRetry in the catch below. The outer handler
+      // then rolled the whole batch back, which un-did the attempts bump, so
+      // the same row was re-claimed every 2-second tick forever: no backoff,
+      // no counter, no dead-letter, and invisible to the failed_at alert.
+      // ROLLBACK TO SAVEPOINT restores a usable transaction so the failure
+      // can actually be recorded.
+      await client.query("SAVEPOINT outbox_row");
 
       try {
         const result = await executor.execute(
@@ -159,16 +175,27 @@ async function processBatch(): Promise<void> {
           await markOutboxFailed(row.id, result.error ?? "permanent error", client);
         }
       } catch (error) {
-        // Defensive: if the executor itself throws, treat as transient so
-        // we don't lose visibility, but log loudly.
+        // Defensive: if the executor itself throws, log loudly and record the
+        // failure — under the SAME attempts ceiling as the transient-return
+        // path. This catch used to skip the ceiling entirely, so a throwing
+        // row (e.g. a malformed date that makes buildCreatePayload throw —
+        // permanent by nature) retried hourly forever instead of
+        // dead-lettering after CALCOM_OUTBOX_MAX_ATTEMPTS.
         logger.error({ evt: "outbox_executor_threw", error });
-        await markOutboxRetry(
-          row.id,
-          (error as Error).message ?? "executor threw",
-          backoffMsForAttempt(row.attempts),
-          client
-        );
+        await client.query("ROLLBACK TO SAVEPOINT outbox_row");
+        const message = (error as Error).message ?? "executor threw";
+        const nextAttempt = row.attempts + 1;
+        if (nextAttempt >= env.CALCOM_OUTBOX_MAX_ATTEMPTS) {
+          await markOutboxFailed(
+            row.id,
+            `Max attempts reached (${env.CALCOM_OUTBOX_MAX_ATTEMPTS}). Executor threw: ${message}`,
+            client
+          );
+        } else {
+          await markOutboxRetry(row.id, message, backoffMsForAttempt(row.attempts), client);
+        }
       }
+      await client.query("RELEASE SAVEPOINT outbox_row");
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -208,6 +235,11 @@ export function startOutboxWorker(): void {
   // Don't keep Node alive purely for this interval — server.close() should be
   // the thing that ends the process lifecycle.
   intervalHandle.unref();
+}
+
+/** Test-only alias: one batch, no interval. See processBatch's doc. */
+export async function processOutboxBatchOnce(): Promise<void> {
+  await processBatch();
 }
 
 /**

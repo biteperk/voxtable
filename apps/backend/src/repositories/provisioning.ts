@@ -116,6 +116,19 @@ export async function markProvisioningDone(id: string): Promise<void> {
   await pool.query("UPDATE provisioning_jobs SET status = 'done', step = 'complete' WHERE id = $1", [id]);
 }
 
+/**
+ * Remove one key from the payload. Exists so the buy_number step can clear
+ * its crash-window marker when Twilio PROVABLY rejected the purchase (4xx) —
+ * leaving the marker in place turned a rate-limit blip into a permanently
+ * failed job for a paying customer.
+ */
+export async function clearProvisioningPayloadKey(
+  id: string,
+  key: keyof ProvisioningJobPayload
+): Promise<void> {
+  await pool.query("UPDATE provisioning_jobs SET payload = payload - $2::text WHERE id = $1", [id, key]);
+}
+
 export async function markProvisioningRetry(id: string, error: string, nextAttemptAt: Date): Promise<void> {
   await pool.query(
     "UPDATE provisioning_jobs SET status = 'pending', next_attempt_at = $2, last_error = $3 WHERE id = $1",

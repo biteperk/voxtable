@@ -34,7 +34,11 @@ export async function findAvailableTable(params: {
     FROM tables t
     WHERE t.restaurant_id = $1
       AND t.is_active = true
-      AND t.min_capacity <= $2
+      -- max_capacity is the only HARD capacity bound (a party of 5 cannot
+      -- physically sit at a four-top). min_capacity is a revenue preference,
+      -- handled in ORDER BY below — as a filter it refused a solo diner at an
+      -- entirely empty restaurant whenever the smallest table had
+      -- min_capacity = 2, and the caller was told the TIME was the problem.
       AND t.max_capacity >= $2
       AND NOT EXISTS (
         SELECT 1
@@ -71,6 +75,9 @@ export async function findAvailableTable(params: {
         ) THEN 0
         ELSE 1
       END,
+      -- Prefer tables whose minimum is satisfied; under-filling a bigger-
+      -- minimum table is the fallback, not a refusal.
+      (t.min_capacity > $2) ASC,
       t.max_capacity ASC,
       t.label ASC
     LIMIT 1
@@ -124,7 +131,8 @@ export async function listAvailableTables(params: {
     FROM tables t
     WHERE t.restaurant_id = $1
       AND t.is_active = true
-      AND t.min_capacity <= $2
+      -- Same capacity semantics as findAvailableTable: max is hard, min is a
+      -- preference expressed in ORDER BY. See the comment there.
       AND t.max_capacity >= $2
       AND NOT EXISTS (
         SELECT 1
@@ -150,7 +158,7 @@ export async function listAvailableTables(params: {
              $3::date + $4::time + make_interval(mins => $5::int))
           )
       )
-    ORDER BY t.max_capacity ASC, t.label ASC
+    ORDER BY (t.min_capacity > $2) ASC, t.max_capacity ASC, t.label ASC
     `,
     [
       params.restaurantId,
