@@ -24,15 +24,14 @@ import { pool } from "../src/db/pool";
 import { markOutboxSucceeded } from "../src/repositories/outbox";
 import { cancelBooking, createBooking, modifyBooking } from "../src/services/bookingService";
 import { calcomOutboxExecutor, reconcileMirroredBooking } from "../src/services/calcomService";
-
-let failures = 0;
-function assert(label: string, ok: boolean, detail?: unknown): void {
-  if (!ok) failures += 1;
-  console.log(`[${ok ? "PASS" : "FAIL"}] ${label}${detail !== undefined ? ` — ${JSON.stringify(detail)}` : ""}`);
-}
-
-const SUFFIX = process.pid.toString(36);
-const DATE = new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+import {
+  assert,
+  cleanupSmokeRestaurant,
+  createSmokeRestaurant,
+  reportAndExit,
+  SMOKE_DATE,
+  SMOKE_SUFFIX
+} from "./lib/smoke-harness";
 
 interface OutboxRowLite {
   id: string;
@@ -70,53 +69,12 @@ function executorRow(row: OutboxRowLite, reservationId: string) {
   };
 }
 
-async function setup(): Promise<{ restaurantId: string }> {
-  const restaurant = await pool.query<{ id: string }>(
-    `INSERT INTO restaurants (name, timezone, phone_number)
-     VALUES ($1, 'Australia/Sydney', '+61255500099')
-     RETURNING id`,
-    [`smoke-calcom-mirror-${SUFFIX}`]
-  );
-  const restaurantId = restaurant.rows[0]!.id;
-  const hours = JSON.stringify(
-    Object.fromEntries(
-      ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((d) => [
-        d,
-        [{ open: "10:00", close: "23:00" }]
-      ])
-    )
-  );
-  await pool.query(
-    `INSERT INTO restaurant_settings (restaurant_id, booking_duration_minutes, opening_hours_json)
-     VALUES ($1, 90, $2::jsonb)
-     ON CONFLICT (restaurant_id) DO UPDATE
-       SET booking_duration_minutes = EXCLUDED.booking_duration_minutes,
-           opening_hours_json = EXCLUDED.opening_hours_json`,
-    [restaurantId, hours]
-  );
-  // Several tables so the scenarios don't contend for capacity.
-  for (const label of ["T1", "T2", "T3", "T4"]) {
-    await pool.query(
-      `INSERT INTO tables (restaurant_id, label, min_capacity, max_capacity, is_active)
-       VALUES ($1, $2, 1, 4, true)`,
-      [restaurantId, label]
-    );
-  }
-  return { restaurantId };
-}
-
-async function cleanup(restaurantId: string): Promise<void> {
-  await pool.query(`DELETE FROM reservations WHERE restaurant_id = $1`, [restaurantId]);
-  await pool.query(`DELETE FROM customers WHERE restaurant_id = $1`, [restaurantId]);
-  await pool.query(`DELETE FROM restaurants WHERE id = $1`, [restaurantId]);
-}
-
 function book(restaurantId: string, time: string, phone: string) {
   return createBooking({
     restaurantId,
     customerName: `Mirror ${time}`,
     customerPhone: phone,
-    date: DATE,
+    date: SMOKE_DATE,
     time,
     partySize: 2,
     source: "voice"
@@ -129,7 +87,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const { restaurantId } = await setup();
+  // Several tables so the scenarios don't contend for capacity.
+  const { restaurantId } = await createSmokeRestaurant({
+    name: `smoke-calcom-mirror-${SMOKE_SUFFIX}`,
+    phoneNumber: "+61255500099",
+    tables: [
+      { label: "T1", minCapacity: 1, maxCapacity: 4 },
+      { label: "T2", minCapacity: 1, maxCapacity: 4 },
+      { label: "T3", minCapacity: 1, maxCapacity: 4 },
+      { label: "T4", minCapacity: 1, maxCapacity: 4 }
+    ]
+  });
 
   try {
     // ---- B4a: a moved booking enqueues a reschedule op --------------------
@@ -198,7 +166,7 @@ async function main(): Promise<void> {
     const voice = await book(restaurantId, "19:00", "+61255511004");
     // A stranger's web booking (no vocotable metadata) arrives while the
     // voice create is still pending — the exact old-bug window.
-    const strangers = await reconcileMirroredBooking(undefined, `uid-stranger-${SUFFIX}`);
+    const strangers = await reconcileMirroredBooking(undefined, `uid-stranger-${SMOKE_SUFFIX}`);
     assert("B15: webhook without our metadata is NOT reconciled (old code: stamped it)", strangers === false);
     assert("B15: the voice reservation was not stamped with the stranger's uid",
       (await reservationUid(voice.bookingId)) === null);
@@ -206,28 +174,24 @@ async function main(): Promise<void> {
     // Our own echo (metadata carries the reservation id) reconciles precisely.
     const ours = await reconcileMirroredBooking(
       { vocotable_reservation_id: voice.bookingId },
-      `uid-ours-${SUFFIX}`
+      `uid-ours-${SMOKE_SUFFIX}`
     );
     assert("B15: our own echo reconciles by reservation id", ours === true);
     assert("B15: the uid landed on exactly the intended reservation",
-      (await reservationUid(voice.bookingId)) === `uid-ours-${SUFFIX}`);
+      (await reservationUid(voice.bookingId)) === `uid-ours-${SMOKE_SUFFIX}`);
 
     // Replay of the same echo is an idempotent skip, still claimed as ours.
     const replay = await reconcileMirroredBooking(
       { vocotable_reservation_id: voice.bookingId },
-      `uid-ours-${SUFFIX}`
+      `uid-ours-${SMOKE_SUFFIX}`
     );
     assert("B15: replayed echo is claimed (idempotent), never a web booking", replay === true);
   } finally {
-    await cleanup(restaurantId);
+    await cleanupSmokeRestaurant(restaurantId);
     await pool.end();
   }
 
-  if (failures > 0) {
-    console.error(`\n${failures} check(s) FAILED`);
-    process.exit(1);
-  }
-  console.log("\nAll Cal.com mirror checks passed.");
+  reportAndExit("Cal.com mirror");
 }
 
 void main().catch((error) => {
