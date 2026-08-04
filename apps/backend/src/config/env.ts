@@ -37,6 +37,13 @@ const envSchema = z
   }),
   APP_VERSION: z.string().default("0.1.0"),
   PORT: z.coerce.number().int().positive().default(3050),
+  // The worker process runs its own health surface (/livez /readyz /workerz).
+  // In Cloud Run api and worker are separate containers, so both listen on the
+  // injected PORT (3050) with no conflict — leave this unset there. Locally
+  // dev:backend and dev:worker share one host, so the worker must bind a
+  // DIFFERENT port than the api's PORT or the second process EADDRINUSEs.
+  // Unset → falls back to PORT (see worker.ts).
+  WORKER_HEALTH_PORT: z.coerce.number().int().positive().optional(),
   PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:3050"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   DATABASE_SSL: boolFlag(),

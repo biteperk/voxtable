@@ -95,22 +95,30 @@ healthRouter.get("/", (_request, response) => {
   `);
 });
 
+/** Probe the database with a 2s deadline. Shared by /health and /readyz. */
+export async function probeDatabase(): Promise<{ ok: true } | { ok: false; slow: boolean }> {
+  try {
+    await Promise.race([
+      pool.query("SELECT 1"),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("health-db-timeout")), 2_000)
+      )
+    ]);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, slow: error instanceof Error && error.message === "health-db-timeout" };
+  }
+}
+
 healthRouter.get(
   "/health",
   asyncHandler(async (_request, response) => {
-    try {
-      await Promise.race([
-        pool.query("SELECT 1"),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("health-db-timeout")), 2_000)
-        )
-      ]);
-    } catch (error) {
-      const slow = error instanceof Error && error.message === "health-db-timeout";
+    const db = await probeDatabase();
+    if (!db.ok) {
       response.status(503).json({
         status: "error",
-        database: slow ? "slow" : "unavailable",
-        message: slow
+        database: db.slow ? "slow" : "unavailable",
+        message: db.slow
           ? "Postgres did not respond within 2s. Pool may be saturated."
           : "Backend is running, but Postgres is not reachable. Check DATABASE_URL and start Postgres."
       });
@@ -121,5 +129,29 @@ healthRouter.get(
       status: "ok",
       database: "ok"
     });
+  })
+);
+
+// Liveness vs readiness, split (Cloud Run wires these as its probes; the
+// distinction is a Block 8 platform primitive banked early):
+//
+//   /livez  — "is the process alive?" Deliberately touches NOTHING. A DB blip
+//             must degrade traffic (readiness), never get the container
+//             killed and restarted into the same blip (liveness).
+//   /readyz — "should this instance receive traffic?" DB reachability, with
+//             the same 2s deadline as /health.
+healthRouter.get("/livez", (_request, response) => {
+  response.json({ status: "ok" });
+});
+
+healthRouter.get(
+  "/readyz",
+  asyncHandler(async (_request, response) => {
+    const db = await probeDatabase();
+    if (!db.ok) {
+      response.status(503).json({ status: "unready", database: db.slow ? "slow" : "unavailable" });
+      return;
+    }
+    response.json({ status: "ok" });
   })
 );
