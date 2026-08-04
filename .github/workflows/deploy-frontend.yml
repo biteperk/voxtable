@@ -1,4 +1,4 @@
-name: Deploy frontend + KDS to Firebase
+name: Deploy frontend to Firebase
 
 # CI builds the Firebase Hosting artifact first and uploads it to GCS. This
 # workflow only downloads that artifact and deploys it:
@@ -77,10 +77,26 @@ jobs:
 
           echo "artifact_tag=$ARTIFACT_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Validate deployment configuration
+        env:
+          FIREBASE_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT || vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
+          FRONTEND_ARTIFACT_BUCKET: ${{ vars.FRONTEND_ARTIFACT_BUCKET }}
+          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT || vars.PLATFORM_PROJECT_ID }}
+          WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          set -euo pipefail
+
+          : "${WORKLOAD_IDENTITY_PROVIDER:?Set GCP_WORKLOAD_IDENTITY_PROVIDER in the GitHub environment}"
+          : "${FIREBASE_DEPLOY_SERVICE_ACCOUNT:?Set GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT or GCP_DEPLOY_SERVICE_ACCOUNT in the GitHub environment}"
+          : "${FRONTEND_ARTIFACT_BUCKET:?Set FRONTEND_ARTIFACT_BUCKET in the GitHub environment}"
+          : "${FIREBASE_PROJECT:?Set FIREBASE_PROJECT or VOXTABLE_PROJECT_ID in the GitHub environment}"
+          : "${GOOGLE_CLOUD_QUOTA_PROJECT:?Set GOOGLE_CLOUD_QUOTA_PROJECT or PLATFORM_PROJECT_ID in the GitHub environment}"
+
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-frontend-artifacts@bp-shared-artifacts.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT || vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
@@ -98,15 +114,35 @@ jobs:
 
       - name: Deploy to Firebase Hosting
         env:
-          FIREBASE_ONLY: ${{ vars.FIREBASE_ONLY || 'hosting' }}
-          # No fallback project on purpose: a missing variable must fail the
-          # deploy, not silently ship to whichever project the fallback names.
-          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT }}
-          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT }}
+          FIREBASE_APP_SITE: ${{ vars.FIREBASE_APP_SITE || vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
+          FIREBASE_KDS_SITE: ${{ vars.FIREBASE_KDS_SITE }}
+          FIREBASE_ONLY: ${{ vars.FIREBASE_ONLY || 'hosting:app' }}
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
+          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT || vars.PLATFORM_PROJECT_ID }}
         run: |
           set -euo pipefail
 
-          : "${FIREBASE_PROJECT:?Set FIREBASE_PROJECT in the GitHub environment}"
-          : "${GOOGLE_CLOUD_QUOTA_PROJECT:?Set GOOGLE_CLOUD_QUOTA_PROJECT in the GitHub environment}"
+          : "${FIREBASE_APP_SITE:?Set FIREBASE_APP_SITE, FIREBASE_PROJECT, or VOXTABLE_PROJECT_ID in the GitHub environment}"
+
+          node -e "
+            const fs = require('fs');
+            const rc = JSON.parse(fs.readFileSync('.firebaserc', 'utf8'));
+            const project = process.env.FIREBASE_PROJECT;
+            rc.projects = { ...rc.projects, default: project };
+            rc.targets = {
+              ...rc.targets,
+              [project]: {
+                ...(rc.targets && rc.targets[project]),
+                hosting: {
+                  ...((rc.targets && rc.targets[project] && rc.targets[project].hosting) || {}),
+                  app: [process.env.FIREBASE_APP_SITE],
+                },
+              },
+            };
+            if (process.env.FIREBASE_KDS_SITE) {
+              rc.targets[project].hosting.kds = [process.env.FIREBASE_KDS_SITE];
+            }
+            fs.writeFileSync('.firebaserc', JSON.stringify(rc, null, 2) + '\n');
+          "
 
           npx --yes --package firebase-tools@15 firebase deploy --only "$FIREBASE_ONLY" --project "$FIREBASE_PROJECT" --non-interactive
