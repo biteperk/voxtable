@@ -1,4 +1,4 @@
-name: Deploy backend to VM
+name: Deploy backend to Cloud Run
 
 # CI builds, scans, and pushes images first. This workflow only deploys the
 # image tag produced by the successful CI run:
@@ -86,54 +86,105 @@ jobs:
           echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: projects/846797584634/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-deployer@vocotable-497209.iam.gserviceaccount.com
-
-      - uses: google-github-actions/setup-gcloud@v2
-
-      - name: SSH to VM and deploy images
+      - name: Validate deployment configuration
         env:
-          APP_DIR: ${{ vars.GCP_APP_DIR || '/opt/vocotable' }}
-          COMPOSE_FILES: ${{ vars.GCP_COMPOSE_FILES || 'docker-compose.yml docker-compose.prod.yml' }}
-          IMAGE_TAG: ${{ steps.deploy-meta.outputs.image_tag }}
-          VM_NAME: ${{ vars.GCP_VM_NAME }}
-          VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+          DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
         run: |
           set -euo pipefail
 
-          : "${VM_NAME:?Set GCP_VM_NAME in the GitHub environment}"
-          : "${VM_ZONE:?Set GCP_VM_ZONE in the GitHub environment}"
+          : "${WORKLOAD_IDENTITY_PROVIDER:?Set GCP_WORKLOAD_IDENTITY_PROVIDER in the GitHub environment}"
+          : "${DEPLOY_SERVICE_ACCOUNT:?Set GCP_DEPLOY_SERVICE_ACCOUNT in the GitHub environment}"
 
-          gcloud compute ssh "deployer@${VM_NAME}" --zone="${VM_ZONE}" --quiet --command="
-            set -euo pipefail
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
-            cd '${APP_DIR}'
+      - uses: google-github-actions/setup-gcloud@v2
 
-            if command -v gcloud >/dev/null 2>&1; then
-              gcloud auth configure-docker '${REGISTRY_HOST}' --quiet || true
-            fi
+      - name: Resolve Cloud Run targets
+        id: cloud-run
+        env:
+          API_SERVICE_OVERRIDE: ${{ vars.CLOUD_RUN_API_SERVICE }}
+          DEPLOY_ENV: ${{ steps.deploy-meta.outputs.deploy_env }}
+          JOB_OVERRIDE: ${{ vars.CLOUD_RUN_MIGRATION_JOB }}
+          REGION: ${{ vars.GCP_DEFAULT_REGION || 'australia-southeast1' }}
+          VOXTABLE_PROJECT_ID: ${{ vars.VOXTABLE_PROJECT_ID }}
+          WORKER_SERVICE_OVERRIDE: ${{ vars.CLOUD_RUN_WORKER_SERVICE }}
+        run: |
+          set -euo pipefail
 
-            printf '%s\n' \
-              'services:' \
-              '  api:' \
-              '    image: ${API_IMAGE}:${IMAGE_TAG}' \
-              '    pull_policy: always' \
-              '  worker:' \
-              '    image: ${WORKER_IMAGE}:${IMAGE_TAG}' \
-              '    pull_policy: always' \
-              > /tmp/vocotable-image-tags.yml
+          : "${VOXTABLE_PROJECT_ID:?Set VOXTABLE_PROJECT_ID in the GitHub environment}"
+          : "${REGION:?Set GCP_DEFAULT_REGION in the GitHub environment}"
 
-            COMPOSE_ARGS=''
-            for file in ${COMPOSE_FILES}; do
-              COMPOSE_ARGS=\"\${COMPOSE_ARGS} -f \${file}\"
-            done
+          if [ "$DEPLOY_ENV" = "production" ]; then
+            NAME_PREFIX="voxtable-prod"
+          elif [ "$DEPLOY_ENV" = "staging" ]; then
+            NAME_PREFIX="voxtable-stg"
+          else
+            echo "Unsupported deploy environment: $DEPLOY_ENV" >&2
+            exit 1
+          fi
 
-            docker compose \${COMPOSE_ARGS} -f /tmp/vocotable-image-tags.yml pull api worker
-            docker compose \${COMPOSE_ARGS} -f /tmp/vocotable-image-tags.yml up -d api worker
-            docker compose \${COMPOSE_ARGS} exec -T api node apps/backend/dist/db/migrate.js
-            sleep 5
-            curl -fsS http://localhost:3050/health && echo ' <- deploy healthy'
-            docker compose \${COMPOSE_ARGS} ps
-          "
+          echo "project_id=$VOXTABLE_PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "region=$REGION" >> "$GITHUB_OUTPUT"
+          echo "api_service=${API_SERVICE_OVERRIDE:-${NAME_PREFIX}-api}" >> "$GITHUB_OUTPUT"
+          echo "worker_service=${WORKER_SERVICE_OVERRIDE:-${NAME_PREFIX}-worker}" >> "$GITHUB_OUTPUT"
+          echo "migration_job=${JOB_OVERRIDE:-${NAME_PREFIX}-migrate}" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migrations
+        env:
+          IMAGE_TAG: ${{ steps.deploy-meta.outputs.image_tag }}
+          MIGRATION_JOB: ${{ steps.cloud-run.outputs.migration_job }}
+          PROJECT_ID: ${{ steps.cloud-run.outputs.project_id }}
+          REGION: ${{ steps.cloud-run.outputs.region }}
+        run: |
+          set -euo pipefail
+
+          gcloud run jobs update "$MIGRATION_JOB" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --image "${API_IMAGE}:${IMAGE_TAG}" \
+            --command node \
+            --args apps/backend/dist/db/migrate.js
+
+          gcloud run jobs execute "$MIGRATION_JOB" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --wait
+
+      - name: Deploy Cloud Run services
+        env:
+          API_SERVICE: ${{ steps.cloud-run.outputs.api_service }}
+          IMAGE_TAG: ${{ steps.deploy-meta.outputs.image_tag }}
+          PROJECT_ID: ${{ steps.cloud-run.outputs.project_id }}
+          REGION: ${{ steps.cloud-run.outputs.region }}
+          WORKER_SERVICE: ${{ steps.cloud-run.outputs.worker_service }}
+        run: |
+          set -euo pipefail
+
+          gcloud run services update "$API_SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --image "${API_IMAGE}:${IMAGE_TAG}"
+
+          gcloud run services update "$WORKER_SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --image "${WORKER_IMAGE}:${IMAGE_TAG}"
+
+      - name: Check API health
+        env:
+          API_SERVICE: ${{ steps.cloud-run.outputs.api_service }}
+          PROJECT_ID: ${{ steps.cloud-run.outputs.project_id }}
+          REGION: ${{ steps.cloud-run.outputs.region }}
+        run: |
+          set -euo pipefail
+
+          API_URL="$(gcloud run services describe "$API_SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --format='value(status.url)')"
+
+          curl -fsS "${API_URL}/health"
