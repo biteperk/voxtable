@@ -30,9 +30,9 @@ const envSchema = z
   // No default. Which environment this is decides how the whole file behaves,
   // so it has to be stated, not assumed — the old default meant a .env that
   // never mentioned APP_ENV silently got the development ruleset.
-  APP_ENV: z.enum(["development", "test", "production"], {
+  APP_ENV: z.enum(["development", "test", "production", "migration"], {
     required_error:
-      "APP_ENV must be set explicitly (development | test | production). " +
+      "APP_ENV must be set explicitly (development | test | production | migration). " +
       "There is no default — see .env.example."
   }),
   APP_VERSION: z.string().default("0.1.0"),

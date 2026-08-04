@@ -97,8 +97,11 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT || vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
 
       - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
 
       - name: Download Firebase Hosting artifact from GCS
         env:

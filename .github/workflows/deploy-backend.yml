@@ -146,6 +146,9 @@ jobs:
             --project "$PROJECT_ID" \
             --region "$REGION" \
             --image "${API_IMAGE}:${IMAGE_TAG}" \
+            --update-env-vars APP_ENV=migration,NODE_ENV=production \
+            --remove-env-vars DASHBOARD_ALLOWED_EMAILS,DASHBOARD_MANAGER_EMAILS,PUBLIC_API_BASE_URL,RETELL_AGENT_ID,RETELL_VERIFY_SIGNATURE,TWILIO_PHONE_NUMBER,TWILIO_VALIDATE_SIGNATURE \
+            --remove-secrets RETELL_API_KEY,RETELL_WEBHOOK_SECRET,TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN \
             --command node \
             --args apps/backend/dist/db/migrate.js
 
