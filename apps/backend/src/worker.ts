@@ -1,11 +1,62 @@
+import { createServer, type Server } from "node:http";
+
 import { env } from "./config/env";
 import { closePool } from "./db/pool";
 import { installProcessGuards } from "./runtime/processGuards";
 import { startBackendWorkers, stopBackendWorkers } from "./runtime/workers";
+import { probeDatabase } from "./routes/health";
 import { verifyCalcomSchemasAgainstFixtures } from "./services/calcomSchemas";
 import { initSentry } from "./utils/sentry";
+import { tickPulseSnapshot } from "./utils/tickPulse";
 
 let shuttingDown = false;
+
+/**
+ * The worker's health surface. Until now this process had no HTTP listener at
+ * all, so "the worker is up" was unfalsifiable from outside — a worker whose
+ * ticks all silently no-op looked identical to a healthy one. Cloud Run also
+ * requires every service to listen on $PORT, so this replaces the old
+ * keep-alive interval hack as what holds the event loop open.
+ *
+ *   /livez   — process alive; touches nothing.
+ *   /readyz  — database reachable (same 2s deadline as the api's).
+ *   /workerz — per-worker tick counts and last-tick age, fed by
+ *              withTickLogContext. THE line to read when the worker "runs
+ *              fine" but nothing is happening.
+ */
+function startHealthServer(): Server {
+  const server = createServer((request, response) => {
+    const respond = (status: number, body: Record<string, unknown>): void => {
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(JSON.stringify(body));
+    };
+
+    if (request.url === "/livez") {
+      respond(200, { status: "ok" });
+      return;
+    }
+    if (request.url === "/readyz") {
+      void probeDatabase().then((db) =>
+        db.ok
+          ? respond(200, { status: "ok" })
+          : respond(503, { status: "unready", database: db.slow ? "slow" : "unavailable" })
+      );
+      return;
+    }
+    if (request.url === "/workerz") {
+      respond(200, { status: "ok", workers: tickPulseSnapshot() });
+      return;
+    }
+    respond(404, { error: "not found" });
+  });
+  // Falls back to PORT so Cloud Run (separate container, injected PORT) needs no
+  // extra config; locally WORKER_HEALTH_PORT keeps this off the api's PORT.
+  const port = env.WORKER_HEALTH_PORT ?? env.PORT;
+  server.listen(port, () => {
+    console.log(`[startup] worker health surface on :${port} (/livez /readyz /workerz)`);
+  });
+  return server;
+}
 
 async function main(): Promise<void> {
   // One stray rejection in any of the seven workers must not take the other
@@ -24,16 +75,16 @@ async function main(): Promise<void> {
   startBackendWorkers();
   console.log(`VoxTable backend worker listening for jobs (${env.APP_ENV}).`);
 
-  // Every worker unref()s its own timer — correct in the api process, which the
-  // HTTP listener keeps alive. This process has no HTTP listener, so without a
-  // ref'd handle Node's event loop drains and the process exits 0 right after
-  // startup (Docker then restarts it in a loop). Hold the loop open until shutdown.
-  const keepAlive = setInterval(() => {}, 1 << 30);
+  // Holds the event loop open (every worker unref()s its own timer) AND gives
+  // the process a health surface — see startHealthServer above.
+  const healthServer = startHealthServer();
 
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[shutdown] worker received ${signal}; draining...`);
+
+    healthServer.close();
 
     await stopBackendWorkers({
       onStopFailure(worker, reason) {
@@ -47,7 +98,6 @@ async function main(): Promise<void> {
       console.warn("[shutdown] closePool failed:", error);
     }
 
-    clearInterval(keepAlive);
     console.log("[shutdown] worker done");
     process.exit(0);
   }

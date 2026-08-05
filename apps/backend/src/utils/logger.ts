@@ -29,6 +29,8 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import { recordTick } from "./tickPulse";
+
 // ---------------------------------------------------------------------------
 // Request-scoped context (request_id propagation)
 // ---------------------------------------------------------------------------
@@ -75,6 +77,9 @@ let tickSequence = 0;
 
 export function withTickLogContext<T>(worker: string, fn: () => T): T {
   tickSequence += 1;
+  // Doubles as the worker's pulse: the health surface reports ticks and
+  // last-tick-at per worker from exactly this call.
+  recordTick(worker);
   return withLogContext({ request_id: `${worker}#${tickSequence}` }, fn);
 }
 
