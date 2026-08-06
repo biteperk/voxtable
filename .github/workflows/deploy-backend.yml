@@ -44,12 +44,30 @@ jobs:
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
 
     steps:
+      # Until the target project exists (bp-voxtable-prod arrives with the
+      # Phase 3 cutover), a promotion to main would die here on missing
+      # environment variables and train everyone to ignore red production
+      # deploys. A red run people ignore is worse than a skipped one.
+      - name: Skip when the target environment is not provisioned
+        id: guard
+        env:
+          VOXTABLE_PROJECT_ID: ${{ vars.VOXTABLE_PROJECT_ID }}
+        run: |
+          if [ -z "${VOXTABLE_PROJECT_ID:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deploy skipped::VOXTABLE_PROJECT_ID is not set on this GitHub environment — the target Cloud Run project is not provisioned yet, so this deploy is deliberately a no-op."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.guard.outputs.enabled == 'true'
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Resolve deployment image tag
         id: deploy-meta
+        if: steps.guard.outputs.enabled == 'true'
         env:
           DISPATCH_ENVIRONMENT: ${{ inputs.environment }}
           DISPATCH_IMAGE_TAG: ${{ inputs.image_tag }}
@@ -87,6 +105,7 @@ jobs:
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Validate deployment configuration
+        if: steps.guard.outputs.enabled == 'true'
         env:
           DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
           WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -97,14 +116,17 @@ jobs:
           : "${DEPLOY_SERVICE_ACCOUNT:?Set GCP_DEPLOY_SERVICE_ACCOUNT in the GitHub environment}"
 
       - uses: google-github-actions/auth@v2
+        if: steps.guard.outputs.enabled == 'true'
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
+        if: steps.guard.outputs.enabled == 'true'
 
       - name: Resolve Cloud Run targets
         id: cloud-run
+        if: steps.guard.outputs.enabled == 'true'
         env:
           API_SERVICE_OVERRIDE: ${{ vars.CLOUD_RUN_API_SERVICE }}
           DEPLOY_ENV: ${{ steps.deploy-meta.outputs.deploy_env }}
@@ -133,7 +155,32 @@ jobs:
           echo "worker_service=${WORKER_SERVICE_OVERRIDE:-${NAME_PREFIX}-worker}" >> "$GITHUB_OUTPUT"
           echo "migration_job=${JOB_OVERRIDE:-${NAME_PREFIX}-migrate}" >> "$GITHUB_OUTPUT"
 
+      # The revision serving BEFORE this deploy — the rollback target if the
+      # new revision becomes Ready but then fails verification. Empty on a
+      # first-ever deploy, in which case there is nothing to roll back to.
+      - name: Capture serving revisions
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          API_SERVICE: ${{ steps.cloud-run.outputs.api_service }}
+          PROJECT_ID: ${{ steps.cloud-run.outputs.project_id }}
+          REGION: ${{ steps.cloud-run.outputs.region }}
+          WORKER_SERVICE: ${{ steps.cloud-run.outputs.worker_service }}
+        run: |
+          set -euo pipefail
+
+          API_PRIOR="$(gcloud run services describe "$API_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format='value(status.latestReadyRevisionName)' 2>/dev/null || true)"
+          WORKER_PRIOR="$(gcloud run services describe "$WORKER_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format='value(status.latestReadyRevisionName)' 2>/dev/null || true)"
+
+          echo "API_PRIOR_REVISION=${API_PRIOR}" >> "$GITHUB_ENV"
+          echo "WORKER_PRIOR_REVISION=${WORKER_PRIOR}" >> "$GITHUB_ENV"
+          echo "Prior revisions: api=${API_PRIOR:-<none>} worker=${WORKER_PRIOR:-<none>}"
+
       - name: Run database migrations
+        if: steps.guard.outputs.enabled == 'true'
         env:
           IMAGE_TAG: ${{ steps.deploy-meta.outputs.image_tag }}
           MIGRATION_JOB: ${{ steps.cloud-run.outputs.migration_job }}
@@ -158,6 +205,7 @@ jobs:
             --wait
 
       - name: Deploy Cloud Run services
+        if: steps.guard.outputs.enabled == 'true'
         env:
           API_SERVICE: ${{ steps.cloud-run.outputs.api_service }}
           IMAGE_TAG: ${{ steps.deploy-meta.outputs.image_tag }}
@@ -167,6 +215,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          # A revision that never becomes Ready fails these commands and traffic
+          # stays on the old revision — boot-crash rollback is Cloud Run's own
+          # behaviour. The verification step below covers the other case: Ready
+          # but unhealthy.
           gcloud run services update "$API_SERVICE" \
             --project "$PROJECT_ID" \
             --region "$REGION" \
@@ -177,17 +229,70 @@ jobs:
             --region "$REGION" \
             --image "${WORKER_IMAGE}:${IMAGE_TAG}"
 
-      - name: Check API health
+          # Heal any traffic pin left by an earlier rollback. Without this, a
+          # service rolled back last week stays pinned to that old revision
+          # forever and every later deploy silently goes nowhere.
+          gcloud run services update-traffic "$API_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" --to-latest
+
+          gcloud run services update-traffic "$WORKER_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" --to-latest
+
+      - name: Verify deployment, roll back on failure
+        if: steps.guard.outputs.enabled == 'true'
         env:
           API_SERVICE: ${{ steps.cloud-run.outputs.api_service }}
           PROJECT_ID: ${{ steps.cloud-run.outputs.project_id }}
           REGION: ${{ steps.cloud-run.outputs.region }}
+          WORKER_SERVICE: ${{ steps.cloud-run.outputs.worker_service }}
         run: |
           set -euo pipefail
+
+          rollback() {
+            echo "::error title=Deploy failed verification::Shifting traffic back to the previous revisions."
+            if [ -n "${API_PRIOR_REVISION:-}" ]; then
+              gcloud run services update-traffic "$API_SERVICE" \
+                --project "$PROJECT_ID" --region "$REGION" \
+                --to-revisions "${API_PRIOR_REVISION}=100" \
+                || echo "::error::API rollback itself failed — intervene manually (deploy/runbooks/rollback.md)."
+            else
+              echo "No prior API revision recorded — first deploy, nothing to roll back to."
+            fi
+            if [ -n "${WORKER_PRIOR_REVISION:-}" ]; then
+              gcloud run services update-traffic "$WORKER_SERVICE" \
+                --project "$PROJECT_ID" --region "$REGION" \
+                --to-revisions "${WORKER_PRIOR_REVISION}=100" \
+                || echo "::error::Worker rollback itself failed — intervene manually (deploy/runbooks/rollback.md)."
+            else
+              echo "No prior worker revision recorded — first deploy, nothing to roll back to."
+            fi
+            exit 1
+          }
+
+          # The worker has no public URL, so its check is the revision's Ready
+          # condition — before this, the worker got no verification at all.
+          WORKER_READY="$(gcloud run services describe "$WORKER_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" --format=json \
+            | jq -r '[.status.conditions[]? | select(.type=="Ready")][0].status // "Unknown"')"
+          if [ "$WORKER_READY" != "True" ]; then
+            echo "Worker service is not Ready (status: ${WORKER_READY})."
+            rollback
+          fi
 
           API_URL="$(gcloud run services describe "$API_SERVICE" \
             --project "$PROJECT_ID" \
             --region "$REGION" \
             --format='value(status.url)')"
 
-          curl -fsS "${API_URL}/health"
+          for attempt in 1 2 3 4 5; do
+            if curl -fsS --max-time 10 "${API_URL}/health"; then
+              echo
+              echo "API healthy on the new revision."
+              exit 0
+            fi
+            echo "Health check attempt ${attempt} failed; retrying in 10s."
+            sleep 10
+          done
+
+          echo "API /health never came good on the new revision."
+          rollback

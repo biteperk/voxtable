@@ -6,7 +6,53 @@ This runbook covers the three concrete failure modes we've seen or planned for.
 
 ---
 
-## Failure mode 1 — new image crash-loops on boot
+## Failure mode 1 — bad backend deploy (Cloud Run: staging now, production after the Phase 3 cutover)
+
+**What already happens without you.** Two layers of automatic protection:
+
+1. A revision that never becomes Ready (boot crash, env-gate refusal) **never receives
+   traffic** — `gcloud run services update` fails and the old revision keeps serving. That
+   is Cloud Run's own behaviour, not ours.
+2. `deploy-backend.yml` then verifies the worker's Ready condition and the api's `/health`,
+   and on failure **shifts traffic back to the previously-serving revision by itself** —
+   this covers the nastier case where the new revision boots fine but is broken.
+
+So by the time a human is involved, either the workflow already rolled back (read its log —
+it names the revisions), or the breakage was noticed later and you roll back by hand:
+
+**Manual recovery (≈60s):**
+
+```bash
+# What's serving right now, and what's available to go back to
+gcloud run services describe voxtable-stg-api --project bp-voxtable-stg \
+  --region australia-southeast1 --format='value(status.traffic)'
+gcloud run revisions list --service voxtable-stg-api --project bp-voxtable-stg \
+  --region australia-southeast1 --limit 5
+
+# Pin traffic to the last good revision — this IS the rollback
+gcloud run services update-traffic voxtable-stg-api --project bp-voxtable-stg \
+  --region australia-southeast1 --to-revisions <good-revision>=100
+
+# Same for the worker (it serves background loops, not requests, but revisions
+# work identically)
+gcloud run services update-traffic voxtable-stg-worker --project bp-voxtable-stg \
+  --region australia-southeast1 --to-revisions <good-revision>=100
+
+# Verify
+curl -sf "$(gcloud run services describe voxtable-stg-api --project bp-voxtable-stg \
+  --region australia-southeast1 --format='value(status.url)')/health"
+```
+
+For production substitute `bp-voxtable-prod` / `voxtable-prod-api` / `voxtable-prod-worker`.
+
+**A pinned service stays pinned.** The deploy workflow runs `update-traffic --to-latest`
+after every successful deploy, so the next good deploy heals the pin automatically — but
+until that deploy happens, remember that merging fixes does nothing while traffic is pinned.
+
+**Then,** open an issue on the broken commit and roll forward properly once fixed. Don't
+re-deploy the broken image to "see if it fixes itself."
+
+### Appendix — VM path (production until the Phase 3 cutover)
 
 **Symptoms:** `docker ps` shows `vocotable-api-1` in `Restarting (1)` or `Restarting (137)`. Health check fails. Logs show a fatal startup error (e.g., schema fixture rejection from Sweep A, env validation failure, port already in use).
 
@@ -39,8 +85,6 @@ done
 # 6. Smoke
 curl -sf https://vocotable.algorythmos.com.au/health
 ```
-
-**Then,** open an issue on the broken commit and roll forward properly once fixed. Don't re-deploy the broken image to "see if it fixes itself."
 
 ---
 
