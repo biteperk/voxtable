@@ -1,0 +1,24 @@
+# Weekly dependency PRs, grouped so review cost stays sane: one PR for all
+# minor/patch npm bumps, majors individually (they need real review), and one
+# for GitHub Actions. Security advisories arrive regardless of schedule.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Sydney
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Sydney
+    open-pull-requests-limit: 3

@@ -1,10 +1,33 @@
 # Staging Cloud Run bootstrap — one-time service configuration
 
+> ## ⛔ SUPERSEDED by Terraform (6 Aug 2026)
+>
+> The service/job/secret configuration below is now managed by
+> **`biteperk/biteperk-cloud-platform`** — `roots/products/voxtable/stg` applied via
+> that repo's `terraform.yml` workflow (manual dispatch: voxtable / stg / apply). Do
+> NOT run the gcloud sections of this document; hand-mutated services will fight the
+> Terraform state on the next apply.
+>
+> What Terraform does **not** do, and the only parts of this runbook still live:
+> - **§1 — provisioning the staging vendor identities** (a separate Retell agent and
+>   a Twilio subaccount + number for staging; never production's).
+> - Putting the three secrets (`RETELL_API_KEY`, `TWILIO_ACCOUNT_SID`,
+>   `TWILIO_AUTH_TOKEN`) on that repo's **staging GitHub Environment**.
+>   `RETELL_AGENT_ID` and `TWILIO_PHONE_NUMBER` deliberately go NOWHERE in the
+>   deployment: they are per-restaurant database data (review decision closing
+>   biteperk-cloud-platform PR #20; boot requirement dropped in voxtable PR #107).
+>   Bind them to the staging restaurant row instead (admin bind route or one
+>   UPDATE on `restaurants.twilio_phone_number` / `retell_agent_id`).
+> - **§6-style verification** after an apply + deploy: `/health` returns 200,
+>   `/workerz` shows ticking workers.
+>
+> The rest is retained as history / a map of what the Terraform manages.
+
 `deploy-backend.yml` deploys staging by rolling the **image only**
 (`gcloud run services update --image`). It never sets env vars or secrets — it
 assumes the `voxtable-stg-api` / `voxtable-stg-worker` services and the
-`voxtable-stg-migrate` job already exist and are fully configured. This runbook is
-that one-time configuration.
+`voxtable-stg-migrate` job already exist and are fully configured. This runbook was
+that one-time configuration, before Terraform took it over.
 
 **Why it's needed now:** the services currently refuse to boot with
 `Refusing to start: the environment is not safe to boot` — the PR #82 fail-closed

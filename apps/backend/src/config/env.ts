@@ -484,6 +484,10 @@ const envSchema = z
     }
   });
 
+// Every key the schema accepts — the .env.example drift test compares this
+// list against the example file, so a new variable cannot ship undocumented.
+export const ENV_SCHEMA_KEYS = Object.keys(envSchema.innerType().shape);
+
 /**
  * Validate a raw environment without touching `process.env` or exiting. Exists
  * so the boot rules above can be tested — the module-level load below is the
