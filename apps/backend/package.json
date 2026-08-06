@@ -33,7 +33,8 @@
     "smoke:calcom-mirror": "CALCOM_SYNC_ENABLED=true tsx scripts/smoke-calcom-mirror.ts",
     "smoke:outbox-deadletter": "tsx scripts/smoke-outbox-deadletter.ts",
     "smoke:solo-diner": "tsx scripts/smoke-solo-diner.ts",
-    "smoke:ops-state": "tsx scripts/smoke-ops-state.ts"
+    "smoke:ops-state": "tsx scripts/smoke-ops-state.ts",
+    "smoke:voice-kill-switch": "tsx scripts/smoke-voice-kill-switch.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",
