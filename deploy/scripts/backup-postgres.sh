@@ -4,16 +4,25 @@
 # =============================================================================
 #
 # Runs pg_dump from the postgres Docker container, compresses the output with
-# gzip, and deletes backups older than 7 days.
+# gzip, uploads it to the GCS bucket the restore runbook reads from, and
+# deletes LOCAL copies older than 7 days (bucket retention is a lifecycle
+# rule on the bucket itself, not this script).
+#
+# The upload is the part that matters: deploy/runbooks/backup-restore.md
+# restores from gs://vocotable-backups/, so a backup that only exists on the
+# VM's own disk is not a backup — the disaster it protects against takes the
+# disk with it. An upload failure is therefore a hard failure: logged,
+# posted to Slack (when OPS_SLACK_WEBHOOK_URL is in the env file), exit 1.
 #
 # Usage:
 #   ./backup-postgres.sh                # Manual run
-#   0 3 * * * /opt/vocotable/deploy/scripts/backup-postgres.sh  # Cron (daily 3 AM)
+#   deploy/cron/vocotable-backup       # Committed cron.d unit (install once)
 #
 # Prerequisites:
 #   - Docker and Docker Compose installed
+#   - gcloud CLI authenticated with write access to the backup bucket
 #   - /opt/vocotable/.env file with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
-#   - /opt/vocotable/backups/ directory exists (script will create if missing)
+#     (optional: BACKUP_BUCKET to override the bucket, OPS_SLACK_WEBHOOK_URL)
 #
 # =============================================================================
 
@@ -30,7 +39,7 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="/var/log/vocotable/backup.log"
 
 # ---------------------------------------------------------------------------
-# Logging helper
+# Logging helpers
 # ---------------------------------------------------------------------------
 log() {
     local message="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -39,6 +48,23 @@ log() {
     if [ -d "$(dirname "$LOG_FILE")" ]; then
         echo "$message" >> "$LOG_FILE"
     fi
+}
+
+# Best-effort Slack post — a backup failure at 3am must land somewhere a
+# human looks. Keep messages free of double quotes; they are interpolated
+# into JSON verbatim.
+notify_slack() {
+    if [ -n "${OPS_SLACK_WEBHOOK_URL:-}" ]; then
+        curl -m 5 -s -X POST -H 'content-type: application/json' \
+            -d "{\"text\": \":rotating_light: $1\"}" \
+            "$OPS_SLACK_WEBHOOK_URL" >/dev/null 2>&1 || true
+    fi
+}
+
+fail() {
+    log "ERROR: $1"
+    notify_slack "VoxTable backup FAILED: $1"
+    exit 1
 }
 
 # ---------------------------------------------------------------------------
@@ -57,6 +83,13 @@ source "$ENV_FILE"
 : "${POSTGRES_USER:?POSTGRES_USER is not set in $ENV_FILE}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set in $ENV_FILE}"
 : "${POSTGRES_DB:?POSTGRES_DB is not set in $ENV_FILE}"
+
+# The bucket the restore runbook reads from. Overridable from the env file.
+BACKUP_BUCKET="${BACKUP_BUCKET:-vocotable-backups}"
+
+if ! command -v gcloud >/dev/null 2>&1; then
+    fail "gcloud CLI not found — the backup cannot reach gs://${BACKUP_BUCKET}."
+fi
 
 # Ensure backup directory exists
 mkdir -p "$BACKUP_DIR"
@@ -91,14 +124,25 @@ if docker compose -f "${COMPOSE_DIR}/docker-compose.yml" exec -T postgres \
         BACKUP_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"
         log "Backup completed successfully: ${BACKUP_FILE} (${BACKUP_SIZE})"
     else
-        log "ERROR: Backup file is empty. Removing."
         rm -f "$BACKUP_FILE"
-        exit 1
+        fail "Backup file is empty — pg_dump produced no output."
     fi
 else
-    log "ERROR: pg_dump failed. Check that the postgres container is running."
     rm -f "$BACKUP_FILE"
-    exit 1
+    fail "pg_dump failed. Check that the postgres container is running."
+fi
+
+# ---------------------------------------------------------------------------
+# Upload to GCS — the copy that survives losing the VM
+# ---------------------------------------------------------------------------
+REMOTE_PATH="gs://${BACKUP_BUCKET}/$(basename "$BACKUP_FILE")"
+log "Uploading to ${REMOTE_PATH}..."
+
+if gcloud storage cp "$BACKUP_FILE" "$REMOTE_PATH" >/dev/null 2>&1; then
+    log "Upload complete: ${REMOTE_PATH}"
+else
+    # Keep the local copy — it is now the only one that exists.
+    fail "Upload to gs://${BACKUP_BUCKET} failed. Local copy kept at ${BACKUP_FILE}; the restore runbook depends on this bucket."
 fi
 
 # ---------------------------------------------------------------------------

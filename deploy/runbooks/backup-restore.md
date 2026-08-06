@@ -1,6 +1,12 @@
 # Backup + restore runbook — VocoTable Postgres
 
-We pg_dump nightly to a GCS bucket (provisioned 2026-05-25, see observation 6987). This runbook covers two things:
+We pg_dump nightly and upload to **`gs://vocotable-backups/`** via `deploy/scripts/backup-postgres.sh`, scheduled by the committed cron unit `deploy/cron/vocotable-backup` (03:30 AEST). Files are named `vocotable_YYYYMMDD_HHMMSS.sql.gz`. A local copy is kept on the VM for 7 days as a convenience; **the bucket is the real backup** — bucket retention is a 30-day lifecycle rule on the bucket, not script logic. Upload failures exit non-zero and post to Slack.
+
+> **Honesty note (fixed 6 Aug 2026):** before this date the script wrote local-only and this runbook described a bucket nothing uploaded to. If you are investigating an incident older than that, the bucket will be empty — look in `/opt/vocotable/backups/` on the VM.
+>
+> **After the Phase 3 cutover** Cloud SQL automated backups + PITR replace this chain entirely; retire the cron unit with the VM.
+
+This runbook covers two things:
 
 1. **Verify the backup chain is actually working** — periodic drill so we discover the failure before we need the backup.
 2. **Restore from backup** — the actual disaster step.
@@ -32,8 +38,9 @@ Goal: prove the dump actually restores to a working DB, and that the restored ro
 ```bash
 # On any workstation (or staging VM if you have one):
 
-# 1. Pull yesterday's backup
-gcloud storage cp gs://vocotable-backups/$(date -v-1d +%Y%m%d).sql.gz /tmp/
+# 1. Pull the latest backup (files are vocotable_YYYYMMDD_HHMMSS.sql.gz)
+LATEST=$(gcloud storage ls gs://vocotable-backups/ | sort | tail -1)
+gcloud storage cp "$LATEST" /tmp/
 
 # 2. Spin up a throwaway Postgres
 docker run -d --rm --name pg-restore-test \

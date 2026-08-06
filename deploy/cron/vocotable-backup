@@ -1,0 +1,13 @@
+# Nightly Postgres backup for VoxTable production (VM path — retired at the
+# Phase 3 Cloud SQL cutover, whose automated backups + PITR replace this).
+#
+# Install on the VM (one-time):
+#   sudo cp /opt/vocotable/deploy/cron/vocotable-backup /etc/cron.d/vocotable-backup
+#   sudo chmod 644 /etc/cron.d/vocotable-backup
+#
+# 17:30 UTC = 03:30 AEST — the restaurant's quietest hour. Runs as root
+# because the script drives docker compose. cron.d requires the user field.
+# Failures land in the log below AND in Slack via OPS_SLACK_WEBHOOK_URL
+# (see deploy/scripts/backup-postgres.sh); verify weekly per
+# deploy/runbooks/backup-restore.md.
+30 17 * * * root /opt/vocotable/deploy/scripts/backup-postgres.sh >> /var/log/vocotable/backup-cron.log 2>&1
