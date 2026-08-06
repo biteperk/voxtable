@@ -143,6 +143,12 @@ const envSchema = z
 
   // Operations alerting — Slack webhook for outbox depth + circuit breaker events.
   OPS_SLACK_WEBHOOK_URL: z.string().url().optional(),
+  // Dead-man's switch: the health alerter GETs this URL (healthchecks.io
+  // style) at the end of every tick. The external service alerts when pings
+  // STOP — the one failure mode every in-process alert shares is "the worker
+  // that would have alerted is dead", and until this existed every probe ran
+  // on the same box it was probing.
+  OPS_HEARTBEAT_URL: z.string().url().optional(),
 
   // Sentry — error tracking. No-op when unset; safe to ship the scaffolding
   // without a DSN. Not enforced in production yet (Phase 5 calls for it but

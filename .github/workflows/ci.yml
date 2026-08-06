@@ -124,6 +124,12 @@ jobs:
       - name: Prove ops state crosses the process boundary
         run: npm run smoke:ops-state
 
+      # The two alerts that watch outcomes instead of mechanisms: calls
+      # arriving with zero bookings written, and a venue deep into configured
+      # service with zero calls at all (dead number / broken SIP forward).
+      - name: Prove the business-outcome alerts see what they watch
+        run: npm run smoke:business-alerts
+
       - name: Build frontend
         run: npm run build:frontend
 

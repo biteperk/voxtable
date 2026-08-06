@@ -35,7 +35,15 @@ import { kdsHealthSnapshot } from "../services/orderService";
 import { retellAuthSnapshot } from "../services/retellAuthHealth";
 import { getKdsHeartbeats } from "../services/kdsHeartbeats";
 import { getOpsState, setOpsState } from "../repositories/opsState";
+import { OpeningHours } from "../domain/types";
 import { logger, withTickLogContext } from "../utils/logger";
+import {
+  getOpeningWindowsForDate,
+  nowTimeInTz,
+  todayInTz,
+  toMinutes,
+  zonedWallClockToUtcISO
+} from "../utils/time";
 
 const CHECK_INTERVAL_MS = 60_000; // every minute
 const OUTBOX_DEPTH_THRESHOLD = 100;
@@ -58,6 +66,17 @@ const KDS_TABLET_SILENCE_MS = 5 * 60 * 1000;
 // booking is ever written. 3 failures in the 5-min window = a real outage, not
 // a one-off. Edge-triggered with a recovery message.
 const RETELL_AUTH_FAILURE_THRESHOLD = 3;
+
+// Business-outcome thresholds. The auth-storm alert above only catches the
+// signature-gate variant of "Bella answers but nothing books" — a prompt
+// regression, tool-schema drift, or a booking_outcome=failed streak produced
+// zero alerts. These two watch the OUTCOME instead of a mechanism:
+//   - calls arriving but zero bookings written across a full hour, and
+//   - a venue with configured opening hours that is deep into service with
+//     zero calls at all (dead number, broken SIP forward, Retell outage).
+const NO_BOOKINGS_WINDOW_MINUTES = 60;
+const NO_BOOKINGS_MIN_CALLS = 3;
+const ZERO_CALLS_MIN_HOURS_INTO_SERVICE = 4;
 
 interface AlertState {
   outboxDepthBreaches: number;
@@ -91,6 +110,11 @@ interface AlertState {
   // latch survives a restart like every other latch here (the old version
   // lived inside calcomQuotaTracker's module memory and re-fired on redeploy).
   quotaAlertedDayKey: string | null;
+  // Business outcomes: calls-but-no-bookings (edge-triggered with recovery),
+  // and per-venue "silent all service" latches as "restaurantId:dayKey"
+  // entries so each venue alerts at most once per day.
+  noBookingsAlerted: boolean;
+  zeroCallsAlertedKeys: string[];
 }
 
 const DEFAULT_STATE: AlertState = {
@@ -109,7 +133,9 @@ const DEFAULT_STATE: AlertState = {
   notificationsStuckAlerted: false,
   stripeUnprocessedAlerted: false,
   menuImportsFailedAlerted: false,
-  quotaAlertedDayKey: null
+  quotaAlertedDayKey: null,
+  noBookingsAlerted: false,
+  zeroCallsAlertedKeys: []
 };
 
 const state: AlertState = { ...DEFAULT_STATE };
@@ -126,11 +152,13 @@ async function loadAlertLatches(): Promise<void> {
   if (!stored) return;
   for (const key of Object.keys(DEFAULT_STATE) as Array<keyof AlertState>) {
     const value = stored[key];
-    if (
-      typeof value === typeof DEFAULT_STATE[key] ||
-      ((key === "funnelSummaryDayKey" || key === "quotaAlertedDayKey") &&
-        (value === null || typeof value === "string"))
-    ) {
+    const isValid =
+      key === "zeroCallsAlertedKeys"
+        ? Array.isArray(value) && value.every((entry) => typeof entry === "string")
+        : key === "funnelSummaryDayKey" || key === "quotaAlertedDayKey"
+          ? value === null || typeof value === "string"
+          : typeof value === typeof DEFAULT_STATE[key];
+    if (isValid) {
       (state as unknown as Record<string, unknown>)[key] = value;
     }
   }
@@ -472,6 +500,186 @@ async function checkPaidCustomerQueues(): Promise<void> {
   }
 }
 
+// How far into today's service a venue is right now, or null when closed /
+// no hours configured. Pure so the DST-heavy cases are unit-testable.
+// Overnight windows (close <= open, e.g. 18:00–02:00) count the morning leg
+// as a continuation of yesterday's service — serviceOpenDate points at the
+// calendar day the window OPENED, which is what the calls-since-open query
+// needs to build a UTC boundary.
+export function serviceProgressNow(
+  openingHours: OpeningHours,
+  timeZone: string,
+  now: Date = new Date()
+): { hoursIntoService: number; serviceOpenDate: string; serviceOpenTime: string } | null {
+  const localDate = todayInTz(timeZone, now);
+  const nowMinutes = toMinutes(nowTimeInTz(timeZone, now));
+
+  const yesterdayOf = (date: string): string => {
+    const [y, m, d] = date.split("-").map(Number);
+    return new Date(Date.UTC(y!, m! - 1, d! - 1)).toISOString().slice(0, 10);
+  };
+
+  for (const window of getOpeningWindowsForDate(localDate, openingHours)) {
+    const open = toMinutes(window.open);
+    const close = toMinutes(window.close);
+    if (close === open) continue; // degenerate "closed all day"
+    if (close > open) {
+      if (nowMinutes >= open && nowMinutes < close) {
+        return {
+          hoursIntoService: (nowMinutes - open) / 60,
+          serviceOpenDate: localDate,
+          serviceOpenTime: window.open
+        };
+      }
+    } else if (nowMinutes >= open) {
+      // Evening leg of an overnight window.
+      return {
+        hoursIntoService: (nowMinutes - open) / 60,
+        serviceOpenDate: localDate,
+        serviceOpenTime: window.open
+      };
+    }
+  }
+
+  // Morning leg of YESTERDAY'S overnight window (e.g. 00:30 during 18:00–02:00).
+  for (const window of getOpeningWindowsForDate(yesterdayOf(localDate), openingHours)) {
+    const open = toMinutes(window.open);
+    const close = toMinutes(window.close);
+    if (close < open && nowMinutes < close) {
+      return {
+        hoursIntoService: (nowMinutes + 1440 - open) / 60,
+        serviceOpenDate: yesterdayOf(localDate),
+        serviceOpenTime: window.open
+      };
+    }
+  }
+
+  return null;
+}
+
+// Exported for the business-alerts smoke: calls and bookings landed in the
+// trailing window, across all venues.
+export async function bookingActivitySnapshot(
+  windowMinutes: number = NO_BOOKINGS_WINDOW_MINUTES
+): Promise<{ calls: number; bookings: number }> {
+  const result = await pool.query<{ calls: string; bookings: string }>(
+    `SELECT
+       (SELECT count(*) FROM call_logs
+         WHERE created_at >= now() - $1::int * interval '1 minute') AS calls,
+       (SELECT count(*) FROM reservations
+         WHERE created_at >= now() - $1::int * interval '1 minute') AS bookings`,
+    [windowMinutes]
+  );
+  return {
+    calls: Number(result.rows[0]?.calls ?? 0),
+    bookings: Number(result.rows[0]?.bookings ?? 0)
+  };
+}
+
+// Exported for the business-alerts smoke: venues that are configured with
+// opening hours, are at least ZERO_CALLS_MIN_HOURS_INTO_SERVICE into today's
+// service, and have not logged a single call since service opened. Venues
+// with empty hours ({} is the column default) are skipped — alerting every
+// quiet venue that never configured hours would page-spam and get muted.
+export async function restaurantsSilentDuringService(
+  now: Date = new Date()
+): Promise<Array<{ restaurant_id: string; name: string; hours_into_service: number }>> {
+  const venues = await pool.query<{
+    id: string;
+    name: string;
+    timezone: string;
+    opening_hours_json: OpeningHours;
+  }>(
+    `SELECT r.id, r.name, r.timezone, s.opening_hours_json
+       FROM restaurants r
+       JOIN restaurant_settings s ON s.restaurant_id = r.id
+      WHERE s.opening_hours_json <> '{}'::jsonb`
+  );
+
+  const silent: Array<{ restaurant_id: string; name: string; hours_into_service: number }> = [];
+  for (const venue of venues.rows) {
+    const progress = serviceProgressNow(venue.opening_hours_json, venue.timezone, now);
+    if (!progress || progress.hoursIntoService < ZERO_CALLS_MIN_HOURS_INTO_SERVICE) continue;
+
+    const serviceStartUtc = zonedWallClockToUtcISO(
+      progress.serviceOpenDate,
+      progress.serviceOpenTime,
+      venue.timezone
+    );
+    const calls = await pool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM call_logs
+        WHERE restaurant_id = $1 AND created_at >= $2::timestamptz`,
+      [venue.id, serviceStartUtc]
+    );
+    if (Number(calls.rows[0]?.n ?? 0) === 0) {
+      silent.push({
+        restaurant_id: venue.id,
+        name: venue.name,
+        hours_into_service: progress.hoursIntoService
+      });
+    }
+  }
+  return silent;
+}
+
+async function checkBusinessOutcomes(): Promise<void> {
+  try {
+    // 9) Calls arriving but nothing books. The auth-storm alert catches the
+    //    signature-gate variant; this one is mechanism-blind — whatever broke
+    //    the funnel, the outcome is calls with no bookings for an hour.
+    const activity = await bookingActivitySnapshot();
+    if (activity.calls >= NO_BOOKINGS_MIN_CALLS && activity.bookings === 0) {
+      if (!state.noBookingsAlerted) {
+        await postToSlack(
+          `:rotating_light: ${activity.calls} call(s) in the last ${NO_BOOKINGS_WINDOW_MINUTES} min and ZERO bookings written. Bella may be answering while every booking silently fails — check /retell tool logs and booking_outcome in call_logs.`
+        );
+        state.noBookingsAlerted = true;
+      }
+    } else if (state.noBookingsAlerted && activity.bookings > 0) {
+      await postToSlack(
+        `:white_check_mark: Bookings are being written again (${activity.bookings} in the last ${NO_BOOKINGS_WINDOW_MINUTES} min).`
+      );
+      state.noBookingsAlerted = false;
+    }
+
+    // 10) A venue deep into service with zero calls at all — dead number,
+    //     broken SIP forward, or a Retell-side outage. Once per venue per day.
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const silent = await restaurantsSilentDuringService();
+    for (const venue of silent) {
+      const latchEntry = `${venue.restaurant_id}:${dayKey}`;
+      if (state.zeroCallsAlertedKeys.includes(latchEntry)) continue;
+      await postToSlack(
+        `:rotating_light: ${venue.name} is ${venue.hours_into_service.toFixed(1)}h into service with ZERO calls today. The phone line may be dead — dial the number and check the Twilio + Retell consoles.`
+      );
+      // Keep only today's entries so the latch list can't grow forever.
+      state.zeroCallsAlertedKeys = [
+        ...state.zeroCallsAlertedKeys.filter((entry) => entry.endsWith(dayKey)),
+        latchEntry
+      ];
+    }
+  } catch (error) {
+    logger.warn({ evt: "health_alerter_business_check_failed", error: (error as Error).message });
+  }
+}
+
+// The dead-man's switch: a GET that says "the worker's alert loop ran". The
+// external service (healthchecks.io-style) alerts when these STOP — covering
+// the failure mode every in-process alert shares: the process that would
+// have alerted is dead, and until this existed every probe ran on the same
+// box it was probing. Exported (with url injectable) for the unit test.
+export async function pingHeartbeat(url: string | undefined = env.OPS_HEARTBEAT_URL): Promise<void> {
+  if (!url) return;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    await fetch(url, { method: "GET", signal: controller.signal });
+    clearTimeout(timer);
+  } catch (error) {
+    logger.warn({ evt: "health_alerter_heartbeat_failed", error: (error as Error).message });
+  }
+}
+
 async function checkOnce(): Promise<void> {
   // Latches round-trip through ops_state so a worker restart doesn't re-page
   // every open alert. A failed load runs the tick on current in-memory state
@@ -487,6 +695,7 @@ async function checkOnce(): Promise<void> {
   // env flag.
   await checkKds();
   await checkRetellAuth();
+  await checkBusinessOutcomes();
   await checkOnboardingFunnel();
   await checkPaidCustomerQueues();
   if (env.CALCOM_SYNC_ENABLED) {
@@ -498,13 +707,21 @@ async function checkOnce(): Promise<void> {
   } catch (error) {
     logger.warn({ evt: "health_alerter_latch_save_failed", error: (error as Error).message });
   }
+
+  // Last, always: the heartbeat means "this loop ran", not "all healthy" —
+  // a tick that posted five alerts still pings.
+  await pingHeartbeat();
 }
 
 export function startHealthAlerter(): void {
-  // Slack webhook is the only hard requirement now. KDS rules are valuable
-  // even when Cal.com sync is off (single-tenant venues that don't mirror).
-  if (!env.OPS_SLACK_WEBHOOK_URL) {
-    logger.info({ evt: "health_alerter_not_started", reason: "no OPS_SLACK_WEBHOOK_URL" });
+  // Starts when there is anywhere to signal: Slack for the alerts, or the
+  // heartbeat URL alone — the dead-man's switch must keep pinging even on a
+  // box that has no Slack webhook configured.
+  if (!env.OPS_SLACK_WEBHOOK_URL && !env.OPS_HEARTBEAT_URL) {
+    logger.info({
+      evt: "health_alerter_not_started",
+      reason: "no OPS_SLACK_WEBHOOK_URL and no OPS_HEARTBEAT_URL"
+    });
     return;
   }
   if (intervalHandle !== null) return;
