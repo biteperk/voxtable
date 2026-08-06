@@ -371,10 +371,15 @@ const envSchema = z
     }
 
     requireInProd("RETELL_API_KEY", "RETELL_API_KEY is required in production.");
-    requireInProd("RETELL_AGENT_ID", "RETELL_AGENT_ID is required in production.");
     requireInProd("TWILIO_ACCOUNT_SID", "TWILIO_ACCOUNT_SID is required in production.");
     requireInProd("TWILIO_AUTH_TOKEN", "TWILIO_AUTH_TOKEN is required in production.");
-    requireInProd("TWILIO_PHONE_NUMBER", "TWILIO_PHONE_NUMBER is required in production.");
+    // RETELL_AGENT_ID and TWILIO_PHONE_NUMBER are deliberately NOT required:
+    // they are per-restaurant data, not deployment config (review decision on
+    // biteperk-cloud-platform PR #20). The authoritative values live on the
+    // restaurants row (retell_agent_id, twilio_phone_number — written by
+    // provisioning/bind), dialled-number routing reads only the database, and
+    // every env read of these two is fallback-guarded. The env values remain
+    // as optional single-tenant/dev fallbacks only.
     // The three signature/auth gates and the allowlist are enforced above for
     // every APP_ENV, keyed on the public URL rather than on this branch.
 
