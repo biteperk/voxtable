@@ -29,6 +29,12 @@ import {
   resetRetellAuthFailures,
   retellAuthSnapshot
 } from "../src/services/retellAuthHealth";
+import {
+  getBreakerState,
+  hydrateBreakerFromOpsState,
+  resetBreakerForTests
+} from "../src/services/calcomClient";
+import { quotaSnapshotFromDb, recordCalcomRequest } from "../src/services/calcomQuotaTracker";
 import { assert, reportAndExit, SMOKE_SUFFIX } from "./lib/smoke-harness";
 
 // ops_state has no FKs, so fake tenant ids are fine — and prefixed with the
@@ -100,6 +106,55 @@ async function main(): Promise<void> {
     assert("stale rows purge by prefix + age", purged === 1);
     assert("fresh rows survive the purge",
       (await getOpsState(latchKey, pool)) !== null);
+
+    // ---- Cal.com breaker survives a worker restart -------------------------
+    // Process A (the dying worker) last mirrored an OPEN breaker; process B
+    // (the restarted worker) must adopt it before its first Cal.com call
+    // instead of starting from a fresh "closed" and hammering a down Cal.com.
+    // resetBreakerForTests() forgets both the module state and the memoized
+    // hydration — exactly a process restart, without spawning one.
+    const priorBreakerRow = await getOpsState("calcom-breaker", pool);
+    const openedAt = Date.now();
+    await setOpsState("calcom-breaker", {
+      state: "open",
+      consecutiveFailures: 10,
+      firstFailureAt: openedAt - 5_000,
+      openedAt
+    });
+    resetBreakerForTests();
+    await hydrateBreakerFromOpsState();
+    const hydrated = getBreakerState();
+    assert(
+      "a restarted worker adopts the open breaker (old code: reset to closed)",
+      hydrated.state === "open" && hydrated.consecutiveFailures === 10,
+      hydrated
+    );
+    resetBreakerForTests();
+    if (priorBreakerRow) {
+      await setOpsState("calcom-breaker", priorBreakerRow);
+    } else {
+      await pool.query("DELETE FROM ops_state WHERE key = 'calcom-breaker'");
+    }
+
+    // ---- Cal.com quota survives a worker restart ---------------------------
+    // The counter's home is the ops_state day bucket, not module memory — the
+    // runaway loop that burns quota is exactly the one that crashes workers,
+    // and every restart used to reset the "authoritative" count to zero.
+    const beforeQuota = await quotaSnapshotFromDb();
+    recordCalcomRequest();
+    recordCalcomRequest();
+    let afterQuota = await quotaSnapshotFromDb();
+    for (let waited = 0; afterQuota.count < beforeQuota.count + 2 && waited < 2_000; waited += 100) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      afterQuota = await quotaSnapshotFromDb();
+    }
+    assert(
+      "quota increments accumulate in the DB, readable by any process",
+      afterQuota.count >= beforeQuota.count + 2,
+      { before: beforeQuota.count, after: afterQuota.count }
+    );
+    // Leave the real day counter as we found it.
+    await incrementOpsCounter(`calcom-quota:${afterQuota.day_key}`, -2);
   } finally {
     await cleanup();
     await pool.end();

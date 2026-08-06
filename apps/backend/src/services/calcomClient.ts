@@ -14,8 +14,11 @@
  *     outbox row failed; retrying won't help (bad payload, missing field, …).
  *
  * Circuit breaker:
- *   - In-memory; resets on container restart (acceptable — outbox state is
- *     durable so retries pick up where we left off).
+ *   - Module memory is the working copy; ops_state is the durable copy. Every
+ *     transition writes through (best-effort), and the first Cal.com call
+ *     after a process start hydrates from the stored row — so a restart
+ *     mid-outage resumes with the breaker open instead of hammering a down
+ *     Cal.com from a fresh "closed".
  *   - Opens after 10 consecutive transient failures inside a 60 s window.
  *   - Stays open for 60 s, then enters half-open. The next call probes; if it
  *     succeeds the breaker closes, otherwise it opens again.
@@ -26,7 +29,7 @@
 
 import { env } from "../config/env";
 import { logger } from "../utils/logger";
-import { setOpsState } from "../repositories/opsState";
+import { getOpsState, setOpsState } from "../repositories/opsState";
 import { recordCalcomRequest } from "./calcomQuotaTracker";
 
 export class CalcomTransientError extends Error {
@@ -129,29 +132,67 @@ export function getBreakerState(): { state: BreakerState; consecutiveFailures: n
   return { state: breakerState, consecutiveFailures, openedAt };
 }
 
-// Fire-and-forget mirror of the breaker into ops_state. The worker is the
-// only process that drives the breaker, so its module state stays the source
-// of truth; the row exists because /api/ops/calcom-health runs in the API
-// process, whose own breaker instance is permanently "closed" — the rollback
-// runbook told the on-call to trust an endpoint that could not tell the
-// truth. Best-effort by design: a breaker that trips BECAUSE the network is
-// down must never block, or fail, on another write.
+// Write-through of the breaker into ops_state. The worker is the only
+// process that DRIVES the breaker, so its module state stays the working
+// copy; the row serves two readers: /api/ops/calcom-health in the API
+// process (whose own breaker instance never trips — the rollback runbook
+// used to tell the on-call to trust an endpoint that could not tell the
+// truth), and this module's own next incarnation after a restart (see
+// hydrateBreakerFromOpsState). Best-effort by design: a breaker that trips
+// BECAUSE the network is down must never block, or fail, on another write.
 function mirrorBreakerState(): void {
   void setOpsState("calcom-breaker", {
     state: breakerState,
     consecutiveFailures,
+    firstFailureAt,
     openedAt
   }).catch((error) => {
     logger.warn({ evt: "calcom_breaker_mirror_failed", error: (error as Error).message });
   });
 }
 
-// Exposed only for tests; resets every counter and reopens the gate.
+// The restart path: before the first Cal.com call of a process lifetime,
+// adopt whatever the previous incarnation last mirrored. Without this, a
+// worker restart mid-outage forgot the breaker was open and hammered a down
+// Cal.com from a fresh "closed" until the failures rebuilt to threshold.
+// Memoized so it costs one DB read per process, and best-effort: if the read
+// fails we proceed from "closed" exactly as before this existed.
+let hydration: Promise<void> | null = null;
+
+export function hydrateBreakerFromOpsState(): Promise<void> {
+  hydration ??= (async () => {
+    try {
+      const stored = await getOpsState("calcom-breaker");
+      if (!stored) return;
+      const storedState = stored.state;
+      if (storedState !== "closed" && storedState !== "open" && storedState !== "half-open") return;
+      breakerState = storedState === "half-open" ? "open" : storedState;
+      consecutiveFailures = Number(stored.consecutiveFailures ?? 0);
+      firstFailureAt = typeof stored.firstFailureAt === "number" ? stored.firstFailureAt : null;
+      openedAt = typeof stored.openedAt === "number" ? stored.openedAt : null;
+      // An adopted "open" with no timestamp can never half-open on its own.
+      if (breakerState === "open" && openedAt === null) {
+        openedAt = Date.now();
+      }
+      if (breakerState !== "closed") {
+        logger.info({ evt: "calcom_breaker_hydrated", state: breakerState, opened_at: openedAt });
+      }
+    } catch (error) {
+      logger.warn({ evt: "calcom_breaker_hydrate_failed", error: (error as Error).message });
+    }
+  })();
+  return hydration;
+}
+
+// Exposed only for tests; resets every counter, reopens the gate, and forgets
+// the hydration so the next call re-adopts from ops_state — which is also how
+// tests simulate a process restart without spawning one.
 export function resetBreakerForTests(): void {
   breakerState = "closed";
   consecutiveFailures = 0;
   firstFailureAt = null;
   openedAt = null;
+  hydration = null;
 }
 
 // --- Request primitive --------------------------------------------------------
@@ -187,6 +228,7 @@ export interface CalcomResponse<T> {
  * No request body validation — the higher-level service builds the payload.
  */
 export async function calcomRequest<T = unknown>(options: CalcomRequestOptions): Promise<CalcomResponse<T>> {
+  await hydrateBreakerFromOpsState();
   if (shouldShortCircuit()) {
     throw new CalcomCircuitOpenError();
   }
