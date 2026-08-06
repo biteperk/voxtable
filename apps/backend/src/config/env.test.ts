@@ -20,17 +20,21 @@ import { validateEnv } from "./env";
 const DB = "postgres://test:test@localhost:5432/test";
 const PUBLIC_URL = "https://vocotable.algorythmos.com.au";
 
-/** The shape of the real production .env, minus the secrets. */
+/**
+ * The shape of a minimal production .env, minus the secrets. Deliberately
+ * WITHOUT RETELL_AGENT_ID and TWILIO_PHONE_NUMBER: those are per-restaurant
+ * database data (restaurants.retell_agent_id / twilio_phone_number), not
+ * deployment config, so a Cloud Run environment that never sets them must
+ * boot — that is exactly what staging does.
+ */
 const productionEnv = {
   APP_ENV: "production",
   DATABASE_URL: DB,
   PUBLIC_API_BASE_URL: PUBLIC_URL,
   RETELL_API_KEY: "key_realish",
-  RETELL_AGENT_ID: "agent_realish",
   RETELL_VERIFY_SIGNATURE: "true",
   TWILIO_ACCOUNT_SID: "AC0",
   TWILIO_AUTH_TOKEN: "tok",
-  TWILIO_PHONE_NUMBER: "+61200000000",
   TWILIO_VALIDATE_SIGNATURE: "true",
   DASHBOARD_VERIFY_AUTH: "true",
   DASHBOARD_ALLOWED_EMAILS: "sam@example.com"
@@ -130,4 +134,15 @@ test("production still requires the Retell and Twilio credentials", () => {
   const paths = issuePaths(result);
   assert.ok(paths.includes("RETELL_API_KEY"));
   assert.ok(paths.includes("TWILIO_AUTH_TOKEN"));
+});
+
+test("production boots without the per-restaurant identifiers", () => {
+  // RETELL_AGENT_ID and TWILIO_PHONE_NUMBER belong to the restaurants row,
+  // not the deployment (review decision, biteperk-cloud-platform PR #20).
+  // If this test starts failing, someone re-added them to requireInProd and
+  // every Cloud Run environment without them stops booting again.
+  const result = validateEnv(productionEnv);
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+  assert.equal(result.data!.RETELL_AGENT_ID, undefined);
+  assert.equal(result.data!.TWILIO_PHONE_NUMBER, undefined);
 });
