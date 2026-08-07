@@ -1,5 +1,12 @@
 # CLAUDE.md
 
+> 🏷️ **Naming anything — a hostname, GCP project, Cloud Run service, image, repo,
+> env var, or product? Read [`NAMES.md`](NAMES.md) first.** It is the naming SSOT
+> for the whole BitePerk/VoxTable estate (products, the `vocotable.*` →
+> `*.biteperk.com.au` domain migration, the `bp-*` Terraform world, and the legacy
+> identities that must NEVER rename). This file only narrates; when they disagree,
+> NAMES.md wins.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project context
@@ -54,7 +61,7 @@ To exercise a single integration without a real phone call, hit the routes direc
 4. The Retell LLM (GPT-4.1, single-prompt, voice 11labs-Anna en-AU) calls our **custom function** endpoints at `/retell/tools/check-availability` and `/retell/tools/create-booking`. These return snake_case JSON the LLM can read out (`confirmation_message`, `natural_alternatives_message`).
 5. Retell sends lifecycle events to **`/retell/webhook`** (signed). Final `call_analyzed` event includes `call_analysis.custom_analysis_data.{intent, booking_outcome, special_requests, caller_satisfied}` — the keys are configured on the agent via `post_call_analysis_data`.
 6. `apps/backend/src/services/retellService.ts::persistRetellCall` extracts those fields and upserts into `call_logs` (unique on `(provider, provider_call_id)`).
-7. The React dashboard (Firebase Hosting `vocotable.web.app`; public brand site `biteperk.com.au`) fetches from `/api/reservations`, `/api/call-logs`, `/api/analytics` (all Firebase-ID-token-gated) and renders.
+7. The React dashboard (Firebase Hosting `vocotable.web.app` — legacy name, moving to `app.biteperk.com.au`, see NAMES.md §2; public brand site `biteperk.com.au`) fetches from `/api/reservations`, `/api/call-logs`, `/api/analytics` (all Firebase-ID-token-gated) and renders.
 
 ### Cal.com mirror (durable outbox + inbox)
 
@@ -122,7 +129,7 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
 
 **Pipeline state — verified 5 Aug 2026.** The deploy half was rewritten 4 Aug (#94/#95): `deploy-backend.yml`/`deploy-frontend.yml` deploy `integration` → Cloud Run staging and `main` → Cloud Run production, both gated on a successful CI `workflow_run`; the backend job runs the migration job before rolling services. Current gaps:
 - Staging api/worker **refuse to boot**: the services are missing `PUBLIC_API_BASE_URL`, `RETELL_AGENT_ID`, `TWILIO_PHONE_NUMBER` plus the `RETELL_API_KEY` / `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` secrets (Secret Manager holds only the DB secrets so far). Until they're set, every staging backend deploy fails its health check by design.
-- **Promoting `main` targets Cloud Run production (`voxtable-prod-*`), which does not exist yet.** Until `bp-voxtable-prd` is provisioned, production is still the VM and is deployed manually — a `main` merge does NOT reach the VM on its own.
+- **Promoting `main` targets Cloud Run production (`voxtable-prod-*`), which does not exist yet.** Until `bp-voxtable-prod` is provisioned (that exact spelling — see NAMES.md §3), production is still the VM and is deployed manually — a `main` merge does NOT reach the VM on its own.
 - The image registry (`bp-shared-artifacts`) and the frontend artifact bucket (`voxtable-frontend-artifacts`) live outside the `vocotable-497209` project and were **not readable by Sam's account** as of 1 Aug — worth resolving for auditability and bus factor.
 
 Standard hygiene before any backend deploy:
