@@ -45,6 +45,7 @@ const envSchema = z
   // Unset → falls back to PORT (see worker.ts).
   WORKER_HEALTH_PORT: z.coerce.number().int().positive().optional(),
   PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:3050"),
+  CORS_ALLOWED_ORIGINS: z.string().trim().optional(),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   DATABASE_SSL: boolFlag(),
   // Per-process pool ceilings. Both containers import db/pool at boot, so the
@@ -312,6 +313,20 @@ const envSchema = z
     // reachable at something other than localhost, they are not optional, and
     // no value of APP_ENV can make them optional.
     if (!isLocalhost) {
+      const corsAllowedOrigins = (value.CORS_ALLOWED_ORIGINS ?? "")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+      if (corsAllowedOrigins.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CORS_ALLOWED_ORIGINS"],
+          message:
+            "CORS_ALLOWED_ORIGINS must list at least one browser origin " +
+            "when PUBLIC_API_BASE_URL is not localhost."
+        });
+      }
+
       const gates = [
         ["RETELL_VERIFY_SIGNATURE", "Retell webhook signatures"],
         ["TWILIO_VALIDATE_SIGNATURE", "Twilio request signatures"],

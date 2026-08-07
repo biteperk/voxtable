@@ -19,6 +19,7 @@ import { validateEnv } from "./env";
 
 const DB = "postgres://test:test@localhost:5432/test";
 const PUBLIC_URL = "https://vocotable.algorythmos.com.au";
+const CORS_ORIGINS = "https://vocotable.web.app,https://vocotable.algorythmos.com.au";
 
 /**
  * The shape of a minimal production .env, minus the secrets. Deliberately
@@ -29,6 +30,7 @@ const PUBLIC_URL = "https://vocotable.algorythmos.com.au";
  */
 const productionEnv = {
   APP_ENV: "production",
+  CORS_ALLOWED_ORIGINS: CORS_ORIGINS,
   DATABASE_URL: DB,
   PUBLIC_API_BASE_URL: PUBLIC_URL,
   RETELL_API_KEY: "key_realish",
@@ -99,6 +101,7 @@ for (const gate of [
 test("an empty allowlist on a public host refuses to boot", () => {
   const result = validateEnv({
     APP_ENV: "development",
+    CORS_ALLOWED_ORIGINS: CORS_ORIGINS,
     DATABASE_URL: DB,
     PUBLIC_API_BASE_URL: PUBLIC_URL
   });
@@ -106,9 +109,21 @@ test("an empty allowlist on a public host refuses to boot", () => {
   assert.ok(issuePaths(result).includes("DASHBOARD_ALLOWED_EMAILS"));
 });
 
+test("an empty CORS origin list on a public host refuses to boot", () => {
+  const result = validateEnv({
+    APP_ENV: "development",
+    DATABASE_URL: DB,
+    PUBLIC_API_BASE_URL: PUBLIC_URL,
+    DASHBOARD_ALLOWED_EMAILS: "sam@example.com"
+  });
+  assert.equal(result.success, false);
+  assert.ok(issuePaths(result).includes("CORS_ALLOWED_ORIGINS"));
+});
+
 test("a public host with every gate on and a real allowlist boots", () => {
   const result = validateEnv({
     APP_ENV: "development",
+    CORS_ALLOWED_ORIGINS: CORS_ORIGINS,
     DATABASE_URL: DB,
     PUBLIC_API_BASE_URL: PUBLIC_URL,
     DASHBOARD_ALLOWED_EMAILS: "sam@example.com"
