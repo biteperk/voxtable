@@ -45,6 +45,7 @@ const envSchema = z
   // Unset → falls back to PORT (see worker.ts).
   WORKER_HEALTH_PORT: z.coerce.number().int().positive().optional(),
   PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:3050"),
+  CORS_ALLOWED_ORIGINS: z.string().trim().optional(),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   DATABASE_SSL: boolFlag(),
   // Per-process pool ceilings. Both containers import db/pool at boot, so the
@@ -312,6 +313,20 @@ const envSchema = z
     // reachable at something other than localhost, they are not optional, and
     // no value of APP_ENV can make them optional.
     if (!isLocalhost) {
+      const corsAllowedOrigins = (value.CORS_ALLOWED_ORIGINS ?? "")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+      if (corsAllowedOrigins.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CORS_ALLOWED_ORIGINS"],
+          message:
+            "CORS_ALLOWED_ORIGINS must list at least one browser origin " +
+            "when PUBLIC_API_BASE_URL is not localhost."
+        });
+      }
+
       const gates = [
         ["RETELL_VERIFY_SIGNATURE", "Retell webhook signatures"],
         ["TWILIO_VALIDATE_SIGNATURE", "Twilio request signatures"],
@@ -371,10 +386,15 @@ const envSchema = z
     }
 
     requireInProd("RETELL_API_KEY", "RETELL_API_KEY is required in production.");
-    requireInProd("RETELL_AGENT_ID", "RETELL_AGENT_ID is required in production.");
     requireInProd("TWILIO_ACCOUNT_SID", "TWILIO_ACCOUNT_SID is required in production.");
     requireInProd("TWILIO_AUTH_TOKEN", "TWILIO_AUTH_TOKEN is required in production.");
-    requireInProd("TWILIO_PHONE_NUMBER", "TWILIO_PHONE_NUMBER is required in production.");
+    // RETELL_AGENT_ID and TWILIO_PHONE_NUMBER are deliberately NOT required:
+    // they are per-restaurant data, not deployment config (review decision on
+    // biteperk-cloud-platform PR #20). The authoritative values live on the
+    // restaurants row (retell_agent_id, twilio_phone_number — written by
+    // provisioning/bind), dialled-number routing reads only the database, and
+    // every env read of these two is fallback-guarded. The env values remain
+    // as optional single-tenant/dev fallbacks only.
     // The three signature/auth gates and the allowlist are enforced above for
     // every APP_ENV, keyed on the public URL rather than on this branch.
 
