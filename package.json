@@ -40,6 +40,8 @@
     "smoke:outbox-deadletter": "npm run smoke:outbox-deadletter --workspace=@vocotable/backend",
     "smoke:solo-diner": "npm run smoke:solo-diner --workspace=@vocotable/backend",
     "smoke:ops-state": "npm run smoke:ops-state --workspace=@vocotable/backend",
+    "smoke:voice-kill-switch": "npm run smoke:voice-kill-switch --workspace=@vocotable/backend",
+    "smoke:notification-lease": "npm run smoke:notification-lease --workspace=@vocotable/backend",
     "audit:backend": "npm audit --workspace=@vocotable/backend --omit=dev --omit=optional",
     "audit:frontend": "npm audit --workspace=@vocotable/frontend --omit=dev",
     "audit:kds": "npm audit --workspace=@vocotable/kds --omit=dev",

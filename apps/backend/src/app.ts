@@ -26,6 +26,14 @@ import { logger } from "./utils/logger";
 
 type RequestWithRawBody = express.Request & { rawBody?: string };
 
+function corsOrigin() {
+  const configured = env.CORS_ALLOWED_ORIGINS?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return configured?.length ? configured : true;
+}
+
 export function createApp() {
   const app = express();
 
@@ -33,25 +41,7 @@ export function createApp() {
   app.disable("x-powered-by");
   app.use(
     cors({
-      origin:
-        env.APP_ENV === "production"
-          ? [
-              // Canonical branded surfaces (see deploy/runbooks/domain-migration.md).
-              "https://app.biteperk.com.au",
-              "https://kds.biteperk.com.au",
-              "https://biteperk.com.au",
-              // Previous branded hostnames, retained through the domain
-              // migration so in-flight sessions and bookmarks keep working.
-              "https://vocotable.biteperk.com.au",
-              "https://kitchen.vocotable.biteperk.com.au",
-              "https://vocotable-kds.web.app",
-              "https://vocotable-kds.firebaseapp.com",
-              // Legacy / fallback Firebase Hosting URLs. Kept so existing
-              // bookmarks and the .web.app default keep working without 401s.
-              "https://vocotable.web.app",
-              "https://vocotable.algorythmos.com.au"
-            ]
-          : true,
+      origin: corsOrigin(),
       // Setting allowedHeaders explicitly REPLACES cors's default reflection of
       // Access-Control-Request-Headers, so this list must be exhaustive: missing
       // If-Match / Idempotency-Key would silently break order mutations.
