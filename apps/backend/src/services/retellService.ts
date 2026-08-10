@@ -167,6 +167,33 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
   };
 }
 
+/**
+ * What Bella tells the caller while VOICE_BOOKING_ENABLED is off. The same
+ * sentence is spread across every message field the different tools return
+ * (`message`, `natural_alternatives_message`, `confirmation_message`), so
+ * whichever one the agent's prompt reads, the caller hears the refusal —
+ * never a half-taken booking.
+ */
+export function voiceBookingDisabledResponse(): {
+  available: false;
+  success: false;
+  message: string;
+  natural_alternatives_message: string;
+  confirmation_message: string;
+} {
+  const message =
+    "I'm sorry — our booking system is briefly offline for maintenance, so I can't " +
+    "take or change bookings right now. Please call back a little later, and thank " +
+    "you for your patience.";
+  return {
+    available: false,
+    success: false,
+    message,
+    natural_alternatives_message: message,
+    confirmation_message: message
+  };
+}
+
 export async function handleRetellFunction(
   body: unknown,
   fallbackName?: string
@@ -188,6 +215,14 @@ export async function handleRetellFunction(
 
   if (call?.call_id) {
     await persistRetellCall("function_call", call, { event: "function_call" });
+  }
+
+  // The kill switch refuses every tool AFTER the call is persisted (the
+  // dashboard should still show calls arriving while the switch is off) and
+  // BEFORE anything can read or write booking state.
+  if (!env.VOICE_BOOKING_ENABLED) {
+    logger.warn({ evt: "voice_booking_disabled_refusal", tool: name });
+    return voiceBookingDisabledResponse();
   }
 
   // Resolve the tenant from the trusted call (dialed number / persisted call_log

@@ -394,6 +394,42 @@ export async function getOrCreateCustomer(restaurantId: string): Promise<string>
 }
 
 /**
+ * Params for the subscription Checkout Session, extracted so the GST wiring
+ * is testable without Stripe. The three tax fields travel together:
+ * automatic_tax makes Stripe compute GST, but our customer is created with
+ * no address (getOrCreateCustomer sets only name/email), and Stripe rejects
+ * an automatic_tax session for an address-less existing customer unless the
+ * session both collects the billing address AND is allowed to save it back
+ * (customer_update.address). The Price must be tax-inclusive in the Stripe
+ * dashboard so the advertised "inc GST" amount is what the card is charged.
+ */
+export function buildCheckoutSessionParams(input: {
+  customerId: string;
+  restaurantId: string;
+  priceId: string;
+  trialDays: number;
+  successUrl: string;
+  cancelUrl: string;
+}): Stripe.Checkout.SessionCreateParams {
+  return {
+    mode: "subscription",
+    customer: input.customerId,
+    client_reference_id: input.restaurantId,
+    line_items: [{ price: input.priceId, quantity: 1 }],
+    payment_method_collection: "always",
+    automatic_tax: { enabled: true },
+    billing_address_collection: "required",
+    customer_update: { address: "auto" },
+    subscription_data: {
+      trial_period_days: input.trialDays,
+      metadata: { restaurant_id: input.restaurantId }
+    },
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl
+  };
+}
+
+/**
  * Create a Checkout Session for the $80/mo plan with a free trial. Card is
  * collected up front (payment_method_collection: 'always') but not charged
  * until the trial ends. client_reference_id + subscription metadata carry the
@@ -406,19 +442,16 @@ export async function createCheckoutSession(restaurantId: string): Promise<{ url
     }
     const stripe = getStripe();
     const customer = await getOrCreateCustomer(restaurantId);
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer,
-      client_reference_id: restaurantId,
-      line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
-      payment_method_collection: "always",
-      subscription_data: {
-        trial_period_days: env.STRIPE_TRIAL_DAYS,
-        metadata: { restaurant_id: restaurantId }
-      },
-      success_url: env.STRIPE_CHECKOUT_SUCCESS_URL,
-      cancel_url: env.STRIPE_CHECKOUT_CANCEL_URL
-    });
+    const session = await stripe.checkout.sessions.create(
+      buildCheckoutSessionParams({
+        customerId: customer,
+        restaurantId,
+        priceId: env.STRIPE_PRICE_ID,
+        trialDays: env.STRIPE_TRIAL_DAYS,
+        successUrl: env.STRIPE_CHECKOUT_SUCCESS_URL,
+        cancelUrl: env.STRIPE_CHECKOUT_CANCEL_URL
+      })
+    );
     if (!session.url) {
       throw new AppError(502, "BILLING_UPSTREAM_ERROR", "Checkout session has no URL.");
     }
