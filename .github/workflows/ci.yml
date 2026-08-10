@@ -124,6 +124,13 @@ jobs:
       - name: Prove ops state crosses the process boundary
         run: npm run smoke:ops-state
 
+      # The notification outbox claim leases the row (next_attempt_at pushed
+      # forward), so a second worker replica or a send outliving one tick can
+      # never send the same email/SMS twice. Two racing claimers + a late
+      # claimer must partition the rows with no overlap.
+      - name: Prove a claimed notification cannot be claimed again
+        run: npm run smoke:notification-lease
+
       - name: Build frontend
         run: npm run build:frontend
 
