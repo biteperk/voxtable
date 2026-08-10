@@ -2,13 +2,13 @@
 
 ## Security Policy
 
-VocoTable handles restaurant operations data, customer names and phone numbers, call logs, reservations, payment metadata, webhook events, and third-party integration credentials. Treat all production data and secrets as sensitive.
+VoxTable handles restaurant operations data, customer names and phone numbers, call logs, reservations, payment metadata, webhook events, and third-party integration credentials. Treat all production data and secrets as sensitive.
 
 ## Reporting a Vulnerability
 
 Please report suspected vulnerabilities privately. Do not open a public GitHub issue for security reports.
 
-Send a concise report to the project owner or Biteperk/VocoTable maintainer with:
+Send a concise report to the project owner or Biteperk/VoxTable maintainer with:
 
 - Affected component or route.
 - Steps to reproduce.

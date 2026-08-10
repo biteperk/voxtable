@@ -72,3 +72,20 @@ firebase-admin.json
 # feed scripts/ but are never deployed. Real app assets live under
 # apps/frontend/public/, which is NOT covered by this rule.
 /public/
+
+# ASIC / company registration — holds identity documents (passport, birth
+# certificate, Director ID, residential address) and ASIC keys. Never commit.
+asic/
+
+# Credentials, recovery codes and key material — never commit.
+# Values belong in the shared password vault; repo files may hold pointers only.
+*recovery_code*
+*recovery-code*
+*_2FA_*
+*_2fa_*
+*.secret
+*.secret.*
+
+# Prospect / customer business documents (menus, quotes) — never commit.
+# These are other people's business data; keep them outside the repo.
+/restaurants/
