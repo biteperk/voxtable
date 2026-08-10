@@ -30,7 +30,7 @@ import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
 import { getOnboardingFunnel } from "../repositories/restaurants";
 import { getBreakerState } from "../services/calcomClient";
-import { quotaSnapshot, shouldFireQuotaAlert } from "../services/calcomQuotaTracker";
+import { quotaSnapshotFromDb } from "../services/calcomQuotaTracker";
 import { kdsHealthSnapshot } from "../services/orderService";
 import { retellAuthSnapshot } from "../services/retellAuthHealth";
 import { getKdsHeartbeats } from "../services/kdsHeartbeats";
@@ -87,6 +87,10 @@ interface AlertState {
   notificationsStuckAlerted: boolean;
   stripeUnprocessedAlerted: boolean;
   menuImportsFailedAlerted: boolean;
+  // UTC day the Cal.com quota alert last fired for — once per day, and the
+  // latch survives a restart like every other latch here (the old version
+  // lived inside calcomQuotaTracker's module memory and re-fired on redeploy).
+  quotaAlertedDayKey: string | null;
 }
 
 const DEFAULT_STATE: AlertState = {
@@ -104,7 +108,8 @@ const DEFAULT_STATE: AlertState = {
   provisioningStuckAlerted: false,
   notificationsStuckAlerted: false,
   stripeUnprocessedAlerted: false,
-  menuImportsFailedAlerted: false
+  menuImportsFailedAlerted: false,
+  quotaAlertedDayKey: null
 };
 
 const state: AlertState = { ...DEFAULT_STATE };
@@ -121,7 +126,11 @@ async function loadAlertLatches(): Promise<void> {
   if (!stored) return;
   for (const key of Object.keys(DEFAULT_STATE) as Array<keyof AlertState>) {
     const value = stored[key];
-    if (typeof value === typeof DEFAULT_STATE[key] || (key === "funnelSummaryDayKey" && (value === null || typeof value === "string"))) {
+    if (
+      typeof value === typeof DEFAULT_STATE[key] ||
+      ((key === "funnelSummaryDayKey" || key === "quotaAlertedDayKey") &&
+        (value === null || typeof value === "string"))
+    ) {
       (state as unknown as Record<string, unknown>)[key] = value;
     }
   }
@@ -297,12 +306,20 @@ async function checkCalcom(): Promise<void> {
 
     // 4) Cal.com daily quota — edge-triggered alert (once per UTC day).
     //    Audit Sweep I. Catches runaway-loop scenarios where the outbox
-    //    retry budget burns the Cal.com rate limit before we notice.
-    if (shouldFireQuotaAlert()) {
-      const snap = quotaSnapshot();
+    //    retry budget burns the Cal.com rate limit before we notice. Reads
+    //    the ops_state counter (survives restarts — the crashy runaway that
+    //    burns quota is exactly the one that restarts workers) and latches
+    //    on the day key alongside the other restart-surviving latches.
+    const quota = await quotaSnapshotFromDb();
+    if (quota.above_threshold && state.quotaAlertedDayKey !== quota.day_key) {
       await postToSlack(
-        `:warning: Cal.com API quota: ${snap.count} / ${snap.daily_threshold} requests today (UTC ${snap.day_key}). Window opened ${snap.window_started_at}. Investigate if outbox is healthy.`
+        `:warning: Cal.com API quota: ${quota.count} / ${quota.daily_threshold} requests today (UTC ${quota.day_key}). Investigate if outbox is healthy.`
       );
+      state.quotaAlertedDayKey = quota.day_key;
+    } else if (!quota.above_threshold && state.quotaAlertedDayKey !== null && state.quotaAlertedDayKey !== quota.day_key) {
+      // A new UTC day under the threshold — clear the latch so the next
+      // breach fires again.
+      state.quotaAlertedDayKey = null;
     }
   } catch (error) {
     logger.warn({ evt: "health_alerter_calcom_check_failed", error: (error as Error).message });
