@@ -1,10 +1,14 @@
 # AGENTS.md
 
+> 🏷️ **Naming anything? Read [`NAMES.md`](NAMES.md) first** — the naming SSOT for
+> products, hostnames, GCP/Terraform resources, and the legacy identities that must
+> never rename. Never type an infrastructure name from memory; check the registry.
+
 Guidance for AI coding agents and other automated assistants working in this repository.
 
 ## Project Summary
 
-VocoTable is a voice-AI booking platform for restaurants, built by Biteperk Pty Ltd. Customers call a restaurant number, Twilio routes the call to Retell AI's voice agent Bella, Bella checks availability and creates bookings through the Express backend, and the React dashboard shows reservations, live calls, tables, menus, orders, billing, and onboarding state.
+VoxTable is a voice-AI booking platform for restaurants, built by Biteperk Pty Ltd. Customers call a restaurant number, Twilio routes the call to Retell AI's voice agent Bella, Bella checks availability and creates bookings through the Express backend, and the React dashboard shows reservations, live calls, tables, menus, orders, billing, and onboarding state.
 
 The original MVP restaurant is Natalia's Bistro in Sydney. Multi-tenant dashboard/onboarding exists, but inbound voice routing is still intentionally conservative and tied to configured restaurant routing until explicitly rolled out.
 

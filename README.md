@@ -1,4 +1,7 @@
-# VocoTable
+# VoxTable
+
+> 🏷️ Naming conventions, hostnames, and infrastructure names are registered in
+> [`NAMES.md`](NAMES.md) — check it before naming anything.
 
 Voice-AI booking platform for restaurants, built by Biteperk Pty Ltd. A customer dials the restaurant's number, **Bella** (a Retell AI voice agent) answers, checks availability, and books the table — the reservation lands in Postgres and shows up live on the restaurant's dashboard.
 

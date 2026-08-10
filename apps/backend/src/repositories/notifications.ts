@@ -42,10 +42,20 @@ export async function enqueueNotification(input: {
 }
 
 export async function claimReadyNotifications(limit: number, db: DbClient = pool): Promise<NotificationRow[]> {
+  // Pushing next_attempt_at forward IS the claim lease: the row stops matching
+  // the ready predicate the moment this UPDATE commits, so a second worker
+  // replica (or a send outliving the tick interval) cannot claim it again and
+  // double-send. FOR UPDATE SKIP LOCKED alone never provided that — the row
+  // lock dies with this autocommitted statement, while the actual send happens
+  // afterwards, outside any transaction. If the process crashes mid-send, the
+  // row simply becomes claimable again when the lease expires (at-least-once,
+  // same guarantee as before); markNotificationSent/Retry/Failed all overwrite
+  // the lease with their own terminal or scheduled state.
   const result = await db.query<NotificationRow>(
     `
     UPDATE notifications_outbox
-    SET attempts = attempts + 1
+    SET attempts = attempts + 1,
+        next_attempt_at = now() + interval '5 minutes'
     WHERE id IN (
       SELECT id FROM notifications_outbox
       WHERE status = 'pending' AND next_attempt_at <= now()
