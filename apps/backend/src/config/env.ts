@@ -78,6 +78,16 @@ const envSchema = z
   RETELL_LLM_ID: z.string().optional(),
   RETELL_PHONE_NUMBER: z.string().optional(),
   RETELL_VERIFY_SIGNATURE: gateFlag(),
+  // The core product's kill switch. Every peripheral feature has a flag; until
+  // now the one thing the business actually sells had none, so a misbehaving
+  // agent or corrupted booking flow could only be stopped by pulling the phone
+  // number at Retell. Default ON via gateFlag — a forgotten env var must never
+  // silence the phone line — but deliberately NOT in superRefine's gate
+  // enforcement: unlike the security gates, this one must stay legal to turn
+  // OFF in production, or it isn't a kill switch. When off, every /retell tool
+  // call returns a spoken refusal and writes nothing; webhooks and call
+  // logging stay live.
+  VOICE_BOOKING_ENABLED: gateFlag(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),

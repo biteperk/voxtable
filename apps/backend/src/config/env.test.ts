@@ -136,6 +136,22 @@ test("the real production environment still boots", () => {
   assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
 });
 
+test("the voice kill switch defaults ON — a forgotten env var must never silence the phone line", () => {
+  const result = validateEnv({ APP_ENV: "test", DATABASE_URL: DB });
+  assert.equal(result.success, true);
+  assert.equal(result.data!.VOICE_BOOKING_ENABLED, true);
+});
+
+test("the voice kill switch may be turned OFF in production — unlike the security gates", () => {
+  // If this test starts failing, someone added VOICE_BOOKING_ENABLED to the
+  // superRefine gate enforcement. That turns the kill switch into a boot
+  // refusal: flipping it during an incident would take the whole api down
+  // instead of pausing bookings.
+  const result = validateEnv({ ...productionEnv, VOICE_BOOKING_ENABLED: "false" });
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+  assert.equal(result.data!.VOICE_BOOKING_ENABLED, false);
+});
+
 test("production still refuses a localhost public URL", () => {
   const result = validateEnv({ ...productionEnv, PUBLIC_API_BASE_URL: "http://localhost:3050" });
   assert.equal(result.success, false);

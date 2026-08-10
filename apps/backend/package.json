@@ -34,6 +34,7 @@
     "smoke:outbox-deadletter": "tsx scripts/smoke-outbox-deadletter.ts",
     "smoke:solo-diner": "tsx scripts/smoke-solo-diner.ts",
     "smoke:ops-state": "tsx scripts/smoke-ops-state.ts",
+    "smoke:voice-kill-switch": "tsx scripts/smoke-voice-kill-switch.ts",
     "smoke:notification-lease": "tsx scripts/smoke-notification-lease.ts"
   },
   "dependencies": {
