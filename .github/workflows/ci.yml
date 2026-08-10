@@ -164,7 +164,7 @@ jobs:
           workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: registry@bp-shared-artifacts.iam.gserviceaccount.com
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
         if: env.SHOULD_PUSH == 'true'
 
       - name: Configure Artifact Registry auth
@@ -295,7 +295,7 @@ jobs:
           workload_identity_provider: projects/194287509090/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: github-frontend-artifacts@bp-shared-artifacts.iam.gserviceaccount.com
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
 
       - name: Upload Firebase Hosting artifact to GCS
         env:
