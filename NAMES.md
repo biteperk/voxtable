@@ -85,3 +85,21 @@ These look like leftovers. They are not. Each has a hard reason:
 - The string `vocotable` **never appears in a new name** — it exists only in §4.
 - If the tables above don't cover your case: pick the name following these rules,
   and add it to this file **in the same PR**.
+
+## 6. Per-venue vendor resources (multi-tenant scale rules)
+
+A tenant is DATA, not infrastructure: the `restaurants` row is the registry
+(the single source of truth for every id below), and no venue ever gets its
+own GCP project, repo, or branch. When provisioning a venue:
+
+| Resource | Convention | Example |
+|---|---|---|
+| Twilio number friendly name | `voxtable: <venue-slug> <restaurant-uuid-first8>` | `voxtable: cuban-corner-parramatta ecfca4b0` |
+| Retell agent | `<Venue Name> (VoxTable)` — one agent **and one LLM** per venue (a shared LLM means one venue's prompt edit rewrites another's live agent) | `Cuban Corner Parramatta (VoxTable)` |
+| Stripe Customer / Connect account | `metadata.restaurant_id = <uuid>` on both | — |
+| Number registration | Retell import with `inbound_webhook_url` (webhook mode) — never a static `inbound_agent_id` binding | — |
+
+Where each id is recorded: `restaurants.twilio_phone_number`,
+`retell_phone_number`, `retell_agent_id`, `stripe_customer_id`,
+`stripe_connect_account_id`. Nowhere else — no spreadsheets. Full procedure:
+`deploy/runbooks/venue-onboarding.md`.
