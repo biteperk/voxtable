@@ -89,3 +89,7 @@ asic/
 # Prospect / customer business documents (menus, quotes) — never commit.
 # These are other people's business data; keep them outside the repo.
 /restaurants/
+
+# Customer collateral (menus, talk tracks, account plans) — belongs in the
+# private customers repo / Drive, never in the code repo. Per-venue folders:
+Cuban-Corner/
