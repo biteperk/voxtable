@@ -93,7 +93,7 @@ export function withTickLogContext<T>(worker: string, fn: () => T): T {
 // `x_cal_signature` are covered without listing each one; anchoring the END
 // keeps `email_verified` and `tokens_used` readable.
 const SENSITIVE_KEY_PATTERN =
-  /^[a-z0-9]*(?:phone|phonenumber|email|attendee|attendees|authorization|apikey|token|secret|password|signature|transcript|specialrequest|specialrequests|callername)$/;
+  /^[a-z0-9]*(?:phone|phonenumber|email|attendee|attendees|authorization|apikey|token|secret|password|signature|transcript|specialrequest|specialrequests|callername|checkouturl)$/;
 
 function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY_PATTERN.test(key.toLowerCase().replace(/[_-]/g, ""));
@@ -132,6 +132,9 @@ const REDACTION_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
     replacement: "$1_$2_[REDACTED]"
   },
   { regex: /\bwhsec_[a-zA-Z0-9]{16,}\b/g, replacement: "whsec_[REDACTED]" },
+  // Checkout session ids: the id IS the payment page URL suffix — a logged
+  // cs_… is a live "pay this order" capability until the session expires.
+  { regex: /\bcs_(test|live)_[a-zA-Z0-9]{16,}\b/g, replacement: "cs_$1_[REDACTED]" },
   { regex: /Bearer\s+[A-Za-z0-9._\-]+/g, replacement: "Bearer [REDACTED]" },
   {
     regex: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
