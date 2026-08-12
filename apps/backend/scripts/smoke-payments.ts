@@ -37,6 +37,9 @@ async function main(): Promise<void> {
   } = await import("../src/services/orderPaymentService");
   const { handleBillingWebhook } = await import("../src/services/stripeService");
   const { createOrder, updateOrderStatus } = await import("../src/services/orderService");
+  const { createSmokeRestaurant, cleanupSmokeRestaurant, SMOKE_SUFFIX } = await import(
+    "./lib/smoke-harness"
+  );
 
   let sessionCounter = 0;
   const expired: string[] = [];
@@ -63,46 +66,38 @@ async function main(): Promise<void> {
     return r.rows[0] as T;
   };
 
-  const restaurant = await one<{ id: string }>(
-    "SELECT id FROM restaurants ORDER BY created_at LIMIT 1"
-  );
-  assert(restaurant, "no restaurant seeded — run npm run db:seed first");
-  const restaurantId = restaurant.id;
+  // Self-provisioned fixtures, per house convention: CI never seeds, and no
+  // smoke may depend on seed data or leave residue.
+  const { restaurantId } = await createSmokeRestaurant({
+    name: `Payments Smoke ${SMOKE_SUFFIX}`,
+    phoneNumber: `+6129009${String(process.pid % 10000).padStart(4, "0")}`,
+    tables: [{ label: "P1", minCapacity: 1, maxCapacity: 4 }]
+  });
   const PHONE = "+61400000001";
 
-  // Point the venue at a fixture connected account (restored at the end).
-  const savedConnect = await one<{
-    stripe_connect_account_id: string | null;
-    stripe_connect_charges_enabled: boolean;
-  }>(
-    "SELECT stripe_connect_account_id, stripe_connect_charges_enabled FROM restaurants WHERE id = $1",
+  const category = await one<{ id: string }>(
+    `INSERT INTO menu_categories (restaurant_id, name) VALUES ($1, 'Smoke Mains') RETURNING id`,
     [restaurantId]
   );
+  const menuItem = await one<{ id: string }>(
+    `INSERT INTO menu_items (restaurant_id, category_id, name, base_price_cents, is_available)
+     VALUES ($1, $2, 'Smoke Fish and Chips', 1850, true) RETURNING id`,
+    [restaurantId, category.id]
+  );
+
+  // Point the venue at a fixture connected account.
   await pool.query(
-    `UPDATE restaurants SET stripe_connect_account_id = 'acct_smoke_test',
+    `UPDATE restaurants SET stripe_connect_account_id = 'acct_smoke_${SMOKE_SUFFIX}',
        stripe_connect_charges_enabled = true WHERE id = $1`,
     [restaurantId]
   );
 
   const createdOrderIds: string[] = [];
   const makeOrder = async (): Promise<{ id: string; total_cents: number; version: number }> => {
-    // An item with no REQUIRED modifier group — the seed's Fish & Chips
-    // demands a drink choice, which isn't what this smoke is testing.
-    const item = await one<{ id: string }>(
-      `SELECT mi.id FROM menu_items mi
-        WHERE mi.restaurant_id = $1 AND mi.is_available = true
-          AND NOT EXISTS (
-            SELECT 1 FROM menu_item_modifiers m
-             WHERE m.menu_item_id = mi.id AND m.group_min_select > 0
-          )
-        LIMIT 1`,
-      [restaurantId]
-    );
-    assert(item, "no menu items seeded — run npm run db:seed first");
     const result = await createOrder({
       restaurantId,
       source: "dashboard",
-      items: [{ menuItemId: item.id, quantity: 1 }],
+      items: [{ menuItemId: menuItem.id, quantity: 1 }],
       idempotencyKey: `smoke-payments-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       createdBy: "smoke:payments"
     });
@@ -400,7 +395,9 @@ async function main(): Promise<void> {
 
     console.log("\nAll payment smoke assertions passed.");
   } finally {
-    // Cleanup: this smoke's rows only, then restore the venue's connect state.
+    // Cleanup: order_payments references orders and restaurants with RESTRICT
+    // (financial ledger), so it must go first; everything else unwinds child →
+    // parent, ending with the harness restaurant teardown.
     if (createdOrderIds.length > 0) {
       await pool.query("DELETE FROM order_payments WHERE order_id = ANY($1)", [createdOrderIds]);
       await pool.query("DELETE FROM order_events WHERE order_id = ANY($1)", [createdOrderIds]);
@@ -411,13 +408,13 @@ async function main(): Promise<void> {
       await pool.query("DELETE FROM order_items WHERE order_id = ANY($1)", [createdOrderIds]);
       await pool.query("DELETE FROM orders WHERE id = ANY($1)", [createdOrderIds]);
     }
-    await pool.query("DELETE FROM notifications_outbox WHERE recipient = $1 AND kind = 'order_payment_link'", [
-      PHONE
-    ]);
     await pool.query(
-      "UPDATE restaurants SET stripe_connect_account_id = $2, stripe_connect_charges_enabled = $3 WHERE id = $1",
-      [restaurantId, savedConnect?.stripe_connect_account_id ?? null, savedConnect?.stripe_connect_charges_enabled ?? false]
+      "DELETE FROM notifications_outbox WHERE restaurant_id = $1 AND kind = 'order_payment_link'",
+      [restaurantId]
     );
+    await pool.query("DELETE FROM menu_items WHERE restaurant_id = $1", [restaurantId]);
+    await pool.query("DELETE FROM menu_categories WHERE restaurant_id = $1", [restaurantId]);
+    await cleanupSmokeRestaurant(restaurantId);
     await pool.end();
   }
 }
