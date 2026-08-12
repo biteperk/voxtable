@@ -357,11 +357,22 @@ export async function handleRetellFunction(
           `I can't find "${itemInput.name}" on our menu. Want me to read what we have?`
         );
       }
+      // If EVERY plausible match is a licensed item ("mojito" matching three
+      // cocktail-list entries), skip the which-one question — the answer is
+      // the same refusal regardless, and asking first is noise.
+      const topMatches = lookup.matches.slice(0, 3);
+      if (topMatches.every((m) => m.is_restricted)) {
+        throw new AppError(
+          400,
+          "RESTRICTED_ITEM",
+          `I can't take drink orders over the phone — licensing rules. I'll pop a note on the order and the team can sort it when you pick up.`
+        );
+      }
       if (lookup.ambiguous) {
         // Dedupe candidate names — identical names in two categories would
         // otherwise produce the unanswerable "Classic Mojito or Classic
         // Mojito?".
-        const candidates = Array.from(new Set(lookup.matches.slice(0, 3).map((m) => m.name)));
+        const candidates = Array.from(new Set(topMatches.map((m) => m.name)));
         if (candidates.length > 1) {
           throw new AppError(400, "AMBIGUOUS_ITEM", `Did you mean ${candidates.join(" or ")}?`, {
             candidates
