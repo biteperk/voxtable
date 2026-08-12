@@ -24,6 +24,8 @@ import { normalizePhone } from "../utils/phone";
 import { enrichLogContext, logger } from "../utils/logger";
 import {
   dayNameInTz,
+  formatVoiceTime,
+  isWithinDailyWindow,
   nowTimeInTz,
   todayInTz,
   tomorrowInTz
@@ -338,6 +340,11 @@ export async function handleRetellFunction(
       specialRequests?: string;
     }> = [];
 
+    // Wall-clock "now" in the restaurant's own timezone, for daily menu
+    // windows (breakfast until noon, lunch specials, happy hour).
+    const restaurantTz = await getRestaurantTimezone(restaurantId);
+    const nowHm = nowTimeInTz(restaurantTz);
+
     for (const itemInput of parsed.data.items) {
       const lookup = await lookupMenu({
         restaurantId,
@@ -350,15 +357,54 @@ export async function handleRetellFunction(
           `I can't find "${itemInput.name}" on our menu. Want me to read what we have?`
         );
       }
-      if (lookup.ambiguous) {
+      // If EVERY plausible match is a licensed item ("mojito" matching three
+      // cocktail-list entries), skip the which-one question — the answer is
+      // the same refusal regardless, and asking first is noise.
+      const topMatches = lookup.matches.slice(0, 3);
+      if (topMatches.every((m) => m.is_restricted)) {
         throw new AppError(
           400,
-          "AMBIGUOUS_ITEM",
-          `Did you mean ${lookup.matches.slice(0, 3).map((m) => m.name).join(" or ")}?`,
-          { candidates: lookup.matches.slice(0, 3).map((m) => m.name) }
+          "RESTRICTED_ITEM",
+          `I can't take drink orders over the phone — licensing rules. I'll pop a note on the order and the team can sort it when you pick up.`
         );
       }
+      if (lookup.ambiguous) {
+        // Dedupe candidate names — identical names in two categories would
+        // otherwise produce the unanswerable "Classic Mojito or Classic
+        // Mojito?".
+        const candidates = Array.from(new Set(topMatches.map((m) => m.name)));
+        if (candidates.length > 1) {
+          throw new AppError(400, "AMBIGUOUS_ITEM", `Did you mean ${candidates.join(" or ")}?`, {
+            candidates
+          });
+        }
+      }
       const top = lookup.matches[0]!;
+
+      // Licensed items: never sold over the phone (responsible service of
+      // alcohol). The item stays on the menu and staff can ring it up — Bella
+      // takes a note instead.
+      if (top.is_restricted) {
+        throw new AppError(
+          400,
+          "RESTRICTED_ITEM",
+          `I can't take drink orders over the phone — licensing rules. I'll pop a note on the order and the team can sort ${top.name} when you pick up.`
+        );
+      }
+
+      // Daily windows: a breakfast item at 8pm gets a helpful redirect, not a
+      // silent acceptance the kitchen can't honour.
+      if (!isWithinDailyWindow(nowHm, top.available_from, top.available_until)) {
+        const from = top.available_from ? formatVoiceTime(top.available_from.slice(0, 5)) : null;
+        const until = top.available_until ? formatVoiceTime(top.available_until.slice(0, 5)) : null;
+        const windowSpoken =
+          from && until ? `between ${from} and ${until}` : from ? `from ${from}` : `until ${until}`;
+        throw new AppError(
+          400,
+          "ITEM_NOT_AVAILABLE_NOW",
+          `${top.name} is only served ${windowSpoken}. Want something from the all-day menu instead?`
+        );
+      }
 
       // Resolve variant by name within this menu item if provided.
       let variantId: string | undefined;

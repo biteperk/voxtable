@@ -214,6 +214,15 @@ export const menuItemRequestSchema = z.object({
   displayOrder: z.number().int().min(0).max(1000).optional(),
   is_available: z.boolean().optional(),
   isAvailable: z.boolean().optional(),
+  // Daily availability window (wall-clock in the restaurant TZ) and the
+  // licensed-item flag: restricted items stay staff-orderable but the voice
+  // path refuses them.
+  available_from: timeSchema.optional().nullable(),
+  availableFrom: timeSchema.optional().nullable(),
+  available_until: timeSchema.optional().nullable(),
+  availableUntil: timeSchema.optional().nullable(),
+  is_restricted: z.boolean().optional(),
+  isRestricted: z.boolean().optional(),
   variants: z.array(variantInputSchema).max(10).optional(),
   modifier_groups: z.array(modifierGroupInputSchema).max(10).optional(),
   modifierGroups: z.array(modifierGroupInputSchema).max(10).optional()
@@ -500,6 +509,11 @@ const draftItemSchema = z.object({
   price_cents: draftPriceCentsSchema,
   // Per-item OCR confidence (0–1) so the review UI can flag uncertain rows.
   confidence: z.number().min(0).max(1).optional(),
+  // Daily window + licensed flag — survive the owner's draft round-trip so a
+  // reviewed import doesn't silently flatten breakfast menus or free mojitos.
+  available_from: timeSchema.optional(),
+  available_until: timeSchema.optional(),
+  is_restricted: z.boolean().optional(),
   variants: z.array(draftVariantSchema).max(20).optional(),
   modifier_groups: z.array(draftModifierGroupSchema).max(10).optional()
 });

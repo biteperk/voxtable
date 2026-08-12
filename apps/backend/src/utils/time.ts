@@ -115,9 +115,47 @@ function hmInTz(date: Date, timeZone: string): string {
     hour12: false
   }).formatToParts(date);
 
-  const h = parts.find((p) => p.type === "hour")?.value ?? "00";
+  let h = parts.find((p) => p.type === "hour")?.value ?? "00";
   const m = parts.find((p) => p.type === "minute")?.value ?? "00";
+  // Intl quirk: some runtimes format midnight as "24" rather than "00" (same
+  // guard tzOffsetMsAt below carries). A "24:xx" here would silently fail
+  // every `now < until` window comparison.
+  if (h === "24") h = "00";
   return `${h}:${m}`;
+}
+
+/**
+ * Daily availability window check for menu items ("breakfast 07:00–12:00").
+ *
+ * All arguments are wall-clock in the same (restaurant) timezone. `from`/
+ * `until` accept "HH:MM" or Postgres TIME's "HH:MM:SS" — only the first two
+ * segments count. NULL on either side means unbounded on that side; both NULL
+ * means always available. Semantics:
+ *   - start-inclusive, end-EXCLUSIVE (`from <= now < until`) — at 12:00:00
+ *     the 07:00–12:00 breakfast menu is over;
+ *   - from > until wraps midnight (happy hour 16:00–02:00 spans the evening
+ *     leg [16:00, 24:00) and the morning leg [00:00, 02:00));
+ *   - from === until is a degenerate zero-length window: never available
+ *     (mirrors isWithinOpeningHours' closed-all-day case).
+ */
+export function isWithinDailyWindow(
+  nowHm: string,
+  from: string | null,
+  until: string | null
+): boolean {
+  if (!from && !until) return true;
+  const now = toMinutes(nowHm);
+  const start = from ? toMinutes(from) : null;
+  const end = until ? toMinutes(until) : null;
+
+  if (start !== null && end !== null) {
+    if (start === end) return false;
+    if (start < end) return now >= start && now < end;
+    // Wraps midnight.
+    return now >= start || now < end;
+  }
+  if (start !== null) return now >= start;
+  return now < (end as number);
 }
 
 export function todayInTz(timeZone: string, now: Date = new Date()): string {

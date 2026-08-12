@@ -136,7 +136,10 @@ export async function commitDraft(jobId: string, restaurantId: string): Promise<
             name: item.name,
             description: item.description,
             basePriceCents: item.price_cents,
-            displayOrder: itemIndex
+            displayOrder: itemIndex,
+            availableFrom: item.available_from ?? null,
+            availableUntil: item.available_until ?? null,
+            isRestricted: item.is_restricted ?? false
           },
           db
         );
