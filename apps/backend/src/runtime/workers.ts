@@ -4,6 +4,7 @@ import { startCleanupWorker, stopCleanupWorker } from "../workers/cleanupWorker"
 import { startHealthAlerter, stopHealthAlerter } from "../workers/healthAlerter";
 import { startMenuOcrWorker, stopMenuOcrWorker } from "../workers/menuOcrWorker";
 import { startNotificationWorker, stopNotificationWorker } from "../workers/notificationWorker";
+import { startOrderPaymentReaper, stopOrderPaymentReaper } from "../workers/orderPaymentReaper";
 import { startProvisioningWorker, stopProvisioningWorker } from "../workers/provisioningWorker";
 import {
   startRetellVariablesWorker,
@@ -22,6 +23,7 @@ export const backendWorkers: BackendWorker[] = [
   { name: "cleanup", start: startCleanupWorker, stop: stopCleanupWorker },
   { name: "menu-ocr", start: startMenuOcrWorker, stop: stopMenuOcrWorker },
   { name: "notifications", start: startNotificationWorker, stop: stopNotificationWorker },
+  { name: "order-payment-reaper", start: startOrderPaymentReaper, stop: stopOrderPaymentReaper },
   { name: "provisioning", start: startProvisioningWorker, stop: stopProvisioningWorker },
   {
     name: "retell-variables",

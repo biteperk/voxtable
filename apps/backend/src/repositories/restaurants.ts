@@ -418,6 +418,66 @@ export async function findRestaurantIdByStripeCustomerId(
   return result.rows[0]?.id ?? null;
 }
 
+// --- Stripe Connect (voice-order payments) ----------------------------------
+
+export interface ConnectAccountState {
+  stripe_connect_account_id: string | null;
+  stripe_connect_charges_enabled: boolean;
+  stripe_connect_payouts_enabled: boolean;
+}
+
+export async function getConnectAccountState(
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<ConnectAccountState | null> {
+  const result = await db.query<ConnectAccountState>(
+    `SELECT stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled
+     FROM restaurants WHERE id = $1`,
+    [restaurantId]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function setConnectAccountId(
+  restaurantId: string,
+  accountId: string,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query("UPDATE restaurants SET stripe_connect_account_id = $2 WHERE id = $1", [
+    restaurantId,
+    accountId
+  ]);
+}
+
+/**
+ * account.updated events carry no metadata/customer — the connected-account id
+ * (event.account) is the only handle, resolved against the unique index.
+ */
+export async function findRestaurantIdByConnectAccountId(
+  accountId: string,
+  db: DbClient = pool
+): Promise<string | null> {
+  const result = await db.query<{ id: string }>(
+    "SELECT id FROM restaurants WHERE stripe_connect_account_id = $1 LIMIT 1",
+    [accountId]
+  );
+  return result.rows[0]?.id ?? null;
+}
+
+export async function updateConnectCapabilities(
+  restaurantId: string,
+  chargesEnabled: boolean,
+  payoutsEnabled: boolean,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(
+    `UPDATE restaurants
+     SET stripe_connect_charges_enabled = $2, stripe_connect_payouts_enabled = $3
+     WHERE id = $1`,
+    [restaurantId, chargesEnabled, payoutsEnabled]
+  );
+}
+
 // --- Provisioning (Phase 4) ------------------------------------------------
 
 export interface ProvisioningRow {

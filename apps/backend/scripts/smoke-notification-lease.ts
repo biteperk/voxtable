@@ -48,10 +48,10 @@ async function main(): Promise<void> {
     // second worker replica. A third claimer afterwards models the next tick
     // firing while every send is still in flight.
     const [first, second] = await Promise.all([
-      claimReadyNotifications(6),
-      claimReadyNotifications(6)
+      claimReadyNotifications(6, ["email", "sms"]),
+      claimReadyNotifications(6, ["email", "sms"])
     ]);
-    const third = await claimReadyNotifications(50);
+    const third = await claimReadyNotifications(50, ["email", "sms"]);
 
     const allClaimedIds = [...first, ...second, ...third].map((row) => row.id);
     assert(

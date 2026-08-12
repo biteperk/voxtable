@@ -56,6 +56,18 @@ export const verifyEmailLimiter = rateLimit({
   message: { error: { code: "RATE_LIMITED", message: "Too many attempts — please try again later." } }
 });
 
+// Payment-link sends cost real money (SMS) and put a payment request in a
+// guest's hands — cap per staff account on top of the DB-side per-order cap
+// (max 3 attempts/hour, enforced in orderPaymentService).
+export const paymentLinkLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: uidOrIpKey,
+  message: { error: { code: "RATE_LIMITED", message: "Too many payment links — please try again later." } }
+});
+
 // Contact-details upsert (signup flush + profile edits). Cheap write to the
 // caller's own users row, but deliberately reachable by any verified account
 // pre-allowlist — so cap it like restaurant creation.

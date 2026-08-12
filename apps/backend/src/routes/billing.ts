@@ -21,6 +21,12 @@ import {
 } from "../services/stripeService";
 import { isBillingConfigured, legacyCustomerId, stripeMode } from "../services/stripeClient";
 import {
+  createConnectOnboardingLink,
+  getConnectStatus,
+  isConnectEnabled,
+  refreshConnectStatus
+} from "../services/stripeConnectService";
+import {
   assertCanStartCheckout,
   computeChecklist,
   nextOnboardingStatus
@@ -161,5 +167,36 @@ billingRouter.post(
 
     const session = await createCheckoutSession(restaurantId);
     response.json(session);
+  })
+);
+
+// --- Stripe Connect (guest payments payouts) --------------------------------
+
+// Capability status for the Billing page's Payouts card. ?refresh=1 pulls the
+// live state from Stripe (used after returning from hosted onboarding, since
+// account.updated webhooks can lag the redirect).
+billingRouter.get(
+  "/api/billing/connect",
+  asyncHandler(async (request, response) => {
+    const restaurantId = tenantId(request);
+    if (!isConnectEnabled()) {
+      response.json(await getConnectStatus(restaurantId));
+      return;
+    }
+    const status =
+      request.query.refresh === "1"
+        ? await refreshConnectStatus(restaurantId)
+        : await getConnectStatus(restaurantId);
+    response.json(status);
+  })
+);
+
+// Mint a Stripe-hosted onboarding link (creates the connected account on
+// first call). Account Links are single-use — resume = call again.
+billingRouter.post(
+  "/api/billing/connect/onboarding-link",
+  asyncHandler(async (request, response) => {
+    const result = await createConnectOnboardingLink(tenantId(request));
+    response.json(result);
   })
 );

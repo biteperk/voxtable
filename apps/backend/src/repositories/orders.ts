@@ -337,6 +337,60 @@ export async function updatePaymentStatusAtVersion(input: {
   return result.rows[0] ?? null;
 }
 
+/**
+ * Webhook-driven payment flips. Unlike updatePaymentStatusAtVersion these take
+ * no expectedVersion — a Stripe webhook has no version in hand and must not
+ * fail because a waiter touched the order two seconds earlier. The guard is
+ * the from-state in the WHERE clause: paid only from unpaid, refunded only
+ * from paid — monotonic against late event replays (a re-delivered
+ * `completed` after a refund matches zero rows and is a recorded no-op).
+ * The version bump keeps staff optimistic-concurrency honest.
+ */
+export async function markOrderPaidIfUnpaid(
+  orderId: string,
+  restaurantId: string,
+  db: DbClient
+): Promise<OrderRow | null> {
+  const result = await db.query<OrderRow>(
+    `UPDATE orders
+        SET payment_status = 'paid', version = version + 1
+      WHERE id = $1 AND restaurant_id = $2 AND payment_status = 'unpaid'
+      RETURNING *`,
+    [orderId, restaurantId]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function markOrderRefundedIfPaid(
+  orderId: string,
+  restaurantId: string,
+  db: DbClient
+): Promise<OrderRow | null> {
+  const result = await db.query<OrderRow>(
+    `UPDATE orders
+        SET payment_status = 'refunded', version = version + 1
+      WHERE id = $1 AND restaurant_id = $2 AND payment_status = 'paid'
+      RETURNING *`,
+    [orderId, restaurantId]
+  );
+  return result.rows[0] ?? null;
+}
+
+/** Minimal in-txn read for webhook decisions (getOrderById uses the read pool). */
+export async function getOrderCoreForUpdate(
+  orderId: string,
+  restaurantId: string,
+  db: DbClient
+): Promise<Pick<OrderRow, "id" | "status" | "payment_status" | "total_cents" | "version"> | null> {
+  const result = await db.query<OrderRow>(
+    `SELECT id, status, payment_status, total_cents, version
+       FROM orders WHERE id = $1 AND restaurant_id = $2
+        FOR UPDATE`,
+    [orderId, restaurantId]
+  );
+  return result.rows[0] ?? null;
+}
+
 export interface OrderWithItems extends OrderRow {
   items: Array<OrderItemRow & { modifiers: OrderItemModifierRow[] }>;
 }

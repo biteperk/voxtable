@@ -287,6 +287,19 @@ export const createOrderRetellSchema = z.object({
   specialInstructions: z.string().max(500).optional()
 });
 
+export const sendPaymentLinkRetellSchema = z.object({
+  call_id: z.string().min(1).max(200).optional(),
+  callId: z.string().min(1).max(200).optional(),
+  order_id: uuidSchema.optional(),
+  orderId: uuidSchema.optional(),
+  // Optional recipient the caller read out; defaults to the caller's own
+  // number from the call log when absent. Free-form here — normalizePhone
+  // decides what's textable.
+  phone: z.string().max(32).optional(),
+  phone_number: z.string().max(32).optional(),
+  phoneNumber: z.string().max(32).optional()
+});
+
 export const menuLookupRetellSchema = z.object({
   query: z.string().max(100).optional(),
   category: z.string().max(60).optional()

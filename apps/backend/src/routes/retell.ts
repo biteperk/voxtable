@@ -86,3 +86,11 @@ retellRouter.post(
     response.json(result);
   })
 );
+
+retellRouter.post(
+  "/retell/tools/send-payment-link",
+  asyncHandler(async (request, response) => {
+    const result = await handleRetellFunction(request.body, "send_payment_link");
+    response.json(result);
+  })
+);

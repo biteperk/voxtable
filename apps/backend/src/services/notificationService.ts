@@ -3,12 +3,25 @@ import { logger } from "../utils/logger";
 import { enqueueNotification } from "../repositories/notifications";
 import { getRestaurantProfile } from "../repositories/restaurants";
 
-export function isNotificationsEnabled(): boolean {
+export function isEmailEnabled(): boolean {
   if (!env.NOTIFICATIONS_ENABLED) return false;
-  // The worker can only drain the outbox with the active provider's credential.
+  // The worker can only drain email rows with the active provider's credential.
   return env.EMAIL_PROVIDER === "zeptomail"
     ? Boolean(env.ZEPTOMAIL_TOKEN)
     : Boolean(env.SENDGRID_API_KEY);
+}
+
+export function isSmsEnabled(): boolean {
+  if (!env.NOTIFICATIONS_ENABLED) return false;
+  return Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.NOTIFICATIONS_SMS_FROM);
+}
+
+// The channels are independent: an SMS-only deployment (no email key) must
+// still drain the outbox, and vice versa. The worker claims only rows whose
+// channel is actually sendable, so a disabled channel's rows wait as pending
+// rather than burning attempts.
+export function isNotificationsEnabled(): boolean {
+  return isEmailEnabled() || isSmsEnabled();
 }
 
 export type NotificationKind =
@@ -55,7 +68,7 @@ export async function notifyRestaurant(
   restaurantId: string,
   vars: Vars = {}
 ): Promise<void> {
-  if (!isNotificationsEnabled()) return;
+  if (!isEmailEnabled()) return;
   try {
     const profile = await getRestaurantProfile(restaurantId);
     const email = profile?.contact_email;

@@ -232,6 +232,22 @@ export async function getCallLogById(id: string): Promise<CallLogRow | null> {
 }
 
 /**
+ * The caller's number for a call log row, tenant-scoped. Used to default the
+ * payment-link SMS recipient to the guest who actually placed the voice order.
+ */
+export async function getCallerPhoneByCallLogId(
+  id: string,
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<string | null> {
+  const result = await db.query<{ caller_phone: string | null }>(
+    "SELECT caller_phone FROM call_logs WHERE id = $1 AND restaurant_id = $2",
+    [id, restaurantId]
+  );
+  return result.rows[0]?.caller_phone ?? null;
+}
+
+/**
  * How many calls landed for a restaurant since `sinceIso`. Used to verify
  * call-forwarding during onboarding: a test call forwarded to the restaurant's
  * VoxTable number resolves the tenant by dialed number and writes a call_log,

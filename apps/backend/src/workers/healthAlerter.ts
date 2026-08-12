@@ -115,6 +115,13 @@ interface AlertState {
   // entries so each venue alerts at most once per day.
   noBookingsAlerted: boolean;
   zeroCallsAlertedKeys: string[];
+  // Voice-order payments: rows the reaper couldn't resolve (webhook wiring
+  // broken), disputes (they debit the PLATFORM account on destination
+  // charges), and money-vs-order divergence (amount mismatch / paid after
+  // cancel) that needs a human decision.
+  orderPaymentsStuckAlerted: boolean;
+  orderPaymentsDisputeAlerted: boolean;
+  orderPaymentsMismatchAlerted: boolean;
 }
 
 const DEFAULT_STATE: AlertState = {
@@ -135,7 +142,10 @@ const DEFAULT_STATE: AlertState = {
   menuImportsFailedAlerted: false,
   quotaAlertedDayKey: null,
   noBookingsAlerted: false,
-  zeroCallsAlertedKeys: []
+  zeroCallsAlertedKeys: [],
+  orderPaymentsStuckAlerted: false,
+  orderPaymentsDisputeAlerted: false,
+  orderPaymentsMismatchAlerted: false
 };
 
 const state: AlertState = { ...DEFAULT_STATE };
@@ -500,6 +510,85 @@ async function checkPaidCustomerQueues(): Promise<void> {
   }
 }
 
+// Voice-order payment links. Guarded like the cleanup worker's phase guards:
+// on a pre-030 database (VM window before the migration applies) the table
+// doesn't exist and this check quietly skips instead of spamming warnings.
+async function checkOrderPayments(): Promise<void> {
+  try {
+    const { rows } = await pool.query<{
+      stuck: string;
+      disputes: string;
+      mismatches: string;
+    }>(
+      `SELECT
+         -- Active rows >30 min past expiry: the reaper (5-min tick) should
+         -- have resolved these against Stripe — if they persist, webhook
+         -- delivery AND the reaper are both failing.
+         (SELECT count(*) FROM order_payments
+           WHERE status IN ('created','sent','processing')
+             AND expires_at IS NOT NULL
+             AND expires_at < now() - interval '30 minutes'
+         ) AS stuck,
+         (SELECT count(*) FROM order_payments
+           WHERE status = 'disputed' AND updated_at > now() - interval '24 hours'
+         ) AS disputes,
+         -- Money-vs-order divergence: guest paid but the order isn't settled —
+         -- amount mismatch (order edited after the link went out) or paid
+         -- after cancellation. Both need a human refund/adjust decision.
+         (SELECT count(*) FROM order_payments p
+           WHERE p.status = 'paid'
+             AND p.updated_at > now() - interval '24 hours'
+             AND EXISTS (
+               SELECT 1 FROM orders o
+                WHERE o.id = p.order_id
+                  AND (o.payment_status <> 'paid' OR o.status = 'cancelled')
+             )
+         ) AS mismatches`
+    );
+    const counts = rows[0];
+    if (!counts) return;
+
+    const stuck = Number(counts.stuck);
+    const disputes = Number(counts.disputes);
+    const mismatches = Number(counts.mismatches);
+
+    if (stuck > 0 && !state.orderPaymentsStuckAlerted) {
+      await postToSlack(
+        `:rotating_light: ${stuck} order payment link(s) unresolved >30 min past expiry. The reaper should have settled these against Stripe — if this persists, Stripe webhook delivery AND the reaper are both failing. Check \`order_payments.last_error\` and the /stripe/webhook endpoint.`
+      );
+      state.orderPaymentsStuckAlerted = true;
+    } else if (stuck === 0 && state.orderPaymentsStuckAlerted) {
+      await postToSlack(`:white_check_mark: Order payment links clear — nothing stuck past expiry.`);
+      state.orderPaymentsStuckAlerted = false;
+    }
+
+    if (disputes > 0 && !state.orderPaymentsDisputeAlerted) {
+      await postToSlack(
+        `:rotating_light: ${disputes} guest payment(s) disputed in the last 24h. Destination-charge disputes debit the BITEPERK platform account, not the venue's. Respond in the Stripe dashboard; the transfer reversal is a manual decision.`
+      );
+      state.orderPaymentsDisputeAlerted = true;
+    } else if (disputes === 0 && state.orderPaymentsDisputeAlerted) {
+      await postToSlack(`:white_check_mark: No new payment disputes in the last 24h.`);
+      state.orderPaymentsDisputeAlerted = false;
+    }
+
+    if (mismatches > 0 && !state.orderPaymentsMismatchAlerted) {
+      await postToSlack(
+        `:warning: ${mismatches} guest payment(s) received that don't settle their order — amount mismatch (order edited after the link was texted) or paid after cancellation. The money is in Stripe; the order is NOT marked paid. Needs a manual refund-or-adjust call. Check \`order_payments.last_error\`.`
+      );
+      state.orderPaymentsMismatchAlerted = true;
+    } else if (mismatches === 0 && state.orderPaymentsMismatchAlerted) {
+      await postToSlack(`:white_check_mark: Guest payments reconcile cleanly again.`);
+      state.orderPaymentsMismatchAlerted = false;
+    }
+  } catch (error) {
+    // 42P01 = table missing (pre-030 database) — expected during the rollout
+    // window, skip quietly. Anything else is worth a structured warn.
+    if ((error as { code?: string }).code === "42P01") return;
+    logger.warn({ evt: "health_alerter_order_payments_check_failed", error: (error as Error).message });
+  }
+}
+
 // How far into today's service a venue is right now, or null when closed /
 // no hours configured. Pure so the DST-heavy cases are unit-testable.
 // Overnight windows (close <= open, e.g. 18:00–02:00) count the morning leg
@@ -698,6 +787,7 @@ async function checkOnce(): Promise<void> {
   await checkBusinessOutcomes();
   await checkOnboardingFunnel();
   await checkPaidCustomerQueues();
+  await checkOrderPayments();
   if (env.CALCOM_SYNC_ENABLED) {
     await checkCalcom();
   }

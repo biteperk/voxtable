@@ -27,6 +27,7 @@ import {
   loadVariantsForItems
 } from "../repositories/menu";
 import { logger } from "../utils/logger";
+import { cancelActivePaymentForOrder } from "./orderPaymentService";
 
 // Guard against an LLM (or a buggy client) submitting an unbounded order.
 const MAX_ORDER_ITEMS = 50;
@@ -437,6 +438,12 @@ export async function updateOrderStatus(input: {
       actor: input.actor
     });
   });
+  if (input.nextStatus === "cancelled") {
+    // Retire any live payment link so the guest can't pay for food that won't
+    // be made. After the commit (needs the cancel to be visible), best-effort
+    // (the webhook paths are the backstop) — never fails the cancel itself.
+    await cancelActivePaymentForOrder(input.id, input.restaurantId);
+  }
   return hydrateAfterCommit(input.id, input.restaurantId);
 }
 
