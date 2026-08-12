@@ -92,13 +92,19 @@ async function main(): Promise<void> {
     [restaurantId]
   );
 
+  // pid + counters, not Math.random — the duplication/security gates both
+  // objected to pseudorandom ids in smokes before (see smoke-harness).
+  let orderCounter = 0;
+  let eventCounter = 0;
+
   const createdOrderIds: string[] = [];
   const makeOrder = async (): Promise<{ id: string; total_cents: number; version: number }> => {
+    orderCounter += 1;
     const result = await createOrder({
       restaurantId,
       source: "dashboard",
       items: [{ menuItemId: menuItem.id, quantity: 1 }],
-      idempotencyKey: `smoke-payments-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      idempotencyKey: `smoke-payments-${SMOKE_SUFFIX}-${Date.now()}-${orderCounter}`,
       createdBy: "smoke:payments"
     });
     createdOrderIds.push(result.order.id);
@@ -132,12 +138,14 @@ async function main(): Promise<void> {
   const sessionEvent = (
     type: string,
     session: Partial<Stripe.Checkout.Session>
-  ): Stripe.Event =>
-    ({
-      id: `evt_smoke_${Math.random().toString(36).slice(2)}`,
+  ): Stripe.Event => {
+    eventCounter += 1;
+    return {
+      id: `evt_smoke_${SMOKE_SUFFIX}_${eventCounter}`,
       type,
       data: { object: { metadata: { biteperk_kind: "order_payment" }, ...session } }
-    }) as unknown as Stripe.Event;
+    } as unknown as Stripe.Event;
+  };
 
   try {
     // --- 1: create link ------------------------------------------------------
