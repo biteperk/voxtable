@@ -177,7 +177,9 @@ async function main(): Promise<void> {
     pickup.body.confirmation_message?.includes("Order #"),
     "takeaway confirmation should include order number"
   );
-  console.log(`✓ takeaway order without reservation → ${pickup.body.confirmation_message}`);
+  // Deliberately not echoing the confirmation text: it's server-returned data
+  // and the assertion above already proved its shape (Sonar S5145).
+  console.log("✓ takeaway order without reservation → order created with confirmation");
 
   // 4) create_order with bogus item name → 404 MENU_ITEM_NOT_FOUND
   const bogusItem = await callTool(
