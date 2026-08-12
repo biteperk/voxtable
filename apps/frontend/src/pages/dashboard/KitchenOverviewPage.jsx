@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../auth";
-import { listActiveOrders, updateOrderStatus } from "../../api";
+import { listActiveOrders, sendOrderPaymentLink, updateOrderStatus } from "../../api";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
 
@@ -16,6 +16,7 @@ export function KitchenOverviewPage({ navigate, path }) {
   const [orders, setOrders] = useState([]);
   const [serverNow, setServerNow] = useState(new Date().toISOString());
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
   const refresh = useCallback(async () => {
@@ -44,6 +45,19 @@ export function KitchenOverviewPage({ navigate, path }) {
       await refresh();
     } catch (e) {
       setError(e.message ?? "Status update failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSendPaymentLink = async (order) => {
+    setBusyId(order.id);
+    try {
+      const result = await sendOrderPaymentLink(order.id);
+      setError(null);
+      setNotice(result?.message ?? "Payment link sent.");
+    } catch (e) {
+      setError(e.message ?? "Couldn't send the payment link");
     } finally {
       setBusyId(null);
     }
@@ -82,6 +96,11 @@ export function KitchenOverviewPage({ navigate, path }) {
       </header>
 
       {error ? <div className="menu-error">{error}</div> : null}
+      {notice ? (
+        <div className="menu-error" style={{ background: "transparent", color: "var(--on-surface-variant)" }}>
+          {notice}
+        </div>
+      ) : null}
 
       <section className="kitchen-board">
         {KITCHEN_COLUMNS.map((col) => (
@@ -94,6 +113,7 @@ export function KitchenOverviewPage({ navigate, path }) {
             onAdvance={handleAdvance}
             onCancel={handleCancel}
             canCancel={canCancelOrders}
+            onSendPaymentLink={handleSendPaymentLink}
           />
         ))}
       </section>
@@ -101,7 +121,7 @@ export function KitchenOverviewPage({ navigate, path }) {
   );
 }
 
-function KitchenColumn({ column, orders, serverNow, busyId, onAdvance, onCancel, canCancel }) {
+function KitchenColumn({ column, orders, serverNow, busyId, onAdvance, onCancel, canCancel, onSendPaymentLink }) {
   return (
     <article className={`kitchen-column kitchen-column-${column.status}`}>
       <header className="kitchen-column-head">
@@ -124,6 +144,9 @@ function KitchenColumn({ column, orders, serverNow, busyId, onAdvance, onCancel,
               advanceLabel={column.advanceLabel}
               onAdvance={() => onAdvance(order, column.advance)}
               onCancel={canCancel ? () => onCancel(order) : null}
+              onSendPaymentLink={
+                order.payment_status === "unpaid" ? () => onSendPaymentLink(order) : null
+              }
             />
           ))
         )}
@@ -132,7 +155,7 @@ function KitchenColumn({ column, orders, serverNow, busyId, onAdvance, onCancel,
   );
 }
 
-function KitchenOrderCard({ order, serverNow, busy, advanceLabel, onAdvance, onCancel }) {
+function KitchenOrderCard({ order, serverNow, busy, advanceLabel, onAdvance, onCancel, onSendPaymentLink }) {
   const orderedAt = new Date(order.ordered_at).getTime();
   const nowMs = new Date(serverNow).getTime();
   const ageS = Math.max(0, Math.round((nowMs - orderedAt) / 1000));
@@ -174,6 +197,17 @@ function KitchenOrderCard({ order, serverNow, busy, advanceLabel, onAdvance, onC
           <Icon name="arrow_forward" />
           {advanceLabel}
         </button>
+        {onSendPaymentLink && (
+          <button
+            type="button"
+            className="kitchen-btn"
+            onClick={onSendPaymentLink}
+            disabled={busy}
+            title="Text the guest a payment link"
+          >
+            <Icon name="send_to_mobile" />
+          </button>
+        )}
         {onCancel && (
           <button type="button" className="kitchen-btn danger" onClick={onCancel} disabled={busy} title="Cancel order">
             <Icon name="close" />

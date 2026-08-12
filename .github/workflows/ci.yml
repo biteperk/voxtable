@@ -144,6 +144,15 @@ jobs:
       - name: Prove a claimed notification cannot be claimed again
         run: npm run smoke:notification-lease
 
+      # Voice-order payment links: double-fire returns the SAME link (never a
+      # second charge path), a paid webhook flips the order exactly once, a
+      # refunded order can't be resurrected by a late replay, an order-payment
+      # event never advances SaaS onboarding, and the kill switch gates link
+      # creation while in-flight links keep reconciling. The Stripe gateway is
+      # a counting fixture — no credentials needed.
+      - name: Prove payment links replay, reconcile, and never cross into billing
+        run: npm run smoke:payments
+
       - name: Build frontend
         run: npm run build:frontend
 

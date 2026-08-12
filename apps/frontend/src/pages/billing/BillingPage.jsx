@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../auth";
-import { getBillingInvoices, getBillingPaymentMethods, getBillingSubscription } from "../../api";
+import {
+  createConnectOnboardingLink,
+  getBillingInvoices,
+  getBillingPaymentMethods,
+  getBillingSubscription,
+  getConnectStatus,
+} from "../../api";
 import { capitalize, formatInvoiceDate } from "../../lib/format";
 import { Icon } from "../../components/Icon";
 import { CardBrandIcon } from "../../components/brand/CardBrandIcon";
@@ -28,6 +34,33 @@ export function BillingPage({ navigate }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
   const filterRef = useRef(null);
+
+  const [connect, setConnect] = useState(null);
+  const [connectBusy, setConnectBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Refresh from Stripe on load — this page is also the return_url from
+    // hosted onboarding, and the account.updated webhook can lag the redirect.
+    getConnectStatus({ refresh: true })
+      .then((status) => !cancelled && setConnect(status))
+      .catch(() => !cancelled && setConnect(null));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSetUpPayouts = async () => {
+    if (connectBusy) return;
+    setConnectBusy(true);
+    try {
+      const { url } = await createConnectOnboardingLink();
+      if (url) window.location.assign(url);
+    } catch (e) {
+      console.error("[billing] connect onboarding link failed:", e);
+      setConnectBusy(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -219,6 +252,42 @@ export function BillingPage({ navigate }) {
             <Icon name="arrow_forward" />
           </button>
         </article>
+
+        {connect?.enabled && (
+          <article className="payment-card">
+            <h2>Guest Payments &amp; Payouts</h2>
+            {connect.charges_enabled ? (
+              <div className="card-line">
+                <div className="card-icon">
+                  <Icon name="storefront" />
+                </div>
+                <div className="card-line-meta">
+                  <p>Payouts connected</p>
+                  <span>
+                    {connect.payouts_enabled
+                      ? "Guests can pay for phone orders by card; payouts go to your bank."
+                      : "Card payments are on; payouts are still being verified by Stripe."}
+                  </span>
+                </div>
+                <Icon name="check_circle" className="check-circle" />
+              </div>
+            ) : (
+              <div className="card-line payment-card-empty">
+                <div className="card-icon">
+                  <Icon name="storefront" />
+                </div>
+                <div className="card-line-meta">
+                  <p>Payouts not set up</p>
+                  <span>Connect your details with Stripe so guests can pay for phone orders.</span>
+                </div>
+              </div>
+            )}
+            <button onClick={handleSetUpPayouts} disabled={connectBusy}>
+              {connect.charges_enabled ? "Update payout details" : "Set up payouts"}
+              <Icon name={connectBusy ? "hourglass_top" : "arrow_forward"} />
+            </button>
+          </article>
+        )}
 
         <article className="billing-history">
           <div className="billing-history-head">

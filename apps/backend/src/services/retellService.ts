@@ -8,6 +8,7 @@ import {
   createBookingRequestSchema,
   createOrderRetellSchema,
   menuLookupRetellSchema,
+  sendPaymentLinkRetellSchema,
   modifyBookingRequestSchema,
   normalizeModifyBookingArgs,
   normalizePartySize
@@ -31,6 +32,7 @@ import { checkAvailability } from "./availabilityService";
 import { createBooking, modifyBooking } from "./bookingService";
 import { getMenu, lookupMenu } from "./menuService";
 import { createOrder, orderContentFingerprint } from "./orderService";
+import { createOrderPaymentLink } from "./orderPaymentService";
 
 type RetellPayload = Record<string, any>;
 
@@ -449,6 +451,56 @@ export async function handleRetellFunction(
       order_number: result.order.order_number,
       confirmation_message: result.confirmationMessage,
       is_replay: result.isReplay
+    };
+  }
+
+  if (name === "send_payment_link" || name === "sendpaymentlink") {
+    const parsed = sendPaymentLinkRetellSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new AppError(
+        400,
+        "SEND_PAYMENT_LINK_INVALID",
+        `send_payment_link args invalid: ${parsed.error.issues.map((i) => i.message).join("; ")}`
+      );
+    }
+    const orderId = parsed.data.order_id ?? parsed.data.orderId;
+    if (!orderId) {
+      throw new AppError(
+        400,
+        "PAYMENT_REQUIRES_ORDER",
+        "I'll need to take the order first — what would you like?"
+      );
+    }
+    // Recipient: a number the caller read out beats the caller ID; both go
+    // through normalizePhone inside the service (withheld numbers refuse
+    // politely, never dead-air).
+    const phone =
+      parsed.data.phone ??
+      parsed.data.phone_number ??
+      parsed.data.phoneNumber ??
+      (call ? getCallerPhone(call) : null);
+
+    const outcome = await createOrderPaymentLink({
+      restaurantId,
+      orderId,
+      recipientPhone: phone,
+      actor: "voice:retell",
+      source: "voice"
+    });
+
+    // One flat shape for both branches — the LLM reads confirmation_message
+    // aloud either way. The checkout URL is deliberately absent everywhere:
+    // the model can't leak (or misread out) what it never sees.
+    return {
+      sent: outcome.sent,
+      ...(outcome.sent
+        ? {
+            payment_id: outcome.paymentId,
+            is_replay: outcome.isReplay,
+            expires_in_minutes: outcome.expiresInMinutes
+          }
+        : { reason: outcome.code }),
+      confirmation_message: outcome.confirmationMessage
     };
   }
 

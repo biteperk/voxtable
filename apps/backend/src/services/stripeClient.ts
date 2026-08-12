@@ -18,6 +18,7 @@ import Stripe from "stripe";
 
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
+import { logger } from "../utils/logger";
 
 // Pinned to the API version the installed SDK's types reflect
 // (stripe@18.5.0 → LatestApiVersion). Bump in lockstep with the SDK so the
@@ -39,7 +40,11 @@ export function stripeMode(): "test" | "live" {
 }
 
 export function getStripe(): Stripe {
-  if (!env.STRIPE_BILLING_ENABLED) {
+  // Order payments (Checkout links for voice orders) share the account and the
+  // client with billing, so either flag entitles construction — otherwise a
+  // payments-on/billing-off config boots cleanly and then 503s every link
+  // creation and 500-loops every webhook.
+  if (!env.STRIPE_BILLING_ENABLED && !env.ORDER_PAYMENTS_ENABLED) {
     throw new AppError(503, "BILLING_NOT_CONFIGURED", "Billing is not enabled.");
   }
   if (!env.STRIPE_SECRET_KEY) {
@@ -63,6 +68,42 @@ export function getStripe(): Stripe {
  */
 export function legacyCustomerId(): string | null {
   return env.STRIPE_CUSTOMER_ID ?? null;
+}
+
+/**
+ * Wrap every Stripe call. Logs the full (redacted) error and converts it to a
+ * generic AppError — a raw Stripe message can contain customer PII and must
+ * never reach the client. Transient errors map to 503, everything else to 502.
+ * AppError from getStripe() (e.g. BILLING_NOT_CONFIGURED) is passed through.
+ * Lives here (not stripeService) so payment services can share it without an
+ * import cycle through the webhook branch.
+ */
+export async function withStripeErrors<T>(op: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof AppError) {
+      throw err;
+    }
+    if (err instanceof Stripe.errors.StripeError) {
+      const transient =
+        err instanceof Stripe.errors.StripeRateLimitError ||
+        err instanceof Stripe.errors.StripeConnectionError;
+      logger.error({
+        evt: "stripe_request_failed",
+        op,
+        stripe_type: err.type,
+        stripe_code: err.code ?? null,
+        error: err
+      });
+      if (transient) {
+        throw new AppError(503, "BILLING_UPSTREAM_UNAVAILABLE", "Billing is temporarily unavailable.");
+      }
+      throw new AppError(502, "BILLING_UPSTREAM_ERROR", "Billing is temporarily unavailable.");
+    }
+    logger.error({ evt: "stripe_request_failed", op, error: err });
+    throw new AppError(502, "BILLING_UPSTREAM_ERROR", "Billing is temporarily unavailable.");
+  }
 }
 
 /**

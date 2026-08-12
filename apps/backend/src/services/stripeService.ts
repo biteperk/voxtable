@@ -44,6 +44,8 @@ import { enqueueProvisioningJob } from "../repositories/provisioning";
 import { nextOnboardingStatus } from "./onboardingService";
 import { notifyRestaurant } from "./notificationService";
 import { getStripe } from "./stripeClient";
+import { handleOrderPaymentWebhook } from "./orderPaymentService";
+import { syncConnectAccount } from "./stripeConnectService";
 
 // --- Dashboard-facing shapes -------------------------------------------------
 
@@ -144,39 +146,12 @@ function paymentIntentId(value: string | Stripe.PaymentIntent | null | undefined
   return typeof value === "string" ? value : value.id;
 }
 
-/**
- * Wrap every Stripe call. Logs the full (redacted) error and converts it to a
- * generic AppError — a raw Stripe message can contain customer PII and must
- * never reach the client. Transient errors map to 503, everything else to 502.
- * AppError from getStripe() (e.g. BILLING_NOT_CONFIGURED) is passed through.
- */
-async function withStripeErrors<T>(op: string, fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof AppError) {
-      throw err;
-    }
-    if (err instanceof Stripe.errors.StripeError) {
-      const transient =
-        err instanceof Stripe.errors.StripeRateLimitError ||
-        err instanceof Stripe.errors.StripeConnectionError;
-      logger.error({
-        evt: "stripe_request_failed",
-        op,
-        stripe_type: err.type,
-        stripe_code: err.code ?? null,
-        error: err
-      });
-      if (transient) {
-        throw new AppError(503, "BILLING_UPSTREAM_UNAVAILABLE", "Billing is temporarily unavailable.");
-      }
-      throw new AppError(502, "BILLING_UPSTREAM_ERROR", "Billing is temporarily unavailable.");
-    }
-    logger.error({ evt: "stripe_request_failed", op, error: err });
-    throw new AppError(502, "BILLING_UPSTREAM_ERROR", "Billing is temporarily unavailable.");
-  }
-}
+// withStripeErrors moved to stripeClient.ts so services that must not import
+// this module (import-cycle: this file's webhook branch imports them) can
+// still share the error mapping. Imported back for the calls below and
+// re-exported for existing callers.
+import { withStripeErrors } from "./stripeClient";
+export { withStripeErrors };
 
 // --- Public API --------------------------------------------------------------
 
@@ -491,8 +466,49 @@ async function restaurantIdForEvent(object: Record<string, unknown>): Promise<st
  * uses the monotonic state machine (so a late/duplicate event can't regress
  * progress). Returns a short outcome string for logging.
  */
+/**
+ * True when the event belongs to the voice-order payment flow, not billing.
+ * Guest-payment sessions/PaymentIntents carry metadata.biteperk_kind =
+ * "order_payment" (duplicated onto payment_intent_data so charge.* events
+ * carry it too). This check MUST run before any billing handling: an order
+ * payment's checkout.session.completed carries metadata.restaurant_id, which
+ * restaurantIdForEvent would otherwise happily attribute — flipping the
+ * venue's SaaS subscription active because a guest bought fish and chips.
+ */
+function isOrderPaymentEvent(event: Stripe.Event): boolean {
+  const object = event.data.object as unknown as Record<string, unknown>;
+  const kind = (object.metadata as Record<string, unknown> | undefined)?.biteperk_kind;
+  return kind === "order_payment";
+}
+
 export async function handleBillingWebhook(event: Stripe.Event): Promise<string> {
   const type = event.type;
+
+  // Order-payment events branch FIRST — see isOrderPaymentEvent. This branch
+  // deliberately ignores ORDER_PAYMENTS_ENABLED: the kill switch gates link
+  // creation only, and links already in guests' hands must keep settling
+  // after a flag-off.
+  if (isOrderPaymentEvent(event)) {
+    await handleOrderPaymentWebhook(event);
+    return `order_payment:${type}`;
+  }
+
+  // Dispute objects carry their OWN metadata (empty), not the PaymentIntent's,
+  // so the marker check above can't see them. Route every dispute through the
+  // order-payment handler — it attributes by PaymentIntent id and logs loudly
+  // if the dispute isn't one of ours (billing subscriptions rarely dispute).
+  if (type === "charge.dispute.created") {
+    await handleOrderPaymentWebhook(event);
+    return "charge_dispute";
+  }
+
+  // Connected-account lifecycle (Stripe Connect): keep the venue's capability
+  // cache fresh. These events carry no metadata/customer; they're resolved by
+  // the connected-account id.
+  if (type === "account.updated") {
+    await syncConnectAccount(event.data.object as Stripe.Account);
+    return "account_updated";
+  }
 
   if (
     type === "checkout.session.completed" ||

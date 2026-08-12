@@ -177,3 +177,48 @@ test("production boots without the per-restaurant identifiers", () => {
   assert.equal(result.data!.RETELL_AGENT_ID, undefined);
   assert.equal(result.data!.TWILIO_PHONE_NUMBER, undefined);
 });
+
+// --- Voice-order payments (ORDER_PAYMENTS_ENABLED) --------------------------
+
+test("order payments off by default, and the expiry floor respects Stripe's minimum + skew margin", () => {
+  const result = validateEnv({ APP_ENV: "test", DATABASE_URL: DB });
+  assert.equal(result.success, true);
+  assert.equal(result.data!.ORDER_PAYMENTS_ENABLED, false);
+  assert.equal(result.data!.STRIPE_CONNECT_ENABLED, false);
+  assert.equal(result.data!.ORDER_PAYMENT_EXPIRY_MINUTES, 45);
+
+  // Stripe rejects expires_at < 30 min out; exactly 30 fails intermittently
+  // on clock skew, so the schema floor is 35.
+  const tooShort = validateEnv({ APP_ENV: "test", DATABASE_URL: DB, ORDER_PAYMENT_EXPIRY_MINUTES: "30" });
+  assert.equal(tooShort.success, false);
+  assert.ok(issuePaths(tooShort).includes("ORDER_PAYMENT_EXPIRY_MINUTES"));
+});
+
+test("production with ORDER_PAYMENTS_ENABLED=true and nothing else refuses to boot, naming every gap", () => {
+  const result = validateEnv({ ...productionEnv, ORDER_PAYMENTS_ENABLED: "true" });
+  assert.equal(result.success, false);
+  const paths = issuePaths(result);
+  assert.ok(paths.includes("STRIPE_SECRET_KEY"));
+  assert.ok(paths.includes("STRIPE_WEBHOOK_SECRET"));
+  assert.ok(paths.includes("NOTIFICATIONS_SMS_FROM"));
+  // Without this the success_url is literally "undefined/order/paid".
+  assert.ok(paths.includes("PUBLIC_ORDER_RETURN_BASE_URL"));
+  assert.ok(paths.includes("NOTIFICATIONS_ENABLED"));
+  assert.ok(paths.includes("STRIPE_CONNECT_ENABLED"));
+});
+
+test("production with the full order-payments config boots", () => {
+  const result = validateEnv({
+    ...productionEnv,
+    ORDER_PAYMENTS_ENABLED: "true",
+    STRIPE_CONNECT_ENABLED: "true",
+    NOTIFICATIONS_ENABLED: "true",
+    EMAIL_PROVIDER: "zeptomail",
+    ZEPTOMAIL_TOKEN: "ztok",
+    STRIPE_SECRET_KEY: "sk_test_x",
+    STRIPE_WEBHOOK_SECRET: "whsec_x",
+    NOTIFICATIONS_SMS_FROM: "+61400000000",
+    PUBLIC_ORDER_RETURN_BASE_URL: "https://app.biteperk.com.au"
+  });
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});

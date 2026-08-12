@@ -17,18 +17,22 @@ export interface NotificationRow {
   sent_at: string | null;
 }
 
-export async function enqueueNotification(input: {
-  restaurantId?: string | null;
-  channel: "email" | "sms";
-  recipient: string;
-  kind: string;
-  subject?: string | null;
-  body: string;
-  bodyHtml?: string | null;
-}): Promise<void> {
-  await pool.query(
+export async function enqueueNotification(
+  input: {
+    restaurantId?: string | null;
+    channel: "email" | "sms";
+    recipient: string;
+    kind: string;
+    subject?: string | null;
+    body: string;
+    bodyHtml?: string | null;
+  },
+  db: DbClient = pool
+): Promise<string> {
+  const result = await db.query<{ id: string }>(
     `INSERT INTO notifications_outbox (restaurant_id, channel, recipient, kind, subject, body, body_html)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id`,
     [
       input.restaurantId ?? null,
       input.channel,
@@ -39,9 +43,15 @@ export async function enqueueNotification(input: {
       input.bodyHtml ?? null
     ]
   );
+  return result.rows[0]!.id;
 }
 
-export async function claimReadyNotifications(limit: number, db: DbClient = pool): Promise<NotificationRow[]> {
+export async function claimReadyNotifications(
+  limit: number,
+  channels: Array<"email" | "sms">,
+  db: DbClient = pool
+): Promise<NotificationRow[]> {
+  if (channels.length === 0) return [];
   // Pushing next_attempt_at forward IS the claim lease: the row stops matching
   // the ready predicate the moment this UPDATE commits, so a second worker
   // replica (or a send outliving the tick interval) cannot claim it again and
@@ -58,14 +68,14 @@ export async function claimReadyNotifications(limit: number, db: DbClient = pool
         next_attempt_at = now() + interval '5 minutes'
     WHERE id IN (
       SELECT id FROM notifications_outbox
-      WHERE status = 'pending' AND next_attempt_at <= now()
+      WHERE status = 'pending' AND next_attempt_at <= now() AND channel = ANY($2)
       ORDER BY next_attempt_at ASC
       FOR UPDATE SKIP LOCKED
       LIMIT $1
     )
     RETURNING *
     `,
-    [limit]
+    [limit, channels]
   );
   return result.rows;
 }

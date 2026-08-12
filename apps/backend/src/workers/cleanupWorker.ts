@@ -10,6 +10,9 @@
  *   * Notifications: sent rows older than 30 days.
  *   * Onboarding: restaurants abandoned mid-signup for 30 days.
  *
+ * Deliberately NOT cleaned up: order_payments. It is a financial ledger
+ * (guest payments, fees, refunds, disputes) and is retained indefinitely.
+ *
  * Runs every 6 hours after the first tick at +1 hour after boot (so a
  * fresh container doesn't spike the DB the moment it comes up). Counts are
  * structured-logged so ops can see how much the cleanup is touching.

@@ -311,7 +311,27 @@ const envSchema = z
   // VoxConcierge is contracted "when released" — the wizard only offers it
   // once this flag is on. VoxDrive is deliberately not a service value
   // anywhere: it is a concept and must never be sold.
-  SERVICES_VOXCONCIERGE_ENABLED: boolFlag()
+  SERVICES_VOXCONCIERGE_ENABLED: boolFlag(),
+
+  // Voice-order payments: Bella texts the caller a Stripe Checkout link for
+  // their food order. Kill-switch pattern: ships OFF. IMPORTANT: this flag
+  // gates link CREATION only (Retell tool + staff resend) — webhook
+  // reconciliation and the expiry reaper deliberately ignore it, because links
+  // already in guests' hands must keep settling after a flag-off.
+  ORDER_PAYMENTS_ENABLED: boolFlag(),
+  // Stripe Connect (destination charges to venue connected accounts). Order
+  // payments require it; it can be on alone to let venues onboard early.
+  STRIPE_CONNECT_ENABLED: boolFlag(),
+  // Stripe rejects expires_at < 30 min out; min 35 keeps clock skew from
+  // turning the floor into intermittent mid-call failures.
+  ORDER_PAYMENT_EXPIRY_MINUTES: z.coerce.number().int().min(35).max(1440).default(45),
+  // BitePerk's application fee on each guest payment: bps + flat, clamped in
+  // code to never reach the transaction total.
+  ORDER_PAYMENT_FEE_BPS: z.coerce.number().int().min(0).max(2000).default(0),
+  ORDER_PAYMENT_FEE_FLAT_CENTS: z.coerce.number().int().min(0).default(0),
+  // Where Stripe sends the guest after paying/cancelling — the dashboard
+  // frontend origin (serves /order/paid and /order/cancelled), NOT the API.
+  PUBLIC_ORDER_RETURN_BASE_URL: z.string().url().optional()
   })
   .superRefine((value, ctx) => {
     const publicUrl = new URL(value.PUBLIC_API_BASE_URL);
@@ -443,6 +463,40 @@ const envSchema = z
         "STRIPE_WEBHOOK_SECRET",
         "STRIPE_WEBHOOK_SECRET is required when STRIPE_BILLING_ENABLED=true."
       );
+    }
+
+    if (value.ORDER_PAYMENTS_ENABLED) {
+      requireInProd("STRIPE_SECRET_KEY", "STRIPE_SECRET_KEY is required when ORDER_PAYMENTS_ENABLED=true.");
+      requireInProd(
+        "STRIPE_WEBHOOK_SECRET",
+        "STRIPE_WEBHOOK_SECRET is required when ORDER_PAYMENTS_ENABLED=true."
+      );
+      // Links are delivered by SMS; a payments deployment without an SMS
+      // sender silently strands every link in the outbox.
+      requireInProd(
+        "NOTIFICATIONS_SMS_FROM",
+        "NOTIFICATIONS_SMS_FROM is required when ORDER_PAYMENTS_ENABLED=true (links go out by SMS)."
+      );
+      // Without this the success_url is literally "undefined/order/paid" and
+      // Stripe rejects the session mid-phone-call.
+      requireInProd(
+        "PUBLIC_ORDER_RETURN_BASE_URL",
+        "PUBLIC_ORDER_RETURN_BASE_URL is required when ORDER_PAYMENTS_ENABLED=true."
+      );
+      if (!value.NOTIFICATIONS_ENABLED) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["NOTIFICATIONS_ENABLED"],
+          message: "NOTIFICATIONS_ENABLED must be true when ORDER_PAYMENTS_ENABLED=true (links go out via the notifications outbox)."
+        });
+      }
+      if (!value.STRIPE_CONNECT_ENABLED) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["STRIPE_CONNECT_ENABLED"],
+          message: "STRIPE_CONNECT_ENABLED must be true when ORDER_PAYMENTS_ENABLED=true (guest payments are Connect destination charges)."
+        });
+      }
     }
 
     if (value.MENU_OCR_ENABLED && !value.MENU_OCR_API_KEY) {

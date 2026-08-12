@@ -25,6 +25,7 @@ import { OnboardingWizard } from "./pages/onboarding/OnboardingWizard";
 import { LoginScreen } from "./pages/auth/LoginScreen";
 import { VerifyEmailScreen } from "./pages/auth/VerifyEmailScreen";
 import { AcceptInvitePage } from "./pages/auth/AcceptInvitePage";
+import { OrderReturnPage } from "./pages/public/OrderReturnPage";
 
 
 
@@ -123,6 +124,8 @@ function App() {
       "/profile": "Profile · VoxTable",
       "/onboarding": "Get started · VoxTable",
       "/verify-email": "Verify your email · VoxTable",
+      "/order/paid": "Payment received",
+      "/order/cancelled": "Payment not completed",
     };
     if (/^\/live-feed\/[^/]+$/.test(path)) {
       document.title = "Call detail · VoxTable";
@@ -264,6 +267,9 @@ function AppRouter({ path, navigate, isDashboard }) {
   const isOnboarding = path === "/onboarding" || path.startsWith("/onboarding/");
   const isInvite = path === "/invite";
   const isVerifyEmail = path === "/verify-email";
+  // Stripe Checkout return pages for guest order payments. Fully public (the
+  // guest has no account) — must render before any auth/onboarding gate.
+  const isOrderReturn = path === "/order/paid" || path === "/order/cancelled";
   const gate = useOnboardingGate();
 
   // Gate redirects — only after auth + gate are resolved, and only ever toward
@@ -327,6 +333,10 @@ function AppRouter({ path, navigate, isDashboard }) {
   useEffect(() => {
     if (roleRedirect) navigate(roleRedirect, { replace: true });
   }, [roleRedirect, navigate]);
+
+  if (isOrderReturn) {
+    return <OrderReturnPage outcome={path === "/order/paid" ? "paid" : "cancelled"} />;
+  }
 
   // /invite?token=xxx is outside dashboard/onboarding gates so new staff can join first.
   if (isInvite) {

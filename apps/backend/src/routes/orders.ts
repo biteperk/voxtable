@@ -14,7 +14,9 @@ import {
   updateOrderStatusRequestSchema,
   updatePaymentStatusRequestSchema
 } from "../http/schemas";
+import { paymentLinkLimiter } from "../http/rateLimiters";
 import { recordKdsHeartbeat } from "../services/kdsHeartbeats";
+import { createOrderPaymentLink } from "../services/orderPaymentService";
 import {
   createOrder,
   getActiveOrders,
@@ -170,6 +172,46 @@ ordersRouter.patch(
       actor: actorFor(request)
     });
     response.json(updated);
+  })
+);
+
+// Text the guest a Stripe payment link for an order (send or resend). FOH can
+// send to the number on the order's originating call only; overriding the
+// recipient with an arbitrary number requires manager — a free-form recipient
+// from any staff account is an SMS-abuse and harassment vector. Rate-limited
+// per account on top of the service's per-order attempt cap.
+ordersRouter.post(
+  "/api/orders/:id/payment-link",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireAnyMemberRole(FRONT_OF_HOUSE_ROLES),
+  paymentLinkLimiter,
+  asyncHandler(async (request: AuthenticatedRequest, response) => {
+    const override = typeof request.body?.phone === "string" ? request.body.phone.slice(0, 32) : undefined;
+    if (override) {
+      await new Promise<void>((resolve, reject) =>
+        requireMemberRole("manager")(request, response, (err?: unknown) => (err ? reject(err) : resolve()))
+      );
+    }
+    const outcome = await createOrderPaymentLink({
+      restaurantId: tenantId(request),
+      orderId: request.params.id!,
+      recipientPhone: override ?? null,
+      actor: actorFor(request),
+      source: "staff"
+    });
+    if (!outcome.sent) {
+      throw new AppError(409, outcome.code, outcome.confirmationMessage);
+    }
+    // Deliberately no URL in the response — staff don't need it, and a link in
+    // a dashboard response is a link in browser devtools and logs.
+    response.status(outcome.isReplay ? 200 : 201).json({
+      sent: true,
+      is_replay: outcome.isReplay,
+      payment_id: outcome.paymentId,
+      expires_in_minutes: outcome.expiresInMinutes,
+      message: outcome.confirmationMessage
+    });
   })
 );
 

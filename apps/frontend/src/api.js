@@ -442,6 +442,22 @@ export function createBillingCheckoutSession() {
   return authedFetch("/api/billing/checkout-session", { method: "POST" });
 }
 
+// Stripe Connect payouts (guest payments). Status for the Billing page card;
+// refresh=true pulls live capability state from Stripe after onboarding.
+export function getConnectStatus({ refresh } = {}) {
+  return authedFetch(`/api/billing/connect${refresh ? "?refresh=1" : ""}`);
+}
+
+// Returns { url } for the Stripe-hosted Connect onboarding flow.
+export function createConnectOnboardingLink() {
+  return authedFetch("/api/billing/connect/onboarding-link", { method: "POST" });
+}
+
+// Texts the guest a payment link for an order (front-of-house resend surface).
+export function sendOrderPaymentLink(orderId) {
+  return authedFetch(`/api/orders/${orderId}/payment-link`, { method: "POST" });
+}
+
 // ===== Staff management =====
 
 export function getStaffList() {

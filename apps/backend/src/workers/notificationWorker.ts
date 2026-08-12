@@ -16,7 +16,7 @@ import {
   markNotificationSent,
   type NotificationRow
 } from "../repositories/notifications";
-import { isNotificationsEnabled } from "../services/notificationService";
+import { isEmailEnabled, isNotificationsEnabled, isSmsEnabled } from "../services/notificationService";
 
 const TICK_INTERVAL_MS = 5_000;
 const BATCH_SIZE = 10;
@@ -116,10 +116,19 @@ async function sendSms(row: NotificationRow): Promise<void> {
   }
 }
 
+function enabledChannels(): Array<"email" | "sms"> {
+  const channels: Array<"email" | "sms"> = [];
+  if (isEmailEnabled()) channels.push("email");
+  if (isSmsEnabled()) channels.push("sms");
+  return channels;
+}
+
 async function processBatch(): Promise<void> {
   let rows: NotificationRow[];
   try {
-    rows = await claimReadyNotifications(BATCH_SIZE);
+    // Rows for a channel without credentials are left pending (not claimed), so
+    // they neither burn attempts nor fail — they send when the channel is configured.
+    rows = await claimReadyNotifications(BATCH_SIZE, enabledChannels());
   } catch (error) {
     logger.error({ evt: "notification_claim_failed", error });
     return;
