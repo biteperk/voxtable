@@ -29,6 +29,24 @@ law context: NSW (Surveillance Devices Act 2007) — all venues are currently in
 Schema source: `apps/backend/db/migrations/001_initial_schema.sql` (call_logs at ~:61),
 `016_call_log_caller_name.sql`.
 
+### 1a. Backup copies — added 3 Aug 2026
+
+The inventory above describes the *live* store. Transcripts and caller phone numbers also
+exist in **database backups**, which is material to any retention or deletion question:
+
+| Location | Contents | Retention |
+|---|---|---|
+| `gs://vocotable-backups-497209/` (GCS, australia-southeast1 / Sydney) | Nightly `pg_dump` of the whole database, including `call_logs.transcript`, `call_logs.caller_phone` and `customers` | ~30 daily snapshots on a rolling window |
+| `/opt/vocotable/backups/` on `core-central-vm` | Second, local-only nightly dump of the same data | Local pruning |
+
+Verified 3 Aug 2026: 31 objects, newest `db-20260803-062501.sql.gz`, schema identical to
+the live database. Data residency is Australian (Sydney region) for the offsite copy.
+
+**Implication for deletion:** "delete the corpus" is not a single action. It means
+Postgres *and* Retell's storage *and* up to 30 days of rolling backups, both offsite and
+on-VM. A deletion instruction that stops at the live database leaves recoverable copies
+for a further 30 days.
+
 ## 2. Who processes it (subprocessors actually in the data path)
 
 | Processor | Role | What they hold |
@@ -41,6 +59,7 @@ Schema source: `apps/backend/db/migrations/001_initial_schema.sql` (call_logs at
 | **Slack (ops webhook)** | Alerting | Aggregate counts only; logger redacts PII (`apps/backend/src/utils/logger.ts`) |
 | **Stripe** | Billing | Restaurant billing data, not caller data |
 | **Sentry** | Error tracking | Scaffolding present; `SENTRY_DSN` unset in production today → inactive |
+| **Google Cloud Storage** (`vocotable-backups-497209`, Sydney) | Backup storage | Full nightly database dumps — transcripts, caller phone numbers, names. See §1a |
 
 ## 3. What the signed agreement promises vs what the system does
 
@@ -55,7 +74,7 @@ Schema source: `apps/backend/db/migrations/001_initial_schema.sql` (call_logs at
 Net: **call data is currently retained indefinitely** on Retell and in Postgres,
 regardless of what the restaurant elected.
 
-## 4. Volumes (to fill in before the lawyer meeting — read-only queries)
+## 4. Volumes — measured 3 Aug 2026
 
 Run against production (read-only):
 
@@ -66,6 +85,22 @@ SELECT count(*) AS total_calls,
        min(started_at) AS earliest_call
 FROM call_logs;
 ```
+
+| Measure | Value |
+|---|---|
+| Total calls | **41** |
+| With stored transcript | **22** |
+| With stored recording URL | **22** |
+| Earliest call | **2026-05-25 02:25:52 UTC** |
+
+Read: the affected corpus is **22 recorded-and-transcribed calls** over roughly ten
+weeks. The 19 remaining rows have neither a transcript nor a recording — consistent with
+calls that ended before the agent engaged.
+
+**This materially changes question 2 below.** Deleting or remediating 22 recordings is a
+different proposition from deleting thousands; whatever the lawyer advises, the corpus is
+small enough that the most conservative option remains cheap to execute. That is worth
+saying out loud in the meeting, because it widens the range of advice that is practical.
 
 Retell dashboard (Sam): confirm the agent's current data-storage/retention setting and
 whether recordings are downloadable/deletable via their API; export their DPA/subprocessor
@@ -85,7 +120,8 @@ list.
 1. Disclosure wording and placement (greeting vs IVR-style preamble) for NSW SDA 2007
    compliance, given all current venues are NSW.
 2. Whether the existing corpus of undisclosed recordings must be deleted, and on what
-   timeline.
+   timeline. Corpus is **22 recorded calls** (§4). Note that deletion must reach Retell's
+   storage, Postgres, and up to 30 days of rolling backups (§1a) to be complete.
 3. Whether the agreement's restaurant-certifies model is salvageable, or whether the
    platform must make the announcement itself (we control the greeting; the restaurant
    does not).

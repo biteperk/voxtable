@@ -11,10 +11,10 @@ We pg_dump nightly to a GCS bucket (provisioned 2026-05-25, see observation 6987
 
 ```bash
 # 1. Confirm the cron ran and a fresh file landed in GCS
-gcloud storage ls gs://vocotable-backups/ --recursive | tail -5
+gcloud storage ls gs://vocotable-backups-497209/ --recursive | tail -5
 
 # 2. Spot-check the most recent dump — list its tables without restoring
-gcloud storage cp gs://vocotable-backups/<latest>.sql.gz /tmp/
+gcloud storage cp gs://vocotable-backups-497209/<latest>.sql.gz /tmp/
 gunzip -c /tmp/<latest>.sql.gz | head -200 | grep -E "^(--|CREATE TABLE|COPY)"
 
 # Should see: schema_migrations, restaurants, customers, reservations, tables,
@@ -33,7 +33,7 @@ Goal: prove the dump actually restores to a working DB, and that the restored ro
 # On any workstation (or staging VM if you have one):
 
 # 1. Pull yesterday's backup
-gcloud storage cp gs://vocotable-backups/$(date -v-1d +%Y%m%d).sql.gz /tmp/
+gcloud storage cp gs://vocotable-backups-497209/$(date -v-1d +%Y%m%d).sql.gz /tmp/
 
 # 2. Spin up a throwaway Postgres
 docker run -d --rm --name pg-restore-test \
@@ -86,7 +86,7 @@ sudo docker exec vocotable-postgres-1 pg_dump -U vocotable vocotable | \
   gzip > /tmp/pre-restore-snapshot-$(date +%Y%m%d-%H%M%S).sql.gz
 
 # 4. Pull the backup to restore from. Pick which day — usually yesterday.
-gcloud storage cp gs://vocotable-backups/<filename>.sql.gz /tmp/
+gcloud storage cp gs://vocotable-backups-497209/<filename>.sql.gz /tmp/
 
 # 5. Drop and recreate the DB
 sudo docker exec vocotable-postgres-1 psql -U vocotable -d postgres -c \
@@ -117,3 +117,51 @@ curl -sf https://vocotable.algorythmos.com.au/health
 - **No point-in-time recovery (PITR).** A daily pg_dump can lose up to 24h of bookings. For ≤ 10 calls/day this is acceptable; revisit when traffic grows.
 - **GCS bucket lifecycle is 30 days** (per observation 6987). Older backups auto-delete. If you need long retention, copy to a different bucket before day 30.
 - **No automated restore verification.** The "Daily verification" section above is manual. Cron-ify after launch.
+
+
+---
+
+## What actually runs the backups (verified 2026-08-03)
+
+There are **two independent backup mechanisms**. Know which one you are relying on.
+
+| | Offsite chain (the real one) | Local script |
+|---|---|---|
+| Bucket / path | `gs://vocotable-backups-497209/` — australia-southeast1 (Sydney) | `/opt/vocotable/backups/` on the VM only |
+| Filename | `db-YYYYMMDD-062501.sql.gz` | `vocotable_YYYYMMDD_030001.sql.gz` |
+| Runs at | 06:25 UTC daily | 03:00 UTC daily, root cron |
+| Driven by | service account `vocotable-backups@vocotable-497209.iam.gserviceaccount.com` ("VocoTable daily DB backups"), **from a machine outside GCP** | `deploy/scripts/backup-postgres.sh` |
+| Offsite? | Yes | **No** |
+
+Verified 2026-08-03: 31 objects, newest `db-20260803-062501.sql.gz`, schema
+identical to the local dump of the same day (`call_logs`, `customers`,
+`agreement_acceptances`, `legal_notices`, `menu_*`, …).
+
+### Two things to know before you change anything
+
+1. **`core-central-vm` cannot write to GCS.** Its OAuth scopes are
+   `devstorage.read_only`, `logging.write`, `monitoring.write`,
+   `service.management.readonly`, `servicecontrol`, `trace.append`. Adding a
+   `gcloud storage cp` to `backup-postgres.sh` will fail no matter what IAM you
+   grant. Changing instance scopes requires stopping the VM.
+
+2. **The 06:25 job does not run on this VM, and its host is not yet
+   identified.** It is not root cron, not a GitHub Actions schedule, not Cloud
+   Scheduler (that API is disabled), and there is no VM in any Sydney zone. The
+   service account holds a user-managed key created 2026-05-25 and never
+   rotated, so some machine outside GCP is holding that JSON key, reaching
+   production Postgres, and uploading the dump.
+
+   That key currently has **`roles/storage.objectAdmin`**, which means the
+   holder can *delete* every backup, not merely add new ones. Downgrade to
+   `objectCreator` once the host is identified — but **do not delete the key
+   before then**, because it is the only offsite chain you have.
+
+### Open actions
+
+- [ ] Identify the machine running the 06:25 dump.
+- [ ] Downgrade the backup SA from `objectAdmin` to `objectCreator`.
+- [ ] Rotate the 2026-05-25 key and record where the replacement lives.
+- [ ] Enable object versioning or a retention policy on the bucket.
+- [ ] Decide the fate of the redundant 03:00 local-only script — retire it, or
+      give the VM write scope and make it the documented chain.
