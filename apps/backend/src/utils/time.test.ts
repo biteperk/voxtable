@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { tomorrowInTz, todayInTz, utcIsoToZonedWallClock, zonedWallClockToUtcISO } from "./time";
+import { isWithinDailyWindow, tomorrowInTz, todayInTz, utcIsoToZonedWallClock, zonedWallClockToUtcISO } from "./time";
 
 const SYD = "Australia/Sydney";
 
@@ -105,4 +105,41 @@ test("today and tomorrow are always one day apart, and never equal", () => {
     const expected = new Date(Date.UTC(ty!, tm! - 1, td! + 1)).toISOString().slice(0, 10);
     assert.equal(tomorrow, expected, `tomorrow after ${today} should be ${expected}`);
   }
+});
+
+// --- isWithinDailyWindow (menu availability windows, migration 031) ---------
+
+test("no bounds means always available", () => {
+  assert.equal(isWithinDailyWindow("13:45", null, null), true);
+});
+
+test("same-day window is start-inclusive, end-exclusive", () => {
+  assert.equal(isWithinDailyWindow("07:00", "07:00", "12:00"), true);
+  assert.equal(isWithinDailyWindow("11:59", "07:00", "12:00"), true);
+  // At noon the breakfast menu is over.
+  assert.equal(isWithinDailyWindow("12:00", "07:00", "12:00"), false);
+  assert.equal(isWithinDailyWindow("06:59", "07:00", "12:00"), false);
+});
+
+test("accepts Postgres TIME's HH:MM:SS shape", () => {
+  assert.equal(isWithinDailyWindow("08:30", "07:00:00", "12:00:00"), true);
+  assert.equal(isWithinDailyWindow("20:00", "07:00:00", "12:00:00"), false);
+});
+
+test("overnight window wraps midnight (happy hour 16:00-02:00)", () => {
+  assert.equal(isWithinDailyWindow("23:30", "16:00", "02:00"), true);
+  assert.equal(isWithinDailyWindow("01:15", "16:00", "02:00"), true);
+  assert.equal(isWithinDailyWindow("02:00", "16:00", "02:00"), false);
+  assert.equal(isWithinDailyWindow("12:00", "16:00", "02:00"), false);
+});
+
+test("one-sided windows are open-ended on the missing side", () => {
+  assert.equal(isWithinDailyWindow("23:00", "17:00", null), true);
+  assert.equal(isWithinDailyWindow("09:00", "17:00", null), false);
+  assert.equal(isWithinDailyWindow("09:00", null, "11:30"), true);
+  assert.equal(isWithinDailyWindow("11:30", null, "11:30"), false);
+});
+
+test("zero-length window is never available (degenerate, mirrors opening hours)", () => {
+  assert.equal(isWithinDailyWindow("12:00", "12:00", "12:00"), false);
 });

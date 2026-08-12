@@ -160,6 +160,9 @@ menuRouter.post(
       imageUrl: body.image_url ?? body.imageUrl ?? undefined,
       imageBlurhash: body.image_blurhash ?? body.imageBlurhash ?? undefined,
       displayOrder: body.display_order ?? body.displayOrder,
+      availableFrom: body.available_from ?? body.availableFrom ?? undefined,
+      availableUntil: body.available_until ?? body.availableUntil ?? undefined,
+      isRestricted: body.is_restricted ?? body.isRestricted,
       variants,
       modifierGroups
     });
@@ -201,6 +204,9 @@ menuRouter.patch(
       imageBlurhash: body.image_blurhash ?? body.imageBlurhash,
       displayOrder: body.display_order ?? body.displayOrder,
       isAvailable: body.is_available ?? body.isAvailable,
+      availableFrom: body.available_from ?? body.availableFrom ?? undefined,
+      availableUntil: body.available_until ?? body.availableUntil ?? undefined,
+      isRestricted: body.is_restricted ?? body.isRestricted,
       variants,
       modifierGroups
     });

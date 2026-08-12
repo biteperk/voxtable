@@ -21,6 +21,14 @@ export interface MenuItemRow {
   image_url: string | null;
   image_blurhash: string | null;
   display_order: number;
+  // Daily availability window, wall-clock in the restaurant TZ. Postgres TIME
+  // arrives as "HH:MM:SS" — compare via toMinutes/isWithinDailyWindow, never
+  // string-equality against "HH:MM". NULL = unbounded side.
+  available_from: string | null;
+  available_until: string | null;
+  // Licensed items (alcohol): visible + staff-orderable, refused on the voice
+  // path (responsible-service posture).
+  is_restricted: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -184,14 +192,18 @@ export async function createMenuItem(input: {
   imageUrl?: string;
   imageBlurhash?: string;
   displayOrder?: number;
+  availableFrom?: string | null;
+  availableUntil?: string | null;
+  isRestricted?: boolean;
 }, db: DbClient = pool): Promise<MenuItemRow> {
   const result = await db.query<MenuItemRow>(
     `
     INSERT INTO menu_items (
       restaurant_id, category_id, name, description,
-      base_price_cents, image_url, image_blurhash, display_order, is_available
+      base_price_cents, image_url, image_blurhash, display_order, is_available,
+      available_from, available_until, is_restricted
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $11)
     RETURNING *
     `,
     [
@@ -202,7 +214,10 @@ export async function createMenuItem(input: {
       input.basePriceCents,
       input.imageUrl ?? null,
       input.imageBlurhash ?? null,
-      input.displayOrder ?? 0
+      input.displayOrder ?? 0,
+      input.availableFrom ?? null,
+      input.availableUntil ?? null,
+      input.isRestricted ?? false
     ]
   );
   return result.rows[0]!;
@@ -219,7 +234,13 @@ export async function updateMenuItem(input: {
   imageBlurhash?: string | null;
   displayOrder?: number;
   isAvailable?: boolean;
+  availableFrom?: string | null;
+  availableUntil?: string | null;
+  isRestricted?: boolean;
 }, db: DbClient = pool): Promise<MenuItemRow | null> {
+  // Known COALESCE limitation (same as description): a window can be set or
+  // changed via PATCH but not cleared back to NULL. Clearing means a direct
+  // repo call or re-import; called out in the PR as an accepted launch trade.
   const result = await db.query<MenuItemRow>(
     `
     UPDATE menu_items
@@ -230,7 +251,10 @@ export async function updateMenuItem(input: {
            image_url        = COALESCE($7, image_url),
            image_blurhash   = COALESCE($8, image_blurhash),
            display_order    = COALESCE($9, display_order),
-           is_available     = COALESCE($10, is_available)
+           is_available     = COALESCE($10, is_available),
+           available_from   = COALESCE($11, available_from),
+           available_until  = COALESCE($12, available_until),
+           is_restricted    = COALESCE($13, is_restricted)
      WHERE id = $1 AND restaurant_id = $2
      RETURNING *
     `,
@@ -244,7 +268,10 @@ export async function updateMenuItem(input: {
       input.imageUrl ?? null,
       input.imageBlurhash ?? null,
       input.displayOrder ?? null,
-      input.isAvailable ?? null
+      input.isAvailable ?? null,
+      input.availableFrom ?? null,
+      input.availableUntil ?? null,
+      input.isRestricted ?? null
     ]
   );
   return result.rows[0] ?? null;

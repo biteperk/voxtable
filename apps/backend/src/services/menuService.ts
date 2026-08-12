@@ -28,6 +28,9 @@ export interface MenuItemPayload {
   image_url: string | null;
   image_blurhash: string | null;
   display_order: number;
+  available_from: string | null;
+  available_until: string | null;
+  is_restricted: boolean;
   variants: MenuItemVariantRow[];
   modifier_groups: Array<{
     group_name: string;
@@ -99,6 +102,9 @@ export async function getMenu(restaurantId: string): Promise<MenuPayload> {
       image_url: item.image_url,
       image_blurhash: item.image_blurhash,
       display_order: item.display_order,
+      available_from: item.available_from,
+      available_until: item.available_until,
+      is_restricted: item.is_restricted,
       variants: itemVariants,
       modifier_groups: groups
     };
@@ -177,6 +183,9 @@ export async function createMenuItem(input: {
   imageUrl?: string;
   imageBlurhash?: string;
   displayOrder?: number;
+  availableFrom?: string | null;
+  availableUntil?: string | null;
+  isRestricted?: boolean;
   variants?: Array<{ name: string; priceDeltaCents: number; displayOrder: number }>;
   modifierGroups?: Array<{
     groupName: string;
@@ -220,6 +229,9 @@ export async function updateMenuItem(input: {
   imageBlurhash?: string | null;
   displayOrder?: number;
   isAvailable?: boolean;
+  availableFrom?: string | null;
+  availableUntil?: string | null;
+  isRestricted?: boolean;
   variants?: Array<{ name: string; priceDeltaCents: number; displayOrder: number }>;
   modifierGroups?: Array<{
     groupName: string;
@@ -288,12 +300,22 @@ export async function deleteMenuItem(id: string, restaurantId: string): Promise<
  * speakable string plus structured matches so the agent can decide what to
  * read out.
  */
+export interface MenuLookupMatch {
+  id: string;
+  name: string;
+  price_cents: number;
+  category_id: string;
+  is_restricted: boolean;
+  available_from: string | null;
+  available_until: string | null;
+}
+
 export async function lookupMenu(input: {
   restaurantId: string;
   query?: string;
   category?: string;
 }): Promise<{
-  matches: Array<{ id: string; name: string; price_cents: number; category_id: string }>;
+  matches: MenuLookupMatch[];
   speakable_summary: string;
   ambiguous: boolean;
 }> {
@@ -307,7 +329,12 @@ export async function lookupMenu(input: {
       };
     }
     const ambiguous = matches.length > 1 && Math.abs(matches[0]!.similarity - matches[1]!.similarity) < 0.1;
-    const summary = matches
+    // Restricted (licensed) items stay IN matches — create_order refuses them
+    // with a clean spoken line; filtering here would turn that into a
+    // confusing "not found". But the spoken offer must not upsell them.
+    const offerable = matches.filter((m) => !m.is_restricted);
+    const summarySource = offerable.length > 0 ? offerable : matches;
+    const summary = summarySource
       .slice(0, 3)
       .map((m) => `${m.name} ($${(m.base_price_cents / 100).toFixed(2).replace(/\.00$/, "")})`)
       .join(", ");
@@ -316,28 +343,39 @@ export async function lookupMenu(input: {
         id: m.id,
         name: m.name,
         price_cents: m.base_price_cents,
-        category_id: m.category_id
+        category_id: m.category_id,
+        is_restricted: m.is_restricted,
+        available_from: m.available_from,
+        available_until: m.available_until
       })),
       ambiguous,
-      speakable_summary: ambiguous
-        ? `I have ${summary} — which one?`
-        : `We have ${summary}. Want one of those?`
+      speakable_summary:
+        offerable.length === 0
+          ? `That's from our licensed drinks list, which I can't take orders for over the phone — but I can pop a note on your order for the team.`
+          : ambiguous
+            ? `I have ${summary} — which one?`
+            : `We have ${summary}. Want one of those?`
     };
   }
 
-  // No query: read the top of each category as a category overview.
+  // No query: read the top of each category as a category overview. Skip
+  // restricted items — Bella must never offer what she has to refuse.
   const menu = await getMenu(input.restaurantId);
+  const offerableItems = (items: MenuItemPayload[]) => items.filter((i) => !i.is_restricted);
   const overview = menu.categories
     .slice(0, 4)
-    .map((c) => `${c.name}: ${c.items.slice(0, 2).map((i) => i.name).join(" or ") || "(empty)"}`)
+    .map((c) => `${c.name}: ${offerableItems(c.items).slice(0, 2).map((i) => i.name).join(" or ") || "(empty)"}`)
     .join("; ");
   return {
     matches: menu.categories.flatMap((c) =>
-      c.items.slice(0, 1).map((i) => ({
+      offerableItems(c.items).slice(0, 1).map((i) => ({
         id: i.id,
         name: i.name,
         price_cents: i.base_price_cents,
-        category_id: c.id
+        category_id: c.id,
+        is_restricted: i.is_restricted,
+        available_from: i.available_from,
+        available_until: i.available_until
       }))
     ),
     ambiguous: false,

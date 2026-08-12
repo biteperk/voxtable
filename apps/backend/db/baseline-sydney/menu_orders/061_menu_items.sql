@@ -26,3 +26,10 @@ DROP TRIGGER IF EXISTS set_menu_items_updated_at ON menu_orders.menu_items;
 CREATE TRIGGER set_menu_items_updated_at
 BEFORE UPDATE ON menu_orders.menu_items
 FOR EACH ROW EXECUTE FUNCTION core.set_updated_at();
+
+-- Mirror of migrations/031_menu_windows_restricted.sql: daily availability
+-- window (wall-clock in the restaurant TZ, NULL = unbounded side) and the
+-- licensed-item flag the voice path refuses.
+ALTER TABLE menu_orders.menu_items ADD COLUMN IF NOT EXISTS available_from TIME;
+ALTER TABLE menu_orders.menu_items ADD COLUMN IF NOT EXISTS available_until TIME;
+ALTER TABLE menu_orders.menu_items ADD COLUMN IF NOT EXISTS is_restricted BOOLEAN NOT NULL DEFAULT false;
