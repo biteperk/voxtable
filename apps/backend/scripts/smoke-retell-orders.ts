@@ -7,7 +7,8 @@
 // Asserts:
 //   1. menu_lookup("fish and chips") returns Fish & Chips first match
 //   2. menu_lookup("xyznonexistent") returns 0 matches + a fallback summary
-//   3. create_order without reservation_id → 400 ORDER_REQUIRES_BOOKING
+//   3. create_order with no reservation_id and no pickup_name → 400 ORDER_NEEDS_NAME
+//   3b. create_order with pickup_name and no reservation → 200 (takeaway)
 //   4. create_order with bogus item name → 404 MENU_ITEM_NOT_FOUND
 //   5. create_order with Fish & Chips, no drink choice → 400 MODIFIER_REQUIRED
 //   6. create_order with full happy path → 200 + order_id + confirmation_message
@@ -139,21 +140,44 @@ async function main(): Promise<void> {
   const bookingId = await createTestBooking();
   console.log(`✓ test booking ${bookingId}`);
 
-  // 3) create_order without reservation_id → 400 ORDER_REQUIRES_BOOKING
-  const noBooking = await callTool(
+  // 3) No reservation AND no pickup name → 400 ORDER_NEEDS_NAME. A pickup
+  //    ticket the kitchen can't call out is worse than no ticket.
+  const noName = await callTool(
     "create_order",
     {
-      call_id: "smoke-noreservation-" + Date.now(),
+      call_id: "smoke-noname-" + Date.now(),
       items: [{ name: "Fish & Chips", quantity: 1, variant_name: "Large", modifier_choices: { Drink: "Coke" } }]
     },
-    "smoke-noreservation"
+    "smoke-noname"
   );
-  assert(noBooking.status === 400, `expected 400, got ${noBooking.status}: ${JSON.stringify(noBooking.body)}`);
+  assert(noName.status === 400, `expected 400, got ${noName.status}: ${JSON.stringify(noName.body)}`);
   assert(
-    noBooking.body.error?.code === "ORDER_REQUIRES_BOOKING",
-    `expected ORDER_REQUIRES_BOOKING, got ${noBooking.body.error?.code}`
+    noName.body.error?.code === "ORDER_NEEDS_NAME",
+    `expected ORDER_NEEDS_NAME, got ${noName.body.error?.code}`
   );
-  console.log("✓ create_order without reservation → 400 ORDER_REQUIRES_BOOKING");
+  console.log("✓ create_order with no reservation and no name → 400 ORDER_NEEDS_NAME");
+
+  // 3b) Takeaway: no reservation, but a pickup name → order is created. This
+  //     is the phone-pickup path; it used to throw ORDER_REQUIRES_BOOKING and
+  //     offer the caller a table they never asked for.
+  const pickupCallId = `smoke-pickup-${Date.now()}`;
+  const pickup = await callTool(
+    "create_order",
+    {
+      call_id: pickupCallId,
+      pickup_name: "Marco",
+      pickup_time: "6:30pm",
+      items: [{ name: "Fish & Chips", quantity: 1, variant_name: "Large", modifier_choices: { Drink: "Coke" } }]
+    },
+    pickupCallId
+  );
+  assert(pickup.status === 200, `expected 200, got ${pickup.status}: ${JSON.stringify(pickup.body)}`);
+  assert(pickup.body.order_id, "takeaway order should return order_id");
+  assert(
+    pickup.body.confirmation_message?.includes("Order #"),
+    "takeaway confirmation should include order number"
+  );
+  console.log(`✓ takeaway order without reservation → ${pickup.body.confirmation_message}`);
 
   // 4) create_order with bogus item name → 404 MENU_ITEM_NOT_FOUND
   const bogusItem = await callTool(

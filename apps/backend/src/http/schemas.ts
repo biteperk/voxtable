@@ -271,6 +271,12 @@ export const createOrderRetellSchema = z.object({
   callId: z.string().min(1).max(200).optional(),
   reservation_id: uuidSchema.optional(),
   reservationId: uuidSchema.optional(),
+  // Takeaway: a caller ringing for pickup has no reservation and never will.
+  // The kitchen needs a name to call out, and ideally when they're coming.
+  pickup_name: z.string().min(1).max(80).optional(),
+  pickupName: z.string().min(1).max(80).optional(),
+  pickup_time: z.string().max(40).optional(),
+  pickupTime: z.string().max(40).optional(),
   items: z.array(
     z.object({
       name: z.string().min(1).max(120),
