@@ -307,11 +307,22 @@ export async function handleRetellFunction(
       );
     }
     const reservationId = parsed.data.reservation_id ?? parsed.data.reservationId;
-    if (!reservationId) {
+    const pickupName = (parsed.data.pickup_name ?? parsed.data.pickupName ?? "").trim();
+    const pickupTime = (parsed.data.pickup_time ?? parsed.data.pickupTime ?? "").trim();
+
+    // Takeaway is a first-class order type. This used to throw
+    // ORDER_REQUIRES_BOOKING whenever there was no reservation, which made the
+    // voice path unusable for phone pickup — the caller was offered a table
+    // they never asked for. orderService.createOrder has always taken
+    // reservationId as optional; only this guard stood in the way.
+    //
+    // What the kitchen actually needs on a pickup ticket is a name to call
+    // out, so that is what we require in a reservation's place.
+    if (!reservationId && !pickupName) {
       throw new AppError(
         400,
-        "ORDER_REQUIRES_BOOKING",
-        "I can only take a food order after the booking is confirmed. Want me to book your table first?"
+        "ORDER_NEEDS_NAME",
+        "Could I grab a name for the pickup order?"
       );
     }
     const callId = parsed.data.call_id ?? parsed.data.callId ?? providerCallId;
@@ -415,8 +426,23 @@ export async function handleRetellFunction(
       });
     }
 
-    const specialInstructions =
+    // Pickup details ride along in special_instructions so they land on the
+    // KDS ticket without a schema migration. They are also part of the
+    // idempotency fingerprint below, which is what we want: two different
+    // pickup orders in one call must not collide.
+    const callerInstructions =
       parsed.data.special_instructions ?? parsed.data.specialInstructions;
+    const pickupNote = reservationId
+      ? undefined
+      : ["Pickup:", pickupName, pickupTime ? `at ${pickupTime}` : ""]
+          .filter(Boolean)
+          .join(" ");
+    // Pickup note first so the callout name always survives the cap. 700, not
+    // the schema's per-field 500: both parts can legitimately coexist and the
+    // column is TEXT \u2014 a silent 500 cut here would eat the tail of a real
+    // allergy note.
+    const specialInstructions =
+      [pickupNote, callerInstructions].filter(Boolean).join(" \u2014 ").slice(0, 700) || undefined;
 
     // Audit B8: the key used to be the bare call_id, so ONE call could only
     // ever place ONE order — the guest added a Coke mid-call, heard the
