@@ -103,3 +103,17 @@ Where each id is recorded: `restaurants.twilio_phone_number`,
 `retell_phone_number`, `retell_agent_id`, `stripe_customer_id`,
 `stripe_connect_account_id`. Nowhere else — no spreadsheets. Full procedure:
 `deploy/runbooks/venue-onboarding.md`.
+
+### Live per-venue identifiers (Retell)
+
+Recorded here because nothing else outside the database holds them, and a
+missed rebind fails silently at call time. Keys and account credentials stay in
+the gitignored `deploy/runbooks/vendor-accounts.local.md`.
+
+| Venue | Retell agent | Retell LLM | Workspace |
+|---|---|---|---|
+| Natalia's Bistro | `agent_7b7a5f6c21c9968ee88afd3bac` | `llm_2cad4da643f2beb4d07dd0b311d1` | `org_f0DPXgKIQTMJL4je` (live) |
+| Cuban Corner Parramatta | `agent_93864e80fbaab14b5168e8f7b9` | `llm_adc242c622b8dffd32c24495edbd` | `org_f0DPXgKIQTMJL4je` (live) |
+
+Each venue owns a **separate LLM object**. Sharing one is the trap that makes a
+prompt edit for one venue rewrite another venue's live agent.

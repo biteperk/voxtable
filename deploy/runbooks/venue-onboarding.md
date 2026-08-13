@@ -26,24 +26,43 @@ NAMES.md §per-venue resources.
 
 ## 1. Retell agent — one agent AND one LLM per venue
 
-⚠️ Two traps, both proven the hard way:
+⚠️ Traps, all proven the hard way:
 
 1. **Never "clone" with `agent.create({response_engine: template.response_engine})`**
    — that copies the LLM **by reference**: the new agent shares the template's
    LLM, and editing "its" prompt rewrites every other venue's live agent.
-   In the Retell dashboard, duplicate the **agent AND the LLM**, then point
-   the duplicate agent at the duplicate LLM.
-2. **The prompt must not hard-code a venue name.** Use `{{restaurant_name}}`
-   (injected per call by `/retell/inbound`) — the original prompt said
-   "Natalia's Bistro" three times.
+   Create a **new LLM** (`POST /create-retell-llm`) and point the new agent at
+   that id. Verify afterwards that the two agents hold different `llm_id`s.
+2. **Build from the LIVE config, never from a snapshot.** Snapshots drift —
+   the live greeting carries the AI + recording disclosure that no committed
+   snapshot had, so a snapshot rebuild would silently strip a legal
+   disclosure off a customer-facing line. `GET /get-retell-llm/<id>` and
+   `/get-agent/<id>` first, then diff.
+3. **De-venue the prompt properly.** Replacing the restaurant name is not
+   enough: the live prompt also names the *owner* ("let me get Natalia to ring
+   you back"). Assert on the finished payload that no previous venue's name
+   survives anywhere.
+4. **Leave `default_dynamic_variables` empty.** Production has no worker that
+   refreshes them (`RETELL_LLM_ID` is unreferenced on `main`), so anything set
+   there is frozen forever and surfaces only when the inbound webhook fails —
+   i.e. it greets the caller with the wrong venue name and stale dates at
+   exactly the worst moment.
 
-Also: confirm `webhook_url` (`<api>/retell/webhook`) is set on the new agent
-(SDK-created agents don't inherit it), name it `"<Venue> (VoxTable)"`, and
-snapshot before/after to `deploy/retell-snapshots/`.
+Also: set `webhook_url` (`<api>/retell/webhook`) explicitly (API-created agents
+don't inherit it), name it `"<Venue> (VoxTable)"`, carry `data_storage_setting`,
+`data_storage_retention_days` and `pii_config` across deliberately (they are
+part of our data-handling posture, not defaults to inherit), and snapshot
+before/after to `deploy/retell-snapshots/`.
 
-Prompt content per venue: pickup-order guidance (name + time), the
-licensed-drinks line (matches the API's `RESTRICTED_ITEM` refusal), function
-enquiries → take a message, AI + recording disclosure.
+Fields that no longer exist and must not be copied from old snapshots:
+`normalize_for_speech`, and the deprecated single-agent phone field
+`inbound_agent_id` (removed 31 Mar 2026 in favour of weighted `inbound_agents`).
+
+Prompt content per venue: the licensed-drinks refusal, function enquiries →
+take a message, AI + recording disclosure. Add pickup-order guidance (name +
+time) **only once the backend serving that venue actually supports orders
+without a booking** — on a backend that still enforces `ORDER_REQUIRES_BOOKING`,
+Bella would take a full takeaway order and then apologise.
 
 ## 2. Phone number wiring
 
