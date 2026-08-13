@@ -77,20 +77,26 @@ with Algorythmos at all.
 still authenticates to the **legacy** org for every real call. The cutover is
 tracked in [`../../NUMBERS.md`](../../NUMBERS.md) §8.
 
-Two things this resolution does **not** fix, both deliberate:
+**The legacy org carries no data obligation.** The calls recorded inside
+`org_f0DPXgKIQTMJL4je` were tests, not customer audio, so it can be handed back
+to Algorythmos once Natalia's is cut over — nothing needs exporting first.
 
-- **The legacy org cannot simply be abandoned.** `call_logs.recording_url`
-  points at recordings hosted inside `org_f0DPXgKIQTMJL4je`, and the dashboard
-  plays them back (`LiveFeedDetailPage.jsx`) as an advertised plan feature. It
-  must stay alive and funded until recordings are exported or consciously
-  written off — see Track L and `recording-data-inventory.md`.
-- **The new login is `biteperk@gmail.com`, a personal Gmail, not a company
-  mailbox.** This is a *knowingly accepted* exposure, not an oversight: no admin
-  recovery, no delegation, tied to one person — structurally similar to the
-  agency-domain problem this was meant to solve, differing mainly in that
-  BitePerk controls the mailbox. Moving it to `retell@biteperk.com.au` is
-  cheapest now, while the workspace is nearly empty; it becomes progressively
-  harder as numbers, call history and billing accumulate.
+**What this resolution does not fix**, deliberately: the new login is
+`biteperk@gmail.com`, a personal Gmail rather than a company mailbox. This is a
+*knowingly accepted* exposure, not an oversight — no admin recovery, no
+delegation, tied to one person, which is structurally similar to the
+agency-domain problem it was meant to solve, differing mainly in that BitePerk
+controls the mailbox. Moving it to `retell@biteperk.com.au` is cheapest now,
+while the workspace is nearly empty; it gets harder as numbers, call history and
+billing accumulate.
+
+⚠️ **Separately, and still open:** call recordings are served from
+unauthenticated URLs — a plain GET returns the audio, and `opt_in_signed_url` is
+`false` on the live agent *and* on both new ones. No real audio is exposed today
+(the existing recordings are tests), which makes now the cheapest possible
+moment to fix it — before Natalia's is live and there is real playback history
+to avoid breaking. Tracked in
+[issue #173](https://github.com/biteperk/voxtable/issues/173).
 
 ### Original state, for the record
 

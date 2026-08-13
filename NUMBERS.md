@@ -1,9 +1,10 @@
 # NUMBERS.md — the telephony registry
 
-> ☎️ **Every phone number in the BitePerk/VoxTable estate, what it can actually do, and
-> what is still unwired.** Read this before you quote a number, wire a number, send an SMS,
-> test a call, or tell anyone a number "works". Numbers here are *not* interchangeable, and
-> **two of the four are not BitePerk platform infrastructure at all.**
+> ☎️ **Every phone number BitePerk owns, what it can actually do, and what is still
+> unwired.** Read this before you quote a number, wire a number, send an SMS, test a call,
+> or tell anyone a number "works". **BitePerk owns exactly two numbers** (§1) — anything
+> else you have seen referred to as "the BitePerk number" is either marketing or another
+> company's infrastructure, and wiring it is a mistake.
 >
 > Naming rules live in [`NAMES.md`](NAMES.md) and win on any naming question.
 > Procedure lives in [`deploy/runbooks/twilio-account-topology.md`](deploy/runbooks/twilio-account-topology.md).
@@ -20,42 +21,38 @@ account suspension and registration states change without anyone editing this fi
 |---|---|---|
 | Twilio | `twilio@biteperk.com.au` | Accounts `Biteperk-staging` + `Biteperk-production` (SIDs unchanged — only the owner moved) |
 | Retell | `biteperk@gmail.com` | Workspaces **Biteperk** (production) + **Staging** |
-| Twilio (legacy) | Algorythmos | The original account holding `+61 2 7501 1140` — **another project, not ours** |
-| Retell (legacy) | `retellai@algorythmos.com.au` | Org `org_f0DPXgKIQTMJL4je` — still serves live traffic until the cutover |
 
 ⚠️ The Retell login is a **personal Gmail**, not a company mailbox. That is a knowingly accepted
 exposure (no admin recovery, tied to one person), tracked in
 [`deploy/runbooks/vendor-hardening.md`](deploy/runbooks/vendor-hardening.md) §2 — not an oversight.
 
+Anything on an **Algorythmos** account is a different company's infrastructure and is out of scope
+(§4).
+
 ---
 
-## 1. Two estates — know which one you are touching
-
-The most expensive mistake is treating "the BitePerk number" as one thing. It is two estates that
-happen to appear side by side in old notes.
-
-### BitePerk platform numbers — these are ours
+## 1. BitePerk owns exactly two numbers
 
 | Number | Environment | Account | Takes a call today? | SMS? |
 |---|---|---|---|---|
 | `+61 468 202 846` | **Production** | Biteperk-production | ❌ No Retell agent bound yet | ✅ Enabled (never actually sent) |
 | `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ❌ No Retell agent bound yet | ✅ Enabled, stamped `Unverified` |
 
-### Not BitePerk platform infrastructure — do not wire these
+That is the whole platform estate. If a number is not in this table, **it is not ours to wire** —
+do not put it in a `restaurants` row, do not register it with Retell, and do not "reconcile" it
+against the Twilio inventory.
 
-| Number | What it actually is | Rule |
-|---|---|---|
-| `+61 2 5504 1140` | **Published marketing line** — website, NAP, GBP, directories | Brand fact owned by `biteperk-website/src/data/site.ts`. Never goes in a `restaurants` row or Retell. |
-| `+61 2 7501 1140` | **Algorythmos project line** — currently still serving Natalia's Bistro | Being migrated off (§4). Not part of the platform estate going forward. |
+Two numbers get mistaken for platform numbers often enough to name:
 
-**`+61 2 5504 1140` is not a VoxTable line.** It must stay byte-identical everywhere it appears,
-and where it terminates is not recorded in this repo. Do not wire it to Retell, do not put it in a
-`restaurants` row, and do not "reconcile" it against the Twilio inventory.
-
-⚠️ **`(02) 7501 1140` appears in the brand table as a print-only demo line** — the same number as
-`+61 2 7501 1140`, in national format. **Printed collateral cannot be recalled.** Audit
-`biteperk-website` before treating that number as disposable: if it is genuinely in print, it must
-be kept alive or transferred into the BitePerk account, not abandoned.
+- **`+61 2 5504 1140` — the published marketing line.** Website, NAP block, Google Business
+  Profile, directory citations. It must stay byte-identical everywhere it appears, and where it
+  terminates is not recorded in this repo. It is a brand fact owned by
+  `biteperk-website/src/data/site.ts`, not a VoxTable line.
+- **`+61 2 7501 1140` — an Algorythmos number.** A different company's (§4). It also appears in the
+  brand table as the print-only demo line `(02) 7501 1140` — same number, national format — so
+  **check `biteperk-website` before anyone assumes it can just disappear**; printed collateral
+  cannot be recalled, and that is a brand question for Algorythmos and BitePerk to settle, not a
+  telephony one.
 
 ---
 
@@ -95,9 +92,9 @@ the only shape available, not a misconfiguration. Never "fix" it by moving the n
 | Sends SMS as `BitePerk` | ⚠️ Sender ID `BUce1fa0ad…` still in review; one-way only when approved |
 | Survives a Retell outage | ❌ **No Disaster Recovery URL** (verified blank) — callers would get dead air |
 
-**This number is not live and does not replace `+61 2 7501 1140`.** Twilio-side wiring is done;
-Retell-side and database-side are not. A call to it today reaches nothing, and that is the
-fail-closed design working, not a fault to route around.
+**This number is not live yet.** Twilio-side wiring is done; Retell-side and database-side are not.
+A call to it today reaches nothing, and that is the fail-closed design working, not a fault to
+route around. It becomes BitePerk's production line — and Natalia's line — at §8 step 6.
 
 ---
 
@@ -176,71 +173,59 @@ can be left alone.
 
 ---
 
-## 4. Legacy — `+61 2 7501 1140` (Algorythmos, being migrated off)
+## 4. Algorythmos — a different company, out of scope
 
-**Account:** *My first Twilio account* `AC949756ac8dc4aced25b15b2e0bbb3a61` — **Algorythmos, not BitePerk**
-**Type:** AU **Local** `02` — **voice only, cannot ever send SMS**
+`+61 2 7501 1140`, its Twilio account and its Retell workspace belong to **Algorythmos**, a
+separate legal entity. **They are not BitePerk infrastructure and are not tracked here.** Do not
+add BitePerk resources to them, do not fund them from BitePerk, and do not treat that number as a
+spare line.
 
-This is the number behind the `algorythmos` SIP trunk that Natalia's Bistro customers dial today,
-bound to the live Bella agent in the **legacy** Retell workspace:
+They appear in this repo's history only because BitePerk's pilot ran on borrowed infrastructure
+before it had its own. Everything BitePerk operates now lives on the two numbers in §1.
 
-| Resource | Identifier |
-|---|---|
-| Retell agent | `agent_7b7a5f6c21c9968ee88afd3bac` |
-| Retell LLM | `llm_2cad4da643f2beb4d07dd0b311d1` |
-| Retell workspace | `org_f0DPXgKIQTMJL4je` (legacy, `retellai@algorythmos.com.au`) |
+**What this means in practice:**
 
-🔴 **The account was suspended for lack of funds as at 5 Aug 2026.** While suspended, this number
-does not take calls — meaning **Natalia's line is down**, not degraded. Verify the balance before
-investigating any "customers can't get through" report; the answer is usually here, not in the code.
+- The pilot line stopped answering when that account was suspended on 5 Aug 2026. That is
+  Algorythmos's account to fund, not ours, and it is not a BitePerk incident.
+- **Natalia's Bistro moves onto `+61 468 202 846`**, BitePerk's own production number. Until she is
+  cut over and has re-pointed her call forwarding, she has no working line — because the one she
+  had was never ours. That is the cost of the separation, and it is understood.
+- **A Local `02` number can never send SMS** — worth keeping because the constraint is generic, not
+  about this number. Searching Twilio's AU Local inventory with the SMS capability returns zero
+  results, so any SMS design assuming a landline can text is wrong at the number-type level; the
+  fix is a Mobile number, not configuration.
 
-### Its disposition
-
-**Natalia's Bistro is migrating onto `+61 468 202 846`.** Until that cutover completes this number
-still carries her traffic, so it is *legacy*, not *dead*.
-
-Three rules while it exists:
-
-1. **Keep this account funded through the cutover.** Because the migration moves Natalia's to a
-   *different* number rather than porting this one, her old path stays intact — which makes it the
-   rollback. A suspended account is a rollback that does not work.
-2. **Do not delete the legacy Retell workspace.** `call_logs.recording_url` points at recordings
-   hosted in *that* workspace, and the dashboard plays them back
-   (`apps/frontend/src/pages/dashboard/LiveFeedDetailPage.jsx`). "Transcripts & call recordings" is
-   a sold plan feature — letting the workspace lapse is a customer-visible regression, and there is
-   an open retention review in `deploy/runbooks/recording-data-inventory.md`.
-3. **Resolve the print-collateral question (§1) before handing the number back.**
-
-After cutover it goes back to the Algorythmos project. It does not become a spare BitePerk number.
-
-**A Local `02` number can never send SMS** — this is not a setting. Searching Twilio's AU Local
-inventory with the SMS capability returns zero results. Any SMS design that assumes this number
-can text is wrong at the number-type level, and the fix is a Mobile number, not configuration.
+The one genuinely permanent tie is `SYNTH_EMAIL_DOMAIN`
+(`bookings.vocotable.algorythmos.com.au`), baked into the attendee identity of every existing
+Cal.com booking and immutable per [`NAMES.md`](NAMES.md) §4. It is internal-only and never shown to
+a customer. The remaining tie — the API hostname the agents call back to — is being removed by
+moving to `api.biteperk.com.au` (§8).
 
 ---
 
 ## 5. What the numbers can and cannot do
 
-| | `+61 2 7501 1140` | `+61 468 202 846` | `+61 468 203 234` |
-|---|---|---|---|
-| Estate | **Legacy — Algorythmos** | BitePerk platform | BitePerk platform |
-| Environment | Migrating off | Production | Staging |
-| Number type | Local `02` | Mobile `+61 4` | Mobile `+61 4` |
-| Monthly cost | ~$3.00 | $8.25 | $8.25 |
-| Inbound voice | ✅ (when account funded) | ✅ Twilio side only | ✅ Twilio side only |
-| Outbound voice | ❌ out of scope — no trunk termination anywhere | ❌ | ❌ |
-| Outbound SMS | ❌ **never possible** | ✅ enabled, **never sent** | ✅ enabled, **never sent** + `Unverified` |
-| Inbound SMS | ❌ | ❌ no webhook (deliberate — nothing consumes it) | ❌ no webhook (deliberate) |
-| Bella answers | ✅ | ❌ | ❌ |
-| Voice region | — | AU1 | AU1 |
-| Messaging region | n/a | US1 | US1 |
+Both numbers BitePerk owns. Nothing else belongs in this table.
 
-**"Enabled" is not "works".** Both platform numbers report Messaging enabled with an approved AU
-registration, but **neither has ever sent a message**. Treat outbound SMS as unproven until one
-test SMS is delivered to a real handset from each number.
+| | `+61 468 202 846` | `+61 468 203 234` |
+|---|---|---|
+| Environment | Production | Staging — never customer-facing |
+| Account | Biteperk-production | Biteperk-staging |
+| Number type | Mobile `+61 4` | Mobile `+61 4` |
+| Monthly cost | $8.25 | $8.25 |
+| Inbound voice | ✅ Twilio side only — no Retell agent bound | ✅ Twilio side only |
+| Outbound voice | ❌ deliberate — no trunk termination configured | ❌ |
+| Outbound SMS | ✅ enabled, **never sent** | ✅ enabled, **never sent** + `Unverified` |
+| Inbound SMS | ❌ no webhook (deliberate — nothing consumes it) | ❌ no webhook (deliberate) |
+| Bella answers | ❌ not yet | ❌ not yet |
+| Voice region | AU1 | AU1 |
+| Messaging region | US1 | US1 |
 
-Current Twilio line rental across the estate: **~$19.50/month** — of which **$16.50 is BitePerk's**
-(the two mobiles); the `02` rental belongs to the Algorythmos project.
+**"Enabled" is not "works".** Both report Messaging enabled with an approved AU registration, but
+**neither has ever sent a message**. Treat outbound SMS as unproven until one test SMS is delivered
+to a real handset from each.
+
+BitePerk's Twilio line rental: **$16.50/month.**
 
 ---
 
@@ -260,10 +245,10 @@ numbers pointing at one agent is a valid intermediate state.
 13 Aug 2026 the BitePerk-workspace agents still call back to **`vocotable.algorythmos.com.au`** for
 `webhook_url` and all five tool URLs — so every call still resolves DNS and terminates TLS on a
 domain BitePerk does not own. Moving the agents without moving the API hostname to
-`api.biteperk.com.au` relocates the agent and keeps the dependency. Two further residuals are
-permanent or near-permanent: `SYNTH_EMAIL_DOMAIN` (`bookings.vocotable.algorythmos.com.au`) is baked
-into every existing Cal.com booking and can never change (NAMES.md §4), and the legacy Retell
-workspace must stay alive because it hosts the call recordings the dashboard plays back.
+`api.biteperk.com.au` relocates the agent and keeps the dependency. One further residual is
+permanent: `SYNTH_EMAIL_DOMAIN` (`bookings.vocotable.algorythmos.com.au`) is baked into the
+attendee identity of every existing Cal.com booking and can never change (NAMES.md §4). It is
+internal-only and never shown to a customer.
 
 **"The number is configured, so it works."** Console green ticks confirm configuration, not
 connectivity. Only a real test call that lands in `call_logs` with the right `restaurant_id`
@@ -324,34 +309,41 @@ reason.
 
 Ordered. The sequence matters — each step is either reversible or gated by the one above it.
 
-### Restore and make safe to fail
+Natalia's has no working line until step 4 completes — the one she used was never BitePerk's.
+That makes this a restoration, not a migration, and it is the reason the order below starts where
+it does.
+
+### Stand the estate up
 
 | # | Action | Blocks | Owner |
 |---|---|---|---|
-| 1 | **Enable auto-recharge + low-balance alert on both BitePerk accounts** | A repeat of the outage below. Both sat at **$11.75** with no auto-recharge. | Sam |
-| 2 | **Recharge the Algorythmos account** — deliberately, as the rollback path for the cutover, not as a stopgap | Natalia's line is **down now**; also makes rollback possible at all | Sam |
-| 3 | Payment method on both Retell workspaces (Staging's trial has **ended**) | Every Retell number operation — they 402 without it | Sam |
-| 4 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first | Plain-RTP media today; dead air during a Retell outage | — |
+| 1 | **Auto-recharge + low-balance alert on both accounts** ✅ recharged 13 Aug — arm auto-recharge so it cannot recur | A dead balance suspends an account and every call fails in ways that look like a code bug | Sam |
+| 2 | Build both agents in the **Staging** workspace (currently empty) | Any staging call | — |
+| 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first | Plain-RTP media today; dead air during a Retell outage | — |
+| 4 | Move the API hostname to `api.biteperk.com.au` and repoint the agents' `webhook_url` + 5 tool URLs | The last operational tie to the other company — see §6 | — |
 
-### Make the platform estate real
+### Put Natalia's back on the air
 
 | # | Action | Blocks | Owner |
 |---|---|---|---|
-| 5 | Build both agents in the **Staging** Retell workspace (currently empty) | Any staging call | — |
-| 6 | Move the API hostname to `api.biteperk.com.au` and repoint the agents' `webhook_url` + 5 tool URLs | The migration meaning anything — see §6 | — |
-| 7 | Import `+61 468 202 846` into the Biteperk workspace (`inbound_webhook_url` only) and prove it against a **temporary** `restaurants` row | Cutover; doing it this way risks nothing live | — |
-| 8 | Cut Natalia's over: env → health → SQL rebind → venue re-forwards | Closing the Algorythmos dependency | Sam + venue |
-| 9 | **Send one real test SMS from each number** | Outbound SMS is enabled but unproven | — |
+| 5 | Import `+61 468 202 846` into the Biteperk workspace (`inbound_webhook_url` only) and prove it against a **temporary** `restaurants` row | Everything below; doing it this way risks nothing live | — |
+| 6 | Bind Natalia's: env → health check → SQL rebind (`twilio_phone_number`, `retell_agent_id`) | Her service | — |
+| 7 | Venue re-points call forwarding to `+61 468 202 846` | Her service — **needs the restaurant, so give them notice** | Sam + venue |
+| 8 | **Send one real test SMS from each number** | Outbound SMS is enabled but has never been sent | — |
+
+There is **no rollback to the old number** — it belongs to another company and is not coming back.
+Step 5 exists to compensate: the new number is proven end-to-end against a throwaway restaurant row
+before Natalia's is touched, so a failure delays the restoration rather than deepening it.
 
 ### Follow-ups
 
 | # | Action | Blocks | Owner |
 |---|---|---|---|
-| 10 | Add staging's Account SID to sender-ID ticket `28926493` | Branded-SMS testing on staging | Sam |
-| 11 | Export legacy call recordings before any decommission | Dashboard playback of historical calls (a sold feature) | — |
-| 12 | Audit `biteperk-website` for `(02) 7501 1140` in print collateral | Whether the legacy number can ever be released | Sam |
-| 13 | Decide Direct Customer vs ISV before the first auto-provisioned venue | Per-venue provisioning at scale | Sam |
-| 14 | Move the Retell login to `retell@biteperk.com.au` | Accepted exposure — cheapest to fix while the workspace is near-empty | Sam |
+| 9 | Add staging's Account SID to sender-ID ticket `28926493` | Branded-SMS testing on staging | Sam |
+| 10 | Fix the recording exposure ([#173](https://github.com/biteperk/voxtable/issues/173)) — cheapest **before** real calls exist | Nothing today; every real call once Natalia's is live inherits it | — |
+| 11 | Settle `(02) 7501 1140` in brand collateral **with Algorythmos** | A brand question, not a telephony one | Sam |
+| 12 | Decide Direct Customer vs ISV before the first auto-provisioned venue | Per-venue provisioning at scale | Sam |
+| 13 | Move the Retell login to `retell@biteperk.com.au` | Accepted exposure — cheapest while the workspace is near-empty | Sam |
 
 ---
 
@@ -362,3 +354,4 @@ Ordered. The sequence matters — each step is either reversible or gated by the
 | 13 Aug 2026 | File created. Production `+61 468 202 846` and staging `+61 468 203 234` bought and wired (trunk + messaging service, AU1 voice / US1 messaging). Confirmed the live Bella number sits on the **Algorythmos** account, not either BitePerk account, and that account is suspended for funds. |
 | 13 Aug 2026 | **Full console audit of both numbers.** Corrected: both show Traffic Status **Messaging enabled** and an **Approved** AU Mobile compliance registration — the earlier "pending registration" note was wrong. Confirmed origination URI, region split, messaging-service binding on both. Recorded trunk hardening state (§3a): Secure Trunking **off** and Disaster Recovery URL **blank** on both. Noted the stale compliance prompts (§3b) are for lost numbers, not ours. |
 | 13 Aug 2026 | **Restructured around ownership.** BitePerk's vendor estate moved to company-owned identities — Twilio under `twilio@biteperk.com.au` (same Account SIDs), Retell under a new account with **Biteperk** and **Staging** workspaces. §1 now separates the two BitePerk platform numbers from the marketing and Algorythmos lines, which are *not* platform infrastructure. §4 rewritten as the legacy/handover entry: Natalia's is migrating to `+61 468 202 846`, and until then the old account must stay **funded** because it is the rollback, and the legacy Retell workspace must stay **alive** because it hosts the recordings the dashboard plays back. §5 corrected — SMS is *enabled but never sent* on both numbers, not "pending". §6 gained the deprecated `inbound_agent_id` field, the dual-binding fallback trap, and the residual Algorythmos dependencies (agents still call back to `vocotable.algorythmos.com.au`; `SYNTH_EMAIL_DOMAIN` is permanent). §8 re-ordered into a gated sequence. |
+| 13 Aug 2026 | **Algorythmos removed from scope.** It is a separate company; its number, Twilio account and Retell workspace are no longer tracked here. §1 states plainly that BitePerk owns two numbers and everything else is out of scope; §4 is now a boundary note rather than an inventory entry; §5 and §8 cover only BitePerk's estate. The recordings that appeared to block separation were **test calls, not customer audio**, so no export is needed and the legacy workspace carries no obligation — the exposure mechanism behind them is still tracked in [#173](https://github.com/biteperk/voxtable/issues/173) because it will apply to real calls. **There is no rollback to the old number**, so the cutover now proves the new one against a throwaway restaurant row first. |
