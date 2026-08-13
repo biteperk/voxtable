@@ -115,5 +115,12 @@ the gitignored `deploy/runbooks/vendor-accounts.local.md`.
 | Natalia's Bistro | `agent_7b7a5f6c21c9968ee88afd3bac` | `llm_2cad4da643f2beb4d07dd0b311d1` | `org_f0DPXgKIQTMJL4je` (live) |
 | Cuban Corner Parramatta | `agent_93864e80fbaab14b5168e8f7b9` | `llm_adc242c622b8dffd32c24495edbd` | `org_f0DPXgKIQTMJL4je` (live) |
 
+A parallel set exists in the **BitePerk-owned workspace** (`biteperk@gmail.com`),
+built 13 Aug 2026 and **not yet live** — production still serves from the org
+above. Natalia's `agent_5b5df167525452db98cda2112f` / `llm_18ad6f5adedc865b7ffd02a121e1`;
+Cuban Corner `agent_2892d65ceace4e68d8a3f3e80c` / `llm_53c6e9de9aac3b60270ffdd6bcba`.
+The backend can only ever serve **one** Retell account at a time (one API key,
+one webhook secret), so switching is an atomic cutover, never a gradual move.
+
 Each venue owns a **separate LLM object**. Sharing one is the trap that makes a
 prompt edit for one venue rewrite another venue's live agent.

@@ -1,0 +1,1 @@
+Hi, you've called {{restaurant_name}}. I'm Bella, the restaurant's AI assistant — just so you know, this call is recorded and transcribed so I can take your booking or order. If you'd rather speak with a person, just say so, or call back during opening hours. Now, how can I help?
