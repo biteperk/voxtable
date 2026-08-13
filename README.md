@@ -88,4 +88,36 @@ npm run smoke:isolation     # multi-tenant onboarding isolation
 - **KDS**: Firebase Hosting target `kds`, deployed separately with `npm run build:kds && firebase deploy --only hosting:kds`.
 - Production builds: `npm run build:backend` / `build:frontend` / `build:kds`; run with `start:backend`; migrate with `db:migrate:prod`.
 
+## Environments — staging first, always
+
+Every environment in this project is paired: something is proven in staging before the same change is made in production. That applies to code (`integration` → staging, promoted to `main` → production) and equally to the third-party consoles, where there is no pipeline to enforce it.
+
+**Twilio has two BitePerk accounts** under one organisation, owned by `twilio@biteperk.com.au` and switched with the account picker at the top-left of the console:
+
+| Account | Account SID | State (13 Aug 2026) |
+|---|---|---|
+| `Biteperk-staging` | `AC8116857da2064ef3251533f3ade56f32` | Active · owns `+61 468 203 234` · $11.75, **no auto-recharge** |
+| `Biteperk-production` | `ACd423bd09e9649e552a0b6d19a9eed338` | Active · owns `+61 468 202 846` · $11.75, **no auto-recharge** |
+
+**Check which account is selected before changing anything** — the two consoles look nearly identical. Number purchases, Messaging Services, sender IDs, SIP trunks and webhook URLs all go into staging first. Twilio has no promote step: "promotion" means repeating the change by hand in the production account, so write down what you did.
+
+> ⚠️ **A third account exists and it is not ours.** The live AU voice number behind the `algorythmos` SIP trunk sits on the **Algorythmos** account `AC949756ac8dc4aced25b15b2e0bbb3a61` — a separate project BitePerk is migrating away from. It was suspended for lack of funds on 5 Aug 2026, which is why that line stopped answering. Before quoting, wiring or testing **any** number, read [`NUMBERS.md`](NUMBERS.md): it is the telephony source of truth and the four numbers are not interchangeable.
+
+### Branded SMS (ACMA sender ID) — in flight
+
+Australia's SMS Sender ID Register went live on 1 July 2026. Any *alphanumeric* sender ID (a brand name where the phone number would normally be) that isn't registered with ACMA gets replaced with the word **`Unverified`** on the recipient's handset, grouped in with scam messages.
+
+**We have no exposure right now** — VoxTable sends SMS from the Twilio number, not a sender ID. So this is pre-emptive work, and the order matters: **register first, change the config second.** You cannot switch on a branded sender and register afterwards.
+
+Status as of 13 August 2026:
+
+- ✅ `Biteperk-production` upgraded off trial
+- ✅ Trust Hub Primary Customer Profile **approved** — Bundle SID `BU975db7eebfb0b5525d6762f3d77e2087`
+- ⏳ `BitePerk` sender ID **lodged 11 Aug and in review** — Twilio ticket `28926493`
+- ⏳ ABR authorised-contact email + myID identity — outstanding, and both are slow
+
+⚠️ A sender ID is bound **per Account SID**. It is registered against production only, so SMS sent from `Biteperk-staging` is stamped `Unverified` on the handset regardless of approval — a branded-SMS test on staging measures the wrong thing until staging's SID is added to that ticket.
+
+Full checklist, evidence pack and decisions: [`deploy/runbooks/acma-sender-id-registration.md`](deploy/runbooks/acma-sender-id-registration.md).
+
 Read `CLAUDE.md` and `deploy/runbooks/` before touching production.
