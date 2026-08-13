@@ -185,6 +185,14 @@ const stripeGateway: CheckoutGateway = {
           mode: "payment",
           // Cards + wallets only for v1. Async methods (BECS) confirm days
           // later; the kitchen must not cook on a promise.
+          //
+          // Managed Payments is on by default for accounts created from ~2026
+          // and picks the payment methods itself — with it enabled, passing
+          // payment_method_types is a hard error, not a warning, so session
+          // creation fails and no link is ever sent. Opting out is deliberate:
+          // letting Stripe choose would quietly reintroduce the async methods
+          // the line above exists to exclude.
+          managed_payments: { enabled: false },
           payment_method_types: ["card"],
           // client_reference_id already means restaurant_id in the billing
           // flow (restaurantIdForEvent reads it as one) — keep that meaning;
@@ -201,7 +209,10 @@ const stripeGateway: CheckoutGateway = {
           },
           success_url: `${returnBaseUrl()}/order/paid?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${returnBaseUrl()}/order/cancelled`
-        },
+          // The assertion below is only for managed_payments: the API accepts
+          // it but the pinned stripe@18 types predate it. Drop the assertion
+          // once the SDK is upgraded (see the Accounts v2 work).
+        } as Stripe.Checkout.SessionCreateParams,
         // Keyed on amount, not order version: kitchen taps bump the version
         // without changing what's owed, and those retries must replay; an
         // amount change must mint a fresh session.
