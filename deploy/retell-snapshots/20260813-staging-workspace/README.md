@@ -24,15 +24,44 @@ the string `algorythmos` appears nowhere in either object; 15 read-back checks
 cover that, the six tools, the empty `default_dynamic_variables`, the AI +
 recording disclosure, and that the two venues hold different LLMs.
 
-## Not yet usable for a live call
+## Wired and verified end-to-end (13 Aug 2026)
 
-Staging's `RETELL_API_KEY` / `RETELL_WEBHOOK_SECRET` come from the Secret
-Manager secret `voxtable-stg-retell-api-key` in `bp-voxtable-stg`, last updated
-**7 Aug 2026** — before this workspace's key existed. Until that secret holds the
-Staging workspace key **and** the Cloud Run service picks it up on a new
-revision, every call from these agents will be rejected 401 by the signature
-gate. The staging API itself is healthy (`/health` → 200) and the gate is
-confirmed on (unsigned `POST /retell/webhook` → 401).
+Everything short of real audio is proven:
 
-A staging call also needs a `restaurants` row bound to `+61 468 203 234`, which
-is data rather than configuration.
+| Step | Result |
+|---|---|
+| Staging secret holds the Staging workspace key | ✅ version 4 of `voxtable-stg-retell-api-key` |
+| Cloud Run picked it up | ✅ `voxtable-stg-api-00031-qps`, `voxtable-stg-worker-00027-9pl` |
+| Signed request verifies | ✅ **204** signed with the Staging key |
+| Wrong key rejected | ✅ **401** |
+| `+61 468 203 234` imported to the Staging workspace | ✅ webhook mode, no static agent binding |
+| Venue row exists and resolves | ✅ `VoxTable Staging Venue` `33333333-…`, 4 tables, 09:00–23:00 daily |
+| Dialled number → venue | ✅ returns `override_agent_id: agent_b9087333…` with **fresh** dynamic variables (correct venue name, timezone, today's dates) |
+| Unknown number fails closed | ✅ `restaurant_unconfigured: true`, no agent override |
+
+That the dynamic variables come back computed per call — not the frozen
+`default_dynamic_variables` — is the specific thing worth re-checking after any
+change, because the failure is silent: the caller simply hears a stale venue
+name and wrong dates.
+
+⚠️ **The `termination_uri` on the imported number is a placeholder.** It was set
+to `voxtable-staging-au1.pstn.twilio.com`, inferred from the trunk's friendly
+name rather than read from Twilio — and NUMBERS.md §3a records trunk termination
+as *deliberately unconfigured* on both trunks, because VoxTable is inbound-only.
+The field is inert for inbound calls (inbound is driven by the trunk's
+*origination* URI pointing at Retell), so it does not affect anything today. But
+do not trust it: if outbound SIP is ever needed, configure a real termination
+domain in Twilio first. DNS cannot confirm it either way — `*.pstn.twilio.com`
+is a wildcard and resolves for any invented subdomain.
+
+## Re-seeding a staging venue
+
+The staging Cloud SQL instance is **private-only**, so it cannot be reached from
+a laptop even with the Cloud SQL proxy. The route that works is a throwaway
+Cloud Run job cloned from `voxtable-stg-migrate`'s network settings —
+`--network voxtable-stg-private --subnet voxtable-stg-cloud-run`,
+`--vpc-egress private-ranges-only`, the `cloudsql-instances` annotation, the
+`voxtable-stg-runtime` service account and the `voxtable-stg-database-url`
+secret. Pass SQL base64-encoded through an env var and use a custom `--args`
+delimiter (`^@^`), because gcloud splits `--args` on commas and any real script
+is full of them. Delete the job afterwards; it is not Terraform-managed.
