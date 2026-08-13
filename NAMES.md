@@ -118,8 +118,10 @@ the gitignored `deploy/runbooks/vendor-accounts.local.md`.
 | Natalia's Bistro | `agent_5b5df167525452db98cda2112f` | `llm_18ad6f5adedc865b7ffd02a121e1` |
 | Cuban Corner Parramatta | `agent_2892d65ceace4e68d8a3f3e80c` | `llm_53c6e9de9aac3b60270ffdd6bcba` |
 
-A second workspace, **Staging**, exists in the same account and is currently
-empty.
+The **Staging** workspace in the same account carries a parallel pair, built
+13 Aug and pointed at the staging API rather than production:
+Natalia's `agent_b9087333b7030f0cee06a19ffc` / `llm_7c0a5c84498b81a5c723521038ef`;
+Cuban Corner `agent_a9c17694d805908f4b9a7bd4b9` / `llm_472328dafafd697a3c8e67230457`.
 
 **Legacy — Algorythmos-owned** (`retellai@algorythmos.com.au`, org
 `org_f0DPXgKIQTMJL4je`). A **different company's** workspace, out of BitePerk's
