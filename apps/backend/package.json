@@ -38,7 +38,8 @@
     "smoke:voice-kill-switch": "tsx scripts/smoke-voice-kill-switch.ts",
     "smoke:notification-lease": "tsx scripts/smoke-notification-lease.ts",
     "smoke:payments": "tsx scripts/smoke-payments.ts",
-    "menu:import": "tsx scripts/import-menu.ts"
+    "menu:import": "tsx scripts/import-menu.ts",
+    "recordings:export": "tsx scripts/export-retell-recordings.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",
