@@ -283,13 +283,43 @@ jobs:
 
       - run: npm ci
 
+      # Every VITE_* value is now defined per GitHub Environment. There is
+      # deliberately NO repository-level fallback: until 13 Aug 2026 there was
+      # one, holding production's values, and because neither environment
+      # overrode it BOTH staging and production builds silently inherited the
+      # production API and the production Firebase project. Staging was not
+      # isolated and nothing failed to say so. An absent variable must break the
+      # build loudly, which is what the check below does.
+      - name: Check this environment defines its own frontend config
+        env:
+          DEPLOY_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in VITE_API_BASE_URL VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN \
+                   VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_STORAGE_BUCKET \
+                   VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::GitHub Environment '${DEPLOY_ENV}' does not define: ${missing[*]}" >&2
+            echo "Add them to that environment's variables. Do NOT add a repository-level" >&2
+            echo "fallback — a shared default is how staging ends up built against production." >&2
+            exit 1
+          fi
+          echo "${DEPLOY_ENV} defines all required frontend config."
+
       - name: Build frontend + KDS
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
-          # THIS job builds the artifact that actually gets deployed. If these
-          # are missing the build fails by design — far better than shipping a
-          # bundle where nobody can sign in and nothing says why.
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
@@ -300,6 +330,44 @@ jobs:
         run: |
           npm run build:frontend
           npm run build:kds
+
+      # Config can look right and the artifact still be wrong, so assert on the
+      # bundle that actually ships. A staging build carrying a production
+      # hostname means staging traffic reaching production data — the failure
+      # this whole separation exists to prevent.
+      - name: Assert the bundle carries no other environment
+        env:
+          DEPLOY_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          EXPECT_API: ${{ vars.VITE_API_BASE_URL }}
+          EXPECT_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+        run: |
+          set -euo pipefail
+          bundle_dir="apps/frontend/dist/assets"
+          [ -d "$bundle_dir" ] || { echo "::error::no frontend bundle at $bundle_dir" >&2; exit 1; }
+
+          # Match on authDomain, NOT the bare project id. `vocotable` appears in
+          # every bundle regardless of environment — it is the immutable legacy
+          # prefix on localStorage keys and window events (NAMES.md §4) — so a
+          # bare project-id grep passes even on a staging bundle. authDomain is
+          # unambiguous.
+          expect_host="$(printf '%s' "$EXPECT_API" | sed -E 's#^https?://##; s#/.*$##')"
+          grep -rqF "$expect_host"        "$bundle_dir" || { echo "::error::bundle does not reference ${DEPLOY_ENV} API ${expect_host}" >&2; exit 1; }
+          grep -rqF "$EXPECT_AUTH_DOMAIN" "$bundle_dir" || { echo "::error::bundle does not reference ${DEPLOY_ENV} Firebase auth domain ${EXPECT_AUTH_DOMAIN}" >&2; exit 1; }
+
+          # Markers belonging to the OTHER environment. Extend deliberately.
+          if [ "$DEPLOY_ENV" = "staging" ]; then
+            forbidden="vocotable.algorythmos.com.au api.biteperk.com.au vocotable.firebaseapp.com"
+          else
+            forbidden="voxtable-stg-api bp-voxtable-stg"
+          fi
+          for marker in $forbidden; do
+            if grep -rqF "$marker" "$bundle_dir"; then
+              echo "::error::${DEPLOY_ENV} bundle contains '${marker}', which belongs to the other environment." >&2
+              echo "This build would send ${DEPLOY_ENV} traffic to the wrong place. Check that environment's VITE_* variables." >&2
+              exit 1
+            fi
+          done
+          echo "${DEPLOY_ENV} bundle references only ${DEPLOY_ENV}."
 
       - name: Resolve Firebase Hosting artifact tag
         id: hosting-artifact

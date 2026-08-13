@@ -88,13 +88,29 @@ jobs:
 
       - name: Validate deployment configuration
         env:
+          DEPLOY_ENV: ${{ steps.deploy-meta.outputs.deploy_env }}
           DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
           WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
         run: |
           set -euo pipefail
 
-          : "${WORKLOAD_IDENTITY_PROVIDER:?Set GCP_WORKLOAD_IDENTITY_PROVIDER in the GitHub environment}"
-          : "${DEPLOY_SERVICE_ACCOUNT:?Set GCP_DEPLOY_SERVICE_ACCOUNT in the GitHub environment}"
+          # Say WHICH environment is missing WHAT. A bare `${VAR:?}` prints a
+          # shell parameter-expansion error, which reads like a workflow bug and
+          # sends people to the wrong place. As at 13 Aug 2026 the `production`
+          # environment genuinely has no GCP_DEPLOY_SERVICE_ACCOUNT, so a
+          # promotion to main fails here — deliberately and legibly, rather than
+          # half-deploying.
+          missing=()
+          [ -n "${WORKLOAD_IDENTITY_PROVIDER:-}" ] || missing+=("GCP_WORKLOAD_IDENTITY_PROVIDER")
+          [ -n "${DEPLOY_SERVICE_ACCOUNT:-}" ]     || missing+=("GCP_DEPLOY_SERVICE_ACCOUNT")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::GitHub Environment '${DEPLOY_ENV}' is missing: ${missing[*]}" >&2
+            echo "Nothing has been deployed. Add the variable(s) to that environment," >&2
+            echo "and if the backing service account does not exist yet, create it first" >&2
+            echo "in the Terraform repo (biteperk/biteperk-cloud-platform)." >&2
+            exit 1
+          fi
 
       - uses: google-github-actions/auth@v3
         with:
