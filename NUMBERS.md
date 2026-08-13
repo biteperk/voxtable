@@ -318,7 +318,9 @@ it does.
 | # | Action | Blocks | Owner |
 |---|---|---|---|
 | 1 | **Auto-recharge + low-balance alert on both accounts** ✅ recharged 13 Aug — arm auto-recharge so it cannot recur | A dead balance suspends an account and every call fails in ways that look like a code bug | Sam |
-| 2 | Build both agents in the **Staging** workspace (currently empty) | Any staging call | — |
+| 2 | ~~Build both agents in the **Staging** workspace~~ ✅ 13 Aug — both built, every URL pointing at the staging API, verified by 15 read-back assertions | — | — |
+| 2a | **Put the Staging workspace key into `voxtable-stg-retell-api-key`** (`bp-voxtable-stg`) and roll a revision — the secret still holds a 7 Aug value, so staging 401s its own agents | Any staging call | Sam |
+| 2b | Insert a `restaurants` row bound to `+61 468 203 234` | Any staging call resolving a venue | — |
 | 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first | Plain-RTP media today; dead air during a Retell outage | — |
 | 4 | Move the API hostname to `api.biteperk.com.au` and repoint the agents' `webhook_url` + 5 tool URLs | The last operational tie to the other company — see §6 | — |
 
