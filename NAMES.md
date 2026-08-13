@@ -122,10 +122,11 @@ A second workspace, **Staging**, exists in the same account and is currently
 empty.
 
 **Legacy — Algorythmos-owned** (`retellai@algorythmos.com.au`, org
-`org_f0DPXgKIQTMJL4je`). ⚠️ **Still serving every real call** until the cutover
-in [`NUMBERS.md`](NUMBERS.md) §8, and it cannot simply be deleted afterwards —
-`call_logs.recording_url` points into it and the dashboard plays those
-recordings back:
+`org_f0DPXgKIQTMJL4je`). A **different company's** workspace, out of BitePerk's
+scope. It still answers the pilot line until Natalia's is cut over
+([`NUMBERS.md`](NUMBERS.md) §8), and it carries no obligation afterwards — the
+calls recorded there were tests, not customer audio. Recorded only so the ids
+below are not mistaken for current ones:
 
 | Venue | Retell agent | Retell LLM |
 |---|---|---|
