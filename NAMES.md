@@ -110,17 +110,31 @@ Recorded here because nothing else outside the database holds them, and a
 missed rebind fails silently at call time. Keys and account credentials stay in
 the gitignored `deploy/runbooks/vendor-accounts.local.md`.
 
-| Venue | Retell agent | Retell LLM | Workspace |
-|---|---|---|---|
-| Natalia's Bistro | `agent_7b7a5f6c21c9968ee88afd3bac` | `llm_2cad4da643f2beb4d07dd0b311d1` | `org_f0DPXgKIQTMJL4je` (live) |
-| Cuban Corner Parramatta | `agent_93864e80fbaab14b5168e8f7b9` | `llm_adc242c622b8dffd32c24495edbd` | `org_f0DPXgKIQTMJL4je` (live) |
+**Going forward — BitePerk-owned account** (`biteperk@gmail.com`), workspace
+**Biteperk**. These are the ids new work should target:
 
-A parallel set exists in the **BitePerk-owned workspace** (`biteperk@gmail.com`),
-built 13 Aug 2026 and **not yet live** — production still serves from the org
-above. Natalia's `agent_5b5df167525452db98cda2112f` / `llm_18ad6f5adedc865b7ffd02a121e1`;
-Cuban Corner `agent_2892d65ceace4e68d8a3f3e80c` / `llm_53c6e9de9aac3b60270ffdd6bcba`.
-The backend can only ever serve **one** Retell account at a time (one API key,
-one webhook secret), so switching is an atomic cutover, never a gradual move.
+| Venue | Retell agent | Retell LLM |
+|---|---|---|
+| Natalia's Bistro | `agent_5b5df167525452db98cda2112f` | `llm_18ad6f5adedc865b7ffd02a121e1` |
+| Cuban Corner Parramatta | `agent_2892d65ceace4e68d8a3f3e80c` | `llm_53c6e9de9aac3b60270ffdd6bcba` |
+
+A second workspace, **Staging**, exists in the same account and is currently
+empty.
+
+**Legacy — Algorythmos-owned** (`retellai@algorythmos.com.au`, org
+`org_f0DPXgKIQTMJL4je`). ⚠️ **Still serving every real call** until the cutover
+in [`NUMBERS.md`](NUMBERS.md) §8, and it cannot simply be deleted afterwards —
+`call_logs.recording_url` points into it and the dashboard plays those
+recordings back:
+
+| Venue | Retell agent | Retell LLM |
+|---|---|---|
+| Natalia's Bistro | `agent_7b7a5f6c21c9968ee88afd3bac` | `llm_2cad4da643f2beb4d07dd0b311d1` |
+| Cuban Corner Parramatta | `agent_93864e80fbaab14b5168e8f7b9` | `llm_adc242c622b8dffd32c24495edbd` |
+
+The backend can only ever serve **one** Retell account per environment (one API
+key, one webhook secret), so switching is an atomic cutover, never a gradual
+move — which is why both sets are recorded rather than one being deleted.
 
 Each venue owns a **separate LLM object**. Sharing one is the trap that makes a
 prompt edit for one venue rewrite another venue's live agent.

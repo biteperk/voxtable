@@ -64,29 +64,54 @@ authenticator and not SMS.
 
 ---
 
-## 2. Retell — the one with a structural problem
+## 2. Retell — ⚠️ SUPERSEDED 13 Aug 2026, resolved a different way
 
-**Current state:** login `retellai@algorythmos.com.au` (Auth0, email + MFA or
-"Continue with Google"), org `org_f0DPXgKIQTMJL4je`, Pay As You Go. MFA codes
-and "action required" notices are delivered to `skalaliya@gmail.com`.
+**The "add a second owner" plan below was not taken.** BitePerk instead stood up
+a **separate, company-owned Retell account** (`biteperk@gmail.com`) with two
+workspaces — **Biteperk** (production) and **Staging** — and both venue agents
+were rebuilt there on 13 Aug. That is a stronger outcome than a second owner on
+the agency's org: the new estate shares no tenancy, billing or org membership
+with Algorythmos at all.
 
-The login identity is a mailbox on the **retired agency domain**. If that Google
-Workspace lapses, is reclaimed, or the relationship ends, you lose the ability
-to authenticate to the service that answers your customers' phone calls. This is
-the same failure mode as the API hostname — and unlike the hostname, you cannot
-fix it with a DNS record.
+**It is not finished, and the risk below is still live until it is.** Production
+still authenticates to the **legacy** org for every real call. The cutover is
+tracked in [`../../NUMBERS.md`](../../NUMBERS.md) §8.
 
-1. Confirm in the Retell console who the org owner actually is — do not infer it
-   from which inbox the mail lands in.
-2. Add a **second owner** on a `biteperk.com.au` address.
-3. Enrol authenticator MFA on that new owner.
-4. Only then decide whether to retire the `algorythmos.com.au` login. Do not
-   remove it until the new owner is proven to work — losing both leaves nobody.
-5. While you are in there, Track L needs the agent's data-storage / retention
-   setting and whether recordings are downloadable and deletable via their API.
+Two things this resolution does **not** fix, both deliberate:
 
-**Verify:** sign in as the new `biteperk.com.au` owner in a private window and
-confirm you can edit agent `agent_7b7a5f6c21c9968ee88afd3bac`.
+- **The legacy org cannot simply be abandoned.** `call_logs.recording_url`
+  points at recordings hosted inside `org_f0DPXgKIQTMJL4je`, and the dashboard
+  plays them back (`LiveFeedDetailPage.jsx`) as an advertised plan feature. It
+  must stay alive and funded until recordings are exported or consciously
+  written off — see Track L and `recording-data-inventory.md`.
+- **The new login is `biteperk@gmail.com`, a personal Gmail, not a company
+  mailbox.** This is a *knowingly accepted* exposure, not an oversight: no admin
+  recovery, no delegation, tied to one person — structurally similar to the
+  agency-domain problem this was meant to solve, differing mainly in that
+  BitePerk controls the mailbox. Moving it to `retell@biteperk.com.au` is
+  cheapest now, while the workspace is nearly empty; it becomes progressively
+  harder as numbers, call history and billing accumulate.
+
+### Original state, for the record
+
+Login `retellai@algorythmos.com.au` (Auth0, email + MFA or "Continue with
+Google"), org `org_f0DPXgKIQTMJL4je`, Pay As You Go. MFA codes and "action
+required" notices delivered to `skalaliya@gmail.com`. The login identity was a
+mailbox on the **retired agency domain** — if that Workspace lapsed or was
+reclaimed, authentication to the service answering customer calls was lost, and
+unlike the API hostname it could not be fixed with a DNS record.
+
+### Still outstanding
+
+1. Complete the production cutover to the Biteperk workspace (NUMBERS.md §8).
+2. Enrol authenticator MFA on the new account.
+3. Move the login to `retell@biteperk.com.au`.
+4. Track L still needs the agent's data-storage / retention setting and whether
+   recordings are downloadable and deletable via their API — now doubly relevant,
+   because that API is the export path for point 1 above.
+
+**Verify:** sign in to the new account in a private window and confirm you can
+edit agent `agent_5b5df167525452db98cda2112f` (Natalia's, Biteperk workspace).
 
 ---
 

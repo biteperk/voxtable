@@ -16,10 +16,18 @@ NAMES.md §per-venue resources.
 ## 0. Before anything: the two slow vendors
 
 - **Twilio number.** An AU number cannot be bought without an approved
-  Regulatory Bundle matching country AND type (~3 business days to approve).
-  Voice-only venues need a **Local** number ($3/mo, needs an AU address
-  record); SMS needs **Mobile** ($8.25/mo). Check the bundle BEFORE promising
-  a go-live date. Friendly-name the number `voxtable: <venue-slug> <uuid8>`.
+  Regulatory Bundle matching country AND type. **Approval is fast if the account
+  already has a verified customer profile** (instant, observed 13 Aug 2026) or if
+  you clone an approved bundle from another account in the org (instant, no
+  review queue); it is ~1–3 days only when building a bundle from documents on an
+  account with no profile. Voice-only venues need a **Local** number ($3/mo, needs
+  an AU address record); SMS needs **Mobile** ($8.25/mo — the only AU type doing
+  voice *and* SMS). Check the bundle BEFORE promising a go-live date.
+  Friendly-name the number `voxtable: <venue-slug> <uuid8>`.
+  ⚠️ **Before the first auto-provisioned venue**, settle the Direct Customer vs
+  ISV/Reseller question — per-venue numbers may need per-venue End User objects,
+  in which case bundle cloning does not help. See
+  [`twilio-account-topology.md`](twilio-account-topology.md).
 - **Terms.** While `TERMS_DOCUMENT_SET_VERSION=DRAFT`, the API agreement step
   refuses in production — commercial terms are handled on paper/email until
   the versioned CSA publishes. Track the acceptance backfill.
