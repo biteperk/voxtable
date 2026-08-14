@@ -34,17 +34,24 @@ const SUITES: Array<{ name: string; script: string }> = [
 ];
 
 async function health(): Promise<boolean> {
-  try {
-    const [h, r] = await Promise.all([
-      fetch(`${baseUrl}/health`),
-      fetch(`${baseUrl}/readyz`).catch(() => null)
-    ]);
-    console.log(`/health → ${h.status}${r ? ` · /readyz → ${r.status}` : ""}`);
-    return h.ok;
-  } catch (error) {
-    console.error(`health check unreachable: ${(error as Error).message}`);
-    return false;
+  // Staging runs min-instances=0 — the first request of a run can land in the
+  // cold-start window and see a 503 that means "waking up", not "broken".
+  // Retry a few times before judging.
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const h = await fetch(`${baseUrl}/health`);
+      if (h.ok) {
+        const r = await fetch(`${baseUrl}/readyz`).catch(() => null);
+        console.log(`/health → ${h.status}${r ? ` · /readyz → ${r.status}` : ""}`);
+        return true;
+      }
+      console.log(`/health → ${h.status} (attempt ${attempt}/4 — cold start?)`);
+    } catch (error) {
+      console.log(`health unreachable (attempt ${attempt}/4): ${(error as Error).message}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   }
+  return false;
 }
 
 async function main(): Promise<void> {
