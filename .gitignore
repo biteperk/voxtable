@@ -99,3 +99,6 @@ Cuban-Corner/
 # numbers and contact details — the decisions belong in the runbooks, the
 # documents belong in Drive.
 /*.pdf
+
+# Generated project dashboard (rebuild with: npm run dashboard)
+/voxtable-dashboard.html
