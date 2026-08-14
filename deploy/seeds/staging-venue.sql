@@ -68,6 +68,19 @@ INSERT INTO restaurant_members (user_id, restaurant_id, role)
 VALUES ('fBufe7XgkBYDDoQGXZj4aQ50c4T2', '33333333-3333-4333-8333-333333333333', 'owner')
 ON CONFLICT (user_id, restaurant_id) DO NOTHING;
 
+-- The machine smoke user: a password identity in the STAGING Firebase project
+-- (biteperk@gmail.com, uid below; password lives in staging Secret Manager as
+-- voxtable-stg-smoke-user-password). smoke:staging mints its token as this
+-- user, so it needs the same membership a human member would. Note staging's
+-- DASHBOARD_ALLOWED_EMAILS currently lists ONLY biteperk@gmail.com.
+INSERT INTO users (id, email, name, email_verified)
+VALUES ('HWdoEEhHvGZuOvwQ0AsxKXdYZHI2', 'biteperk@gmail.com', 'BitePerk Smoke', true)
+ON CONFLICT (id) DO UPDATE SET email_verified = true;
+
+INSERT INTO restaurant_members (user_id, restaurant_id, role)
+VALUES ('HWdoEEhHvGZuOvwQ0AsxKXdYZHI2', '33333333-3333-4333-8333-333333333333', 'owner')
+ON CONFLICT (user_id, restaurant_id) DO NOTHING;
+
 -- 4 tables, matching the live rows created at bring-up (labels + capacities
 -- read back from staging 14 Aug 2026). Bare ON CONFLICT so either the fixed
 -- id or UNIQUE (restaurant_id, label) absorbs the duplicate — the live rows
