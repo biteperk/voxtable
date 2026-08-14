@@ -1,4 +1,10 @@
-# Staging Cloud Run bootstrap — one-time service configuration
+# Staging Cloud Run bootstrap
+
+> ⚠️ **Twilio staging is a *sibling account*, not a subaccount.** `Biteperk-staging` has
+> `Parent Account SID: N/A`. That distinction matters: subaccounts inherit some parent
+> configuration, siblings inherit nothing — regulatory bundles must be cloned per account and
+> alphanumeric sender IDs have no clone API at all. See
+> [`twilio-account-topology.md`](twilio-account-topology.md). — one-time service configuration
 
 > ## ⛔ SUPERSEDED by Terraform (6 Aug 2026)
 >
@@ -10,7 +16,7 @@
 >
 > What Terraform does **not** do, and the only parts of this runbook still live:
 > - **§1 — provisioning the staging vendor identities** (a separate Retell agent and
->   a Twilio subaccount + number for staging; never production's).
+>   a Twilio sibling account + number for staging; never production's).
 > - Putting the three secrets (`RETELL_API_KEY`, `TWILIO_ACCOUNT_SID`,
 >   `TWILIO_AUTH_TOKEN`) on that repo's **staging GitHub Environment**.
 >   `RETELL_AGENT_ID` and `TWILIO_PHONE_NUMBER` deliberately go NOWHERE in the
@@ -70,7 +76,7 @@ gcloud config set project "$PROJECT"
 
 ## 1. Provision the real staging vendor accounts (human step)
 
-Staging gets its **own** Retell agent and Twilio subaccount/number — never
+Staging gets its **own** Retell agent and Twilio sibling account/number — never
 production's. Prod creds in staging means staging can place/receive calls and text
 real customers, and it confuses webhook signature routing (Retell/Twilio verify by
 URL). Collect six values:
@@ -80,9 +86,9 @@ URL). Collect six values:
 | `RETELL_AGENT_ID` | Retell → new staging agent (clone Bella's config; point webhooks at the staging API URL) |
 | `RETELL_API_KEY` | Retell → API key for the staging workspace |
 | `RETELL_WEBHOOK_SECRET` | Retell → signing secret for the staging agent's webhook |
-| `TWILIO_ACCOUNT_SID` | Twilio → **staging subaccount** SID |
-| `TWILIO_AUTH_TOKEN` | Twilio → staging subaccount auth token |
-| `TWILIO_PHONE_NUMBER` | Twilio → an AU test number on the staging subaccount, E.164 (`+61…`) |
+| `TWILIO_ACCOUNT_SID` | Twilio → **staging sibling account** SID |
+| `TWILIO_AUTH_TOKEN` | Twilio → staging sibling account auth token |
+| `TWILIO_PHONE_NUMBER` | Twilio → an AU test number on the staging sibling account, E.164 (`+61…`) |
 
 Point the staging Retell agent's webhooks and the Twilio number's voice/status
 webhooks at the staging API host once step 3 confirms its URL.

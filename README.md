@@ -90,18 +90,18 @@ npm run smoke:isolation     # multi-tenant onboarding isolation
 
 ## Environments — staging first, always
 
-Every environment in this project is paired: something is proven in staging before the same change is made in production. That applies to code (`integration` → staging, promoted to `main` → production) and equally to the third-party consoles, where there is no pipeline to enforce it.
+Everything is proven in staging before the same change is made in production. That covers code
+(`integration` → staging, promoted to `main` → production) and equally the vendor consoles,
+where no pipeline can enforce it.
 
-**Twilio has two BitePerk accounts** under one organisation, owned by `twilio@biteperk.com.au` and switched with the account picker at the top-left of the console:
+**The full doctrine lives in [`CLAUDE.md` → Environments and promotion](CLAUDE.md#environments-and-promotion)**
+— what "promote" means for each plane (only one is automatic), which environment owns which
+account, the register of things that genuinely *cannot* be rehearsed in staging, and what is
+mechanically enforced. Telephony specifics are in [`NUMBERS.md`](NUMBERS.md).
 
-| Account | Account SID | State (13 Aug 2026) |
-|---|---|---|
-| `Biteperk-staging` | `AC8116857da2064ef3251533f3ade56f32` | Active · owns `+61 468 203 234` · $11.75, **no auto-recharge** |
-| `Biteperk-production` | `ACd423bd09e9649e552a0b6d19a9eed338` | Active · owns `+61 468 202 846` · $11.75, **no auto-recharge** |
-
-**Check which account is selected before changing anything** — the two consoles look nearly identical. Number purchases, Messaging Services, sender IDs, SIP trunks and webhook URLs all go into staging first. Twilio has no promote step: "promotion" means repeating the change by hand in the production account, so write down what you did.
-
-> ⚠️ **A third account exists and it is not ours.** The live AU voice number behind the `algorythmos` SIP trunk sits on the **Algorythmos** account `AC949756ac8dc4aced25b15b2e0bbb3a61` — a separate project BitePerk is migrating away from. It was suspended for lack of funds on 5 Aug 2026, which is why that line stopped answering. Before quoting, wiring or testing **any** number, read [`NUMBERS.md`](NUMBERS.md): it is the telephony source of truth and the four numbers are not interchangeable.
+Two things that catch people out: **data never promotes** (a venue seeded in staging does not
+exist in production), and **production is still the VM** — a `main` merge does not deploy the
+backend.
 
 ### Branded SMS (ACMA sender ID) — in flight
 

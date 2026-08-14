@@ -4,6 +4,21 @@
 > products, hostnames, GCP/Terraform resources, and the legacy identities that must
 > never rename. Never type an infrastructure name from memory; check the registry.
 
+> 🚦 **Before changing anything outside your own machine — merging, deploying, clicking a
+> vendor console, running SQL — read
+> [`CLAUDE.md` → Environments and promotion](CLAUDE.md#environments-and-promotion).**
+> Non-negotiables, each of which has already gone wrong once:
+>
+> 1. Say which environment and account you are in before any vendor action.
+> 2. After copying config between environments, **assert** the other environment's
+>    identifiers appear nowhere in the result — do not trust the rewrite.
+> 3. **Data does not promote.** Seeding staging changes nothing in production.
+> 4. Read config back from the API after writing it; never trust the write response.
+> 5. **"Enabled" is not "works."** Only a real call or a delivered message proves a path.
+> 6. Some things **cannot** be rehearsed in staging (buying a number, branded SMS, Stripe
+>    live mode, the venue cutover). That register is in CLAUDE.md §C — check it before
+>    assuming a staging test is available.
+
 Guidance for AI coding agents and other automated assistants working in this repository.
 
 ## Project Summary
