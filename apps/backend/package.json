@@ -48,6 +48,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.6.2",
     "firebase-admin": "^14.2.0",
+    "helmet": "^8.3.0",
     "libphonenumber-js": "^1.13.3",
     "pg": "^8.23.0",
     "retell-sdk": "^5.60.0",

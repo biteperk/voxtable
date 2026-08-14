@@ -163,7 +163,11 @@ async function main(): Promise<void> {
     assert(rows[0].status === "sent", `row should be 'sent', got ${rows[0].status}`);
     let sms = await smsRows(PHONE);
     assert(sms.length === 1, `expected 1 sms outbox row, got ${sms.length}`);
-    assert(String(sms[0].body).includes("https://checkout.stripe.com"), "sms body carries the link");
+    const smsBody = String(sms[0].body);
+    const linkStart = smsBody.indexOf("https://");
+    assert(linkStart >= 0, "sms body carries a link");
+    const smsLink = smsBody.slice(linkStart).split("\n")[0].split(" ")[0];
+    assert(new URL(smsLink).origin === "https://checkout.stripe.com", "sms link is a checkout.stripe.com URL");
     assert(sessionCounter === 1, "exactly one Stripe session created");
     console.log("✓ 1. link created: 1 payment row, 1 sms, 1 session");
 

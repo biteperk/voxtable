@@ -79,7 +79,9 @@ test("SMS copy: venue first, total, url, expiry, and no invitation to reply", ()
   });
   assert.ok(sms.startsWith("Natalia's Bistro"));
   assert.ok(sms.includes("$28.50"));
-  assert.ok(sms.includes("https://checkout.stripe.com/c/pay/cs_test_abc"));
+  const link = sms.match(/https:\/\/\S+/)?.[0] ?? "";
+  assert.equal(new URL(link).origin, "https://checkout.stripe.com");
+  assert.equal(new URL(link).pathname, "/c/pay/cs_test_abc");
   assert.ok(sms.includes("45 minutes"));
   assert.ok(sms.includes("Do not reply"));
   // Alphanumeric sender IDs are one-way; nothing may invite a response.

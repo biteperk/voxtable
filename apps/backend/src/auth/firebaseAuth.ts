@@ -88,10 +88,13 @@ async function firebaseAuthMiddleware(
     return;
   }
 
+  // Linear-time parse. This header is attacker-controlled and pre-auth, so no
+  // regex with overlapping quantifiers belongs here.
   const header = request.header("authorization") ?? "";
-  const match = header.match(/^Bearer\s+(.+)$/i);
+  const token =
+    header.slice(0, 7).toLowerCase() === "bearer " ? header.slice(7).trim() : "";
 
-  if (!match) {
+  if (!token) {
     return next(
       new AppError(401, "MISSING_BEARER_TOKEN", "Authorization: Bearer <token> required.")
     );
@@ -111,7 +114,7 @@ async function firebaseAuthMiddleware(
   try {
     const app = ensureInitialized();
     decoded = await withTimeout(
-      getAuth(app).verifyIdToken(match[1]!),
+      getAuth(app).verifyIdToken(token),
       env.FIREBASE_AUTH_TIMEOUT_MS,
       () => new AppError(503, "AUTH_UNAVAILABLE", "Token verification timed out — please retry.")
     );

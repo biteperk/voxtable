@@ -68,8 +68,12 @@ export function synthesizedEmail(phone: string | null | undefined): string {
  *  `+6145****140`. Used so logs aren't a PII liability. */
 export function redactPhone(phone: string | null | undefined): string {
   if (!phone) return "unknown";
-  const m = phone.match(/^(\+\d{2,3}\d{2})\d+(\d{3})$/);
-  return m ? `${m[1]}****${m[2]}` : phone.slice(0, 6) + "***";
+  // Shape check + slicing instead of an ambiguous regex: the input arrives
+  // from webhooks, so masking must stay linear-time.
+  const digits = /^\+\d{8,15}$/.test(phone) ? phone.slice(1) : null;
+  if (!digits) return phone.slice(0, 6) + "***";
+  const prefix = digits.slice(0, digits.length === 8 ? 4 : 5);
+  return `+${prefix}****${digits.slice(-3)}`;
 }
 
 // --- create payload builder --------------------------------------------------

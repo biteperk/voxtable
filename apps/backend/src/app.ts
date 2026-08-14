@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 
 import { env } from "./config/env";
 import { adminRouter } from "./routes/admin";
@@ -31,7 +32,12 @@ function corsOrigin() {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  return configured?.length ? configured : true;
+  // Unconfigured means local development only (env.ts refuses to boot on a
+  // reachable host with an empty allowlist), so the fallback admits localhost
+  // origins rather than reflecting whatever Origin the request carries.
+  return configured?.length
+    ? configured
+    : [/^https?:\/\/localhost(:\d+)?$/, /^https?:\/\/127\.0\.0\.1(:\d+)?$/];
 }
 
 export function createApp() {
@@ -39,6 +45,11 @@ export function createApp() {
 
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
+  // Security headers must come from the app, not the proxy: nginx only fronts
+  // the VM, so Cloud Run revisions would otherwise serve with none at all.
+  // Helmet defaults stand — the default CSP costs a JSON API nothing (browsers
+  // only enforce it on documents) and covers any HTML error page express emits.
+  app.use(helmet({ strictTransportSecurity: { maxAge: 31536000 } }));
   app.use(
     cors({
       origin: corsOrigin(),

@@ -377,7 +377,7 @@ const ragCard = (r) => `<div class="rag rag-${r.level}">
   ${r.blocking.length ? `<div class="rag-links">${r.blocking.map((b) => `<a href="${esc(b.url)}" target="_blank" rel="noopener">#${b.number}</a>`).join(" ")}</div>` : ""}
 </div>`;
 
-const kpi = (value, label, sub = "", cls = "") => `<div class="kpi ${cls}"><div class="kpi-v">${value}</div><div class="kpi-l">${esc(label)}</div>${sub ? `<div class="kpi-s">${esc(sub)}</div>` : ""}</div>`;
+const kpi = (value, label, sub = "", cls = "") => `<div class="kpi ${cls}"><div class="kpi-v">${esc(value)}</div><div class="kpi-l">${esc(label)}</div>${sub ? `<div class="kpi-s">${esc(sub)}</div>` : ""}</div>`;
 
 const wsRows = [...content.workstreams.map((w) => ({ label: w.name, value: (wsBuckets.get(w.key) ?? []).length })),
   { label: "Other", value: wsBuckets.get("other").length }].filter((r) => r.value > 0);
