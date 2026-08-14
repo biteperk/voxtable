@@ -27,19 +27,27 @@
 
 import { Retell } from "retell-sdk";
 
+import { mintSmokeIdToken } from "./lib/firebaseToken";
+
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
 const restaurantId =
-  process.env.DEFAULT_RESTAURANT_ID ?? "11111111-1111-4111-8111-111111111111";
-const signingKey = process.env.RETELL_API_KEY;
+  process.env.SMOKE_RESTAURANT_ID ??
+  process.env.DEFAULT_RESTAURANT_ID ??
+  "11111111-1111-4111-8111-111111111111";
+// The server verifies with RETELL_WEBHOOK_SECRET ?? RETELL_API_KEY — sign with
+// whichever value the TARGET actually verifies against. Staging has a separate
+// webhook secret, so SMOKE_RETELL_SIGNING_KEY takes precedence.
+const signingKey = process.env.SMOKE_RETELL_SIGNING_KEY ?? process.env.RETELL_API_KEY;
 
 if (!signingKey) {
   console.error(
     [
-      "smoke:retell-signed requires RETELL_API_KEY — the SAME value the server verifies with.",
+      "smoke:retell-signed requires SMOKE_RETELL_SIGNING_KEY (or RETELL_API_KEY) — the SAME",
+      "value the server verifies with (RETELL_WEBHOOK_SECRET ?? RETELL_API_KEY on the server).",
       "Start the server with verification on and a matching key, then run this:",
       "",
       "  RETELL_VERIFY_SIGNATURE=true RETELL_API_KEY=smoke-test-key npm run dev:backend",
-      "  RETELL_API_KEY=smoke-test-key npm run smoke:retell-signed"
+      "  SMOKE_RETELL_SIGNING_KEY=smoke-test-key npm run smoke:retell-signed"
     ].join("\n")
   );
   process.exit(1);
@@ -137,15 +145,42 @@ async function main(): Promise<void> {
     },
     args: {
       restaurant_id: restaurantId,
-      customer_name: "Retell Signed Smoke",
+      customer_name: "SMOKE Retell Signed",
       customer_phone: "+61400000001",
       date,
       time: "19:00",
       party_size: 2,
-      notes: "Created by npm run smoke:retell-signed"
+      notes: "SMOKE — created by npm run smoke:retell-signed"
     }
   });
   console.log("signed create-booking ✓", JSON.stringify(booking).slice(0, 160));
+
+  // Cleanup: cancel the smoke booking so repeated runs against a shared
+  // staging database don't slowly eat the venue's tables. /bookings is a
+  // Firebase-gated dashboard route, so this needs the smoke token; without
+  // one the booking stays behind, marker-named for manual cleanup.
+  const bookingId = (booking as { booking_id?: string }).booking_id;
+  if (bookingId) {
+    const token = await mintSmokeIdToken();
+    if (token) {
+      const cancel = await fetch(`${baseUrl}/bookings/${bookingId}/cancel`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+          "x-restaurant-id": restaurantId
+        },
+        body: JSON.stringify({})
+      });
+      console.log(
+        cancel.ok
+          ? `cleanup: booking ${bookingId} cancelled ✓`
+          : `cleanup: cancel returned ${cancel.status} — remove SMOKE bookings manually`
+      );
+    } else {
+      console.log(`[SKIP] cleanup — no SMOKE_FIREBASE_* env; SMOKE booking ${bookingId} left behind`);
+    }
+  }
 
   console.log("\n✅ signature path verified end-to-end (gate rejects bad sigs, accepts good ones).");
 }
