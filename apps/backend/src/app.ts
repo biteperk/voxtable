@@ -47,15 +47,9 @@ export function createApp() {
   app.disable("x-powered-by");
   // Security headers must come from the app, not the proxy: nginx only fronts
   // the VM, so Cloud Run revisions would otherwise serve with none at all.
-  app.use(
-    helmet({
-      // JSON API — there is no document for a CSP to police, and a policy here
-      // would only hide misconfiguration elsewhere.
-      contentSecurityPolicy: false,
-      crossOriginEmbedderPolicy: false,
-      strictTransportSecurity: { maxAge: 31536000 }
-    })
-  );
+  // Helmet defaults stand — the default CSP costs a JSON API nothing (browsers
+  // only enforce it on documents) and covers any HTML error page express emits.
+  app.use(helmet({ strictTransportSecurity: { maxAge: 31536000 } }));
   app.use(
     cors({
       origin: corsOrigin(),
