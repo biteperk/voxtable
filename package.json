@@ -49,6 +49,7 @@
     "audit:kds": "npm audit --workspace=@vocotable/kds --omit=dev",
     "audit:production": "npm run audit:backend && npm run audit:frontend && npm run audit:kds",
     "audit:all": "npm audit",
-    "firebase": "firebase"
+    "firebase": "firebase",
+    "dashboard": "node scripts/project-dashboard.mjs"
   }
 }
