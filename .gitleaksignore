@@ -1,0 +1,13 @@
+# Reviewed and allowlisted — each entry is deliberate, not a leak.
+#
+# Firebase WEB API keys are public by design: they ship inside every frontend
+# bundle and are restricted by Firebase Auth authorized domains, not secrecy.
+apps/frontend/.env.example:gcp-api-key:19
+scripts/configure-github-env-vars.sh:gcp-api-key:31
+#
+# Fake credentials used to test that the log redaction actually redacts.
+apps/backend/src/utils/logger.test.ts:jwt:38
+apps/backend/src/utils/logger.test.ts:stripe-access-token:66
+#
+# Documentation placeholder (<retell-api-key>), not a value.
+apps/backend/docs/retellai-phase1.md:generic-api-key:201

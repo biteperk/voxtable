@@ -161,7 +161,7 @@
                   <label class="onboarding-field onboarding-field-sm"><span>Postcode</span><input value="2040" /></label>
                 </div>
                 <div class="onboarding-field"><span>Cuisine <em>(pick up to 5)</em></span>
-                  <div class="onboarding-chips">${CUISINES.map((c) => `<button class="onboarding-chip${chosenCuisines.has(c) ? " is-on" : ""}" onclick="toggleCuisine('${c.replace(/'/g, "\\'")}')">${c}</button>`).join("")}</div>
+                  <div class="onboarding-chips">${CUISINES.map((c) => `<button class="onboarding-chip${chosenCuisines.has(c) ? " is-on" : ""}" onclick="toggleCuisine('${c.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}')">${c}</button>`).join("")}</div>
                 </div>
                 ${nextBtn("Save &amp; continue")}
               </div>

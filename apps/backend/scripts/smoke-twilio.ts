@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     })
   );
 
-  if (!twiml.includes("<Response>") || !twiml.includes("<Sip>")) {
+  if (!twiml.includes("<Response>") || !twiml.includes("<Sip")) {
     throw new Error(`Expected TwiML with SIP dial, received: ${twiml}`);
   }
 

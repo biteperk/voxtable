@@ -1,0 +1,58 @@
+name: Security
+
+# Static security analysis + secret scanning on every PR, plus a weekly sweep
+# so newly-published rules still get a look at unchanged code.
+#
+# Semgrep gates on ERROR-severity findings only; WARNINGs are visible in the
+# job log but do not block. Gitleaks scans the checked-out tree (not history);
+# reviewed false positives live in .gitleaksignore with a reason each.
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - integration
+      - main
+  schedule:
+    - cron: "0 18 * * 0" # Mondays 04:00 Sydney
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Static security analysis
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Semgrep (fail on ERROR severity)
+        run: >
+          semgrep scan
+          --config p/javascript
+          --config p/typescript
+          --config p/expressjs
+          --severity ERROR
+          --error
+
+      - name: Semgrep report-only pass (WARNINGs, non-blocking)
+        run: >
+          semgrep scan
+          --config p/javascript
+          --config p/typescript
+          --config p/expressjs
+          || true
+
+  gitleaks:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run gitleaks over the checked-out tree
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tgz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          /tmp/gitleaks dir . --no-banner --redact --exit-code 1

@@ -1,0 +1,9 @@
+# Build outputs and generated files
+dist/
+dist-*/
+node_modules/
+voxtable-dashboard.html
+# Historical vendor config snapshots — reference material, not shipped code
+deploy/retell-snapshots/
+# Static marketing/demo assets
+public/

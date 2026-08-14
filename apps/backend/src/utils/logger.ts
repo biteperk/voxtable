@@ -141,7 +141,10 @@ const REDACTION_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
     replacement: "[REDACTED-JWT]"
   },
   {
-    regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+    // Each quantified part is anchored by a literal the part itself cannot
+    // match, so the regex stays linear on the multi-megabyte webhook payloads
+    // it runs over.
+    regex: /\b[A-Za-z0-9_%+-]+(?:\.[A-Za-z0-9_%+-]+)*@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g,
     replacement: "[REDACTED-EMAIL]"
   },
   { regex: /\+\d{10,15}\b/g, replacement: "+[REDACTED-PHONE]" },
