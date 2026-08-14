@@ -56,6 +56,34 @@
     { "idea": "Multilingual Bella (Mandarin, Vietnamese, Greek, Italian) once English is stable", "status": "deliberately deferred — scope guardrail" }
   ],
 
+  "naming": {
+    "$comment": "Mirror of NAMES.md for the team view. NAMES.md is the registry of record — when they disagree, NAMES.md wins. Update BOTH when a name changes.",
+    "hostnames": [
+      { "surface": "Client dashboard", "new": "app.biteperk.com.au", "old": "vocotable.biteperk.com.au · vocotable.web.app", "status": "Firebase Hosting target app; custom domain pending (Phase 5)" },
+      { "surface": "Backend API", "new": "api.biteperk.com.au", "old": "vocotable.algorythmos.com.au", "status": "Live on both names since 3 Aug; Stripe repointed; Cal.com → Retell → Twilio cut over one at a time" },
+      { "surface": "Kitchen display", "new": "kds.biteperk.com.au", "old": "kitchen.vocotable.biteperk.com.au · vocotable-kds.web.app", "status": "Firebase Hosting target kds; custom domain pending (Phase 5)" },
+      { "surface": "Public brand site", "new": "biteperk.com.au", "old": "—", "status": "Live (Vox rename shipped 22 Jul)" }
+    ],
+    "infrastructure": [
+      { "thing": "Staging GCP project", "name": "bp-voxtable-stg" },
+      { "thing": "Production GCP project (created at cutover)", "name": "bp-voxtable-prod — always -prod, never -prd (Terraform enforces it)" },
+      { "thing": "Shared registry project", "name": "bp-shared-artifacts" },
+      { "thing": "Docker images", "name": "australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/{api, worker}" },
+      { "thing": "Cloud Run — staging", "name": "voxtable-stg-api · voxtable-stg-worker · voxtable-stg-migrate · Cloud SQL voxtable-stg-postgres" },
+      { "thing": "Cloud Run — production (at cutover)", "name": "voxtable-prod-api · voxtable-prod-worker · voxtable-prod-migrate · voxtable-prod-postgres" },
+      { "thing": "Firebase Hosting (new world)", "name": "bp-voxtable-stg.web.app / bp-voxtable-prod.web.app" },
+      { "thing": "Database roles (Cloud SQL, migration 029)", "name": "voxtable_owner (migrations) / voxtable_app (runtime)" },
+      { "thing": "Infra repo — Terraform source of truth", "name": "biteperk/biteperk-cloud-platform" },
+      { "thing": "Product repo", "name": "biteperk/voxtable (renamed from biteperk/vocotable)" }
+    ],
+    "never_rename": [
+      "bookings.vocotable.algorythmos.com.au — the synthetic-email domain baked into existing Cal.com bookings; must never change",
+      "vocotable_number API field, event/storage keys, and Firebase project ids vocotable / vocotable-497209 — retained until their own migration tier",
+      "Old hostnames keep serving — the migration is additive; nothing is torn down until every vendor webhook is verified on the new name with a live test call",
+      "API A records stay DNS-only (gray cloud) in Cloudflare, and every new hostname must be added to Firebase Auth authorized domains or Google sign-in breaks on it"
+    ]
+  },
+
   "links": {
     "board": "https://github.com/orgs/biteperk/projects/1",
     "repo": "https://github.com/biteperk/voxtable",
