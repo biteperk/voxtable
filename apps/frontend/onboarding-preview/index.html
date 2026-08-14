@@ -161,7 +161,7 @@
                   <label class="onboarding-field onboarding-field-sm"><span>Postcode</span><input value="2040" /></label>
                 </div>
                 <div class="onboarding-field"><span>Cuisine <em>(pick up to 5)</em></span>
-                  <div class="onboarding-chips">${CUISINES.map((c) => `<button class="onboarding-chip${chosenCuisines.has(c) ? " is-on" : ""}" onclick="toggleCuisine('${c.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}')">${c}</button>`).join("")}</div>
+                  <div class="onboarding-chips" data-cuisine-chips>${CUISINES.map((c, i) => `<button class="onboarding-chip${chosenCuisines.has(c) ? " is-on" : ""}" data-cuisine-index="${i}">${c}</button>`).join("")}</div>
                 </div>
                 ${nextBtn("Save &amp; continue")}
               </div>
@@ -206,6 +206,14 @@
         else if (chosenCuisines.size < 5) chosenCuisines.add(c);
         renderMain();
       }
+      // Delegated: chips carry an index into CUISINES, so no cuisine name is
+      // ever embedded in an inline handler string.
+      document.addEventListener("click", (e) => {
+        const chip = e.target.closest("[data-cuisine-index]");
+        if (chip && chip.closest("[data-cuisine-chips]")) {
+          toggleCuisine(CUISINES[Number(chip.dataset.cuisineIndex)]);
+        }
+      });
       function render() { renderSteps(); renderMain(); window.scrollTo(0, 0); }
       window.go = go; window.toggleCuisine = toggleCuisine; window.render = render; window.screen = screen;
       render();
