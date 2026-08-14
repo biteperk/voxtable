@@ -342,8 +342,12 @@ jobs:
           EXPECT_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
         run: |
           set -euo pipefail
-          bundle_dir="apps/frontend/dist/assets"
-          [ -d "$bundle_dir" ] || { echo "::error::no frontend bundle at $bundle_dir" >&2; exit 1; }
+
+          # BOTH bundles are checked. The KDS ships in the same artifact and is
+          # deployed alongside the dashboard, and it talks to the same API — so a
+          # KDS built against the wrong environment is the identical failure,
+          # just on the screen the kitchen stares at all service.
+          bundles="apps/frontend/dist/assets apps/kds/dist/assets"
 
           # Match on authDomain, NOT the bare project id. `vocotable` appears in
           # every bundle regardless of environment — it is the immutable legacy
@@ -351,8 +355,6 @@ jobs:
           # bare project-id grep passes even on a staging bundle. authDomain is
           # unambiguous.
           expect_host="$(printf '%s' "$EXPECT_API" | sed -E 's#^https?://##; s#/.*$##')"
-          grep -rqF "$expect_host"        "$bundle_dir" || { echo "::error::bundle does not reference ${DEPLOY_ENV} API ${expect_host}" >&2; exit 1; }
-          grep -rqF "$EXPECT_AUTH_DOMAIN" "$bundle_dir" || { echo "::error::bundle does not reference ${DEPLOY_ENV} Firebase auth domain ${EXPECT_AUTH_DOMAIN}" >&2; exit 1; }
 
           # Markers belonging to the OTHER environment. Extend deliberately.
           if [ "$DEPLOY_ENV" = "staging" ]; then
@@ -360,14 +362,23 @@ jobs:
           else
             forbidden="voxtable-stg-api bp-voxtable-stg"
           fi
-          for marker in $forbidden; do
-            if grep -rqF "$marker" "$bundle_dir"; then
-              echo "::error::${DEPLOY_ENV} bundle contains '${marker}', which belongs to the other environment." >&2
-              echo "This build would send ${DEPLOY_ENV} traffic to the wrong place. Check that environment's VITE_* variables." >&2
-              exit 1
-            fi
+
+          for bundle_dir in $bundles; do
+            [ -d "$bundle_dir" ] || { echo "::error::no bundle at $bundle_dir — did the build step run?" >&2; exit 1; }
+
+            grep -rqF "$expect_host"        "$bundle_dir" || { echo "::error::${bundle_dir} does not reference the ${DEPLOY_ENV} API ${expect_host}" >&2; exit 1; }
+            grep -rqF "$EXPECT_AUTH_DOMAIN" "$bundle_dir" || { echo "::error::${bundle_dir} does not reference the ${DEPLOY_ENV} Firebase auth domain ${EXPECT_AUTH_DOMAIN}" >&2; exit 1; }
+
+            for marker in $forbidden; do
+              if grep -rqF "$marker" "$bundle_dir"; then
+                echo "::error::${DEPLOY_ENV} bundle ${bundle_dir} contains '${marker}', which belongs to the other environment." >&2
+                echo "This build would send ${DEPLOY_ENV} traffic to the wrong place. Check that environment's VITE_* variables." >&2
+                exit 1
+              fi
+            done
+            echo "  ${bundle_dir}: references only ${DEPLOY_ENV}"
           done
-          echo "${DEPLOY_ENV} bundle references only ${DEPLOY_ENV}."
+          echo "${DEPLOY_ENV} bundles (dashboard + KDS) reference only ${DEPLOY_ENV}."
 
       - name: Resolve Firebase Hosting artifact tag
         id: hosting-artifact
