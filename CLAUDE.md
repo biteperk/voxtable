@@ -14,7 +14,115 @@
 > voice-only forever, one is suspended, one is marketing-only, and the two newest answer
 > nothing yet. This file only narrates; when they disagree, NUMBERS.md wins.
 
+> 🚦 **About to change anything outside your own machine — merge, deploy, click a vendor
+> console, run SQL, buy a number? Read [Environments and promotion](#environments-and-promotion)
+> below.** It is the SSOT for what "staging first" actually means here, which things
+> genuinely **cannot** be rehearsed in staging, and the rules an agent must follow before
+> touching a live account.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Environments and promotion
+
+**The rule: prove it in staging, then repeat it in production.** The rest of this section
+exists because that sentence is not self-executing — "promotion" means five different things
+here, only one is automatic, and a few things cannot be rehearsed at all.
+
+### A. What "promote" means, per plane
+
+Most confusion comes from assuming a merge to `main` moves everything. It moves code.
+
+| Plane | How it reaches production | Automatic? |
+|---|---|---|
+| Application code | merge `integration` → `main` | ✅ CI-gated |
+| Container image | **rebuilt on `main` under a semver tag** — *not* the sha-tagged image staging proved | ⚠️ automatic but **not the same artifact** |
+| Infrastructure | Terraform apply in `biteperk/biteperk-cloud-platform` | ❌ separate repo, manual |
+| Database **schema** | migration job runs before services roll (staging); the VM migrates on restart | ⚠️ partly |
+| Database **data** — venues, menus, bindings | inserted separately in each environment | ❌ **never promotes** |
+| Retell / Twilio / Stripe config | repeated by hand in the other account | ❌ no promote exists |
+
+Two consequences worth internalising. **Seeding a venue in staging does not create it in
+production** — every venue is inserted twice, deliberately. And **production runs an image
+staging never tested**: staging deploys `api:<sha>`, `main` rebuilds as `api:<version>`. Until
+that is promotion-by-digest, "it passed staging" is a statement about the source, not the
+artifact.
+
+### B. Which environment am I touching?
+
+| | Staging | Production |
+|---|---|---|
+| Branch | `integration` | `main` |
+| GCP project | `bp-voxtable-stg` | `bp-voxtable-prod` — **an empty shell**, Cloud Run API not enabled |
+| Backend runtime | Cloud Run (`voxtable-stg-api` / `-worker`) | **The VM** `core-central-vm`, `docker compose`, deployed by hand |
+| API hostname | `voxtable-stg-api-…run.app` | `api.biteperk.com.au` (also `vocotable.algorythmos.com.au`) |
+| Database | Cloud SQL `voxtable-stg-postgres`, private VPC | Postgres on the VM |
+| Retell workspace | **Staging** | **Biteperk** (production) — see [`NAMES.md`](NAMES.md) §6 |
+| Twilio account | `Biteperk-staging` | `Biteperk-production` — see [`NUMBERS.md`](NUMBERS.md) |
+| Phone number | `+61 468 203 234` | `+61 468 202 846` |
+| Stripe | test mode / sandbox | **live mode, same account** |
+
+Vendor state (SIDs, balances, approval statuses) lives in `NUMBERS.md` and is deliberately
+**not duplicated here** — copied state is stale state.
+
+### C. What cannot be rehearsed in staging
+
+This register is the honest part. Claiming universal staging coverage would contradict our own
+runbooks, and an agent that believes the claim will take a risk it does not know it is taking.
+
+| Cannot be staged | Why | Compensating control |
+|---|---|---|
+| Branded SMS (`BitePerk` sender ID) | Sender IDs are bound per Account SID with no clone API; a staging send reads `Unverified`, indistinguishable from a failed registration | `acma-sender-id-registration.md`; add staging's SID to the ticket, or don't test it there |
+| Buying a phone number | One-way, and numbers are not reserved between selection and payment — two were lost mid-purchase | Buy from the unfiltered pool; never promise a specific number |
+| Regulatory bundles / customer profiles | Account-scoped; approval latency differs by account | Repeat the exact field entry recorded in `twilio-account-topology.md` |
+| Direct Customer vs ISV identity model | Explicitly "one of the few places where staging genuinely does not rehearse production" | Settle with Twilio **before** the first auto-provisioned venue |
+| Natalia's number cutover | Deliberately production-first, **no rollback** | Prove the number against a *throwaway* `restaurants` row first — `NUMBERS.md` §8 |
+| Stripe live mode | One account; no "send test event"; live Connect, payouts and refunds cannot be replayed | Sandbox proves the code path; live proves nothing until it runs |
+| Append-only legal ledgers | `agreement_acceptances` has a `BEFORE TRUNCATE` guard (migration 029) | Rehearse on staging data only; production writes are permanent |
+| The venue dress-rehearsal call | It is a production activity by definition — the venue's real line | It *is* the go/no-go gate; treat it as such |
+| DNS, TLS, Cloudflare, Firebase authorized domains | Single-instance, no second copy to practise on | Additive changes only; rollback = point the vendor back |
+
+### D. Rules for agents
+
+Each of these is here because it went wrong, not because it might.
+
+1. **Say which environment and account you are in** before any vendor console or API action.
+2. **After copying config between environments, assert the other environment's identifiers
+   appear nowhere in the result.** Do not trust the rewrite. Cloned staging agents once carried
+   production URLs — a staging test call would have written real bookings.
+3. **Match on unambiguous identifiers.** `vocotable` appears in every frontend bundle
+   regardless of environment (legacy storage keys, NAMES.md §4), so it cannot prove which
+   environment built it. Use the auth domain or the API host.
+4. **Data does not promote.** Seeding staging changes nothing in production.
+5. **Read config back from the API after writing it.** Never trust the write response.
+6. **"Enabled" is not "works."** Only a real call, or a delivered message, proves a path.
+   Both platform numbers report SMS enabled and neither has ever sent one.
+7. **A number lives in exactly one Retell workspace**; importing is delete-then-import with a
+   24–48h support ticket if it fails, and no way back.
+8. **Never point a staging agent, webhook or build at a production hostname** — the reverse is
+   equally true and less obvious.
+
+### E. What is actually enforced
+
+Convention that only lives in prose gets skipped. Enforced today (GitHub Team, since 13 Aug 2026):
+
+- **`main` is protected** — PR required, force-push and deletion blocked, conversation
+  resolution required, and CI's `Validate code and migrations` + `Build, scan, and publish
+  Docker images` must pass. Those two are required precisely because they run on
+  `pull_request`; `frontend-artifacts` does **not**, so requiring it would deadlock every PR.
+- **The `production` environment only accepts deployments from `main`.** This closes a real
+  hole: on 1 Aug, `integration` deployed to the production environment via `workflow_dispatch`.
+- **CI refuses to build** if the environment it is running in has not defined its own frontend
+  config, and **fails if the built bundle contains the other environment's identifiers.**
+
+Deliberately **not** enabled: required reviewers on `production`. CI's `frontend-artifacts` job
+declares `environment: production`, so a reviewer rule would pause CI itself — and with
+`cancel-in-progress: true`, a parked run gets cancelled, `workflow_run.conclusion` becomes
+`cancelled`, and both deploy workflows **skip silently**. Someone would approve a deploy that
+never happened. Fix the concurrency interaction first.
+
+Honest limit: the controls above govern git. **Most production mutations do not go through
+git** — VM `scp` deploys, Twilio and Retell console edits, live SQL, the number cutover. For
+those, §C and §D are the only controls that exist.
 
 ## Project context
 
@@ -64,7 +172,7 @@ To exercise a single integration without a real phone call, hit the routes direc
 
 1. Caller dials the AU number → **Twilio** receives it.
 2. Twilio's SIP trunk `algorythmos` forwards to `sip.retellai.com`. The trunk's Termination URI is set in the Twilio console, not in this repo.
-3. **Retell** matches the called number to the registered `Natalia's Bistro` agent (`inbound_agent_id` on the phone number, set via Retell API). Dynamic variables (`today`, `tomorrow`, `restaurant_name`, etc.) come from the LLM's `default_dynamic_variables` — **not** from our `/retell/inbound` webhook, which only fires when the phone number is registered with a webhook URL rather than a static `inbound_agent_id`.
+3. **Retell** matches the called number and asks **our `/retell/inbound` webhook** which agent to use. The webhook resolves the venue from the *dialled* number (`getRestaurantIdByDialedNumber`) and returns `override_agent_id` plus **freshly computed** `dynamic_variables` (`restaurant_name`, `restaurant_timezone`, `today`, `tomorrow`, `caller_phone`). Verified end-to-end on a real staging call, 13 Aug 2026. *(An earlier version of this file said variables came from the LLM's `default_dynamic_variables` and that the agent was bound by `inbound_agent_id`. Both are wrong: `inbound_agent_id` was **removed by Retell on 31 Mar 2026** in favour of weighted `inbound_agents`, and `default_dynamic_variables` is only a **fallback** that fires when the webhook fails — which is exactly why we keep it empty. See [`NUMBERS.md`](NUMBERS.md) §6.)*
 4. The Retell LLM (GPT-4.1, single-prompt, voice 11labs-Anna en-AU) calls our **custom function** endpoints at `/retell/tools/check-availability` and `/retell/tools/create-booking`. These return snake_case JSON the LLM can read out (`confirmation_message`, `natural_alternatives_message`).
 5. Retell sends lifecycle events to **`/retell/webhook`** (signed). Final `call_analyzed` event includes `call_analysis.custom_analysis_data.{intent, booking_outcome, special_requests, caller_satisfied}` — the keys are configured on the agent via `post_call_analysis_data`.
 6. `apps/backend/src/services/retellService.ts::persistRetellCall` extracts those fields and upserts into `call_logs` (unique on `(provider, provider_call_id)`).
@@ -135,10 +243,11 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
 - **Branded SMS (ACMA sender ID) — IN FLIGHT, read `deploy/runbooks/acma-sender-id-registration.md` before touching SMS senders.** Australia's SMS Sender ID Register went live 1 Jul 2026: any *alphanumeric* sender ID not registered with ACMA is overstamped **`Unverified`** on the handset. **We have no exposure today** — SMS goes out from the Twilio number, not a sender ID — so this is pre-emptive, and the order is register first, flip config second. Progress as of 10 Aug 2026: `Biteperk-production` upgraded off trial; Trust Hub **Primary Customer Profile APPROVED** — Bundle SID `BU975db7eebfb0b5525d6762f3d77e2087` on Account SID `ACd423bd09e9649e552a0b6d19a9eed338` (business verification ran through Persona, `inquiry.withpersona.com`, not Twilio directly); the `BitePerk` sender ID application was **lodged 11 Aug 2026 and is in review** — Twilio ticket **28926493**, sender-ID Bundle SID **`BUce1fa0ad6053c4444f3faca4c7957f25`** (a *different* object from the customer-profile bundle above — don't conflate them), correspondence `senderid@twilio.com` ↔ `sam@biteperk.com.au`. Review is Twilio → carrier/regulator; a fee on approval is possible but unconfirmed. ⚠️ **The sender ID is bound per Account SID**: it is registered against production `ACd423bd09…` only, so any send from another account — including `Biteperk-staging` — is stamped `Unverified` regardless of approval. Adding staging's SID is an open action; see the runbook §5 before planning any staging SMS test. Twilio Inc. is a **Certified telco** on ACMA's approved list, so it can register on our behalf. Two prerequisites are still outstanding and both are slow, so start them early: the **ABR** authorised-contact / service-of-notice email must be current for ABN `36 700 831 303` (ACMA verifies authority there, *not* via RAM — a stale address stalls the application silently), and the signing individual needs a **myID** identity. Nothing in the repo changes until a sender ID is approved; when it is, set it on the Messaging Service used by `notificationWorker`, keep the number as fallback, and remember alphanumeric SMS is **one-way** — no notification copy may invite a reply.
 - **DOMAIN MIGRATION IN FLIGHT (from 3 Aug 2026) — read `deploy/runbooks/domain-migration.md` before touching hostnames.** The customer-facing surfaces are moving to company-native names: API `vocotable.algorythmos.com.au` → **`api.biteperk.com.au`**, dashboard `vocotable.biteperk.com.au`/`vocotable.web.app` → **`app.biteperk.com.au`**, KDS → **`kds.biteperk.com.au`**. It is deliberately **additive** — old hostnames keep serving, vendors (Stripe → Cal.com → Retell → Twilio) cut over one at a time, each verified with a live test call, because Retell/Twilio signature verification is URL-sensitive. The `SYNTH_EMAIL_DOMAIN` (`bookings.vocotable.algorythmos.com.au`, `calcomService.ts`) must NOT change — it is baked into existing Cal.com bookings. The Firebase project id, Artifact Registry path and `vocotable_number` API field are explicitly out of scope.
 - **TLS** via nginx + certbot. Nginx config is in `deploy/nginx/vocotable.conf` — it serves BOTH the new and legacy `server_name` from one cert (`--cert-name api.biteperk.com.au`); rate limits at the top-level `http {}` scope (already correct), raw body buffering on webhook paths for signature verification. *(Note: the repo config was stale at `api.vocotable.com` until 3 Aug 2026 — the VM was the source of truth. Keep them in sync now.)*
+- ⚠️ **The KDS is deployed by no pipeline, in any environment.** Both GitHub Environments set `FIREBASE_ONLY=hosting:app`, so `deploy-frontend.yml` only ever ships the dashboard. KDS reaches production solely via `npm run build:kds && firebase deploy --only hosting:kds` from someone's laptop — outside CI, outside staging, outside every control in §E.
 - **Frontend** on Firebase Hosting target `app`. Build with `VITE_API_BASE_URL` (a GitHub repo variable) before `firebase deploy --only hosting:app`. KDS is the separate Firebase Hosting target `kds`.
 - **DNS** managed in Cloudflare — legacy records under `algorythmos.com.au`, new ones under `biteperk.com.au` (both zones live in the same personal Cloudflare account). Any A record fronting the API must be **DNS-only (gray cloud)** — orange-cloud proxying breaks Let's Encrypt HTTP-01 and Retell/Twilio signature URLs. Adding a hostname to Firebase Auth's **authorized domains** is required or Google sign-in breaks on it.
 - **Retell: BitePerk now owns its own account — but production has NOT cut over yet.** Two estates exist and confusing them wastes a night:
-  - **New (BitePerk-owned)** — login `biteperk@gmail.com`, workspaces **Biteperk** (production) and **Staging**. The Biteperk workspace holds both venue agents, built 13 Aug from the *live* config: Natalia's `agent_5b5df167525452db98cda2112f` / `llm_18ad6f5adedc865b7ffd02a121e1`, Cuban Corner `agent_2892d65ceace4e68d8a3f3e80c` / `llm_53c6e9de9aac3b60270ffdd6bcba`. Staging is **empty and its trial has ended**.
+  - **New (BitePerk-owned)** — login `biteperk@gmail.com`, workspaces **Biteperk** (production) and **Staging**. The Biteperk workspace holds both venue agents, built 13 Aug from the *live* config: Natalia's `agent_5b5df167525452db98cda2112f` / `llm_18ad6f5adedc865b7ffd02a121e1`, Cuban Corner `agent_2892d65ceace4e68d8a3f3e80c` / `llm_53c6e9de9aac3b60270ffdd6bcba`. The **Staging** workspace carries a parallel pair pointed at the staging API, and as at 13 Aug 2026 it is wired and proven: staging key deployed, number imported, venue row resolving, and a real call answered.
   - **Legacy (Algorythmos-owned)** — `retellai@algorythmos.com.au`, org `org_f0DPXgKIQTMJL4je`. **A different company's workspace, out of scope.** It still answers the pilot line until Natalia's is cut over, and carries no obligation afterwards (the calls recorded there were tests, not customer audio). Do not add BitePerk resources to it.
   - **The backend serves exactly one Retell account per environment** — one `RETELL_API_KEY`, one `RETELL_WEBHOOK_SECRET`, checked by router-level middleware before any parsing. There is no gradual move; switching workspaces is an atomic env cutover. The new workspace's single API key is badged as its **Webhook key**, so both env values take the same string.
   - ⚠️ **The new agents still call back to `vocotable.algorythmos.com.au`** (`webhook_url` + all five tool URLs). Until the API hostname moves to `api.biteperk.com.au`, "migrated off Algorythmos" is not true — the agent moved, the dependency did not.
@@ -156,7 +265,7 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
 
 **Pipeline state — verified 6 Aug 2026.** The deploy half was rewritten 4 Aug (#94/#95): `deploy-backend.yml`/`deploy-frontend.yml` deploy `integration` → Cloud Run staging and `main` → Cloud Run production, both gated on a successful CI `workflow_run`; the backend job runs the migration job before rolling services. Deploy recovery is a Cloud Run revision traffic rollback done by hand — extra pipeline rollback tooling was reviewed and declined (PR #100). Current gaps:
 - Staging api/worker **refused to boot until PR #107** (merged 6 Aug): the boot gate demanded `RETELL_AGENT_ID` and `TWILIO_PHONE_NUMBER`, which are per-restaurant database data (`restaurants.retell_agent_id` / `twilio_phone_number`), not deployment config — the review decision that closed `biteperk-cloud-platform` PR #20. With #107 in, staging boots on the existing Terraform config with no new variables anywhere. End-to-end staging **calls** additionally need a staging `restaurants` row bound to the staging Twilio number + Retell agent (data, not config — staging uses its own vendor identities, never production's).
-- **Promoting `main` targets Cloud Run production (`voxtable-prod-*`), which does not exist yet.** Until **`bp-voxtable-prod`** is provisioned (that exact spelling — see NAMES.md §3; asserted by the platform repo's workflow), production is still the VM and is deployed manually — a `main` merge does NOT reach the VM on its own; `deploy-backend.yml` skips cleanly with a notice rather than failing red. The prod Terraform root already exists: provisioning is "add the project to the org root + apply", not console-clicking — plus the two pieces no automation creates yet: the `voxtable-prod-deployer` service account and the `api.biteperk.com.au` → Cloud Run domain mapping.
+- **Promoting `main` targets Cloud Run production (`voxtable-prod-*`), which is not provisioned.** `bp-voxtable-prod` **exists as an empty shell** — one secret, Cloud Run API not even enabled — so "does the project exist?" answers a misleading *yes*. Production is still the VM and is deployed by hand; a `main` merge does NOT reach the VM. ⚠️ **It does not skip cleanly either** — the `production` environment has no `GCP_DEPLOY_SERVICE_ACCOUNT`, so `deploy-backend.yml` **fails red** at its validation step (which now names the environment and the missing variable instead of emitting a bare shell error). The prod Terraform root already exists: provisioning is "add the project to the org root + apply", not console-clicking — plus the two pieces no automation creates yet: the `voxtable-prod-deployer` service account and the `api.biteperk.com.au` → Cloud Run domain mapping.
 - The image registry (`bp-shared-artifacts`) and the frontend artifact bucket (`voxtable-frontend-artifacts`) live outside the `vocotable-497209` project and were **not readable by Sam's account** as of 1 Aug — worth resolving for auditability and bus factor.
 
 **Deliberate Won't-Fix while the VM lives** (decided 6 Aug 2026, both die with the VM at the Phase 3 cutover): no log shipping off the VM (Cloud Run gets Cloud Logging for free; SSH + `docker compose logs` until then), and no compose `stop_grace_period`/memory limits (the notification-outbox lease closed the real double-send hazard a mid-send SIGKILL created).
