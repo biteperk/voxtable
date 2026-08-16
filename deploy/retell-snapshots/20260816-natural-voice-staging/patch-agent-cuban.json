@@ -1,0 +1,38 @@
+{
+  "voice_model": "eleven_multilingual_v2",
+  "voice_temperature": 1.1,
+  "enable_dynamic_voice_speed": true,
+  "enable_dynamic_responsiveness": true,
+  "backchannel_frequency": 0.7,
+  "backchannel_words": [
+    "mm",
+    "mm-hm",
+    "yeah",
+    "right",
+    "no worries"
+  ],
+  "reminder_trigger_ms": 18000,
+  "reminder_max_count": 1,
+  "stt_mode": "accurate",
+  "ambient_sound": "coffee-shop",
+  "ambient_sound_volume": 0.3,
+  "begin_message_delay_ms": 500,
+  "fallback_voice_ids": [
+    "cartesia-Maren"
+  ],
+  "handbook_config": {
+    "natural_filler_words": true,
+    "speech_normalization": true,
+    "smart_matching": true,
+    "ai_disclosure": true,
+    "scope_boundaries": true
+  },
+  "boosted_keywords": [
+    "Cuban Corner",
+    "Parramatta",
+    "booking",
+    "reservation",
+    "pickup",
+    "pre-order"
+  ]
+}
