@@ -416,6 +416,20 @@ export const AGREEMENT_SERVICES = ["voxtable", "voxorder", "voxconcierge"] as co
 export const AGREEMENT_LANGUAGES = ["en-AU"] as const;
 
 export const agreementSchema = z.object({
+  document_set_version: z.string().trim().min(1).max(120),
+  csa_url: z.string().url().refine((url) => url.startsWith("https://"), "CSA URL must be HTTPS"),
+  schedule_url: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), "Schedule URL must be HTTPS"),
+  csa_sha256: z
+    .string()
+    .trim()
+    .regex(/^[a-fA-F0-9]{64}$/, "CSA SHA-256 must be a 64-character hex digest"),
+  schedule_sha256: z
+    .string()
+    .trim()
+    .regex(/^[a-fA-F0-9]{64}$/, "Schedule SHA-256 must be a 64-character hex digest"),
   client_legal_name: z.string().trim().min(2).max(200),
   client_abn: z
     .string()
