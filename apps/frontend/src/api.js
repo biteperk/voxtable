@@ -1,4 +1,5 @@
 import { auth, signOutUser } from "./firebase";
+import { fetchLegalDocumentsManifest } from "./lib/legalDocuments";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3050";
 
@@ -153,8 +154,12 @@ export function advanceOnboarding(event) {
   });
 }
 
-export function getAgreement() {
-  return authedFetch(`/api/onboarding/agreement`);
+export async function getAgreement() {
+  const [agreement, legalDocuments] = await Promise.all([
+    authedFetch(`/api/onboarding/agreement`),
+    fetchLegalDocumentsManifest()
+  ]);
+  return { ...agreement, ...legalDocuments };
 }
 
 export function submitAgreement(payload) {

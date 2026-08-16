@@ -189,9 +189,9 @@ onboardingRouter.post(
   })
 );
 
-// Agreement step config + state: which document set the wizard shows, which
-// services can be offered, and the latest recorded acceptance (if any). Read
-// is manager-level; accepting (below) is owner-only.
+// Agreement step state: which services can be offered, and the latest recorded
+// acceptance (if any). Legal document version/URLs/hashes come from the frontend
+// GCS manifest and are submitted in POST /api/onboarding/agreement.
 onboardingRouter.get(
   "/api/onboarding/agreement",
   requireFirebaseAuth,
@@ -201,9 +201,6 @@ onboardingRouter.get(
     const restaurantId = tenantId(request);
     const acceptance = await getLatestAcceptance(restaurantId);
     response.json({
-      document_set_version: env.TERMS_DOCUMENT_SET_VERSION,
-      csa_url: env.TERMS_CSA_URL,
-      schedule_url: env.TERMS_SCHEDULE_URL,
       // voxdrive is deliberately absent from AGREEMENT_SERVICES (concept only);
       // voxconcierge appears once its release flag is on.
       services_available: AGREEMENT_SERVICES.filter(
@@ -237,17 +234,6 @@ onboardingRouter.post(
     const user = actingUser(request);
     const body = agreementSchema.parse(request.body);
 
-    // An acceptance recorded against DRAFT documents is evidence of nothing.
-    // Boot-time env validation blocks the self-serve flag + DRAFT combination;
-    // this guards the admin-invited path too.
-    if (env.APP_ENV === "production" && env.TERMS_DOCUMENT_SET_VERSION === "DRAFT") {
-      throw new AppError(
-        503,
-        "TERMS_NOT_PUBLISHED",
-        "The service agreement isn't available yet — please try again later."
-      );
-    }
-
     if (body.services.includes("voxconcierge") && !env.SERVICES_VOXCONCIERGE_ENABLED) {
       throw new AppError(400, "SERVICE_NOT_AVAILABLE", "VoxConcierge isn't available yet.");
     }
@@ -279,7 +265,7 @@ onboardingRouter.post(
           piiRedaction: body.pii_redaction,
           serviceStartDate: body.service_start_date ?? null
         },
-        env.TERMS_DOCUMENT_SET_VERSION,
+        body.document_set_version,
         db
       );
 
@@ -288,9 +274,9 @@ onboardingRouter.post(
           restaurantId,
           userId: user.uid,
           channel: "online",
-          documentSetVersion: env.TERMS_DOCUMENT_SET_VERSION,
-          csaSha256: env.TERMS_CSA_SHA256 ?? "DRAFT",
-          scheduleSha256: env.TERMS_SCHEDULE_SHA256 ?? "DRAFT",
+          documentSetVersion: body.document_set_version,
+          csaSha256: body.csa_sha256,
+          scheduleSha256: body.schedule_sha256,
           consentTerms: body.consent_terms,
           consentOverseas: body.consent_overseas,
           consentDisclosure: body.consent_disclosure,

@@ -40,6 +40,11 @@ function throws(fn: () => unknown): { threw: boolean; message: string } {
 const VALID_ABN = "51 824 753 556";
 
 const VALID_PAYLOAD = {
+  document_set_version: "SMOKE-2026-08",
+  csa_url: "https://storage.googleapis.com/smoke-legal-documents/versions/SMOKE-2026-08/client-services-agreement.pdf",
+  schedule_url: "https://storage.googleapis.com/smoke-legal-documents/versions/SMOKE-2026-08/privacy-data-handling-schedule.pdf",
+  csa_sha256: "a".repeat(64),
+  schedule_sha256: "b".repeat(64),
   client_legal_name: "Smoke Test Trattoria Pty Ltd",
   client_abn: VALID_ABN,
   services: ["voxtable"],
