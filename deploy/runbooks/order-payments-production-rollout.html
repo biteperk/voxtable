@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en-AU" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxTable — Order Payments: Production Rollout Plan</title>
+<style>
+:root{
+  color-scheme:dark;
+  --ink-0:#0a0b0d; --ink-1:#111317; --ink-2:#161a20; --ink-3:#1d222a;
+  --white:#f7f8fa; --text:#d5d9e0; --mist:#9aa1ad; --mist-2:#b8bec8;
+  --gold:#f5c418; --gold-dark:#d9aa0e; --gold-amber:#ffb840;
+  --gold-fill:#f5c418; --gold-fill-text:#1a0f04;
+  --green:#1a4d1a; --green-deep:#0e2f12; --green-light:#4a8a48;
+  --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.18);
+  --line-gold:rgba(245,196,24,.18);
+  --danger:#ff6b6b; --success:#6ee7a8;
+  --fill-subtle:rgba(255,255,255,.04);
+  --font-sans:"Inter Variable","Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,monospace;
+  --r-sm:8px; --r-md:14px; --r-lg:24px; --r-pill:999px;
+  --shadow-card:0 30px 80px -30px rgba(0,0,0,.7);
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --ink-0:#faf9f6; --ink-1:#ffffff; --ink-2:#f2f0e9; --ink-3:#e9e6dc;
+  --white:#14161a; --text:#333a44; --mist:#5f6774; --mist-2:#4a515c;
+  --gold:#7d6104; --gold-dark:#644e03; --gold-amber:#8a5a00;
+  --green:#1a4d1a; --green-light:#2e6b2c;
+  --line:rgba(20,22,26,.10); --line-strong:rgba(20,22,26,.22);
+  --line-gold:rgba(125,97,4,.30);
+  --danger:#b3261e; --success:#1a7a4a;
+  --fill-subtle:rgba(20,22,26,.04);
+  --shadow-card:0 24px 60px -28px rgba(20,22,26,.22);
+}
+*{box-sizing:border-box}
+body{background:var(--ink-0);color:var(--text);font-family:var(--font-sans);line-height:1.6;margin:0;
+  font-size:clamp(1rem,.95rem + .25vw,1.0625rem);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px 120px}
+h1,h2,h3,h4{color:var(--white);letter-spacing:-.02em;line-height:1.15}
+h1{font-size:clamp(2.1rem,1.2rem + 3vw,3.4rem);line-height:1.02;margin:0 0 12px}
+h2{font-size:clamp(1.5rem,1rem + 1.7vw,2.25rem);margin:64px 0 8px;padding-top:24px;border-top:1px solid var(--line)}
+h3{font-size:clamp(1.15rem,1rem + .65vw,1.5rem);margin:34px 0 8px}
+h4{font-size:1.02rem;margin:22px 0 6px;color:var(--gold)}
+p{margin:0 0 14px}
+a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--line-gold)}
+a:hover{border-bottom-color:var(--gold)}
+code{font-family:var(--font-mono);font-size:.87em;background:var(--fill-subtle);
+  border:1px solid var(--line);border-radius:6px;padding:1px 5px;color:var(--mist-2)}
+pre{background:var(--ink-1);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:16px 18px;overflow-x:auto;font-family:var(--font-mono);font-size:.8rem;line-height:1.55;margin:0 0 18px}
+pre code{background:none;border:none;padding:0;color:var(--text)}
+.tok-k{color:var(--gold-amber)} .tok-s{color:var(--success)} .tok-c{color:var(--mist);font-style:italic}
+.brand-name{font-weight:700;letter-spacing:-.02em;color:var(--white)}
+.brand-name .perk{color:var(--gold);font-style:italic;font-weight:700}
+header.masthead{padding:56px 0 8px;display:flex;align-items:center;gap:14px}
+.eyebrow{font-size:.75rem;text-transform:uppercase;letter-spacing:.14em;color:var(--mist);font-weight:600;margin:0 0 10px}
+.lede{font-size:clamp(1.05rem,1rem + .5vw,1.3rem);line-height:1.5;color:var(--mist-2);max-width:70ch;margin:0 0 8px}
+.meta{font-size:.82rem;color:var(--mist);margin:20px 0 0;padding-top:16px;border-top:1px solid var(--line)}
+.card{background:var(--ink-1);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px 24px;margin:0 0 20px}
+.card.gold{border-color:var(--line-gold);background:linear-gradient(180deg,rgba(245,196,24,.045),transparent 60%),var(--ink-1)}
+.card.warn{border-color:rgba(255,107,107,.28)}
+.card.ok{border-color:rgba(110,231,168,.25)}
+.card h3,.card h4{margin-top:0}
+table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.88rem}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--white);font-weight:600;font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--line-strong)}
+tbody tr:hover{background:var(--fill-subtle)}
+ul,ol{margin:0 0 16px;padding-left:22px}
+li{margin:0 0 7px}
+li::marker{color:var(--gold)}
+.pill{display:inline-block;font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 9px;border-radius:var(--r-pill);border:1px solid var(--line-strong);color:var(--mist-2);white-space:nowrap}
+.pill.block{border-color:rgba(255,107,107,.45);color:var(--danger)}
+.pill.you{background:var(--gold-fill);color:var(--gold-fill-text);border-color:transparent}
+.pill.eng{border-color:var(--line-gold);color:var(--gold)}
+.pill.ext{border-color:rgba(110,231,168,.35);color:var(--success)}
+.gate{display:flex;gap:20px;padding:26px 0;border-top:1px solid var(--line-strong)}
+.gate-id{flex:0 0 78px}
+.gate-id .g{font-family:var(--font-mono);font-size:2.1rem;font-weight:700;color:var(--gold);line-height:1;letter-spacing:-.04em}
+.gate-id .lbl{font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mist);margin-top:6px}
+.gate-body{flex:1;min-width:0}
+.gate-body h3{margin-top:0}
+.gate-meta{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.exit{background:var(--ink-2);border-left:3px solid var(--gold);border-radius:0 var(--r-sm) var(--r-sm) 0;
+  padding:12px 16px;margin:14px 0 0;font-size:.9rem}
+.exit strong{color:var(--white);display:block;margin-bottom:5px;font-size:.76rem;text-transform:uppercase;letter-spacing:.08em}
+.callout{border-left:3px solid var(--gold);padding:2px 0 2px 18px;margin:0 0 18px;color:var(--mist-2)}
+.callout.warn{border-left-color:var(--danger)}
+.toc{columns:2;column-gap:36px;font-size:.9rem}
+@media(max-width:700px){.toc{columns:1}.gate{flex-direction:column;gap:8px}}
+.toc a{display:block;padding:4px 0;border:none;color:var(--mist-2)}
+.toc a:hover{color:var(--gold)}
+.toggle{position:fixed;top:16px;right:16px;z-index:10;background:var(--ink-2);color:var(--mist-2);
+  border:1px solid var(--line-strong);border-radius:var(--r-pill);padding:7px 16px;font-size:.78rem;cursor:pointer;font-weight:600}
+.toggle:hover{color:var(--gold);border-color:var(--line-gold)}
+footer{margin-top:80px;padding-top:24px;border-top:1px solid var(--line);font-size:.82rem;color:var(--mist)}
+.chk{list-style:none;padding-left:0}
+.chk li{padding-left:30px;position:relative}
+.chk li::before{content:"☐";position:absolute;left:0;top:-1px;color:var(--gold);font-size:1.1rem}
+@media print{.toggle{display:none}body{background:#fff}}
+</style>
+</head>
+<body>
+<button class="toggle" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">Theme</button>
+
+<div class="wrap">
+
+<header class="masthead">
+  <svg viewBox="0 0 64 64" width="44" height="44" aria-hidden="true">
+    <polygon points="32,4 39,24 60,24 43,37 49,58 32,46 15,58 21,37 4,24 25,24"
+             fill="#f5c418" stroke="#1a4d1a" stroke-width="1.2" stroke-linejoin="round"/>
+    <rect x="29" y="20" width="2.5" height="22" rx="0.8" fill="#1a4d1a"/>
+    <rect x="32.5" y="20" width="2.5" height="14" rx="0.8" fill="#1a4d1a"/>
+    <rect x="35.5" y="20" width="2.5" height="22" rx="0.8" fill="#1a4d1a"/>
+  </svg>
+  <span class="brand-name" style="font-size:1.5rem">bite<span class="perk">perk</span></span>
+</header>
+
+<p class="eyebrow">VoxTable · Order payments · Production rollout</p>
+<h1>From green CI to<br>real money, safely</h1>
+<p class="lede">The code is written and the tests pass. That is roughly a third of the work. This is the
+path from a green PR to a guest's card actually being charged — organised as gates, not dates, because
+three of them are outside engineering's control and one of them has no owner yet.</p>
+
+<p class="meta">
+Prepared for Sam Kalaliya · 12 August 2026 · Companion to
+<code>deploy/runbooks/voice-order-payments-plan.html</code><br>
+State at time of writing: branch <code>feat/voice-order-payments</code> at <code>db4c1dd</code>, pushed,
+PR #154 open against <code>integration</code>, not yet merged. Nine gates below; <strong>five are
+blocking</strong> and two of those cannot be closed by writing code.
+</p>
+
+<div class="card" style="margin-top:36px">
+<p class="eyebrow" style="margin-bottom:14px">Contents</p>
+<div class="toc">
+<a href="#reality">The three things that change the plan</a>
+<a href="#map">Gate map</a>
+<a href="#g0">Gate 0 — Merge and prove on staging</a>
+<a href="#g1">Gate 1 — Close the code gaps</a>
+<a href="#g2">Gate 2 — Legal</a>
+<a href="#g3">Gate 3 — Where does production run?</a>
+<a href="#g4">Gate 4 — Stripe live mode</a>
+<a href="#g5">Gate 5 — Twilio production</a>
+<a href="#g6">Gate 6 — Bella's prompt</a>
+<a href="#g7">Gate 7 — Pilot: one venue</a>
+<a href="#g8">Gate 8 — General availability</a>
+<a href="#day1">Day-one runbook</a>
+<a href="#monitor">Monitoring and alert thresholds</a>
+<a href="#rollback">Rollback and abort</a>
+<a href="#money">Money reconciliation</a>
+<a href="#owners">Owners and open questions</a>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="reality">The three things that change the plan</h2>
+
+<p>I re-read the merged branch and the infrastructure state before writing this. Three findings reshape
+the rollout, and one of them is a security issue that is <em>not</em> in the PR.</p>
+
+<div class="card warn">
+<h3 style="margin-top:0;color:var(--danger)">1. The log redaction for checkout session ids is uncommitted</h3>
+<p><code>apps/backend/src/utils/logger.ts</code> is modified in your working tree but the change is in no
+commit, so <strong>it is not in PR #154</strong>:</p>
+<pre style="margin:12px 0"><code>$ git diff --stat apps/backend/src/utils/logger.ts
+ apps/backend/src/utils/logger.ts | 5 ++++-
+$ git log --oneline -1 -- apps/backend/src/utils/logger.ts
+ 081d231 Give the worker a health surface Cloud Run can probe   <span class="tok-c">← unrelated, older</span></code></pre>
+<p>The change adds <code>checkouturl</code> to <code>SENSITIVE_KEY_PATTERN</code> and a redaction pattern
+for <code>cs_(test|live)_…</code>. Your own comment on it explains why it matters:
+<em>"the id IS the payment page URL suffix — a logged <code>cs_…</code> is a live 'pay this order'
+capability until the session expires."</em></p>
+<p style="margin-bottom:0"><strong>Without it, every checkout session id lands in Cloud Logging in
+plaintext, and anyone with log read access can pay — or re-pay — a guest's order for 45 minutes.</strong>
+Commit it to the PR branch before merge. <code>CLAUDE.md</code>, <code>README.md</code> and
+<code>deploy/runbooks/acma-sender-id-registration.md</code> are also uncommitted or untracked and should
+go in the same push.</p>
+</div>
+
+<div class="card warn">
+<h3 style="margin-top:0;color:var(--danger)">2. Production is still the VM. Merging to <code>main</code> deploys nothing.</h3>
+<p>Per <code>CLAUDE.md</code> and <code>NAMES.md</code>: <strong><code>bp-voxtable-prod</code> does not
+exist yet.</strong> <code>deploy-backend.yml</code> targets Cloud Run production services
+(<code>voxtable-prod-*</code>) that have never been created, so a <code>main</code> merge skips cleanly
+with a notice rather than failing red. Production today is the VM <code>core-central-vm</code> in
+<code>vocotable-497209</code>, deployed by hand.</p>
+<p style="margin-bottom:0">So "ship to production" is not one decision, it is two: <em>which
+production</em>, and <em>then</em> the feature. Gate 3 forces that choice before anything else can land.</p>
+</div>
+
+<div class="card">
+<h3 style="margin-top:0">3. Two details in the summary are worth correcting, because ops will read them</h3>
+<table style="margin-bottom:0">
+<thead><tr><th>Said</th><th>Actually</th><th>Why it matters</th></tr></thead>
+<tbody>
+<tr><td>Branches on <code>session.mode</code></td><td>Branches on <code>metadata.biteperk_kind === "order_payment"</code> (<code>isOrderPaymentEvent</code>)</td><td>The marker is set on both the session and <code>payment_intent_data.metadata</code>. A Stripe object created outside our code — a dashboard refund, a manual charge — carries no marker and falls through to the billing path. Know this before hand-creating anything in the live dashboard.</td></tr>
+<tr><td>"Unrecognised payment event returns 500"</td><td>Unrecognised <em>types</em> return 200 (<code>order_payment_event_ignored</code>). A <em>recognised</em> event with no matching <code>order_payments</code> row throws → 500</td><td>Both behaviours are right. But an on-call engineer seeing 500s must know it means <strong>"row missing"</strong> — usually a webhook that beat our own commit — not "unknown event". It self-heals on Stripe's retry.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Everything else in the summary checks out: 45-minute expiry (<code>ORDER_PAYMENT_EXPIRY_MINUTES</code>,
+floor 35), the 5-minute reaper in the worker process, destination charge with <code>on_behalf_of</code>,
+the twelve smoke assertions, and the flags defaulting off.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="map">Gate map</h2>
+
+<p>A gate closes when its exit criteria are evidenced, not when someone feels good about it. Gates 2, 3,
+4 and 5 run in parallel — start all four this week, because three have external lead times.</p>
+
+<table>
+<thead><tr><th>Gate</th><th>What</th><th>Owner</th><th>Blocking?</th><th>Lead time</th></tr></thead>
+<tbody>
+<tr><td><strong>0</strong></td><td>Merge and prove on staging</td><td><span class="pill eng">Eng</span></td><td>Yes</td><td>Days</td></tr>
+<tr><td><strong>1</strong></td><td>Close the code gaps (refunds, redaction)</td><td><span class="pill eng">Eng</span></td><td>Yes</td><td>~3 days</td></tr>
+<tr><td><strong>2</strong></td><td>Australian legal advice</td><td><span class="pill you">Sam</span></td><td><span class="pill block">Hard block</span></td><td><strong>Weeks</strong></td></tr>
+<tr><td><strong>3</strong></td><td>Decide + build production infrastructure</td><td><span class="pill you">Sam</span> <span class="pill eng">Eng</span></td><td><span class="pill block">Hard block</span></td><td>Days–weeks</td></tr>
+<tr><td><strong>4</strong></td><td>Stripe live-mode Connect platform</td><td><span class="pill you">Sam</span></td><td>Yes</td><td>Days</td></tr>
+<tr><td><strong>5</strong></td><td>Twilio production SMS <span class="pill">+ reg bundle</span></td><td><span class="pill you">Sam</span></td><td>Yes</td><td><strong>3+ business days min</strong></td></tr>
+<tr><td><strong>6</strong></td><td>Bella's prompt and tool registration</td><td><span class="pill eng">Eng</span></td><td>Yes</td><td>~1 day</td></tr>
+<tr><td><strong>7</strong></td><td>Pilot — one venue, capped</td><td><span class="pill you">Sam</span> <span class="pill ext">Venue</span></td><td>Yes</td><td>2 weeks live</td></tr>
+<tr><td><strong>8</strong></td><td>General availability</td><td><span class="pill you">Sam</span></td><td>—</td><td>—</td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 style="border:none;padding-top:0">The gates</h2>
+
+<div class="gate" id="g0">
+<div class="gate-id"><div class="g">0</div><div class="lbl">Merge</div></div>
+<div class="gate-body">
+<h3>Merge and prove it on staging</h3>
+<div class="gate-meta"><span class="pill eng">Engineering</span><span class="pill">~3 days</span></div>
+<p>Nothing below matters until the feature is actually running somewhere real with a real Stripe test
+account and a real phone.</p>
+<ul>
+<li><strong>Commit the working-tree changes first.</strong> <code>logger.ts</code> especially — see above.
+Push to the PR branch so the redaction is reviewed, not smuggled.</li>
+<li>Merge PR #154 to <code>integration</code>. Note the branch carries ~92 commits of drift on top of
+<code>main</code>; that delta is the eventual production release, not just this feature. Read the
+<code>integration</code>→<code>main</code> diff before you promote anything.</li>
+<li>Add all six new env vars to the Terraform env map in
+<code>biteperk/biteperk-cloud-platform</code> → <code>roots/products/voxtable/stg</code>, for
+<strong>both</strong> the api and worker services. Apply <em>before</em> the deploy or the fail-closed
+boot gate stops the revision.</li>
+<li>Confirm migration 030 ran via the <code>voxtable-stg-migrate</code> Cloud Run job before services
+rolled. 030 is purely additive, so migrate-first is safe — but two things deserve a note in the log:
+<code>CREATE INDEX</code> (not <code>CONCURRENTLY</code>) takes a brief write lock on
+<code>restaurants</code>, and both new foreign keys are <code>ON DELETE RESTRICT</code>, so any script
+that deletes an order or a restaurant will now fail once a payment row references it.</li>
+<li>Do the manual setup from the prior plan: Connect enabled on the <strong>existing staging test
+account</strong> (not a new sandbox — one secret key is shared and a new sandbox would break staging
+billing), payment events added to the webhook, Natalia's onboarded via the Payouts card, and a Twilio
+Mobile <code>+61 4</code> number as <code>NOTIFICATIONS_SMS_FROM</code>.</li>
+</ul>
+<div class="exit"><strong>Exit criteria</strong>
+Two real calls to the staging number: one where the guest pays (SMS arrives &lt;10 s, Stripe page shows
+the venue's name, KDS pill flips to PAID within one 2 s poll) and one where the guest declines (no SMS,
+order stays UNPAID). Plus: a link left to expire is reaped within 15 minutes and a resend then works.
+</div>
+</div>
+</div>
+
+<div class="gate" id="g1">
+<div class="gate-id"><div class="g">1</div><div class="lbl">Code</div></div>
+<div class="gate-body">
+<h3>Close the code gaps that only matter with real money</h3>
+<div class="gate-meta"><span class="pill eng">Engineering</span><span class="pill">~3 days</span></div>
+<p>Four things were consciously deferred. Three of them are fine to defer in a sandbox and are not fine
+in production, because they only bite when the money is real.</p>
+
+<h4>1.1 Refunds — <span class="pill block">must have</span></h4>
+<p><code>grep -rn "reverse_transfer\|refunds.create" apps/backend/src/</code> returns nothing. Today
+<code>charge.refunded</code> is <em>observed</em> but never <em>initiated</em>, so every refund is a
+manual click in the Stripe dashboard — and a dashboard refund does not reverse the transfer. The venue
+keeps the money and <strong>BitePerk absorbs the refund</strong>. On a $28 meal that's an annoyance; as a
+standing policy it's a slow bleed.</p>
+<p>Build <code>refundOrderPayment()</code> with <code>reverse_transfer: true</code> hard-coded, not a
+parameter. Make <code>refund_application_fee</code> the only policy decision. Expose it to managers only.
+Until it exists, <strong>write the manual procedure into the day-one runbook</strong> — refund in the
+dashboard <em>and</em> reverse the transfer, as two deliberate steps.</p>
+
+<h4>1.2 Log redaction — <span class="pill block">must have</span></h4>
+<p>Commit it. Covered above.</p>
+
+<h4>1.3 <code>charge.updated</code> / skipped transfers — <span class="pill">should have</span></h4>
+<p>If a venue loses its transfer capability mid-flight, Stripe skips the transfer and the funds stay in
+our balance with <code>transfer_data: null</code> on the charge. Nobody is told. One handler and a Slack
+alert; an hour's work that prevents a silent money-in-the-wrong-place condition.</p>
+
+<h4>1.4 The reaper's blind spot — <span class="pill">should have</span></h4>
+<p>The reaper is deliberately not gated on <code>ORDER_PAYMENTS_ENABLED</code> — correct, because links
+already in guests' hands must keep settling after a kill switch. But <code>getStripe()</code> throws
+<code>BILLING_NOT_CONFIGURED</code> unless <code>STRIPE_BILLING_ENABLED</code> or
+<code>ORDER_PAYMENTS_ENABLED</code> is on. So in the exact scenario the design anticipates — flag flipped
+off with links outstanding — every reap logs <code>order_payment_reap_failed</code> and settles nothing.
+Either widen the entitlement or make the failure loud rather than per-row noise.</p>
+
+<div class="exit"><strong>Exit criteria</strong>
+A refund issued through our own code path reverses the transfer, verified in the Stripe sandbox balance.
+No <code>cs_test_</code> string appears anywhere in staging logs after a full payment cycle
+(<code>gcloud logging read</code>, grep it — do not assume).
+</div>
+</div>
+</div>
+
+<div class="gate" id="g2">
+<div class="gate-id"><div class="g">2</div><div class="lbl">Legal</div></div>
+<div class="gate-body">
+<h3>Australian financial-services advice</h3>
+<div class="gate-meta"><span class="pill you">Sam</span><span class="pill block">Hard block</span><span class="pill">Weeks — start now</span></div>
+<p>This is the only gate that can stop the whole thing, and the only one where the lead time is entirely
+outside your control. Start it this week even though nothing else waits on it.</p>
+
+<div class="callout warn">
+I am not a lawyer and this is not legal advice. What follows is a brief for one — the vocabulary and the
+specific facts that will let a specialist answer quickly instead of billing you to discover them.
+</div>
+
+<h4>The question, precisely</h4>
+<p>Not "do we need an AFSL". The question is: <em>does taking a guest's card payment into the BitePerk
+Stripe account and immediately transferring it to the venue's connected account constitute a regulated
+payment function, and if so does an exemption apply?</em></p>
+
+<h4>The facts that make our position stronger than it looks</h4>
+<ul>
+<li><strong>We hold no float.</strong> Destination charges transfer to the venue's pending balance
+immediately on capture. There is no stored value, no wallet, no preloading, no guest balance. Much of the
+Australian regulatory concern is about facilities where users load and retain funds — that is not this.</li>
+<li><strong>The venue is the settlement merchant.</strong> We set <code>on_behalf_of</code>, so the
+venue's name is on the guest's statement, settlement is in the venue's country and currency, and the
+venue's fee structure applies.</li>
+<li><strong>Stripe holds the funds, not us.</strong> Stripe is the licensed party in the flow.</li>
+<li><strong>Single-use, purchase-specific.</strong> Each link is one order, expires in 45 minutes, and
+cannot be topped up or reused.</li>
+</ul>
+
+<h4>The facts that create exposure</h4>
+<ul>
+<li>Funds transit an account in BitePerk's name, however briefly.</li>
+<li>We take an <code>application_fee_amount</code> from a third party's transaction.</li>
+<li>Disputes and refunds debit the BitePerk account, so we carry settlement risk.</li>
+<li>Australia's payments reforms have been extending licensing from the older "non-cash payment facility"
+framing toward defined <em>payment functions</em> including payment facilitation, with prudential
+oversight where significant customer funds are held. The ground has moved recently; a 2023 answer may not
+be a 2026 answer.</li>
+</ul>
+
+<h4>Ask counsel these five</h4>
+<ol>
+<li>Does destination-charge flow-through, with no float and the venue as settlement merchant, engage an
+AFSL requirement — and has that answer changed under the current payments reforms?</li>
+<li>If it does, does the low-value relief instrument apply at our volumes, and what are the thresholds we
+must monitor so we know before we cross one?</li>
+<li>Does the <code>application_fee_amount</code> change the characterisation?</li>
+<li>Is there any AUSTRAC or remittance registration exposure?</li>
+<li>What contractual terms must be in the venue agreement — who bears chargebacks, refund authority, and
+what we must disclose to the guest?</li>
+</ol>
+<p>Question 5 is the sleeper. Our venue agreement (the <code>agreement_acceptances</code> ledger, rev.
+29 Jul 2026) predates this feature entirely and says nothing about handling guest money. It will need an
+amendment, which means a new Order Form election and probably re-acceptance by existing venues. That is
+product work with its own lead time — surface it early.</p>
+
+<div class="exit"><strong>Exit criteria</strong>
+Written advice from an Australian financial-services lawyer, naming the specific structure. Plus a
+drafted venue-agreement amendment covering chargeback liability and refund authority.
+</div>
+</div>
+</div>
+
+<div class="gate" id="g3">
+<div class="gate-id"><div class="g">3</div><div class="lbl">Infra</div></div>
+<div class="gate-body">
+<h3>Decide where production actually runs</h3>
+<div class="gate-meta"><span class="pill you">Sam</span><span class="pill eng">Engineering</span><span class="pill block">Hard block</span></div>
+<p><code>bp-voxtable-prod</code> does not exist. Production is the VM, deployed by hand, with no
+automated path from <code>main</code>. Two options and they are not close.</p>
+
+<h4>Option A — Cut over to Cloud Run production first <span class="pill">recommended</span></h4>
+<p>Provision <code>bp-voxtable-prod</code> (that exact spelling — Terraform validates it; older notes
+said <code>-prd</code>), then ship payments into it. The prod Terraform root already exists, so this is
+"add the project to the org root and apply", plus the two pieces no automation creates: the
+<code>voxtable-prod-deployer</code> service account and the <code>api.biteperk.com.au</code> → Cloud Run
+domain mapping.</p>
+<ul>
+<li>Payments arrive on infrastructure with real deploys, Cloud Logging, and a one-command revision
+rollback — which is the entire rollback story in §Rollback.</li>
+<li>The migration job runs before services roll, so schema and code can't skew.</li>
+<li>Cost: the cutover is its own project with its own risk, and payments waits behind it.</li>
+</ul>
+
+<h4>Option B — Ship payments to the VM</h4>
+<ul>
+<li>Faster to first revenue.</li>
+<li>But: rollback is manual image-tag surgery over SSH. No log shipping — a deliberate Won't-Fix while the
+VM lives, which means <strong>your only view of a payment incident is <code>docker compose logs</code>
+over SSH</strong>. For a booking bug that is survivable. For money it is not.</li>
+<li>The VM's git checkout has no GitHub credentials, so compose and env changes go up by
+<code>gcloud compute scp</code>. More hands, more room for a mistyped env var — and a mistyped env var
+here is a fail-closed boot, or worse, a wrong <code>STRIPE_SECRET_KEY</code>.</li>
+</ul>
+
+<div class="callout"><strong>Recommendation:</strong> Option A. Not because the VM can't run the code —
+it can — but because the first time you need to answer "did this guest get charged twice?" you will want
+Cloud Logging and a revision rollback, and you will want them at 7pm on a Friday. If the timeline forces
+Option B, treat log shipping off the VM as a prerequisite rather than a Won't-Fix, for this feature only.</div>
+
+<div class="exit"><strong>Exit criteria</strong>
+A production environment where a deploy is one command, a rollback is one command, and logs are queryable
+without SSH. Terraform env map populated for api and worker. Migration 030 applied and verified.
+</div>
+</div>
+</div>
+
+<div class="gate" id="g4">
+<div class="gate-id"><div class="g">4</div><div class="lbl">Stripe</div></div>
+<div class="gate-body">
+<h3>Stripe live mode and the Connect platform profile</h3>
+<div class="gate-meta"><span class="pill you">Sam</span><span class="pill">Days</span></div>
+<ul>
+<li><strong>Complete the live Connect platform profile.</strong> Separate from the sandbox one. Stripe
+reviews it.</li>
+<li><strong>Choose negative-balance responsibility: Stripe.</strong> The recommended default for
+platforms new to embedding payments — Stripe monitors connected accounts for credit and fraud risk and
+handles remediation directly. Choosing "platform responsible" means we own that operationally, and we
+have no team for it.</li>
+<li><strong>Register the live webhook endpoint</strong> and subscribe to all seven events the code now
+handles: <code>checkout.session.completed</code>, <code>.async_payment_succeeded</code>,
+<code>.async_payment_failed</code>, <code>.expired</code>, <code>charge.refunded</code>,
+<code>charge.dispute.created</code>, <code>account.updated</code>. <strong>Note:
+<code>account.updated</code> for connected accounts arrives on the Connect webhook endpoint, not the
+account one</strong> — a separate endpoint in the dashboard. Miss it and venues will onboard successfully
+while <code>stripe_connect_charges_enabled</code> stays <code>false</code> forever, and every payment
+attempt returns <code>PAYMENTS_NOT_CONFIGURED</code> with no obvious cause.</li>
+<li><strong>Set the live <code>STRIPE_WEBHOOK_SECRET</code>.</strong> Different from test. This is the
+single most common live-mode mistake and it presents as 400s on every webhook.</li>
+<li><strong>Set the platform fee deliberately.</strong> <code>ORDER_PAYMENT_FEE_BPS</code> and
+<code>ORDER_PAYMENT_FEE_FLAT_CENTS</code> both default to <code>0</code> — ship the pilot at zero on
+purpose, then set it once you have real basket sizes. Remember our net is
+<code>application_fee − stripe_processing_fee</code>, so a fee below roughly 1.7% + 30¢ is loss-making.</li>
+<li><strong>Confirm the 1 Oct 2026 AU rate in writing</strong> before setting the fee. Take the eight
+questions from the prior plan to the 19 August Sydney session.</li>
+</ul>
+<div class="exit"><strong>Exit criteria</strong>
+Live platform profile approved. Both webhook endpoints registered and receiving. One live connected
+account onboarded end to end (the pilot venue) with <code>charges_enabled = true</code> synced into our
+database <em>by the webhook</em>, not by hand.
+</div>
+</div>
+</div>
+
+<div class="gate" id="g5">
+<div class="gate-id"><div class="g">5</div><div class="lbl">SMS</div></div>
+<div class="gate-body">
+<h3>Twilio production — and the question nobody has answered</h3>
+<div class="gate-meta"><span class="pill you">Sam</span><span class="pill block">Has an unknown in it</span></div>
+
+<div class="card warn" style="margin:0 0 16px">
+<p style="margin:0"><strong>Unresolved since 10 August and still unresolved.</strong> Per
+<code>CLAUDE.md</code>: neither Twilio account visibly holds the live AU voice number behind the
+<code>algorythmos</code> SIP trunk. <code>Biteperk-staging</code> has no number;
+<code>Biteperk-production</code> was on trial. Either production voice runs under a different Twilio login
+entirely, or the Call lifecycle documentation is stale. <strong>Resolve this before buying anything.</strong>
+Adding an SMS sender to the wrong account is a wasted purchase; pointing production SMS at an account that
+doesn't carry production traffic is a silent failure.</p>
+</div>
+
+<div class="card" style="margin:0 0 16px">
+<h4 style="margin-top:0">Add ~3 business days: the Regulatory Bundle</h4>
+<p>Discovered on 12 Aug 2026 while doing this in staging, and not accounted for anywhere in the original
+plan: <strong>Twilio will not sell an Australian number without an approved Regulatory Bundle.</strong>
+The Buy button is greyed out until one matching the country <em>and</em> number type is assigned, and
+review takes <strong>up to three business days</strong>.</p>
+<p>Staging bundle lodged 12 Aug: <code>BUd5fe40c147a21757f04616a1180cdd89</code>. It does
+<strong>not</strong> carry over — bundles are per-account, so production needs its own, built from the
+same inputs. <code>CLAUDE.md</code> now records the exact field values and which document satisfied
+which of the three slots, so it can be repeated without rediscovery.</p>
+<p style="margin-bottom:0"><strong>Schedule impact:</strong> this sits in front of the number purchase,
+which sits in front of the first production SMS. Lodge the production bundle <em>as soon as</em> the
+account question below is answered — do not wait for the pilot to be otherwise ready.</p>
+</div>
+<ul>
+<li>Confirm which account carries production voice. Log in, look at the SIP trunk, follow it to the number.</li>
+<li>Upgrade that account off trial if it isn't already — Regulatory Compliance pages hard-redirect to
+<code>/upgrade/v2</code> on a trial account, so the bundle cannot even be started until this is done.</li>
+<li>Lodge the <code>AUSTRALIA MOBILE BUSINESS</code> bundle. Three documents; the ABR ABN Advice PDF
+covers two of the three slots on its own.</li>
+<li>Buy a Mobile <code>+61 4</code> number there — <strong>a Local <code>02</code> number cannot send SMS
+at all</strong>, so voice and SMS are necessarily two numbers. A$8.25/mo vs A$3.00/mo. <strong>Assigning
+the approved bundle is a separate step from buying</strong>, and a shortlisted number is never reserved
+while the bundle is in review.</li>
+<li>Prove it in <code>Biteperk-staging</code> first, then repeat in production. Twilio has no promote —
+"promotion" means making the same change again in the other account, and the console gives almost no
+visual difference between them. <strong>Check the account picker before every change.</strong></li>
+<li><strong>ACMA sender ID is not a blocker but the copy assumes it.</strong>
+<code>buildPaymentSms</code> ends "Do not reply to this message" — written for a one-way alphanumeric
+sender. Today we send from a number that <em>can</em> receive replies, and nobody is reading them.
+Either monitor that inbox during the pilot or accept that a guest replying "I paid" is shouting into a
+void. The <code>BitePerk</code> sender ID application is not yet lodged and has two slow prerequisites
+(the ABR authorised-contact email for ABN 36 700 831 303, and a myID identity), so treat it as a
+post-pilot improvement.</li>
+</ul>
+<div class="exit"><strong>Exit criteria</strong>
+Production Regulatory Bundle approved and assigned. A production SMS from the correct account lands on a
+real handset with the exact payment-link body. The question of which account carries voice is answered in
+writing in <code>CLAUDE.md</code>.
+</div>
+</div>
+</div>
+
+<div class="gate" id="g6">
+<div class="gate-id"><div class="g">6</div><div class="lbl">Bella</div></div>
+<div class="gate-body">
+<h3>Register the tool and write the prompt</h3>
+<div class="gate-meta"><span class="pill eng">Engineering</span><span class="pill">~1 day</span></div>
+<p>The backend route exists. <strong>Nothing in the repo registers the tool with Retell</strong> — no
+tool definition in <code>deploy/retell-snapshots/</code>, and no prompt text telling Bella when to call
+it. Until this is done the feature is unreachable by voice, no matter what the flags say.</p>
+<ul>
+<li><strong>Snapshot first</strong> — <code>deploy/retell-snapshots/&lt;timestamp&gt;-add-payment-link/{llm.json,agent.json}</code>.
+This is the rollback for a bad prompt.</li>
+<li>Register <code>send_payment_link</code> in the Retell dashboard: URL, JSON schema matching
+<code>sendPaymentLinkRetellSchema</code>, description.</li>
+<li>Prompt rules, non-negotiable:
+  <ul>
+    <li><strong>Offer, never assume.</strong> "Would you like me to text you a payment link, or would you
+    rather pay when you arrive?"</li>
+    <li><strong>Never read a URL aloud.</strong> The tool response deliberately omits the checkout URL so
+    the model cannot leak what it never sees — but the prompt must also stop it from inventing one.</li>
+    <li><strong>Read back the number</strong> digit by digit if the caller gives one.</li>
+    <li><strong>Say the expiry:</strong> "The link's good for forty-five minutes."</li>
+    <li><strong>Every refusal has a spoken fallback</strong> — withheld number, venue not set up, payments
+    disabled all end with "you can pay when you arrive." No dead air.</li>
+  </ul>
+</li>
+<li>Ten scripted test calls before the pilot: happy path, decline, withheld number, caller changes the
+order after the link is sent, caller asks Bella to read the link aloud (she must refuse), caller asks to
+resend.</li>
+</ul>
+<div class="exit"><strong>Exit criteria</strong>
+Ten scripted calls pass, including the refusals. Snapshot committed. A colleague who has not seen the
+prompt cannot get Bella to read a URL out loud.
+</div>
+</div>
+</div>
+
+<div class="gate" id="g7">
+<div class="gate-id"><div class="g">7</div><div class="lbl">Pilot</div></div>
+<div class="gate-body">
+<h3>One venue, two weeks, capped</h3>
+<div class="gate-meta"><span class="pill you">Sam</span><span class="pill ext">Natalia's Bistro</span><span class="pill">2 weeks</span></div>
+<p>Natalia's Bistro is the obvious pilot — it is the venue you know best and the one whose staff will
+actually tell you when something is odd.</p>
+<h4>Before the first call</h4>
+<ul class="chk">
+<li>Gates 0–6 closed. All of them. Gate 2 in particular is not a formality.</li>
+<li>Venue agreement amendment signed by Natalia's, covering chargeback liability and refund authority.</li>
+<li>Natalia's briefed <em>in person</em>: what the guest sees, what the PAID pill means, what to do if a
+guest says they paid but the ticket says UNPAID, and who to ring.</li>
+<li><code>ORDER_PAYMENT_FEE_BPS=0</code> — pilot at zero platform fee. Prove the mechanism before pricing it.</li>
+<li>A named person on call for the first three dinner services.</li>
+</ul>
+<h4>Flip order — one variable at a time</h4>
+<ol>
+<li><code>STRIPE_CONNECT_ENABLED=true</code>. Deploy. Onboard Natalia's. Confirm
+<code>charges_enabled</code> syncs by webhook. <strong>Nothing is chargeable yet.</strong></li>
+<li>Wait 24 hours. Watch for <code>connect_account_unmatched</code> warnings.</li>
+<li><code>ORDER_PAYMENTS_ENABLED=true</code>. Deploy. <strong>Staff-button path only</strong> — the Retell
+tool is registered but the prompt does not yet offer it. A manager sends the first live link, to their own
+phone, for a real order.</li>
+<li>You pay it. Real card, real money, your money. Watch the whole chain: SMS, page branding, KDS pill,
+Stripe balance, transfer to Natalia's connected account.</li>
+<li>Refund it through our code path. Confirm the transfer reversed.</li>
+<li>Only then enable the prompt offer, and only for dinner service, and only with someone watching.</li>
+</ol>
+<div class="exit"><strong>Exit criteria — all must hold over two weeks</strong>
+Zero double-charges. Zero orders cooked unpaid. Zero disputes. Every payment reconciles to a transfer.
+Median SMS delivery under 10 seconds. Staff can describe the failure procedure without notes.
+</div>
+</div>
+</div>
+
+<div class="gate" id="g8">
+<div class="gate-id"><div class="g">8</div><div class="lbl">GA</div></div>
+<div class="gate-body">
+<h3>General availability</h3>
+<div class="gate-meta"><span class="pill you">Sam</span></div>
+<ul>
+<li>Set the real platform fee, informed by pilot basket sizes and the confirmed post-1-Oct AU rate.</li>
+<li>Connect onboarding becomes a step in the venue wizard rather than a Billing-page afterthought.</li>
+<li>Roll to venues in batches, not all at once. Each new venue is a new connected account and a new KYC
+outcome — some will fail verification and you want to learn that in threes, not thirties.</li>
+<li>Write <code>deploy/runbooks/order-payments-incident.md</code>: guest charged but no order, order paid
+twice, venue's account suspended mid-service, Stripe outage during dinner.</li>
+<li>Revisit the deferred items: async payment methods, the ACMA sender ID, automated dispute handling.</li>
+</ul>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="day1">Day-one runbook</h2>
+
+<p>Pin this where whoever is on call can find it. It assumes Gate 7 step 3 has just happened.</p>
+
+<h4>Guest says they paid, ticket says UNPAID</h4>
+<ol>
+<li>Stripe dashboard → Payments → search the guest's phone or the amount. If there is no payment, they
+haven't paid — the link may have expired.</li>
+<li>If there <em>is</em> a payment: the webhook was missed. <strong>Wait five minutes</strong> — the
+reaper reconciles against Stripe as the source of truth and will flip it. This is exactly what it's for.</li>
+<li>Still unpaid after ten minutes: check the webhook endpoint in Stripe for delivery failures. 500s mean
+"row missing" and self-heal on retry; 400s mean the webhook secret is wrong and nothing will self-heal.</li>
+<li>Never flip <code>payment_status</code> by hand in SQL. Fix the webhook; let the system converge.</li>
+</ol>
+
+<h4>Guest wants a refund</h4>
+<p>Until Gate 1.1 ships, this is <strong>two</strong> steps and doing only the first is a silent loss:</p>
+<ol>
+<li>Stripe dashboard → the payment → Refund.</li>
+<li><strong>Then reverse the transfer</strong> — dashboard → Connect → Transfers → find the transfer for
+that charge → reverse. Without this the venue keeps the money and BitePerk covers the refund.</li>
+</ol>
+
+<h4>Amount mismatch alert</h4>
+<p>The guest paid a different amount than the order total — usually the order was edited after the link
+was sent. The money is recorded, the order deliberately stays unpaid, and a human decides. <strong>Never
+auto-resolve.</strong> Refund the difference or take the balance at the venue.</p>
+
+<h4>Guest paid a cancelled order</h4>
+<p>The payment is recorded, the order stays cancelled, nothing is cooked, and staff are alerted. Refund it
+in full, both steps.</p>
+
+<h4>Kill it</h4>
+<p><code>ORDER_PAYMENTS_ENABLED=false</code>, redeploy. New links stop immediately; Bella falls back to
+"you can pay when you arrive." Links already sent keep settling — the reaper and webhooks are deliberately
+not gated on the flag. <strong>Check Gate 1.4 first</strong>: if that entitlement bug is unfixed and
+<code>STRIPE_BILLING_ENABLED</code> is off, the reaper will fail every row after the flip.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="monitor">Monitoring and alert thresholds</h2>
+
+<p>The health alerter already posts to <code>OPS_SLACK_WEBHOOK_URL</code>. These are the thresholds worth
+setting before the pilot, not after the first incident.</p>
+
+<table>
+<thead><tr><th>Signal</th><th>Threshold</th><th>Means</th></tr></thead>
+<tbody>
+<tr><td>Webhook 500s</td><td>&gt;5 in 10 min</td><td>Rows missing at webhook time — usually fine, self-heals. Sustained means our commit is losing a race with Stripe.</td></tr>
+<tr><td>Webhook 400s</td><td><strong>Any</strong></td><td>Wrong webhook secret. Nothing will self-heal. Page someone.</td></tr>
+<tr><td><code>order_payment_reap_failed</code></td><td>&gt;3 per tick</td><td>Stripe unreachable, or the Gate 1.4 entitlement bug.</td></tr>
+<tr><td><code>order_payment_reaper_resolved</code></td><td>&gt;2 per hour</td><td>The reaper is doing the webhook's job. Investigate delivery.</td></tr>
+<tr><td>Amount mismatch</td><td><strong>Any</strong></td><td>Human decision required. Never auto-resolves.</td></tr>
+<tr><td>Paid-after-cancel</td><td><strong>Any</strong></td><td>Guest owed a refund right now.</td></tr>
+<tr><td><code>connect_account_unmatched</code></td><td>Any</td><td>A connected account exists that we can't map to a venue.</td></tr>
+<tr><td><code>charge.dispute.created</code></td><td><strong>Any</strong></td><td>Debits our account. Manual reversal decision.</td></tr>
+<tr><td>SMS pending &gt;60 s</td><td>Any</td><td>Notification worker stalled or SMS channel misconfigured. Guests are waiting.</td></tr>
+<tr><td>Rate limit hits</td><td>&gt;5/day</td><td>10/hour per user, 3/hour per order. Staff hitting it means confusion or abuse.</td></tr>
+</tbody>
+</table>
+
+<p>Add one business metric that no alert covers: <strong>link-to-payment conversion</strong>. If guests
+receive links and don't pay them, the mechanism works and the product doesn't. That is the number that
+tells you whether to keep building.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="rollback">Rollback and abort</h2>
+
+<h3>Three levels, in order of preference</h3>
+<ol>
+<li><strong>Flag flip</strong> — <code>ORDER_PAYMENTS_ENABLED=false</code>. Seconds. Stops new links,
+lets outstanding ones settle. <strong>This is the rollback for almost everything.</strong></li>
+<li><strong>Revision rollback</strong> — Cloud Run traffic to the previous revision. Minutes. For a code
+bug. Only exists if Gate 3 chose Option A; on the VM this is manual image-tag surgery over SSH.</li>
+<li><strong>Schema rollback</strong> — there is no down migration for 030 and you almost certainly don't
+want one. The table is additive; leaving it is harmless. If you truly must, the ordering is
+<code>order_payments</code> → the <code>restaurants</code> columns, and the <code>ON DELETE RESTRICT</code>
+foreign keys will fight you.</li>
+</ol>
+
+<h3>Abort criteria — stop the pilot immediately</h3>
+<ul>
+<li>Any guest charged twice for one order.</li>
+<li>Any payment that cannot be traced to a transfer within 24 hours.</li>
+<li>Any order cooked and served that was never paid, where the system said PAID.</li>
+<li>Two or more disputes in the pilot window.</li>
+<li>Legal advice arrives and contradicts the structure.</li>
+</ul>
+<p>Aborting is a flag flip and a phone call to Natalia's. Cheap. The expensive thing is discovering any of
+the above from an angry guest instead of from an alert — which is what the monitoring above is for.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="money">Money reconciliation</h2>
+
+<p>Nobody plans this and everybody needs it in week two. Weekly, during the pilot; monthly after.</p>
+<ol>
+<li>Export Stripe balance history for the period.</li>
+<li><code>SELECT sum(amount_received_cents) FROM order_payments WHERE status = 'paid' AND paid_at BETWEEN …</code></li>
+<li>Those two must agree. If they don't, the difference is either a payment we never recorded (webhook
+lost <em>and</em> reaper failed — investigate hard) or a Stripe-dashboard payment created outside our code
+(carries no <code>biteperk_kind</code> marker, so our webhook branch ignores it entirely — this is why
+hand-creating payments in the live dashboard is a bad habit).</li>
+<li>Sum application fees collected; compare to <code>sum(application_fee_cents)</code>.</li>
+<li>Confirm each venue's transfers match their orders. Give venues a statement they can check — they will
+check, and being able to answer is the difference between a trusted product and a suspicious one.</li>
+</ol>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="owners">Owners and open questions</h2>
+
+<table>
+<thead><tr><th>Item</th><th>Owner</th><th>Start</th></tr></thead>
+<tbody>
+<tr><td>Commit <code>logger.ts</code> + docs, merge PR #154</td><td>Eng</td><td><strong>Today</strong></td></tr>
+<tr><td>Brief a financial-services lawyer</td><td>Sam</td><td><strong>This week</strong></td></tr>
+<tr><td>Decide VM vs Cloud Run production</td><td>Sam + Abhishek</td><td>This week</td></tr>
+<tr><td>Resolve which Twilio account carries production voice</td><td>Sam</td><td>This week</td></tr>
+<tr><td>Refund path with <code>reverse_transfer</code></td><td>Eng</td><td>After Gate 0</td></tr>
+<tr><td>Retell tool registration + prompt</td><td>Eng</td><td>After Gate 0</td></tr>
+<tr><td>Venue agreement amendment</td><td>Sam + counsel</td><td>After Gate 2 begins</td></tr>
+<tr><td>Reply to Niza; book the 19 Aug Sydney session</td><td>Sam</td><td>This week</td></tr>
+</tbody>
+</table>
+
+<h3>Still genuinely unknown</h3>
+<ul>
+<li><strong>Which Twilio account carries production voice.</strong> Documented as unresolved on 10 August.
+Everything in Gate 5 depends on it.</li>
+<li><strong>Whether the structure needs a licence.</strong> Gate 2. Unknowable without counsel.</li>
+<li><strong>The post-1-Oct-2026 AU processing rate.</strong> Determines whether any platform fee is viable.</li>
+<li><strong>Whether guests will actually pay by link.</strong> No amount of engineering answers this. The
+pilot does.</li>
+</ul>
+
+<div class="card gold" style="margin-top:32px">
+<h3 style="margin-top:0">If you do only three things this week</h3>
+<ol style="margin-bottom:0">
+<li><strong>Commit <code>logger.ts</code>.</strong> Ten minutes. Right now it is a security hole hiding in
+your working tree, and it will be forgotten the moment the PR merges without it.</li>
+<li><strong>Email a financial-services lawyer.</strong> Longest lead time, hardest block, and the brief in
+Gate 2 is written — you can send it as-is.</li>
+<li><strong>Log into Twilio and find the production voice number.</strong> Fifteen minutes, and it has
+been an open question for two days across two documents.</li>
+</ol>
+</div>
+
+<footer>
+<p><span class="brand-name">bite<span class="perk">perk</span></span> · BITEPERK PTY LTD · ABN 36 700 831 303<br>
+Level 1, 457-459 Elizabeth Street, Surry Hills NSW 2010 · hello@biteperk.com.au</p>
+<p>Internal engineering document. Code state verified against <code>feat/voice-order-payments</code> at
+<code>db4c1dd</code> on 12 August 2026. Stripe behaviour verified against the current API reference.
+<strong>Regulatory content is a briefing for counsel, not legal advice</strong> — Australian payments
+licensing has changed recently and only a qualified Australian financial-services lawyer can tell you
+where BitePerk sits. Fees are indicative; confirm with Stripe in writing.</p>
+</footer>
+
+</div>
+</body>
+</html>
