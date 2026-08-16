@@ -26,7 +26,10 @@ const toNumber = process.env.TWILIO_PHONE_NUMBER ?? "+61200000000";
 function twilioSign(url: string, params: URLSearchParams, key: string): string {
   const entries = [...params.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const data = url + entries.map(([k, v]) => k + v).join("");
-  return crypto.createHmac("sha1", key).update(Buffer.from(data, "utf8")).digest("base64");
+  // SHA-1 is not a choice here: it is the algorithm Twilio's X-Twilio-Signature
+  // scheme mandates, and the server verifies with the same primitive.
+  return crypto.createHmac("sha1", key).update(Buffer.from(data, "utf8")).digest("base64"); // NOSONAR
+
 }
 
 async function request(
