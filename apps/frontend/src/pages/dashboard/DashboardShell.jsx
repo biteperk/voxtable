@@ -9,7 +9,7 @@ import { RestaurantSwitcher } from "../../components/dashboard/RestaurantSwitche
 import { SidebarUserButton } from "../../components/dashboard/SidebarUserButton";
 
 export function DashboardShell({ active, children, navigate, path }) {
-  const { user, hasMinRole, role } = useAuth();
+  const { user, hasMinRole, role, isPlatformAdmin } = useAuth();
   const isPhone = useMediaQuery("(max-width: 767px)");
   const burgerRef = useRef(null);
   const drawer = useDrawer({ pathname: path, triggerRef: burgerRef });
@@ -94,6 +94,16 @@ export function DashboardShell({ active, children, navigate, path }) {
       </nav>
 
       <div className="sidebar-bottom">
+        {isPlatformAdmin && (
+          <button
+            className="settings-link"
+            type="button"
+            onClick={() => navigate("/admin")}
+          >
+            <Icon name="admin_panel_settings" />
+            <span>Admin</span>
+          </button>
+        )}
         {hasMinRole("manager") && (
           <button
             className={`settings-link ${active === "Billing" ? "active" : ""}`}

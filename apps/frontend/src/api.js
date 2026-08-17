@@ -518,3 +518,90 @@ export function acceptStaffInvite(token) {
     body: JSON.stringify({ token })
   });
 }
+
+// ===== Platform admin (BitePerk staff, cross-tenant) =====
+// All of these hit /api/admin/* — email-allowlist gated server-side
+// (DASHBOARD_ADMIN_EMAILS). A stray X-Restaurant-Id header is harmless: the
+// admin router never resolves a tenant.
+
+export function getAdminOnboardingHealth() {
+  return authedFetch(`/api/admin/onboarding-health`);
+}
+
+export function getAdminProvisioningQueue() {
+  return authedFetch(`/api/admin/provisioning-queue`);
+}
+
+export function getAdminRestaurants({ status, q } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (q) params.set("q", q);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return authedFetch(`/api/admin/restaurants${suffix}`);
+}
+
+export function getAdminRestaurant(id) {
+  return authedFetch(`/api/admin/restaurants/${id}`);
+}
+
+export function getAdminRestaurantSubscription(id) {
+  return authedFetch(`/api/admin/restaurants/${id}/subscription`);
+}
+
+export function adminBindProvisioning(id, payload) {
+  return authedFetch(`/api/admin/restaurants/${id}/provisioning`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function adminUnbindProvisioning(id, payload) {
+  return authedFetch(`/api/admin/restaurants/${id}/unbind`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function adminGoLive(id) {
+  return authedFetch(`/api/admin/restaurants/${id}/go-live`, { method: "POST" });
+}
+
+export function getAdminProvisioningJobs(status) {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return authedFetch(`/api/admin/provisioning-jobs${suffix}`);
+}
+
+export function adminReenqueueJob(id, payload) {
+  return authedFetch(`/api/admin/provisioning-jobs/${id}/re-enqueue`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {})
+  });
+}
+
+export function getAdminOpsSummary() {
+  return authedFetch(`/api/admin/ops-summary`);
+}
+
+export function getAdminActivity() {
+  return authedFetch(`/api/admin/activity`);
+}
+
+export function getAdminFlags() {
+  return authedFetch(`/api/admin/flags`);
+}
+
+export function getAdminActions(limit = 25) {
+  return authedFetch(`/api/admin/actions?limit=${limit}`);
+}
+
+export function getAdminSupportRequests(status) {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return authedFetch(`/api/admin/support-requests${suffix}`);
+}
+
+export function adminSetSupportStatus(id, status) {
+  return authedFetch(`/api/admin/support-requests/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status })
+  });
+}

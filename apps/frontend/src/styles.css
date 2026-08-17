@@ -13562,3 +13562,311 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     animation: none;
   }
 }
+
+/* ===== Platform admin console (/admin) =====================================
+   BitePerk-branded staff surface. Uses the app's tokens; brand rules apply:
+   --primary (#f5c418) is a FILL paired with --on-primary text, never a text
+   colour on light surfaces. Green lives only inside the BiteperkMark. */
+.admin-shell {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--on-surface);
+  display: flex;
+  flex-direction: column;
+}
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px clamp(16px, 4vw, 32px);
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface-container-low);
+}
+.admin-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.admin-wordmark {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 1.25rem;
+  color: var(--on-surface);
+}
+.admin-wordmark-perk {
+  color: var(--primary);
+  font-style: italic;
+  font-weight: 700;
+}
+.admin-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  color: var(--on-surface-variant);
+}
+.admin-env-badge {
+  border: 1px solid var(--outline-variant);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  color: var(--on-surface-variant);
+}
+.admin-env-badge.is-production {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: transparent;
+  font-weight: 700;
+}
+.admin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.admin-nav {
+  display: flex;
+  gap: 4px;
+  padding: 0 clamp(16px, 4vw, 32px);
+  border-bottom: 1px solid var(--outline-variant);
+  overflow-x: auto;
+}
+.admin-nav button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--on-surface-variant);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.admin-nav button.active {
+  color: var(--on-surface);
+  border-bottom-color: var(--primary);
+}
+.admin-main {
+  padding: clamp(16px, 3vw, 28px) clamp(16px, 4vw, 32px);
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+}
+.admin-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.admin-card {
+  max-width: none;
+}
+.admin-card h3 {
+  margin: 0 0 10px;
+}
+.admin-card-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.admin-muted {
+  color: var(--on-surface-variant);
+  font-size: 0.9rem;
+}
+.admin-stat {
+  text-align: center;
+}
+.admin-stat-number {
+  display: block;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+.admin-funnel {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.admin-funnel-step {
+  text-align: center;
+  min-width: 84px;
+}
+.admin-flags,
+.admin-dl-inline {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-flag {
+  border: 1px solid var(--outline-variant);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  color: var(--on-surface-variant);
+}
+.admin-flag.is-on {
+  border-color: var(--primary);
+  color: var(--on-surface);
+}
+.admin-flag.is-warn {
+  border-color: var(--error, #ff6b6b);
+  color: var(--on-surface);
+}
+.admin-audit {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.admin-audit li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+.admin-audit-action {
+  color: var(--on-surface-variant);
+}
+.admin-incidents ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.admin-input {
+  background: var(--surface-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: 10px;
+  color: var(--on-surface);
+  padding: 8px 12px;
+  font: inherit;
+  min-width: 200px;
+}
+.admin-input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.admin-venue-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+.admin-venue-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.admin-venue-detail {
+  margin-top: 14px;
+  border-top: 1px solid var(--outline-variant);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.admin-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.admin-panel h4 {
+  margin: 0 0 8px;
+}
+.admin-panel-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 0.88rem;
+  color: var(--on-surface-variant);
+}
+.admin-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 6px 0;
+  font-size: 0.9rem;
+}
+.admin-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 0.9rem;
+}
+.admin-dl dt {
+  color: var(--on-surface-variant);
+}
+.admin-dl dd {
+  margin: 0;
+}
+.admin-warning {
+  color: var(--error, #ff6b6b);
+  font-size: 0.88rem;
+}
+.admin-notice {
+  border-color: var(--primary);
+  color: var(--on-surface);
+}
+.admin-danger-panel {
+  border: 1px solid var(--error, #ff6b6b);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 10px;
+}
+.admin-danger-button {
+  background: var(--error, #ff6b6b);
+  color: #1a0404;
+}
+.admin-error-cell {
+  max-width: 320px;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+  color: var(--on-surface-variant);
+}
+.admin-gate-card {
+  margin: 48px auto 0;
+  text-align: center;
+}
+.admin-support-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.admin-support-message {
+  white-space: pre-wrap;
+  margin: 8px 0;
+}
+@media (max-width: 640px) {
+  .admin-dl {
+    grid-template-columns: 1fr;
+  }
+}
