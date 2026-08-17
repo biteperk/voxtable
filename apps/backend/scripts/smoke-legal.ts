@@ -10,13 +10,23 @@
  *      assert — if the schema stops enforcing, this fails, not production.
  *   3. DB: agreement_acceptances is append-only — UPDATE and DELETE raise.
  *   4. DB: restaurants.retention_days rejects values outside {30, 90}.
+ *   5. Manifest verification: an acceptance whose hashes/version differ from
+ *      the published manifest is refused (409), and SAMPLE/DRAFT document
+ *      sets are refused outright while TERMS_ALLOW_UNPUBLISHED_DOCS is off.
+ *   6. DB: migration 032's csa_url/schedule_url columns exist and are written.
  *
  * DB checks run inside one transaction with savepoints (a raised exception
  * aborts the txn state) and ROLLBACK at the end — nothing persists.
  * Usage:  tsx apps/backend/scripts/smoke-legal.ts   (needs a migrated DB)
  */
 import { pool } from "../src/db/pool";
+import { isAppError } from "../src/domain/errors";
 import { nextOnboardingStatus } from "../src/services/onboardingService";
+import {
+  assertAcceptanceMatchesPublished,
+  assertPublishedVersionAllowed,
+  type LegalDocumentsManifest
+} from "../src/services/legalDocuments";
 import { agreementSchema } from "../src/http/schemas";
 import { isValidAbn } from "../src/utils/abn";
 
@@ -102,6 +112,48 @@ async function main(): Promise<void> {
   assert("ABN util: ATO example valid", isValidAbn("51824753556"));
   assert("ABN util: transposed digits invalid", !isValidAbn("51824753565"));
 
+  // --- 5. Manifest verification ---------------------------------------------
+  const publishedManifest: LegalDocumentsManifest = {
+    document_set_version: VALID_PAYLOAD.document_set_version,
+    csa_url: VALID_PAYLOAD.csa_url,
+    schedule_url: VALID_PAYLOAD.schedule_url,
+    csa_sha256: VALID_PAYLOAD.csa_sha256,
+    schedule_sha256: VALID_PAYLOAD.schedule_sha256
+  };
+  const matching = { ...VALID_PAYLOAD };
+  let matchOk = true;
+  try {
+    assertAcceptanceMatchesPublished(matching, publishedManifest);
+  } catch {
+    matchOk = false;
+  }
+  assert("acceptance matching the manifest passes verification", matchOk);
+
+  let mismatchRefused = false;
+  try {
+    assertAcceptanceMatchesPublished(
+      { ...matching, csa_sha256: "f".repeat(64) },
+      publishedManifest
+    );
+  } catch (e) {
+    mismatchRefused = isAppError(e) && e.statusCode === 409 && e.code === "TERMS_VERSION_MISMATCH";
+  }
+  assert("acceptance with a different CSA hash REFUSED (409 TERMS_VERSION_MISMATCH)", mismatchRefused);
+
+  let sampleRefused = false;
+  try {
+    assertPublishedVersionAllowed({
+      ...publishedManifest,
+      document_set_version: "SAMPLE-2026-08"
+    });
+  } catch (e) {
+    sampleRefused = isAppError(e) && e.code === "TERMS_NOT_PUBLISHED";
+  }
+  assert(
+    "SAMPLE document set REFUSED while TERMS_ALLOW_UNPUBLISHED_DOCS is off",
+    process.env.TERMS_ALLOW_UNPUBLISHED_DOCS === "true" ? !sampleRefused : sampleRefused
+  );
+
   // --- 3 & 4. DB: append-only ledger + retention CHECK -----------------------
   const client = await pool.connect();
   try {
@@ -118,15 +170,19 @@ async function main(): Promise<void> {
       `INSERT INTO restaurants (name, timezone) VALUES ('SMOKE-legal', 'Australia/Sydney') RETURNING id`
     );
     const rid = r.rows[0]!.id;
-    const a = await client.query<{ id: string }>(
+    // Writes the 032 URL columns too — fails loudly if the migration is
+    // missing, and proves the provenance actually lands in the row.
+    const a = await client.query<{ id: string; csa_url: string | null }>(
       `INSERT INTO agreement_acceptances (
-         restaurant_id, user_id, channel, document_set_version, csa_sha256, schedule_sha256,
+         restaurant_id, user_id, channel, document_set_version, csa_url, schedule_url,
+         csa_sha256, schedule_sha256,
          consent_terms, consent_overseas, consent_disclosure, order_form_json
-       ) VALUES ($1, 'smoke-user', 'online', 'SMOKE', 'x', 'x', true, true, true, '{}'::jsonb)
-       RETURNING id`,
-      [rid]
+       ) VALUES ($1, 'smoke-user', 'online', 'SMOKE', $2, $3, 'x', 'x', true, true, true, '{}'::jsonb)
+       RETURNING id, csa_url`,
+      [rid, VALID_PAYLOAD.csa_url, VALID_PAYLOAD.schedule_url]
     );
     const aid = a.rows[0]!.id;
+    assert("ledger row stores csa_url (migration 032)", a.rows[0]!.csa_url === VALID_PAYLOAD.csa_url);
 
     await client.query("SAVEPOINT s1");
     let updateBlocked = false;
