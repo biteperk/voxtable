@@ -135,11 +135,6 @@ export function AgreementStep({ onSaved, onBack = null }) {
       <p className="onboarding-lead">
         A couple of decisions about your service and your callers' data — then Bella can get to work.
       </p>
-      {config.document_set_version === "DRAFT" && (
-        <p className="onboarding-field-help">
-          <Icon name="info" /> Preview environment — the agreement documents are not final yet.
-        </p>
-      )}
       <form onSubmit={submit} className="onboarding-form">
         <div className="onboarding-field-row">
           <label className="onboarding-field">

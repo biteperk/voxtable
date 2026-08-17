@@ -295,6 +295,17 @@ const envSchema = z
   // allowlist remains the gate while this is off, and stays authoritative for
   // admin routes regardless). Kill-switch pattern: ships OFF.
   SELF_SERVE_SIGNUP_ENABLED: boolFlag(),
+  // The published legal-documents manifest (same object the wizard reads from
+  // GCS). When set, POST /api/onboarding/agreement verifies the submitted
+  // version/URLs/hashes against it before writing the acceptance ledger —
+  // the ledger is only evidence if the server, not the browser, vouches for
+  // what was accepted. superRefine below requires it in production whenever
+  // self-serve signup is on.
+  LEGAL_DOCUMENTS_MANIFEST_URL: z.string().url().optional(),
+  // Allows acceptances against an unpublished (SAMPLE-*/DRAFT-*) document
+  // set. Kill-switch pattern: ships OFF. Staging turns it on so the wizard
+  // stays testable before the real CSA text publishes; production never does.
+  TERMS_ALLOW_UNPUBLISHED_DOCS: boolFlag(),
   // VoxConcierge is contracted "when released" — the wizard only offers it
   // once this flag is on. VoxDrive is deliberately not a service value
   // anywhere: it is a concept and must never be sold.
@@ -406,6 +417,19 @@ const envSchema = z
         path: ["PUBLIC_API_BASE_URL"],
         message: "Production PUBLIC_API_BASE_URL must be a public HTTPS URL."
       });
+    }
+
+    // Self-serve signups record legal acceptances; without the manifest the
+    // route would either fail every acceptance (fail-closed) or record
+    // unverified evidence. Refuse the boot instead. NOTE for deploys: add
+    // LEGAL_DOCUMENTS_MANIFEST_URL to the Terraform env map BEFORE promoting
+    // this code to an environment that has self-serve on, or it dies on this
+    // gate at startup.
+    if (value.SELF_SERVE_SIGNUP_ENABLED) {
+      requireInProd(
+        "LEGAL_DOCUMENTS_MANIFEST_URL",
+        "LEGAL_DOCUMENTS_MANIFEST_URL is required when SELF_SERVE_SIGNUP_ENABLED=true (acceptances are verified against the published manifest)."
+      );
     }
 
     requireInProd("RETELL_API_KEY", "RETELL_API_KEY is required in production.");

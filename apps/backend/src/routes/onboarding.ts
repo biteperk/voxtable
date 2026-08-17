@@ -28,10 +28,17 @@ import {
   setOnboardingStatus
 } from "../repositories/restaurants";
 import {
+  assertAcceptanceMatchesPublished,
+  assertPublishedVersionAllowed,
+  getPublishedLegalDocuments,
+  legalDocumentsVerificationEnabled
+} from "../services/legalDocuments";
+import {
   computeChecklist,
   nextOnboardingStatus,
   type OnboardingEvent
 } from "../services/onboardingService";
+import { logger } from "../utils/logger";
 import { notifyRestaurant } from "../services/notificationService";
 import { createRestaurantLimiter } from "../http/rateLimiters";
 
@@ -238,6 +245,22 @@ onboardingRouter.post(
       throw new AppError(400, "SERVICE_NOT_AVAILABLE", "VoxConcierge isn't available yet.");
     }
 
+    // The submitted version/URLs/hashes go into the append-only ledger, so
+    // they must match what we actually published — the browser doesn't get to
+    // choose what the evidence says (#196). Fail-closed: manifest unreachable
+    // means no acceptance is recorded. Only skipped when no manifest URL is
+    // configured (local dev; production boots refuse that combination).
+    if (legalDocumentsVerificationEnabled()) {
+      const published = await getPublishedLegalDocuments();
+      assertPublishedVersionAllowed(published);
+      assertAcceptanceMatchesPublished(body, published);
+    } else {
+      logger.warn({
+        message: "agreement_acceptance_unverified",
+        detail: "LEGAL_DOCUMENTS_MANIFEST_URL is not set; recording acceptance without manifest verification (dev only)."
+      });
+    }
+
     const result = await withTransaction(async (db) => {
       // Same lock key as /advance so the two transition paths serialize.
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
@@ -275,6 +298,8 @@ onboardingRouter.post(
           userId: user.uid,
           channel: "online",
           documentSetVersion: body.document_set_version,
+          csaUrl: body.csa_url,
+          scheduleUrl: body.schedule_url,
           csaSha256: body.csa_sha256,
           scheduleSha256: body.schedule_sha256,
           consentTerms: body.consent_terms,

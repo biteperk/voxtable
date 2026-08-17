@@ -28,9 +28,15 @@ NAMES.md §per-venue resources.
   ISV/Reseller question — per-venue numbers may need per-venue End User objects,
   in which case bundle cloning does not help. See
   [`twilio-account-topology.md`](twilio-account-topology.md).
-- **Terms.** While `TERMS_DOCUMENT_SET_VERSION=DRAFT`, the API agreement step
-  refuses in production — commercial terms are handled on paper/email until
-  the versioned CSA publishes. Track the acceptance backfill.
+- **Terms.** The agreement documents live in a versioned GCS bucket published
+  by `publish-legal-documents.yml`; the wizard reads `current/manifest.json`
+  and the backend verifies every acceptance against the same manifest
+  (`LEGAL_DOCUMENTS_MANIFEST_URL` — mismatch 409, unreachable 503). While the
+  published set is still `SAMPLE-*`, acceptance is refused unless
+  `TERMS_ALLOW_UNPUBLISHED_DOCS=true` (staging only) — commercial terms are
+  handled on paper/email until the real CSA publishes (#164). Track the
+  acceptance backfill for paper/email venues (no route writes
+  `channel='offline'` rows yet).
 
 ## 1. Retell agent — one agent AND one LLM per venue
 
