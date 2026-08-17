@@ -72,6 +72,9 @@ export function AuthProvider({ children }) {
   const [memberships, setMemberships] = useState([]);
   const [activeRestaurantId, setActiveId] = useState(getActiveRestaurantId());
   const [meLoading, setMeLoading] = useState(false);
+  // Platform admin (BitePerk staff) — a UI hint from /api/me for showing the
+  // /admin entry point. Authority lives server-side on every /api/admin call.
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   const role = roleForRestaurant(memberships, activeRestaurantId);
 
@@ -83,6 +86,7 @@ export function AuthProvider({ children }) {
       const me = await getMe();
       const list = Array.isArray(me?.memberships) ? me.memberships : [];
       setMemberships(list);
+      setIsPlatformAdmin(me?.is_admin === true);
       const active = pickActive(list, me?.active_restaurant_id ?? null);
       setActiveRestaurantId(active);
       setActiveId(active);
@@ -90,6 +94,7 @@ export function AuthProvider({ children }) {
       // 403 NO_RESTAURANT_MEMBERSHIP (no restaurant yet) or a transient error:
       // leave memberships empty so the app can route to onboarding (Phase 1).
       setMemberships([]);
+      setIsPlatformAdmin(false);
       setActiveRestaurantId(null);
       setActiveId(null);
     } finally {
@@ -110,6 +115,7 @@ export function AuthProvider({ children }) {
         void flushPendingSignup();
       } else if (!next) {
         setMemberships([]);
+        setIsPlatformAdmin(false);
         setActiveRestaurantId(null);
         setActiveId(null);
       }
@@ -156,6 +162,7 @@ export function AuthProvider({ children }) {
         activeRestaurantId,
         role,
         meLoading,
+        isPlatformAdmin,
         setActiveRestaurant,
         refreshMe: loadMe,
         hasMinRole

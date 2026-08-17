@@ -26,6 +26,7 @@ import { LoginScreen } from "./pages/auth/LoginScreen";
 import { VerifyEmailScreen } from "./pages/auth/VerifyEmailScreen";
 import { AcceptInvitePage } from "./pages/auth/AcceptInvitePage";
 import { OrderReturnPage } from "./pages/public/OrderReturnPage";
+import { AdminPage } from "./pages/admin/AdminPage";
 
 
 
@@ -124,6 +125,11 @@ function App() {
       "/profile": "Profile · VoxTable",
       "/onboarding": "Get started · VoxTable",
       "/verify-email": "Verify your email · VoxTable",
+      "/admin": "Admin · VoxTable",
+      "/admin/venues": "Admin · VoxTable",
+      "/admin/jobs": "Admin · VoxTable",
+      "/admin/ops": "Admin · VoxTable",
+      "/admin/support": "Admin · VoxTable",
       "/order/paid": "Payment received",
       "/order/cancelled": "Payment not completed",
     };
@@ -267,6 +273,11 @@ function AppRouter({ path, navigate, isDashboard }) {
   const isOnboarding = path === "/onboarding" || path.startsWith("/onboarding/");
   const isInvite = path === "/invite";
   const isVerifyEmail = path === "/verify-email";
+  // Platform-admin console. Deliberately OUTSIDE isDashboard: the tenant and
+  // onboarding gates below would redirect a membership-less staff account to
+  // /onboarding and hold the page on an infinite loader. Auth is still
+  // enforced (and the backend re-checks the admin allowlist on every call).
+  const isAdminPath = path === "/admin" || path.startsWith("/admin/");
   // Stripe Checkout return pages for guest order payments. Fully public (the
   // guest has no account) — must render before any auth/onboarding gate.
   const isOrderReturn = path === "/order/paid" || path === "/order/cancelled";
@@ -341,6 +352,15 @@ function AppRouter({ path, navigate, isDashboard }) {
   // /invite?token=xxx is outside dashboard/onboarding gates so new staff can join first.
   if (isInvite) {
     return <AcceptInvitePage navigate={navigate} />;
+  }
+
+  // Platform-admin console (BitePerk staff). Auth-gated here, admin-gated by
+  // the backend on every call — a non-admin sees the page's friendly 403 state.
+  if (isAdminPath) {
+    if (loading) return <FullPageMessage title="Loading..." />;
+    if (!user) return <LoginScreen navigate={navigate} />;
+    if (!user.emailVerified) return <VerifyEmailScreen navigate={navigate} />;
+    return <AdminPage navigate={navigate} path={path} />;
   }
 
   // /verify-email is the continue-URL Firebase's action handler bounces back
