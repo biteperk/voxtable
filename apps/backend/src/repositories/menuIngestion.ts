@@ -250,3 +250,58 @@ export async function markCommitted(id: string, db: DbClient = pool): Promise<bo
   );
   return (result.rowCount ?? 0) > 0;
 }
+
+export interface MenuIngestionSummary {
+  byStatus: Record<string, number>;
+  stuckProcessing: number;
+  parsedNeverCommitted: number;
+  recentFailures: Array<{
+    id: string;
+    restaurant_id: string;
+    restaurant_name: string | null;
+    attempts: number;
+    last_error: string | null;
+    created_at: string;
+  }>;
+}
+
+/** Cross-tenant OCR health for the platform-admin ops panel. */
+export async function getMenuIngestionSummary(db: DbClient = pool): Promise<MenuIngestionSummary> {
+  const [byStatus, counters, failures] = await Promise.all([
+    db.query<{ status: string; n: string }>(
+      "SELECT status, COUNT(*)::text AS n FROM menu_ingestion_jobs GROUP BY status"
+    ),
+    db.query<{ stuck: string; parsed_never_committed: string }>(
+      `SELECT
+         (SELECT COUNT(*) FROM menu_ingestion_jobs
+           WHERE status = 'processing' AND updated_at < now() - interval '30 minutes')::text AS stuck,
+         -- Parsed >24h ago but never committed: the owner abandoned the review
+         -- step, which usually means the draft looked wrong to them.
+         (SELECT COUNT(*) FROM menu_ingestion_jobs
+           WHERE status = 'parsed' AND updated_at < now() - interval '24 hours')::text AS parsed_never_committed`
+    ),
+    db.query<{
+      id: string;
+      restaurant_id: string;
+      restaurant_name: string | null;
+      attempts: number;
+      last_error: string | null;
+      created_at: string;
+    }>(
+      `SELECT j.id, j.restaurant_id, r.name AS restaurant_name, j.attempts, j.last_error, j.created_at
+         FROM menu_ingestion_jobs j
+         LEFT JOIN restaurants r ON r.id = j.restaurant_id
+        WHERE j.status = 'failed' AND j.created_at >= now() - interval '7 days'
+        ORDER BY j.created_at DESC
+        LIMIT 20`
+    )
+  ]);
+  const statusMap: Record<string, number> = {};
+  for (const row of byStatus.rows) statusMap[row.status] = Number(row.n);
+  return {
+    byStatus: statusMap,
+    stuckProcessing: Number(counters.rows[0]?.stuck ?? "0"),
+    parsedNeverCommitted: Number(counters.rows[0]?.parsed_never_committed ?? "0"),
+    recentFailures: failures.rows
+  };
+}

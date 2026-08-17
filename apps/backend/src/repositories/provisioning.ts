@@ -136,6 +136,50 @@ export async function markProvisioningRetry(id: string, error: string, nextAttem
   );
 }
 
+export interface ProvisioningJobWithVenue extends ProvisioningJob {
+  restaurant_name: string | null;
+}
+
+export async function listProvisioningJobs(
+  status?: ProvisioningJob["status"]
+): Promise<ProvisioningJobWithVenue[]> {
+  const params: string[] = [];
+  let where = "";
+  if (status) {
+    params.push(status);
+    where = "WHERE j.status = $1";
+  }
+  const result = await pool.query<ProvisioningJobWithVenue>(
+    `SELECT j.*, r.name AS restaurant_name
+       FROM provisioning_jobs j
+       LEFT JOIN restaurants r ON r.id = j.restaurant_id
+       ${where}
+      ORDER BY j.updated_at DESC
+      LIMIT 100`,
+    params
+  );
+  return result.rows;
+}
+
+/**
+ * Reset a FAILED job in place so the worker picks it up again. Never inserts:
+ * the unique index is partial (active statuses only), so enqueueing while a
+ * failed row exists creates a SECOND job with an empty payload — and an empty
+ * payload means the buy_number step purchases another Twilio number we pay
+ * for monthly. Preserving the row preserves the payload. Returns null when
+ * the job doesn't exist or isn't failed.
+ */
+export async function resetFailedProvisioningJob(id: string): Promise<ProvisioningJob | null> {
+  const result = await pool.query<ProvisioningJob>(
+    `UPDATE provisioning_jobs
+        SET status = 'pending', attempts = 0, next_attempt_at = now(), last_error = NULL
+      WHERE id = $1 AND status = 'failed'
+      RETURNING *`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function markProvisioningFailed(id: string, error: string): Promise<void> {
   await pool.query("UPDATE provisioning_jobs SET status = 'failed', last_error = $2 WHERE id = $1", [
     id,

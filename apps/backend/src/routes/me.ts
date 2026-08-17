@@ -3,9 +3,11 @@ import { z } from "zod";
 
 import {
   AuthenticatedRequest,
+  isPlatformAdminEmail,
   requireFirebaseAuth,
   requireFirebaseIdentity
 } from "../auth/firebaseAuth";
+import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
 import { contactLimiter } from "../http/rateLimiters";
@@ -47,7 +49,10 @@ meRouter.get(
           name: m.restaurantName,
           role: m.role
         })),
-        active_restaurant_id: memberships.length === 1 ? memberships[0]!.restaurantId : null
+        active_restaurant_id: memberships.length === 1 ? memberships[0]!.restaurantId : null,
+        // Dev bypass: requireAdminRole lets everyone through when verify-auth
+        // is off, so the UI must agree or local dev hides a working page.
+        is_admin: true
       });
       return;
     }
@@ -75,7 +80,9 @@ meRouter.get(
       })),
       // Auto-select when there's exactly one; the frontend persists the choice
       // and sends X-Restaurant-Id thereafter. null → frontend must pick.
-      active_restaurant_id: memberships.length === 1 ? memberships[0]!.restaurantId : null
+      active_restaurant_id: memberships.length === 1 ? memberships[0]!.restaurantId : null,
+      // UI hint for the /admin entry point; authority lives in requireAdminRole.
+      is_admin: !env.DASHBOARD_VERIFY_AUTH || isPlatformAdminEmail(user.email)
     });
   })
 );

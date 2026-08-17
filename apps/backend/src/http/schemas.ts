@@ -481,6 +481,35 @@ export const adminProvisioningSchema = z.object({
   retell_agent_id: z.string().min(3).max(120).optional()
 });
 
+// Admin unbind — the destructive counterpart of the bind PATCH (which is
+// COALESCE-only and can never null a column). Requires the venue's name typed
+// back, and a separate acknowledgement when the venue is live.
+export const ADMIN_UNBINDABLE_FIELDS = [
+  "twilio_phone_number",
+  "retell_phone_number",
+  "retell_agent_id"
+] as const;
+
+export const adminUnbindSchema = z.object({
+  fields: z
+    .array(z.enum(ADMIN_UNBINDABLE_FIELDS))
+    .nonempty("Pick at least one binding to clear.")
+    .max(3),
+  confirm_name: z.string().trim().min(1).max(200),
+  acknowledge_live: z.boolean().default(false)
+});
+
+// Admin re-enqueue of a failed provisioning job. clear_buy_marker is the
+// explicit "I checked the Twilio console for an orphaned number" affordance —
+// without it a job that died inside the buy window re-fails immediately.
+export const adminReenqueueSchema = z.object({
+  clear_buy_marker: z.boolean().default(false)
+});
+
+export const adminSupportStatusSchema = z.object({
+  status: z.enum(["open", "in_progress", "resolved", "closed"])
+});
+
 // --- Menu OCR ingestion (Phase 2) ------------------------------------------
 
 // Prices are integer cents (never floats). Cap at $10,000 to reject obvious

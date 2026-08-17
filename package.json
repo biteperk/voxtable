@@ -33,6 +33,8 @@
     "db:migrate:prod": "npm run db:migrate:prod --workspace=@vocotable/backend",
     "preview:frontend": "npm run preview --workspace=@vocotable/frontend",
     "preview:kds": "npm run preview --workspace=@vocotable/kds",
+    "smoke:legal": "npm run smoke:legal --workspace=@vocotable/backend",
+    "smoke:admin": "npm run smoke:admin --workspace=@vocotable/backend",
     "smoke:menu-ocr": "npm run smoke:menu-ocr --workspace=@vocotable/backend",
     "smoke:double-booking": "npm run smoke:double-booking --workspace=@vocotable/backend",
     "smoke:tenant-attribution": "npm run smoke:tenant-attribution --workspace=@vocotable/backend",

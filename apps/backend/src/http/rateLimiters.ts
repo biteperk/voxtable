@@ -68,6 +68,19 @@ export const paymentLinkLimiter = rateLimit({
   message: { error: { code: "RATE_LIMITED", message: "Too many payment links — please try again later." } }
 });
 
+// Mutating platform-admin actions (bind, unbind, go-live, re-enqueue, support
+// updates). Cost-bearing — a re-enqueue can lead to a Twilio purchase, go-live
+// fires owner notifications — and there are few admins, so a modest per-account
+// cap absorbs any scripted mistake without slowing real ops work.
+export const adminActionLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: uidOrIpKey,
+  message: { error: { code: "RATE_LIMITED", message: "Too many admin actions — please slow down." } }
+});
+
 // Contact-details upsert (signup flush + profile edits). Cheap write to the
 // caller's own users row, but deliberately reachable by any verified account
 // pre-allowlist — so cap it like restaurant creation.
