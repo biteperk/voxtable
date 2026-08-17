@@ -12,9 +12,16 @@ development-only "Finish setup locally" path through
 without Twilio/Retell bindings so the dashboard can be exercised locally. It is
 not production behavior.
 
+> **Admin dashboard:** every step below can also be done from `/admin` in the
+> dashboard (Venues → bind / go-live, Provisioning → jobs + re-enqueue). The
+> curl commands remain the source of truth for what each action does. Every
+> mutation — UI or curl — is recorded in `admin_actions` with the actor.
+
 ## 0. Find the queue
 `GET /api/admin/provisioning-queue` (admin-gated) lists restaurants awaiting
 provisioning, with their profile + any bindings already set.
+`GET /api/admin/restaurants?status=&q=` is the broader cross-tenant list
+(any status, name search) with billing/legal columns.
 
 ## 1. Buy + configure a Twilio number
 1. Twilio Console → Phone Numbers → buy an AU local number.
@@ -56,3 +63,19 @@ subscription gate passes and the Twilio number + Retell agent are bound.
 To pull a restaurant back, set `onboarding_status` to `suspended` (billing lapse)
 or clear the bindings. Inbound calls to an unmapped number fail safe (Bella is
 not bound to any tenant) rather than routing to the wrong restaurant.
+
+Clearing bindings no longer needs SQL: `POST /api/admin/restaurants/:id/unbind`
+with `{ "fields": ["twilio_phone_number", ...], "confirm_name": "<exact venue name>" }`.
+The venue's name must be typed back exactly, and a live venue additionally
+requires `"acknowledge_live": true` — clearing a live venue's bindings
+disconnects its phone line.
+
+## Stuck provisioning jobs (Phase 4b, auto-provisioning)
+`GET /api/admin/provisioning-jobs?status=failed` lists failed jobs with
+`last_error`. `POST /api/admin/provisioning-jobs/:id/re-enqueue` resets the
+failed row **in place** (payload preserved — never a second job, which would
+buy a second number). If the failure was the purchase crash-window
+(`buy_started_at` set, no number recorded): first check the Twilio console for
+an unassigned AU number, then re-enqueue with `{ "clear_buy_marker": true }`.
+Without that the job re-fails immediately, by design. Re-enqueued jobs only
+run while `PROVISIONING_AUTO_ENABLED=true`; the response says so when it's off.

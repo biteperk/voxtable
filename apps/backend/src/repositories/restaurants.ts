@@ -532,6 +532,72 @@ export async function listByOnboardingStatus(
   return result.rows;
 }
 
+/** ProvisioningRow plus the cheap local billing/legal columns the admin venue
+ * list shows. Live Stripe subscription state is deliberately NOT here — that
+ * is one Stripe API call per venue and loads lazily per-venue instead. */
+export interface AdminRestaurantRow extends ProvisioningRow {
+  terms_version: string | null;
+  has_stripe_customer: boolean;
+  stripe_connect_charges_enabled: boolean;
+  stripe_connect_payouts_enabled: boolean;
+}
+
+export async function listRestaurantsAdmin(filter: {
+  status?: OnboardingStatus;
+  query?: string;
+}): Promise<AdminRestaurantRow[]> {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (filter.status) {
+    params.push(filter.status);
+    clauses.push(`onboarding_status = $${params.length}::onboarding_status`);
+  }
+  if (filter.query) {
+    params.push(`%${filter.query}%`);
+    clauses.push(`name ILIKE $${params.length}`);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const result = await pool.query<AdminRestaurantRow>(
+    `SELECT id, name, contact_email, onboarding_status,
+            twilio_phone_number, retell_phone_number, retell_agent_id, created_at,
+            terms_version,
+            stripe_customer_id IS NOT NULL AS has_stripe_customer,
+            stripe_connect_charges_enabled, stripe_connect_payouts_enabled
+       FROM restaurants
+       ${where}
+      ORDER BY created_at DESC
+      LIMIT 200`,
+    params
+  );
+  return result.rows;
+}
+
+/**
+ * Null out the named binding columns (admin unbind). The bind PATCH is
+ * COALESCE-only so it can never clear a value; this is the explicit,
+ * confirm-gated counterpart. Field names are validated by adminUnbindSchema
+ * before they reach here — never interpolate caller input directly.
+ */
+export async function clearProvisioningBindings(
+  restaurantId: string,
+  fields: Array<"twilio_phone_number" | "retell_phone_number" | "retell_agent_id">
+): Promise<ProvisioningRow | null> {
+  const allowed = new Set(["twilio_phone_number", "retell_phone_number", "retell_agent_id"]);
+  const safe = fields.filter((f) => allowed.has(f));
+  if (safe.length === 0) return getProvisioning(restaurantId);
+  const sets = safe.map((f) => `${f} = NULL`).join(", ");
+  const result = await pool.query<ProvisioningRow>(
+    `UPDATE restaurants SET ${sets}
+      WHERE id = $1
+      RETURNING id, name, contact_email, onboarding_status,
+                twilio_phone_number, retell_phone_number, retell_agent_id, created_at`,
+    [restaurantId]
+  );
+  if (!result.rows[0]) return null;
+  invalidateRestaurantCache(restaurantId);
+  return result.rows[0];
+}
+
 export async function getProvisioning(restaurantId: string): Promise<ProvisioningRow | null> {
   const result = await pool.query<ProvisioningRow>(
     `SELECT id, name, contact_email, onboarding_status,

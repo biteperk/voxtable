@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { agreementSchema } from "./schemas";
+import {
+  adminReenqueueSchema,
+  adminSupportStatusSchema,
+  adminUnbindSchema,
+  agreementSchema
+} from "./schemas";
 
 const SHA256_A = "a".repeat(64);
 const SHA256_B = "b".repeat(64);
@@ -44,4 +49,35 @@ test("agreement payload preserves supplied document metadata", () => {
   assert.equal(parsed.schedule_url, "https://storage.googleapis.com/bucket/versions/CSA-2026-08/privacy-data-handling-schedule.pdf");
   assert.equal(parsed.csa_sha256, SHA256_A);
   assert.equal(parsed.schedule_sha256, SHA256_B);
+});
+
+test("admin unbind requires at least one known field and a typed name", () => {
+  assert.equal(
+    adminUnbindSchema.safeParse({ fields: [], confirm_name: "Cuban Corner" }).success,
+    false
+  );
+  assert.equal(
+    adminUnbindSchema.safeParse({ fields: ["stripe_customer_id"], confirm_name: "Cuban Corner" })
+      .success,
+    false
+  );
+  assert.equal(
+    adminUnbindSchema.safeParse({ fields: ["twilio_phone_number"], confirm_name: "" }).success,
+    false
+  );
+  const parsed = adminUnbindSchema.parse({
+    fields: ["twilio_phone_number", "retell_agent_id"],
+    confirm_name: "Cuban Corner"
+  });
+  assert.equal(parsed.acknowledge_live, false);
+});
+
+test("admin re-enqueue defaults the buy-marker flag to false", () => {
+  assert.equal(adminReenqueueSchema.parse({}).clear_buy_marker, false);
+  assert.equal(adminReenqueueSchema.parse({ clear_buy_marker: true }).clear_buy_marker, true);
+});
+
+test("admin support status accepts only the four lifecycle states", () => {
+  assert.equal(adminSupportStatusSchema.safeParse({ status: "open" }).success, true);
+  assert.equal(adminSupportStatusSchema.safeParse({ status: "escalated" }).success, false);
 });
