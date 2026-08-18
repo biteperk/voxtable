@@ -56,7 +56,6 @@ class ErrorBoundary extends React.Component {
     // Dev-only console logging — raw error text can carry PII, so keep it out of
     // production consoles. Sentry (below) is the production capture path.
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.error("[vocotable] uncaught render error:", {
         message: error?.message,
         stack: error?.stack?.split("\n").slice(0, 6).join("\n"),

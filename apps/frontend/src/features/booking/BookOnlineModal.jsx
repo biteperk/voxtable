@@ -91,7 +91,6 @@ class EmbedErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    // eslint-disable-next-line no-console
     console.error("[vocotable] BookOnline embed error:", {
       name: error?.name,
       message: error?.message?.slice(0, 200),

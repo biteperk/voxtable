@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 import { AppError } from "../domain/errors";
-import { DbClient, pool, withTransaction } from "../db/pool";
+import { withTransaction } from "../db/pool";
 import {
   findOrderByIdempotencyKey,
   getKdsHealth,

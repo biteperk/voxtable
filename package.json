@@ -25,7 +25,9 @@
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "npm run test --workspace=@vocotable/backend",
     "test:frontend": "npm run test --workspace=@vocotable/frontend",
-    "check": "npm run build && npm run test",
+    "lint": "eslint . --max-warnings 27",
+    "lint:fix": "eslint . --fix",
+    "check": "npm run lint && npm run build && npm run test",
     "start:backend": "npm run start --workspace=@vocotable/backend",
     "start:worker": "npm run start:worker --workspace=@vocotable/backend",
     "db:migrate": "npm run db:migrate --workspace=@vocotable/backend",
@@ -55,5 +57,14 @@
     "audit:all": "npm audit",
     "firebase": "firebase",
     "dashboard": "node scripts/project-dashboard.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
+    "typescript-eslint": "^8.67.0"
   }
 }

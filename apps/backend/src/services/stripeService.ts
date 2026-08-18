@@ -43,7 +43,7 @@ import { unixSecondsToYmd } from "../utils/time";
 import { enqueueProvisioningJob } from "../repositories/provisioning";
 import { nextOnboardingStatus } from "./onboardingService";
 import { notifyRestaurant } from "./notificationService";
-import { getStripe } from "./stripeClient";
+import { getStripe, withStripeErrors } from "./stripeClient";
 import { handleOrderPaymentWebhook } from "./orderPaymentService";
 import { syncConnectAccount } from "./stripeConnectService";
 
@@ -150,7 +150,6 @@ function paymentIntentId(value: string | Stripe.PaymentIntent | null | undefined
 // this module (import-cycle: this file's webhook branch imports them) can
 // still share the error mapping. Imported back for the calls below and
 // re-exported for existing callers.
-import { withStripeErrors } from "./stripeClient";
 export { withStripeErrors };
 
 // --- Public API --------------------------------------------------------------

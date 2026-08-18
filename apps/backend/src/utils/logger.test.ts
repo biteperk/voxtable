@@ -10,7 +10,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { logger, redactSecrets } from "./logger";
+import {
+  enrichLogContext,
+  logger,
+  redactSecrets,
+  withLogContext,
+  withTickLogContext
+} from "./logger";
 
 /** Capture one line of logger output without writing it to the test run. */
 function captureLine(emit: () => void): Record<string, unknown> {
@@ -118,8 +124,6 @@ test("nested objects and arrays are redacted too", () => {
 // ---------------------------------------------------------------------------
 // Log-context correlation (Block 5: provider_call_id + worker tick ids)
 // ---------------------------------------------------------------------------
-
-import { enrichLogContext, withLogContext, withTickLogContext } from "./logger";
 
 test("provider_call_id pinned via enrichLogContext appears on every line", () => {
   const line = captureLine(() => {

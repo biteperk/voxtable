@@ -1,6 +1,5 @@
 import { useId, useRef } from "react";
 import { useAuth } from "../../auth";
-import { signOutUser } from "../../firebase";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useDrawer } from "../../hooks/useDrawer";
 import { useScrolled } from "../../hooks/useScrolled";
@@ -31,11 +30,6 @@ export function DashboardShell({ active, children, navigate, path }) {
   ];
 
   const items = allItems.filter(([, , , canSee]) => canSee());
-
-  const handleSignOut = async () => {
-    await signOutUser();
-    navigate("/");
-  };
 
   const sidebarMarkup = (
     <aside
