@@ -39,9 +39,12 @@
     "smoke:business-alerts": "tsx scripts/smoke-business-alerts.ts",
     "smoke:voice-kill-switch": "tsx scripts/smoke-voice-kill-switch.ts",
     "smoke:notification-lease": "tsx scripts/smoke-notification-lease.ts",
+    "smoke:sms-sender": "tsx scripts/smoke-sms-sender.ts",
     "smoke:payments": "tsx scripts/smoke-payments.ts",
     "menu:import": "tsx scripts/import-menu.ts",
-    "smoke:staging": "tsx scripts/smoke-staging.ts"
+    "smoke:staging": "tsx scripts/smoke-staging.ts",
+    "smoke:agent-routing": "tsx scripts/smoke-agent-routing.ts",
+    "smoke:menu-guards": "tsx scripts/smoke-menu-guards.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",

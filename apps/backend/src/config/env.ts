@@ -277,6 +277,19 @@ const envSchema = z
   NOTIFICATIONS_FROM_EMAIL: z.string().email().default("hello@biteperk.com.au"),
   NOTIFICATIONS_SMS_FROM: z.string().optional(),
 
+  // Preferred over NOTIFICATIONS_SMS_FROM. The Messaging Service owns the sender
+  // pool, so Twilio picks the alphanumeric sender (BitePerk) where the
+  // destination supports it and falls back to the number where it does not —
+  // a guarantee a bare alphanumeric `from` does not carry, since that fails the
+  // send outright instead. The regex catches a typo'd SID at boot rather than as
+  // a 400 mid-phone-call.
+  NOTIFICATIONS_MESSAGING_SERVICE_SID: blankAsUnset(
+    z
+      .string()
+      .regex(/^MG[0-9a-f]{32}$/i, "must be a Twilio Messaging Service SID (MG + 32 hex)")
+      .optional()
+  ),
+
   // Which transactional-email API the notification worker speaks. "zeptomail"
   // is Zoho's transactional service (AU data centre by default) — used for the
   // branded verification-code emails; "sendgrid" is the original path.
@@ -502,11 +515,20 @@ const envSchema = z
         "STRIPE_WEBHOOK_SECRET is required when ORDER_PAYMENTS_ENABLED=true."
       );
       // Links are delivered by SMS; a payments deployment without an SMS
-      // sender silently strands every link in the outbox.
-      requireInProd(
-        "NOTIFICATIONS_SMS_FROM",
-        "NOTIFICATIONS_SMS_FROM is required when ORDER_PAYMENTS_ENABLED=true (links go out by SMS)."
-      );
+      // sender silently strands every link in the outbox. Either sender will
+      // do — the Messaging Service is preferred, but the bare number remains
+      // valid so a rollback off branded SMS is an env change, not a deploy.
+      // Reported against NOTIFICATIONS_SMS_FROM so the message stays where
+      // anyone who has hit this gate before will look for it.
+      if (!value.NOTIFICATIONS_SMS_FROM && !value.NOTIFICATIONS_MESSAGING_SERVICE_SID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["NOTIFICATIONS_SMS_FROM"],
+          message:
+            "One of NOTIFICATIONS_MESSAGING_SERVICE_SID or NOTIFICATIONS_SMS_FROM is required " +
+            "when ORDER_PAYMENTS_ENABLED=true (links go out by SMS)."
+        });
+      }
       // Without this the success_url is literally "undefined/order/paid" and
       // Stripe rejects the session mid-phone-call.
       requireInProd(

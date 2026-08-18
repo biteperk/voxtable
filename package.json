@@ -49,6 +49,7 @@
     "smoke:business-alerts": "npm run smoke:business-alerts --workspace=@vocotable/backend",
     "smoke:voice-kill-switch": "npm run smoke:voice-kill-switch --workspace=@vocotable/backend",
     "smoke:notification-lease": "npm run smoke:notification-lease --workspace=@vocotable/backend",
+    "smoke:sms-sender": "npm run smoke:sms-sender --workspace=@vocotable/backend",
     "smoke:payments": "npm run smoke:payments --workspace=@vocotable/backend",
     "audit:backend": "npm audit --workspace=@vocotable/backend --omit=dev --omit=optional",
     "audit:frontend": "npm audit --workspace=@vocotable/frontend --omit=dev",
@@ -57,7 +58,9 @@
     "audit:all": "npm audit",
     "firebase": "firebase",
     "dashboard": "node scripts/project-dashboard.mjs",
-    "smoke:staging": "npm run smoke:staging --workspace=@vocotable/backend"
+    "smoke:staging": "npm run smoke:staging --workspace=@vocotable/backend",
+    "smoke:agent-routing": "npm run smoke:agent-routing --workspace=@vocotable/backend",
+    "smoke:menu-guards": "npm run smoke:menu-guards --workspace=@vocotable/backend"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
