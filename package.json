@@ -38,6 +38,7 @@
     "smoke:isolation": "npm run smoke:isolation --workspace=@vocotable/backend",
     "smoke:menu-ocr": "npm run smoke:menu-ocr --workspace=@vocotable/backend",
     "smoke:double-booking": "npm run smoke:double-booking --workspace=@vocotable/backend",
+    "smoke:retry-idempotency": "npm run smoke:retry-idempotency --workspace=@vocotable/backend",
     "smoke:tenant-attribution": "npm run smoke:tenant-attribution --workspace=@vocotable/backend",
     "smoke:calcom-mirror": "npm run smoke:calcom-mirror --workspace=@vocotable/backend",
     "smoke:outbox-deadletter": "npm run smoke:outbox-deadletter --workspace=@vocotable/backend",

@@ -375,8 +375,17 @@ export async function getOrCreateCustomer(restaurantId: string): Promise<string>
  * no address (getOrCreateCustomer sets only name/email), and Stripe rejects
  * an automatic_tax session for an address-less existing customer unless the
  * session both collects the billing address AND is allowed to save it back
- * (customer_update.address). The Price must be tax-inclusive in the Stripe
- * dashboard so the advertised "inc GST" amount is what the card is charged.
+ * (customer_update.address).
+ *
+ * The Price is tax-EXCLUSIVE: Stripe adds GST on top, so a $80 plan bills
+ * A$88.00. That is what the site advertises (apps/frontend/src/data/pricing.js
+ * says prices exclude GST) and what a live Checkout page was verified to show
+ * — see the "GST maths matches what Stripe charged" case in pricing.test.js.
+ * This comment previously said the Price "must be tax-inclusive"; switching it
+ * to inclusive would quietly bill $80 with the GST absorbed, i.e. under-collect
+ * ~$7.27 per venue per month AND contradict the advertised price. Do not.
+ * Nothing here pins tax_behavior — it lives on the Price object in Stripe — so
+ * the invoice reader below handles both and renders whichever the Price says.
  */
 export function buildCheckoutSessionParams(input: {
   customerId: string;

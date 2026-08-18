@@ -88,6 +88,15 @@ jobs:
       - name: Prove double-booking is impossible
         run: npm run smoke:double-booking
 
+      # A Retell tool-call retry must return the FIRST booking, never make a
+      # second one. The old guard keyed on an LLM-supplied call_log_id that
+      # Bella cannot know, so it never ran on the path that needed it: the
+      # retry found a DIFFERENT free table and committed. The exclusion
+      # constraint cannot catch that — different table_id, no overlap — so
+      # only this test can.
+      - name: Prove a retried tool call cannot book twice
+        run: npm run smoke:retry-idempotency
+
       # Two restaurants, two numbers: each call must land on the venue that was
       # actually dialled. Both Twilio handlers used to write the default tenant
       # unconditionally, which is invisible with one customer and files every
