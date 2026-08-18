@@ -37,6 +37,7 @@ import { getKdsHeartbeats } from "../services/kdsHeartbeats";
 import { getOpsState, setOpsState } from "../repositories/opsState";
 import { OpeningHours } from "../domain/types";
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 import {
   getOpeningWindowsForDate,
   nowTimeInTz,
@@ -820,6 +821,9 @@ export function startHealthAlerter(): void {
     check_interval_ms: CHECK_INTERVAL_MS,
     calcom_enabled: env.CALCOM_SYNC_ENABLED
   });
+  // Only registered once the worker genuinely starts ticking, so a
+  // flag-disabled no-op is never reported as stalled.
+  registerTickExpectation("health-alerter", CHECK_INTERVAL_MS);
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;

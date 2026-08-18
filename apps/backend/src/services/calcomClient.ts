@@ -301,15 +301,40 @@ export async function calcomRequest<T = unknown>(options: CalcomRequestOptions):
         : `Cal.com network error (${options.method} ${options.path}): ${(error as Error).message}`;
     throw new CalcomTransientError(null, message);
   }
-  clearTimeout(timer);
   const durationMs = Date.now() - startedAt;
 
   // Quota counter — every reply (success or 4xx/5xx) counts against Cal.com's
   // rate limit. Recording AFTER the response confirms a real round-trip.
   recordCalcomRequest();
 
+  // The abort deadline stays ARMED until the body has been consumed.
+  //
+  // fetch() resolves as soon as the response HEADERS arrive. clearTimeout used
+  // to run here, before the read below — so a peer (or a proxy) that sent
+  // "200 OK" and then stalled the body left `await response.text()` hanging
+  // with no signal, no socket deadline and no statement_timeout to save it,
+  // because no query was in flight.
+  //
+  // That is not a slow request, it is a permanently wedged worker: the outbox
+  // executor runs INSIDE an open transaction, so the hang holds FOR UPDATE
+  // locks on the claimed rows and a write-pool connection for the life of the
+  // container, and tickInFlight never resets. Nothing detected it either —
+  // /workerz answered 200 regardless and the depth alert needs 100 queued rows.
+  //
   // Best-effort JSON parse — error responses sometimes ship text/plain.
-  const rawText = await response.text();
+  let rawText: string;
+  try {
+    rawText = await response.text();
+  } catch (error) {
+    recordTransientFailure();
+    const message =
+      error instanceof Error && error.name === "AbortError"
+        ? `Cal.com response body timed out after ${timeoutMs}ms (${options.method} ${options.path})`
+        : `Cal.com response body read failed (${options.method} ${options.path}): ${(error as Error).message}`;
+    throw new CalcomTransientError(null, message);
+  } finally {
+    clearTimeout(timer);
+  }
   let parsed: unknown = null;
   try {
     parsed = rawText ? JSON.parse(rawText) : null;

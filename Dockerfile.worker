@@ -43,4 +43,18 @@ ENV PG_POOL_MAX_WRITE=30 \
     PG_POOL_MAX_READ=5 \
     PG_APPLICATION_NAME=vocotable-worker
 
+# The worker had NO healthcheck, so a wedged one was invisible: a tick hung
+# inside an open transaction stops the Cal.com mirror, notifications,
+# provisioning AND the health alerter itself, while the api container stays
+# green and /health keeps returning 200.
+#
+# /workerz — not /livez. /livez only proves the process exists, which is
+# exactly what a wedged worker also proves. /workerz returns 503 once a
+# started worker has missed too many ticks.
+#
+# The port mirrors worker.ts: WORKER_HEALTH_PORT, else the injected PORT.
+# Shell form so the variables actually expand.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider "http://localhost:${WORKER_HEALTH_PORT:-${PORT:-3050}}/workerz" || exit 1
+
 CMD ["node", "apps/backend/dist/worker.js"]
