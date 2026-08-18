@@ -153,6 +153,30 @@ jobs:
       - name: Prove payment links replay, reconcile, and never cross into billing
         run: npm run smoke:payments
 
+      # The multi-tenancy guarantee the whole product rests on: a member of
+      # restaurant A can neither READ nor MUTATE restaurant B's rows by UUID.
+      # Needs two tenants that own reservations, which the synthetic-venue seed
+      # provides — it is idempotent and additive (fixed UUIDs, ON CONFLICT DO
+      # NOTHING), so it is safe to apply to the fresh CI database.
+      - name: Seed the synthetic tenants used by the isolation check
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f deploy/seeds/synthetic_test_restaurants.sql
+
+      - name: Prove one tenant cannot read or write another's rows
+        run: npm run smoke:isolation
+
+      # The admin console re-enqueues failed provisioning jobs. It MUST reset
+      # the row in place: a second row means buying a second Twilio number.
+      # Runs entirely in a rolled-back transaction — nothing persists.
+      - name: Prove admin re-enqueue never creates a second provisioning job
+        run: npm run smoke:admin
+
+      # The legal layer is evidence, not decoration: the agreement step cannot
+      # be skipped, a hash that disagrees with the published manifest is
+      # refused, an unpublished (SAMPLE-*) document set is refused, and the
+      # ledger's append-only triggers reject UPDATE and DELETE.
+      - name: Prove the agreement ledger refuses bad input and cannot be edited
+        run: npm run smoke:legal
+
       - name: Build frontend
         run: npm run build:frontend
 
