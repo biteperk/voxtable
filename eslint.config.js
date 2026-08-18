@@ -142,6 +142,24 @@ export default [
     }
   },
 
+  // logger.test.ts imports "./logger" twice — once at the top, once mid-file
+  // as a section divider. That is deliberate and load-bearing: .gitleaksignore
+  // allowlists the fake JWT and Stripe token in that file BY LINE NUMBER
+  // (jwt:38, stripe-access-token:66). Merging the imports shifts them six
+  // lines, both fingerprints stop matching, and the secret scan re-arms on two
+  // fixtures that exist purely to prove redaction works — turning a required
+  // check red for no reason. I did exactly that once; this is the note so
+  // nobody repeats it.
+  //
+  // The exemption lives here rather than as a comment in the file because ANY
+  // line added above line 38 re-breaks the fingerprints, including the comment
+  // explaining why. If those fixtures ever move, update .gitleaksignore in the
+  // same commit.
+  {
+    files: ["apps/backend/src/utils/logger.test.ts"],
+    rules: { "import-x/no-duplicates": "off" }
+  },
+
   // Frontend tests run in node, not a browser.
   {
     files: ["apps/**/*.test.{js,jsx,ts}"],
