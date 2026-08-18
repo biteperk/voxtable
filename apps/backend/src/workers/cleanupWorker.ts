@@ -23,6 +23,7 @@
 
 import { pool } from "../db/pool";
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 import { purgeOpsStateByPrefix } from "../repositories/opsState";
 import { purgeStaleKdsHeartbeats } from "../services/kdsHeartbeats";
 import { purgeStaleRetellAuthBuckets } from "../services/retellAuthHealth";
@@ -131,6 +132,9 @@ export function startCleanupWorker(): void {
   });
   firstTickTimer = setTimeout(() => {
     void withTickLogContext("cleanup", () => tick());
+    // Only registered once the worker genuinely starts ticking, so a
+    // flag-disabled no-op is never reported as stalled.
+    registerTickExpectation("cleanup", TICK_INTERVAL_MS);
     intervalHandle = setInterval(() => void withTickLogContext("cleanup", () => tick()), TICK_INTERVAL_MS);
     intervalHandle.unref();
   }, INITIAL_DELAY_MS);

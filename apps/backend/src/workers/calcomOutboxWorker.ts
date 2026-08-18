@@ -25,6 +25,7 @@ import {
   markOutboxSucceeded
 } from "../repositories/outbox";
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 
 const TICK_INTERVAL_MS = 2_000;
 const BATCH_SIZE = 20;
@@ -224,6 +225,9 @@ export function startOutboxWorker(): void {
     return;
   }
   logger.info({ evt: "outbox_worker_starting", tick_interval_ms: TICK_INTERVAL_MS, batch_size: BATCH_SIZE });
+  // Only registered once the worker genuinely starts ticking, so a
+  // flag-disabled no-op is never reported as stalled.
+  registerTickExpectation("calcom-outbox", TICK_INTERVAL_MS);
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;

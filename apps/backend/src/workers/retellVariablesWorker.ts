@@ -28,6 +28,7 @@ import Retell from "retell-sdk";
 import { env } from "../config/env";
 import { getRestaurantTimezone } from "../repositories/restaurants";
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 import { dayNameInTz, todayInTz, tomorrowInTz } from "../utils/time";
 
 const TICK_INTERVAL_MS = 15 * 60 * 1000; // 15 min
@@ -98,6 +99,9 @@ export function startRetellVariablesWorker(): void {
   // Push once on boot so a container restart immediately corrects anything that
   // drifted while it was down.
   currentTick = withTickLogContext("retell-variables", () => tick());
+  // Only registered once the worker genuinely starts ticking, so a
+  // flag-disabled no-op is never reported as stalled.
+  registerTickExpectation("retell-variables", TICK_INTERVAL_MS);
   intervalHandle = setInterval(() => {
     currentTick = withTickLogContext("retell-variables", () => tick());
   }, TICK_INTERVAL_MS);

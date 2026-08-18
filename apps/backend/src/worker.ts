@@ -7,7 +7,7 @@ import { startBackendWorkers, stopBackendWorkers } from "./runtime/workers";
 import { probeDatabase } from "./routes/health";
 import { verifyCalcomSchemasAgainstFixtures } from "./services/calcomSchemas";
 import { initSentry } from "./utils/sentry";
-import { tickPulseSnapshot } from "./utils/tickPulse";
+import { stalledWorkers, tickPulseSnapshot } from "./utils/tickPulse";
 
 let shuttingDown = false;
 
@@ -22,7 +22,11 @@ let shuttingDown = false;
  *   /readyz  — database reachable (same 2s deadline as the api's).
  *   /workerz — per-worker tick counts and last-tick age, fed by
  *              withTickLogContext. THE line to read when the worker "runs
- *              fine" but nothing is happening.
+ *              fine" but nothing is happening. Returns 503 once a started
+ *              worker has missed STALE_INTERVAL_MULTIPLE of its own tick
+ *              interval, so a probe that reads status codes can see a wedge.
+ *              It used to answer 200 unconditionally, which made it useless
+ *              for precisely the failure it was built to expose.
  */
 function startHealthServer(): Server {
   const server = createServer((request, response) => {
@@ -44,7 +48,18 @@ function startHealthServer(): Server {
       return;
     }
     if (request.url === "/workerz") {
-      respond(200, { status: "ok", workers: tickPulseSnapshot() });
+      // 503 when a started worker has missed too many ticks. This used to
+      // answer 200 unconditionally, which made it useless for the one job it
+      // exists to do: a worker wedged mid-tick — an outbox push hung inside an
+      // open transaction, say — reported "ok" for the life of the container
+      // while nothing was being processed.
+      const workers = tickPulseSnapshot();
+      const stalled = stalledWorkers();
+      if (stalled.length > 0) {
+        respond(503, { status: "stalled", stalled, workers });
+        return;
+      }
+      respond(200, { status: "ok", workers });
       return;
     }
     respond(404, { error: "not found" });

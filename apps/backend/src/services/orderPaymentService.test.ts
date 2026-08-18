@@ -8,7 +8,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildLineItems, buildPaymentSms, platformFeeCents } from "./orderPaymentService";
+import {
+  buildLineItems,
+  buildPaymentSms,
+  checkoutIdempotencyKey,
+  platformFeeCents
+} from "./orderPaymentService";
 import { isValidPaymentTransition } from "../repositories/orderPayments";
 
 // --- platformFeeCents -------------------------------------------------------
@@ -125,4 +130,38 @@ test("active statuses can expire, fail, cancel, or pay", () => {
     assert.equal(isValidPaymentTransition(from, "expired"), true);
     assert.equal(isValidPaymentTransition(from, "cancelled"), true);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Checkout idempotency key. The bug: the key omitted the attempt sequence, and
+// total_cents is never updated anywhere, so it was constant per order forever
+// — while Stripe caches keys for 24h and links expire after 45 minutes. Every
+// resend replayed the original, dead session.
+// ---------------------------------------------------------------------------
+
+test("a concurrent double-fire shares a key, so Stripe replays one session", () => {
+  // Both racers read attemptSeq before either writes its row.
+  const a = checkoutIdempotencyKey("order-1", 4200, 0);
+  const b = checkoutIdempotencyKey("order-1", 4200, 0);
+  assert.equal(a, b);
+});
+
+test("a resend after the previous attempt died mints a different key", () => {
+  const first = checkoutIdempotencyKey("order-1", 4200, 0);
+  const resend = checkoutIdempotencyKey("order-1", 4200, 1);
+  assert.notEqual(first, resend, "a resend that reuses the key replays a dead session URL");
+});
+
+test("the key still changes when the amount changes", () => {
+  assert.notEqual(
+    checkoutIdempotencyKey("order-1", 4200, 0),
+    checkoutIdempotencyKey("order-1", 5000, 0)
+  );
+});
+
+test("different orders never collide", () => {
+  assert.notEqual(
+    checkoutIdempotencyKey("order-1", 4200, 0),
+    checkoutIdempotencyKey("order-2", 4200, 0)
+  );
 });
