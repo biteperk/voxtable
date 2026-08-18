@@ -65,8 +65,16 @@ jobs:
 
       - run: npm ci
 
+      # No --if-present. There was no `lint` script and no ESLint anywhere in
+      # the repo, so `npm run lint --if-present` exited 0 silently on every run
+      # and showed a green tick having executed nothing (issue #186). Without
+      # the flag, deleting the script fails the build loudly instead.
+      #
+      # The ceiling in the script is a ratchet: 0 errors, and the current
+      # warning count exactly. A new warning fails CI. Lower it as warnings are
+      # burned down — never raise it.
       - name: Lint
-        run: npm run lint --if-present
+        run: npm run lint
 
       - name: Build backend
         run: npm run build:backend

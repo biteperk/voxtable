@@ -28,7 +28,7 @@ import type Stripe from "stripe";
 
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
-import { DbClient, withTransaction } from "../db/pool";
+import { withTransaction } from "../db/pool";
 import { logger } from "../utils/logger";
 import { normalizePhone } from "../utils/phone";
 import { getStripe, withStripeErrors } from "./stripeClient";

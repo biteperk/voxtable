@@ -12,7 +12,6 @@ import {
   PRODUCT_URL,
   GUIDES_URL,
   ABOUT_URL,
-  CONTACT_URL,
   PRIVACY_URL,
   TERMS_URL,
 } from "../../lib/brand";

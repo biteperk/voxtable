@@ -12,7 +12,7 @@ import {
   createRestaurantSchema,
   onboardingAdvanceSchema
 } from "../http/schemas";
-import { pool, withTransaction } from "../db/pool";
+import { withTransaction } from "../db/pool";
 import {
   getLatestAcceptance,
   insertAcceptance,
