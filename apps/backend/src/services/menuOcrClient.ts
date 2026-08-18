@@ -711,6 +711,34 @@ function inPageOrder(parts: PagePart[]): PagePart[] {
 }
 
 /**
+ * Report liveness without ever failing the work being reported on.
+ *
+ * heartbeatIngestionJob is a plain pool.query subject to the 15s query_timeout.
+ * Awaited unguarded, a DB blip rejected, propagated out of parseMenu, and
+ * runJob classified it PERMANENT — isTransient only accepts an AppError with
+ * status 503, and a pg error is neither. markFailed then discarded a parse the
+ * venue had already paid for in vision calls, and the owner was told to type
+ * their menu in by hand, because one liveness UPDATE timed out.
+ *
+ * Missing a heartbeat is survivable: the worst case is the ten-minute reaper
+ * re-claiming a job that is still running. Losing the parse is not.
+ *
+ * Exported so the swallow is actually testable rather than asserted by eye.
+ */
+export async function pingBatchDone(onBatchDone?: () => Promise<void>): Promise<void> {
+  if (!onBatchDone) return;
+  try {
+    await onBatchDone();
+  } catch (error) {
+    logger.warn({
+      evt: "menu_ocr_heartbeat_failed",
+      error: (error as Error).message,
+      detail: "job liveness ping failed; continuing the parse rather than discarding paid work"
+    });
+  }
+}
+
+/**
  * Read a whole menu — one page or fifty — and return a merged draft plus an
  * honest account of every page.
  *
@@ -835,7 +863,7 @@ export async function parseMenuPages(input: {
         markUnread(batch.pages);
       }
     }
-    if (input.onBatchDone) await input.onBatchDone();
+    await pingBatchDone(input.onBatchDone);
   }
 
   // --- Which pages gave us nothing? ----------------------------------------
@@ -882,7 +910,7 @@ export async function parseMenuPages(input: {
       if (error instanceof AppError && error.statusCode === 503) stopVerifying = true;
       outcomes.set(page, { status: "unverified" });
     }
-    if (input.onBatchDone) await input.onBatchDone();
+    await pingBatchDone(input.onBatchDone);
   }
 
   if (targets.length > 0) merged = mergeAttributed(inPageOrder(parts));
