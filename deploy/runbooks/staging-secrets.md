@@ -98,10 +98,53 @@ printf '%s' "$VALUE" | gcloud secrets versions add voxtable-stg-<thing> \
 Use `printf` rather than `echo` — `echo` appends a newline, and a trailing
 newline inside an API key produces a 401 that looks exactly like a wrong key.
 
+⚠️ **Most of these secrets are Terraform-provisioned** — check for the
+`goog-terraform-provisioned=true` label before touching one:
+
+```bash
+gcloud secrets describe voxtable-stg-<thing> --project=bp-voxtable-stg \
+  --format="value(labels)"
+```
+
+If the Terraform config supplies the *value* (not just the container), a
+version added by hand is drift: the next apply reverts it. You fix staging,
+walk away, and it breaks again later with no obvious cause. Change the value in
+`biteperk/biteperk-cloud-platform` instead. Adding by hand is for secrets
+Terraform only creates a container for.
+
 ⚠️ **Adding a version changes what `:latest` resolves to.** If the Terraform
 map pins `:latest`, the next revision picks up the new value immediately. Check
 what the running service currently resolves before adding a version, and roll
 services deliberately rather than discovering the change during a call.
+
+### Compare before you add
+
+Re-adding a value that is already current just buries the history. Compare by
+hash — never by printing the secret, and never by pasting it into a command
+that lands in shell history:
+
+```bash
+# what staging currently resolves
+gcloud secrets versions access latest --secret=voxtable-stg-<thing> \
+  --project=bp-voxtable-stg | shasum -a 256
+
+# what you are holding — -s keeps it off the screen and out of history
+read -rs -p "paste value, then Enter: " V && printf '%s' "$V" | shasum -a 256; unset V
+```
+
+### Prune superseded versions
+
+Every `enabled` version is a live copy that can still be fetched. After a
+rotation is verified, disable the one it replaced:
+
+```bash
+gcloud secrets versions list voxtable-stg-<thing> --project=bp-voxtable-stg
+gcloud secrets versions disable <N> --secret=voxtable-stg-<thing> \
+  --project=bp-voxtable-stg
+```
+
+Disable rather than destroy until the new value has served real traffic —
+disable is reversible in seconds, destroy is not.
 
 ⚠️ **A new secret is invisible until Terraform references it.** Adding it here
 and expecting the app to see it is the most common way to lose an afternoon.
