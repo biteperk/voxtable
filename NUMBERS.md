@@ -36,7 +36,7 @@ Anything on an **Algorythmos** account is a different company's infrastructure a
 | Number | Environment | Account | Takes a call today? | SMS? |
 |---|---|---|---|---|
 | `+61 468 202 846` | **Production** | Biteperk-production | ❌ No Retell agent bound yet | ✅ Enabled (never actually sent) |
-| `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ❌ No Retell agent bound yet | ✅ Enabled, stamped `Unverified` |
+| `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ✅ Bound — imported to the Staging workspace (webhook mode) 13 Aug; `VoxTable Staging Venue` resolves | ✅ Enabled, stamped `Unverified` |
 
 That is the whole platform estate. If a number is not in this table, **it is not ours to wire** —
 do not put it in a `restaurants` row, do not register it with Retell, and do not "reconcile" it
@@ -114,10 +114,15 @@ route around. It becomes BitePerk's production line — and Natalia's line — a
 | Customer profile | **None** — staging has never had one |
 | Alphanumeric sender ID | **None** — see the warning below |
 
-Same wiring state as production, verified item-for-item: origination
+Same **Twilio** wiring as production, verified item-for-item: origination
 `sip:sip.retellai.com;transport=tls` (pri 10, wt 10, enabled), Traffic Status **Voice enabled** and
-**Messaging enabled**, sender attached to `voxtable-staging-notifications`, no Retell agent, no
-`restaurants` row, no Disaster Recovery URL.
+**Messaging enabled**, sender attached to `voxtable-staging-notifications`, no Disaster Recovery URL.
+
+Beyond Twilio, staging has since gone **further than production**: the number was imported to the
+Retell **Staging** workspace in webhook mode on 13 Aug and a `restaurants` row (`VoxTable Staging
+Venue`) resolves it, with unknown numbers failing closed — see §8 item 2b. This paragraph
+previously said "no Retell agent, no `restaurants` row", which contradicted §8 and is corrected
+here. Production's `+61 468 202 846` remains unbound on both counts.
 
 ## 3a. Trunk configuration — audited 13 Aug 2026
 
@@ -321,7 +326,7 @@ it does.
 | 2 | ~~Build both agents in the **Staging** workspace~~ ✅ 13 Aug — both built, every URL pointing at the staging API, verified by 15 read-back assertions | — | — |
 | 2a | ~~Staging key into `voxtable-stg-retell-api-key` + roll a revision~~ ✅ 13 Aug — version 4, revisions `api-00031` / `worker-00027`; signed request verifies **204**, wrong key **401** | — | — |
 | 2b | ~~`restaurants` row bound to `+61 468 203 234`~~ ✅ 13 Aug — number imported to the Staging workspace (webhook mode) and `VoxTable Staging Venue` resolves with fresh per-call variables; unknown numbers fail closed | — | — |
-| 2c | **Make a real call to `+61 468 203 234`** — everything but audio is proven | Confidence before the production cutover | Sam |
+| 2c | **Make a real call to `+61 468 203 234`** — everything but audio is proven. The machine half is green (`npm run smoke:staging`, first green run 14 Aug); what remains is the seven-leg human battery in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md), whose results table is still empty. Leg 6 (SMS) additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker — issue #185, not set today | Confidence before the production cutover | Sam |
 | 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first | Plain-RTP media today; dead air during a Retell outage | — |
 | 4 | Move the API hostname to `api.biteperk.com.au` and repoint the agents' `webhook_url` + 5 tool URLs | The last operational tie to the other company — see §6 | — |
 

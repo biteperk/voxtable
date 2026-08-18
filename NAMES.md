@@ -52,11 +52,15 @@ there; this table registers them.
 | Thing | Name |
 |---|---|
 | Staging project | `bp-voxtable-stg` |
-| Production project (created at cutover) | `bp-voxtable-prod` — **`-prod`, never `-prd`**. Older notes had `-prd`; Terraform enforces the correct form (`roots/products/voxtable/prod/variables.tf` validation). |
+| Production project (**exists as an empty shell**) | `bp-voxtable-prod` — **`-prod`, never `-prd`**. Older notes had `-prd`; Terraform enforces the correct form (`roots/products/voxtable/prod/variables.tf` validation). ⚠️ The project **does** exist — one secret, Cloud Run API not even enabled — so "does the project exist?" answers a misleading *yes*. Nothing runs there; production is still the VM. |
 | Shared registry project | `bp-shared-artifacts` |
 | Docker images (new world) | `australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/api` and `…/worker` |
-| Cloud Run — staging (exists today) | `voxtable-stg-api`, `voxtable-stg-worker`, `voxtable-stg-migrate`, `voxtable-stg-postgres`, `voxtable-stg-retell`, `voxtable-stg-twilio`, `voxtable-stg-runtime` (see `deploy/runbooks/staging-cloudrun-bootstrap.md`) |
-| Cloud Run — production (pattern; created at cutover, does NOT exist yet) | `voxtable-prod-<service>` mirroring the staging fleet |
+| Cloud Run **services** — staging (exist today) | `voxtable-stg-api`, `voxtable-stg-worker` |
+| Cloud Run **job** — staging | `voxtable-stg-migrate` (runs `dist/db/migrate.js`; not a service) |
+| Cloud SQL **instance** — staging | `voxtable-stg-postgres` (a database, not a Cloud Run service) |
+| Service **account** — staging runtime | `voxtable-stg-runtime@…iam.gserviceaccount.com` |
+| Secret Manager **name prefixes** — staging | `voxtable-stg-retell-*`, `voxtable-stg-twilio-*` (see `deploy/runbooks/staging-secrets.md` for the full registry) |
+| Cloud Run — production (pattern; created at cutover, no services exist yet) | `voxtable-prod-<service>` mirroring the staging fleet |
 | Firebase Hosting (new world) | `bp-voxtable-stg.web.app` / `bp-voxtable-prod.web.app` |
 | Database roles (Cloud SQL) | `voxtable_owner` (migrations) / `voxtable_app` (runtime) |
 | Repos | product `biteperk/voxtable` (renamed from `biteperk/vocotable`) · infra `biteperk/biteperk-cloud-platform` · marketing site `biteperk/biteperk-website` |
