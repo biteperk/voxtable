@@ -174,10 +174,13 @@ const envSchema = z
   // are verified. superRefine below forces keys when enabled in production.
   STRIPE_BILLING_ENABLED: boolFlag(),
   STRIPE_SECRET_KEY: z.string().optional(),
-  // Legacy single-tenant fallback customer. With self-serve billing (Phase 3),
-  // each restaurant gets its own customer (restaurants.stripe_customer_id); this
-  // env is only a transition fallback for the original tenant.
-  STRIPE_CUSTOMER_ID: z.string().optional(),
+  // STRIPE_CUSTOMER_ID was removed on 18 Aug 2026. It was the legacy
+  // single-tenant fallback customer, read by routes/billing.ts with NO tenant
+  // check — so every restaurant that had not yet completed checkout resolved to
+  // it, and a manager of any tenant could read another business's invoices and
+  // card details, or open a Customer Portal session against them. Per-tenant
+  // billing has been the real path since Phase 3; the fallback outlived its
+  // transition. Setting it in a .env is harmless now; it is simply ignored.
   STRIPE_PORTAL_RETURN_URL: z
     .string()
     .url()

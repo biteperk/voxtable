@@ -19,7 +19,7 @@ import {
   listInvoices,
   listPaymentMethods
 } from "../services/stripeService";
-import { isBillingConfigured, legacyCustomerId, stripeMode } from "../services/stripeClient";
+import { isBillingConfigured, stripeMode } from "../services/stripeClient";
 import {
   createConnectOnboardingLink,
   getConnectStatus,
@@ -44,10 +44,22 @@ billingRouter.use("/api/billing", requireFirebaseAuth);
 billingRouter.use("/api/billing", resolveTenant);
 billingRouter.use("/api/billing", requireMemberRole("manager"));
 
-// The restaurant's own Stripe customer, falling back to the legacy single-tenant
-// env id during transition. null → this restaurant hasn't started billing yet.
+// The restaurant's own Stripe customer. null → this restaurant hasn't started
+// billing yet, and every caller below renders that as an empty/disabled state.
+//
+// There used to be a `?? legacyCustomerId()` fallback here, reading the
+// process-wide STRIPE_CUSTOMER_ID with no tenant check at all. Every tenant
+// that had not yet completed checkout — which is every new tenant — fell
+// through to it, so a manager of ANY restaurant could read another business's
+// invoices, amounts and card last4, and (via the portal route below) change
+// their payment method or cancel their subscription. It was transition
+// scaffolding for the single-tenant era and the transition is over.
+//
+// If a venue that was billed before multi-tenancy suddenly shows no billing,
+// the fix is to set restaurants.stripe_customer_id for that venue — not to
+// bring a global fallback back.
 async function resolveCustomer(restaurantId: string): Promise<string | null> {
-  return (await getStripeCustomerId(restaurantId)) ?? legacyCustomerId();
+  return getStripeCustomerId(restaurantId);
 }
 
 billingRouter.get(
@@ -107,6 +119,12 @@ billingRouter.get(
 billingRouter.post(
   "/api/billing/portal-session",
   asyncHandler(async (request, response) => {
+    // This was the ONE billing route with no isBillingConfigured() gate, so it
+    // reached Stripe whenever ORDER_PAYMENTS_ENABLED was on even with
+    // subscription billing switched off (getStripe accepts either flag).
+    if (!isBillingConfigured()) {
+      throw new AppError(409, "NO_BILLING", "Billing is not enabled.");
+    }
     const customer = await resolveCustomer(tenantId(request));
     if (!customer) {
       throw new AppError(409, "NO_BILLING", "No billing is set up for this restaurant yet.");

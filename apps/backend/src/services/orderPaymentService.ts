@@ -34,6 +34,7 @@ import { normalizePhone } from "../utils/phone";
 import { getStripe, withStripeErrors } from "./stripeClient";
 import {
   ACTIVE_PAYMENT_STATUSES,
+  countPaymentAttempts,
   countRecentPaymentAttempts,
   getActiveOrderPayment,
   getOrderPaymentByIntentId,
@@ -154,6 +155,12 @@ export interface CheckoutGateway {
     applicationFeeCents: number;
     expiresAt: Date;
     source: string;
+    /**
+     * How many payment attempts this order has already had. Rides into the
+     * Stripe idempotency key so a resend after the previous link died mints a
+     * fresh session instead of replaying the dead one.
+     */
+    attemptSeq: number;
   }): Promise<CreatedCheckoutSession>;
   expireSession(sessionId: string): Promise<void>;
   retrieveSession(sessionId: string): Promise<RetrievedCheckoutSession>;
@@ -167,8 +174,34 @@ function returnBaseUrl(): string {
   return base.replace(/\/+$/, "");
 }
 
+/**
+ * Idempotency key for the Checkout Session create call. Pure and exported so
+ * the rule is testable without Stripe — the same reason buildLineItems and
+ * buildPaymentSms are.
+ *
+ * Two requirements pull in opposite directions:
+ *
+ *  - A concurrent double-fire (Retell emitting the tool call twice) must
+ *    REPLAY to one session. attemptSeq is read before the Stripe call and the
+ *    row written after, so both racers see the same count and the same key.
+ *  - A deliberate resend, after the previous link expired or failed, must mint
+ *    a FRESH session. attemptSeq has advanced by then.
+ *
+ * The key previously omitted attemptSeq. Because total_cents is never updated
+ * anywhere, that made it constant per order forever — and Stripe caches
+ * idempotency keys for 24 hours while links expire after 45 minutes. Every
+ * resend inside that window replayed the original, dead session URL.
+ */
+export function checkoutIdempotencyKey(
+  orderId: string,
+  totalCents: number,
+  attemptSeq: number
+): string {
+  return `order-checkout:${orderId}:${totalCents}:${attemptSeq}`;
+}
+
 const stripeGateway: CheckoutGateway = {
-  async createSession({ order, restaurantId, connectAccountId, applicationFeeCents, expiresAt, source }) {
+  async createSession({ order, restaurantId, connectAccountId, applicationFeeCents, expiresAt, source, attemptSeq }) {
     const stripe = getStripe();
     // Everything the charge-level events need rides payment_intent_data.metadata
     // too: session metadata does NOT propagate to the PaymentIntent, and
@@ -214,9 +247,22 @@ const stripeGateway: CheckoutGateway = {
           // once the SDK is upgraded (see the Accounts v2 work).
         } as Stripe.Checkout.SessionCreateParams,
         // Keyed on amount, not order version: kitchen taps bump the version
-        // without changing what's owed, and those retries must replay; an
-        // amount change must mint a fresh session.
-        { idempotencyKey: `order-checkout:${order.id}:${order.total_cents}` }
+        // without changing what's owed, and those retries must replay.
+        //
+        // attemptSeq is what makes a RESEND work. The key used to be
+        // (order id, total) alone, and total_cents is never updated anywhere —
+        // so the key was constant per order forever, while Stripe caches
+        // idempotency keys for 24 hours and links expire after 45 minutes.
+        // Every resend inside that window replayed the original, dead session:
+        // inserting it violated the unique index on the session id, the
+        // recovery path found no active row to fall back to, and the error was
+        // rethrown. The guest never got a working link — a raw 500 on the
+        // dashboard, and no scripted refusal at all on the phone.
+        //
+        // attemptSeq is read before the Stripe call and the row written after,
+        // so two concurrent double-fires still share a key and still replay to
+        // one session — which is the behaviour the line above wants to keep.
+        { idempotencyKey: checkoutIdempotencyKey(order.id, order.total_cents, attemptSeq) }
       )
     );
     if (!session.url) {
@@ -382,6 +428,9 @@ export async function createOrderPaymentLink(
   const expiryMinutes = env.ORDER_PAYMENT_EXPIRY_MINUTES;
   const expiresAt = new Date(Date.now() + expiryMinutes * 60_000);
   const feeCents = platformFeeCents(order.total_cents);
+  // All-time count, not the hourly abuse counter above: that one resets every
+  // hour and would hand a later attempt a key Stripe still has cached.
+  const attemptSeq = await countPaymentAttempts(input.orderId);
 
   // Stripe call OUTSIDE the transaction. A crash after this and before commit
   // leaves an orphan session nobody was ever texted; it expires on its own.
@@ -391,7 +440,8 @@ export async function createOrderPaymentLink(
     connectAccountId: connect.stripe_connect_account_id,
     applicationFeeCents: feeCents,
     expiresAt,
-    source: input.source ?? "voice"
+    source: input.source ?? "voice",
+    attemptSeq
   });
 
   const venueName = await getRestaurantName(input.restaurantId);
