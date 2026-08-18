@@ -1,4 +1,5 @@
 import { AppError } from "../domain/errors";
+import { logger } from "../utils/logger";
 import { DEFAULT_OPENING_HOURS, RestaurantSettings } from "../domain/types";
 import { DbClient, pool, withTransaction } from "../db/pool";
 import { normalizePhone } from "../utils/phone";
@@ -99,9 +100,43 @@ export async function getRestaurantTimezone(restaurantId: string): Promise<strin
     [restaurantId]
   );
 
-  const tz = result.rows[0]?.timezone ?? "Australia/Sydney";
+  const tz = coerceUsableTimezone(result.rows[0]?.timezone, restaurantId);
   timezoneCache.set(restaurantId, tz);
   return tz;
+}
+
+/**
+ * Never hand an unusable time zone to Intl.
+ *
+ * utils/time.ts passes this value straight to Intl.DateTimeFormat, which
+ * throws RangeError on anything that is not a real IANA zone. handleRetellInbound
+ * calls four of those helpers, so one bad row meant every inbound call for that
+ * venue 500'd and Retell could not start the call at all — a dead phone line
+ * from a profile-form typo.
+ *
+ * schemas.ts now refuses bad zones on the way in, but that only protects new
+ * writes. A row saved before that, or written by SQL, still has to not kill the
+ * line. A wrong-but-working zone shifts times; an invalid one answers nothing.
+ * The first is recoverable, so it is the safer failure — logged at error, since
+ * silently serving the wrong times is exactly the sort of thing that should
+ * page someone.
+ */
+export function coerceUsableTimezone(timezone: string | undefined, restaurantId: string): string {
+  const fallback = "Australia/Sydney";
+  if (!timezone) return fallback;
+  try {
+    new Intl.DateTimeFormat("en-AU", { timeZone: timezone });
+    return timezone;
+  } catch {
+    logger.error({
+      evt: "restaurant_timezone_invalid",
+      restaurant_id: restaurantId,
+      timezone,
+      fallback,
+      detail: "stored timezone is not a valid IANA zone; falling back so calls still answer"
+    });
+    return fallback;
+  }
 }
 
 export async function getRestaurantName(restaurantId: string): Promise<string> {

@@ -349,11 +349,62 @@ export const CUISINE_OPTIONS = [
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/**
+ * A real IANA time zone, checked by asking Intl whether it can use it.
+ *
+ * This was z.string().min(3).max(64), which accepts "Sydney", "AEST" and
+ * "GMT+10". Every one of those makes Intl.DateTimeFormat throw a RangeError —
+ * and utils/time.ts passes restaurants.timezone straight to Intl. So saving a
+ * plausible-looking zone on the profile form made handleRetellInbound throw on
+ * EVERY subsequent inbound call: Retell could not start the call at all, the
+ * phone line was dead, and the value was memoised so it stayed dead.
+ *
+ * Intl is the right oracle rather than a hardcoded list: it is the exact thing
+ * that will consume the value at runtime, and it tracks tzdata updates.
+ */
+export const ianaTimeZoneSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(64)
+  .refine(
+    (value) => {
+      try {
+        new Intl.DateTimeFormat("en-AU", { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "timezone must be a valid IANA zone, e.g. Australia/Sydney" }
+  );
+
+/**
+ * The seven keys getOpeningWindowsForDate actually looks up, lowercase.
+ *
+ * This used to be z.record(z.string(), …), which accepted ANY key. Saving
+ * {"Monday": [...]} or {"mon": [...]} validated cleanly, then every day
+ * resolved to no windows via the `?? []` fallback in utils/time.ts — so
+ * check_availability answered "no suitable table is available near the
+ * requested time" for a completely empty restaurant, on every call, with no
+ * error and no log line. A venue could be silently closed all week by a
+ * capital letter.
+ */
+export const OPENING_HOURS_DAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday"
+] as const;
+
 // day -> intervals. Overnight (close < open) is allowed (e.g. 18:00–02:00), so
 // only the HH:MM format is validated, not ordering.
 const openingHoursSchema = z
   .record(
-    z.string(),
+    z.enum(OPENING_HOURS_DAYS),
     z
       .array(
         z.object({
@@ -371,7 +422,7 @@ export const createRestaurantSchema = z.object({
 
 export const restaurantProfileSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
-  timezone: z.string().trim().min(3).max(64).optional(),
+  timezone: ianaTimeZoneSchema.optional(),
   address: z.string().trim().max(200).optional(),
   suburb: z.string().trim().max(80).optional(),
   state: z.enum(AU_STATES).optional(),
