@@ -4,6 +4,7 @@
 # bundle and are restricted by Firebase Auth authorized domains, not secrecy.
 apps/frontend/.env.example:gcp-api-key:19
 scripts/configure-github-env-vars.sh:gcp-api-key:31
+deploy/runbooks/staging-call-battery.md:gcp-api-key:11
 #
 # Fake credentials used to test that the log redaction actually redacts.
 apps/backend/src/utils/logger.test.ts:jwt:38
