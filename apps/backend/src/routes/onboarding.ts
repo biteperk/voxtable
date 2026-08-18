@@ -249,11 +249,22 @@ onboardingRouter.post(
     // they must match what we actually published — the browser doesn't get to
     // choose what the evidence says (#196). Fail-closed: manifest unreachable
     // means no acceptance is recorded. Only skipped when no manifest URL is
-    // configured (local dev; production boots refuse that combination).
+    // configured, which is a local-dev-only state.
     if (legalDocumentsVerificationEnabled()) {
       const published = await getPublishedLegalDocuments();
       assertPublishedVersionAllowed(published);
       assertAcceptanceMatchesPublished(body, published);
+    } else if (env.APP_ENV === "production") {
+      // The boot gate above should have made this unreachable. It is repeated
+      // here because the failure mode is silent and permanent: an unverified
+      // row in an append-only ledger cannot be corrected later, only annotated.
+      // Refusing the acceptance costs one signup; recording an unverifiable one
+      // costs the evidence.
+      throw new AppError(
+        503,
+        "TERMS_VERIFICATION_UNAVAILABLE",
+        "Agreement acceptance is unavailable: published legal documents are not configured."
+      );
     } else {
       logger.warn({
         message: "agreement_acceptance_unverified",

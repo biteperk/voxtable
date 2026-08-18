@@ -422,18 +422,21 @@ const envSchema = z
       });
     }
 
-    // Self-serve signups record legal acceptances; without the manifest the
-    // route would either fail every acceptance (fail-closed) or record
-    // unverified evidence. Refuse the boot instead. NOTE for deploys: add
-    // LEGAL_DOCUMENTS_MANIFEST_URL to the Terraform env map BEFORE promoting
-    // this code to an environment that has self-serve on, or it dies on this
-    // gate at startup.
-    if (value.SELF_SERVE_SIGNUP_ENABLED) {
-      requireInProd(
-        "LEGAL_DOCUMENTS_MANIFEST_URL",
-        "LEGAL_DOCUMENTS_MANIFEST_URL is required when SELF_SERVE_SIGNUP_ENABLED=true (acceptances are verified against the published manifest)."
-      );
-    }
+    // Any production that can record a legal acceptance needs the manifest, so
+    // the server — not the browser — decides what was accepted. This used to be
+    // gated on SELF_SERVE_SIGNUP_ENABLED, which defaults false: an invite-only
+    // production therefore booted with no manifest URL and fell back to writing
+    // browser-supplied versions and digests into the append-only ledger with
+    // only a log line. Self-serve is not what makes the evidence matter — a
+    // manually onboarded venue signs the same agreement.
+    //
+    // NOTE for deploys: add LEGAL_DOCUMENTS_MANIFEST_URL to the Terraform env
+    // map (and the VM's .env) BEFORE promoting this code to production, or it
+    // dies on this gate at startup.
+    requireInProd(
+      "LEGAL_DOCUMENTS_MANIFEST_URL",
+      "LEGAL_DOCUMENTS_MANIFEST_URL is required in production (agreement acceptances are verified against the published manifest, not trusted from the browser)."
+    );
 
     requireInProd("RETELL_API_KEY", "RETELL_API_KEY is required in production.");
     requireInProd("TWILIO_ACCOUNT_SID", "TWILIO_ACCOUNT_SID is required in production.");
