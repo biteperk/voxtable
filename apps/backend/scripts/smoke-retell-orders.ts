@@ -1,8 +1,12 @@
-// Smoke for the new Retell tools: /retell/tools/menu-lookup and
-// /retell/tools/create-order. Skips signature verification by hitting
-// localhost (RETELL_VERIFY_SIGNATURE=false in dev) — for prod, point
-// PUBLIC_API_BASE_URL at the live backend; signature is disabled on the
-// VM today so the same script works.
+// Smoke for the Retell tools: /retell/tools/menu-lookup and
+// /retell/tools/create-order.
+//
+// Two modes:
+//   * SMOKE_RETELL_SIGNING_KEY (or RETELL_API_KEY) set → every request is
+//     signed, so it runs against a server with RETELL_VERIFY_SIGNATURE=true
+//     (staging / production posture). Sign with whatever the server verifies
+//     with: RETELL_WEBHOOK_SECRET ?? RETELL_API_KEY on the server side.
+//   * unset → the unsigned local-dev smoke it always was.
 //
 // Asserts:
 //   1. menu_lookup("fish and chips") returns Fish & Chips first match
@@ -14,9 +18,17 @@
 //   6. create_order with full happy path → 200 + order_id + confirmation_message
 //   7. Replay same call_id → SAME order_id (idempotency)
 
+import { Retell } from "retell-sdk";
+
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
 const restaurantId =
-  process.env.DEFAULT_RESTAURANT_ID ?? "11111111-1111-4111-8111-111111111111";
+  process.env.SMOKE_RESTAURANT_ID ??
+  process.env.DEFAULT_RESTAURANT_ID ??
+  "11111111-1111-4111-8111-111111111111";
+// With a signing key, every tool call carries a valid x-retell-signature and
+// this smoke runs against a server with RETELL_VERIFY_SIGNATURE=true (staging).
+// Without one it stays the unsigned local-dev smoke it always was.
+const signingKey = process.env.SMOKE_RETELL_SIGNING_KEY ?? process.env.RETELL_API_KEY;
 
 interface ToolResponse {
   // menu_lookup
@@ -38,44 +50,65 @@ async function callTool(
   callId?: string
 ): Promise<{ status: number; body: ToolResponse }> {
   const path = `/retell/tools/${toolName.replace(/_/g, "-")}`;
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name: toolName,
-      call: callId ? { call_id: callId } : undefined,
-      args
-    })
+  // to_number + metadata let the server resolve the venue the same way it
+  // does for a real call (dialled number first). Without them, production
+  // posture fails closed and every tool call 409s RESTAURANT_NOT_CONFIGURED.
+  const body = JSON.stringify({
+    name: toolName,
+    call: {
+      ...(callId ? { call_id: callId } : {}),
+      ...(process.env.RETELL_PHONE_NUMBER ? { to_number: process.env.RETELL_PHONE_NUMBER } : {}),
+      metadata: { restaurant_id: restaurantId }
+    },
+    args
   });
-  const body = (await response.json().catch(() => ({}))) as ToolResponse;
-  return { status: response.status, body };
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (signingKey) {
+    headers["x-retell-signature"] = await Retell.sign(body, signingKey);
+  }
+  const response = await fetch(`${baseUrl}${path}`, { method: "POST", headers, body });
+  const parsed = (await response.json().catch(() => ({}))) as ToolResponse;
+  return { status: response.status, body: parsed };
 }
 
 async function createTestBooking(): Promise<string> {
-  // Bookings the smoke order against; uses a date 30 days out so it never
-  // collides with real bookings.
+  // Created through the SIGNED create_booking tool — /bookings is a
+  // Firebase-gated dashboard route now, and the voice tool is the surface
+  // this smoke exists to prove anyway. 30 days out; if the first slot is
+  // taken (leftovers from earlier smoke runs), retry once at the server's
+  // own suggested time — the collision is the availability engine working.
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + 30);
   const dateIso = date.toISOString().slice(0, 10);
-  const response = await fetch(`${baseUrl}/bookings`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      restaurant_id: restaurantId,
-      customer_name: "Smoke Retell Order",
-      customer_phone: "+61400000099",
-      date: dateIso,
-      time: "20:30",
-      party_size: 2,
-      source: "voice",
-      notes: "smoke-retell-orders.ts test booking"
-    })
-  });
-  const body = (await response.json()) as { booking_id?: string; error?: unknown };
-  if (!response.ok || !body.booking_id) {
-    throw new Error(`Could not create test booking: ${JSON.stringify(body)}`);
+
+  const attempt = async (time: string) =>
+    callTool(
+      "create_booking",
+      {
+        customer_name: "SMOKE Retell Order",
+        customer_phone: "+61400000099",
+        date: dateIso,
+        time,
+        party_size: 2,
+        notes: "SMOKE — smoke-retell-orders.ts test booking"
+      },
+      `smoke-orders-booking-${Date.now()}`
+    );
+
+  let result = await attempt("20:30");
+  if (result.status !== 200) {
+    const details = (result.body.error as { details?: { suggestedTime?: string } } | undefined)
+      ?.details;
+    if (details?.suggestedTime) {
+      console.log(`  (20:30 taken — retrying at suggested ${details.suggestedTime})`);
+      result = await attempt(details.suggestedTime);
+    }
   }
-  return body.booking_id;
+  const bookingId = (result.body as { booking_id?: string }).booking_id;
+  if (result.status !== 200 || !bookingId) {
+    throw new Error(`Could not create test booking: ${JSON.stringify(result.body)}`);
+  }
+  return bookingId;
 }
 
 function assert(cond: unknown, message: string): asserts cond {
@@ -85,25 +118,29 @@ function assert(cond: unknown, message: string): asserts cond {
 async function main(): Promise<void> {
   console.log(`Smoking ${baseUrl}`);
 
-  // Probe: the /retell/* router is HMAC-protected in prod. Check before
-  // running so the operator sees a clear "run me locally" message instead
-  // of a wall of 500s.
-  const probe = await fetch(`${baseUrl}/retell/tools/menu-lookup`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "menu_lookup", args: { query: "fish" } })
-  });
-  if (probe.status === 500 || probe.status === 401) {
-    const body = await probe.text();
-    if (body.includes("RETELL_SIGNATURE") || body.includes("signature")) {
-      console.log(
-        "Retell signature verification is enabled on this target — this smoke\n" +
-        "is intended for LOCAL dev where RETELL_VERIFY_SIGNATURE=false. To smoke\n" +
-        "the real Retell tools in prod, place a real test call from the Retell\n" +
-        "console with the v3 prompt installed and verify the order on the KDS."
-      );
-      return;
+  // Probe (unsigned mode only): the /retell/* router is HMAC-protected in
+  // prod. Check before running so the operator sees a clear "sign or run
+  // locally" message instead of a wall of 500s. With a signing key the smoke
+  // signs every request, so enforcement is exactly what we want.
+  if (!signingKey) {
+    const probe = await fetch(`${baseUrl}/retell/tools/menu-lookup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "menu_lookup", args: { query: "fish" } })
+    });
+    if (probe.status === 500 || probe.status === 401) {
+      const body = await probe.text();
+      if (body.includes("RETELL_SIGNATURE") || body.includes("signature")) {
+        console.log(
+          "Retell signature verification is enabled on this target. Re-run with\n" +
+          "SMOKE_RETELL_SIGNING_KEY set to the value the server verifies with\n" +
+          "(RETELL_WEBHOOK_SECRET ?? RETELL_API_KEY) and this smoke signs itself."
+        );
+        return;
+      }
     }
+  } else {
+    console.log("signing enabled — running against enforced signatures");
   }
 
   // 1) menu_lookup happy path

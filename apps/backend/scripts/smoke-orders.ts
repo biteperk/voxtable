@@ -13,6 +13,8 @@
 //   9. Served order falls off /api/orders/active
 //  10. /api/ops/kds-health snapshot reflects reality
 
+import { mintSmokeIdToken } from "./lib/firebaseToken";
+
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
 
 interface MenuItem {
@@ -37,12 +39,17 @@ interface OrderResponse {
   items: Array<{ id: string; status: string }>;
 }
 
+// Filled in main(): Bearer token + tenant header for servers running the full
+// production gates (staging). Empty in local dev with DASHBOARD_VERIFY_AUTH=false.
+let authHeaders: Record<string, string> = {};
+
 async function request<T>(path: string, init?: RequestInit & { expectStatus?: number }): Promise<T | { __error: { status: number; body: any } }> {
   const { expectStatus, ...fetchInit } = init ?? {};
   const response = await fetch(`${baseUrl}${path}`, {
     ...fetchInit,
     headers: {
       "content-type": "application/json",
+      ...authHeaders,
       ...(fetchInit?.headers ?? {})
     }
   });
@@ -64,6 +71,22 @@ function assert(cond: unknown, message: string): asserts cond {
 
 async function main(): Promise<void> {
   console.log(`Smoking ${baseUrl}`);
+
+  // Token-gated mode: every /api/* route on a production-posture server needs
+  // a Firebase Bearer token AND the tenant header (resolveTenant). Locally
+  // with DASHBOARD_VERIFY_AUTH=false neither is required and both are skipped.
+  const token = await mintSmokeIdToken();
+  const tenant = process.env.SMOKE_RESTAURANT_ID;
+  if (token) {
+    authHeaders = {
+      authorization: `Bearer ${token}`,
+      ...(tenant ? { "x-restaurant-id": tenant } : {})
+    };
+    console.log(`✓ minted Firebase token${tenant ? ` (tenant ${tenant})` : ""}`);
+  } else if (tenant) {
+    authHeaders = { "x-restaurant-id": tenant };
+    console.log("[SKIP] no SMOKE_FIREBASE_* env — running unauthenticated (local mode)");
+  }
 
   // 1) Health
   const health = await request<{ status: string }>("/health");
