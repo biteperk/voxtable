@@ -1,6 +1,5 @@
 import { useId, useRef } from "react";
 import { useAuth } from "../../auth";
-import { signOutUser } from "../../firebase";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useDrawer } from "../../hooks/useDrawer";
 import { useScrolled } from "../../hooks/useScrolled";
@@ -9,7 +8,7 @@ import { RestaurantSwitcher } from "../../components/dashboard/RestaurantSwitche
 import { SidebarUserButton } from "../../components/dashboard/SidebarUserButton";
 
 export function DashboardShell({ active, children, navigate, path }) {
-  const { user, hasMinRole, role } = useAuth();
+  const { user, hasMinRole, role, isPlatformAdmin } = useAuth();
   const isPhone = useMediaQuery("(max-width: 767px)");
   const burgerRef = useRef(null);
   const drawer = useDrawer({ pathname: path, triggerRef: burgerRef });
@@ -31,11 +30,6 @@ export function DashboardShell({ active, children, navigate, path }) {
   ];
 
   const items = allItems.filter(([, , , canSee]) => canSee());
-
-  const handleSignOut = async () => {
-    await signOutUser();
-    navigate("/");
-  };
 
   const sidebarMarkup = (
     <aside
@@ -94,6 +88,16 @@ export function DashboardShell({ active, children, navigate, path }) {
       </nav>
 
       <div className="sidebar-bottom">
+        {isPlatformAdmin && (
+          <button
+            className="settings-link"
+            type="button"
+            onClick={() => navigate("/admin")}
+          >
+            <Icon name="admin_panel_settings" />
+            <span>Admin</span>
+          </button>
+        )}
         {hasMinRole("manager") && (
           <button
             className={`settings-link ${active === "Billing" ? "active" : ""}`}

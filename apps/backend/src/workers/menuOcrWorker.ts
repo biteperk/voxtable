@@ -9,6 +9,7 @@
  */
 
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 import { AppError } from "../domain/errors";
 import {
   claimReadyJobs,
@@ -151,6 +152,9 @@ export function startMenuOcrWorker(): void {
   }
   if (intervalHandle !== null) return;
   logger.info({ evt: "menu_ocr_worker_started", tick_ms: TICK_INTERVAL_MS, max_concurrent: MAX_CONCURRENT_JOBS });
+  // Only registered once the worker genuinely starts ticking, so a
+  // flag-disabled no-op is never reported as stalled.
+  registerTickExpectation("menu-ocr", TICK_INTERVAL_MS);
   intervalHandle = setInterval(() => {
     // Guards only the CLAIM, which is fast. The jobs themselves run outside it,
     // so a long menu no longer stops the next tick from picking up other work.

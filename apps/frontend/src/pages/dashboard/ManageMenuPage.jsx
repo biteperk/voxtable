@@ -59,8 +59,6 @@ export function ManageMenuPage({ navigate, path }) {
       await deleteMenuItem(item.id);
       await refresh();
       return true;
-    } catch (e) {
-      throw e;
     } finally {
       setBusy(false);
     }

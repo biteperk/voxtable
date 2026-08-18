@@ -135,7 +135,7 @@ const REDACTION_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
   // Checkout session ids: the id IS the payment page URL suffix — a logged
   // cs_… is a live "pay this order" capability until the session expires.
   { regex: /\bcs_(test|live)_[a-zA-Z0-9]{16,}\b/g, replacement: "cs_$1_[REDACTED]" },
-  { regex: /Bearer\s+[A-Za-z0-9._\-]+/g, replacement: "Bearer [REDACTED]" },
+  { regex: /Bearer\s+[A-Za-z0-9._-]+/g, replacement: "Bearer [REDACTED]" },
   {
     regex: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
     replacement: "[REDACTED-JWT]"

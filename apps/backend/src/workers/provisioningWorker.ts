@@ -16,6 +16,7 @@
 
 import { env } from "../config/env";
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 import {
   advanceProvisioningStep,
   claimReadyProvisioningJobs,
@@ -187,6 +188,9 @@ export function startProvisioningWorker(): void {
   }
   if (intervalHandle !== null) return;
   logger.info({ evt: "provisioning_worker_started" });
+  // Only registered once the worker genuinely starts ticking, so a
+  // flag-disabled no-op is never reported as stalled.
+  registerTickExpectation("provisioning", TICK_INTERVAL_MS);
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;

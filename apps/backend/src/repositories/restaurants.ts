@@ -1,4 +1,5 @@
 import { AppError } from "../domain/errors";
+import { logger } from "../utils/logger";
 import { DEFAULT_OPENING_HOURS, RestaurantSettings } from "../domain/types";
 import { DbClient, pool, withTransaction } from "../db/pool";
 import { normalizePhone } from "../utils/phone";
@@ -99,9 +100,43 @@ export async function getRestaurantTimezone(restaurantId: string): Promise<strin
     [restaurantId]
   );
 
-  const tz = result.rows[0]?.timezone ?? "Australia/Sydney";
+  const tz = coerceUsableTimezone(result.rows[0]?.timezone, restaurantId);
   timezoneCache.set(restaurantId, tz);
   return tz;
+}
+
+/**
+ * Never hand an unusable time zone to Intl.
+ *
+ * utils/time.ts passes this value straight to Intl.DateTimeFormat, which
+ * throws RangeError on anything that is not a real IANA zone. handleRetellInbound
+ * calls four of those helpers, so one bad row meant every inbound call for that
+ * venue 500'd and Retell could not start the call at all — a dead phone line
+ * from a profile-form typo.
+ *
+ * schemas.ts now refuses bad zones on the way in, but that only protects new
+ * writes. A row saved before that, or written by SQL, still has to not kill the
+ * line. A wrong-but-working zone shifts times; an invalid one answers nothing.
+ * The first is recoverable, so it is the safer failure — logged at error, since
+ * silently serving the wrong times is exactly the sort of thing that should
+ * page someone.
+ */
+export function coerceUsableTimezone(timezone: string | undefined, restaurantId: string): string {
+  const fallback = "Australia/Sydney";
+  if (!timezone) return fallback;
+  try {
+    new Intl.DateTimeFormat("en-AU", { timeZone: timezone });
+    return timezone;
+  } catch {
+    logger.error({
+      evt: "restaurant_timezone_invalid",
+      restaurant_id: restaurantId,
+      timezone,
+      fallback,
+      detail: "stored timezone is not a valid IANA zone; falling back so calls still answer"
+    });
+    return fallback;
+  }
 }
 
 export async function getRestaurantName(restaurantId: string): Promise<string> {
@@ -530,6 +565,72 @@ export async function listByOnboardingStatus(
     [status]
   );
   return result.rows;
+}
+
+/** ProvisioningRow plus the cheap local billing/legal columns the admin venue
+ * list shows. Live Stripe subscription state is deliberately NOT here — that
+ * is one Stripe API call per venue and loads lazily per-venue instead. */
+export interface AdminRestaurantRow extends ProvisioningRow {
+  terms_version: string | null;
+  has_stripe_customer: boolean;
+  stripe_connect_charges_enabled: boolean;
+  stripe_connect_payouts_enabled: boolean;
+}
+
+export async function listRestaurantsAdmin(filter: {
+  status?: OnboardingStatus;
+  query?: string;
+}): Promise<AdminRestaurantRow[]> {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (filter.status) {
+    params.push(filter.status);
+    clauses.push(`onboarding_status = $${params.length}::onboarding_status`);
+  }
+  if (filter.query) {
+    params.push(`%${filter.query}%`);
+    clauses.push(`name ILIKE $${params.length}`);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const result = await pool.query<AdminRestaurantRow>(
+    `SELECT id, name, contact_email, onboarding_status,
+            twilio_phone_number, retell_phone_number, retell_agent_id, created_at,
+            terms_version,
+            stripe_customer_id IS NOT NULL AS has_stripe_customer,
+            stripe_connect_charges_enabled, stripe_connect_payouts_enabled
+       FROM restaurants
+       ${where}
+      ORDER BY created_at DESC
+      LIMIT 200`,
+    params
+  );
+  return result.rows;
+}
+
+/**
+ * Null out the named binding columns (admin unbind). The bind PATCH is
+ * COALESCE-only so it can never clear a value; this is the explicit,
+ * confirm-gated counterpart. Field names are validated by adminUnbindSchema
+ * before they reach here — never interpolate caller input directly.
+ */
+export async function clearProvisioningBindings(
+  restaurantId: string,
+  fields: Array<"twilio_phone_number" | "retell_phone_number" | "retell_agent_id">
+): Promise<ProvisioningRow | null> {
+  const allowed = new Set(["twilio_phone_number", "retell_phone_number", "retell_agent_id"]);
+  const safe = fields.filter((f) => allowed.has(f));
+  if (safe.length === 0) return getProvisioning(restaurantId);
+  const sets = safe.map((f) => `${f} = NULL`).join(", ");
+  const result = await pool.query<ProvisioningRow>(
+    `UPDATE restaurants SET ${sets}
+      WHERE id = $1
+      RETURNING id, name, contact_email, onboarding_status,
+                twilio_phone_number, retell_phone_number, retell_agent_id, created_at`,
+    [restaurantId]
+  );
+  if (!result.rows[0]) return null;
+  invalidateRestaurantCache(restaurantId);
+  return result.rows[0];
 }
 
 export async function getProvisioning(restaurantId: string): Promise<ProvisioningRow | null> {

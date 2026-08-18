@@ -1,0 +1,214 @@
+name: Publish legal documents
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      document_set_version:
+        description: Immutable document set version, e.g. CSA-2026-08
+        required: true
+      csa_path:
+        description: Repo path to the Client Services Agreement PDF
+        required: true
+        default: legal-documents/versions/CSA-2026-08/client-services-agreement.pdf
+      schedule_path:
+        description: Repo path to the Privacy & Data Handling Schedule PDF
+        required: true
+        default: legal-documents/versions/CSA-2026-08/privacy-data-handling-schedule.pdf
+      publish_current:
+        description: Update current/manifest.json to point at this version
+        required: true
+        type: boolean
+        default: true
+      dry_run:
+        description: Validate and print the manifest without uploading
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish-legal-documents-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish legal documents
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Enforce branch to environment
+        env:
+          DEPLOY_ENV: ${{ inputs.environment }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          expected_branch="integration"
+          if [ "$DEPLOY_ENV" = "production" ]; then
+            expected_branch="main"
+          fi
+
+          if [ "$REF_NAME" != "$expected_branch" ]; then
+            echo "::error::${DEPLOY_ENV} legal documents must be published from ${expected_branch}; this run is from ${REF_NAME}." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Validate inputs
+        env:
+          CSA_PATH: ${{ inputs.csa_path }}
+          DOCUMENT_SET_VERSION: ${{ inputs.document_set_version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT || vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          GCP_PROJECT_ID: ${{ vars.VOXTABLE_PROJECT_ID }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SCHEDULE_PATH: ${{ inputs.schedule_path }}
+        run: |
+          set -euo pipefail
+
+          : "${GCP_PROJECT_ID:?Set VOXTABLE_PROJECT_ID in the GitHub Environment}"
+          if [ "$DRY_RUN" != "true" ]; then
+            : "${GCP_WORKLOAD_IDENTITY_PROVIDER:?Set GCP_WORKLOAD_IDENTITY_PROVIDER in the GitHub Environment}"
+            : "${GCP_DEPLOY_SERVICE_ACCOUNT:?Set GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT or GCP_DEPLOY_SERVICE_ACCOUNT in the GitHub Environment}"
+          fi
+
+          if ! printf '%s' "$DOCUMENT_SET_VERSION" | grep -Eq '^[0-9A-Za-z._-]+$'; then
+            echo "::error::document_set_version may contain only letters, numbers, dot, underscore, and hyphen." >&2
+            exit 1
+          fi
+
+          for path in "$CSA_PATH" "$SCHEDULE_PATH"; do
+            case "$path" in
+              legal-documents/*) ;;
+              *)
+                echo "::error::$path must live under legal-documents/." >&2
+                exit 1
+                ;;
+            esac
+            if [ ! -f "$path" ]; then
+              echo "::error::Missing file: $path" >&2
+              exit 1
+            fi
+            if [ "${path##*.}" != "pdf" ]; then
+              echo "::error::$path must be a PDF." >&2
+              exit 1
+            fi
+          done
+
+      - uses: google-github-actions/auth@v3
+        if: ${{ !inputs.dry_run }}
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT || vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.VOXTABLE_PROJECT_ID }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        if: ${{ !inputs.dry_run }}
+        with:
+          project_id: ${{ vars.VOXTABLE_PROJECT_ID }}
+
+      - name: Build manifest
+        id: manifest
+        env:
+          CSA_PATH: ${{ inputs.csa_path }}
+          DOCUMENT_SET_VERSION: ${{ inputs.document_set_version }}
+          GCP_PROJECT_ID: ${{ vars.VOXTABLE_PROJECT_ID }}
+          SCHEDULE_PATH: ${{ inputs.schedule_path }}
+        run: |
+          set -euo pipefail
+
+          LEGAL_DOCUMENTS_BUCKET="${GCP_PROJECT_ID}-legal-documents"
+          CSA_SHA256="$(sha256sum "$CSA_PATH" | awk '{print $1}')"
+          SCHEDULE_SHA256="$(sha256sum "$SCHEDULE_PATH" | awk '{print $1}')"
+          VERSION_PREFIX="versions/${DOCUMENT_SET_VERSION}"
+          CSA_OBJECT="${VERSION_PREFIX}/client-services-agreement.pdf"
+          SCHEDULE_OBJECT="${VERSION_PREFIX}/privacy-data-handling-schedule.pdf"
+          CSA_URL="https://storage.googleapis.com/${LEGAL_DOCUMENTS_BUCKET}/${CSA_OBJECT}"
+          SCHEDULE_URL="https://storage.googleapis.com/${LEGAL_DOCUMENTS_BUCKET}/${SCHEDULE_OBJECT}"
+          export DOCUMENT_SET_VERSION CSA_URL SCHEDULE_URL CSA_SHA256 SCHEDULE_SHA256
+
+          mkdir -p /tmp/legal-documents
+          node - <<'NODE'
+          const fs = require('fs');
+          const manifest = {
+            document_set_version: process.env.DOCUMENT_SET_VERSION,
+            csa_url: process.env.CSA_URL,
+            schedule_url: process.env.SCHEDULE_URL,
+            csa_sha256: process.env.CSA_SHA256,
+            schedule_sha256: process.env.SCHEDULE_SHA256,
+          };
+          fs.writeFileSync('/tmp/legal-documents/manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+
+          cat /tmp/legal-documents/manifest.json
+
+          {
+            echo "csa_sha256=$CSA_SHA256"
+            echo "schedule_sha256=$SCHEDULE_SHA256"
+            echo "csa_object=$CSA_OBJECT"
+            echo "schedule_object=$SCHEDULE_OBJECT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload legal documents
+        if: ${{ !inputs.dry_run }}
+        env:
+          CSA_OBJECT: ${{ steps.manifest.outputs.csa_object }}
+          CSA_PATH: ${{ inputs.csa_path }}
+          GCP_PROJECT_ID: ${{ vars.VOXTABLE_PROJECT_ID }}
+          PUBLISH_CURRENT: ${{ inputs.publish_current }}
+          SCHEDULE_OBJECT: ${{ steps.manifest.outputs.schedule_object }}
+          SCHEDULE_PATH: ${{ inputs.schedule_path }}
+        run: |
+          set -euo pipefail
+
+          LEGAL_DOCUMENTS_BUCKET="${GCP_PROJECT_ID}-legal-documents"
+          gcloud storage cp \
+            --cache-control "public, max-age=31536000, immutable" \
+            "$CSA_PATH" "gs://${LEGAL_DOCUMENTS_BUCKET}/${CSA_OBJECT}"
+
+          gcloud storage cp \
+            --cache-control "public, max-age=31536000, immutable" \
+            "$SCHEDULE_PATH" "gs://${LEGAL_DOCUMENTS_BUCKET}/${SCHEDULE_OBJECT}"
+
+          if [ "$PUBLISH_CURRENT" = "true" ]; then
+            gcloud storage cp \
+              --cache-control "no-store" \
+              /tmp/legal-documents/manifest.json "gs://${LEGAL_DOCUMENTS_BUCKET}/current/manifest.json"
+          else
+            gcloud storage cp \
+              --cache-control "no-store" \
+              /tmp/legal-documents/manifest.json "gs://${LEGAL_DOCUMENTS_BUCKET}/manifests/${{ inputs.document_set_version }}.json"
+          fi
+
+      - name: Summary
+        env:
+          DOCUMENT_SET_VERSION: ${{ inputs.document_set_version }}
+          GCP_PROJECT_ID: ${{ vars.VOXTABLE_PROJECT_ID }}
+          PUBLISH_CURRENT: ${{ inputs.publish_current }}
+        run: |
+          LEGAL_DOCUMENTS_BUCKET="${GCP_PROJECT_ID}-legal-documents"
+          {
+            echo "### Legal documents"
+            echo
+            echo "- Environment: ${{ inputs.environment }}"
+            echo "- Document set: ${DOCUMENT_SET_VERSION}"
+            echo "- Bucket: gs://${LEGAL_DOCUMENTS_BUCKET}"
+            echo "- Current manifest updated: ${PUBLISH_CURRENT}"
+            echo "- CSA SHA-256: ${{ steps.manifest.outputs.csa_sha256 }}"
+            echo "- Schedule SHA-256: ${{ steps.manifest.outputs.schedule_sha256 }}"
+          } >> "$GITHUB_STEP_SUMMARY"

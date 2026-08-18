@@ -9,7 +9,6 @@ import {
   humanizeOutcome,
   parseTranscript
 } from "../../lib/format";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
 
@@ -17,7 +16,6 @@ export function LiveFeedDetailPage({ navigate, callId, path }) {
   const [callLog, setCallLog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const isPhone = useMediaQuery("(max-width: 767px)");
 
   useEffect(() => {
     let cancelled = false;

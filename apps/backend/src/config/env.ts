@@ -174,10 +174,13 @@ const envSchema = z
   // are verified. superRefine below forces keys when enabled in production.
   STRIPE_BILLING_ENABLED: boolFlag(),
   STRIPE_SECRET_KEY: z.string().optional(),
-  // Legacy single-tenant fallback customer. With self-serve billing (Phase 3),
-  // each restaurant gets its own customer (restaurants.stripe_customer_id); this
-  // env is only a transition fallback for the original tenant.
-  STRIPE_CUSTOMER_ID: z.string().optional(),
+  // STRIPE_CUSTOMER_ID was removed on 18 Aug 2026. It was the legacy
+  // single-tenant fallback customer, read by routes/billing.ts with NO tenant
+  // check — so every restaurant that had not yet completed checkout resolved to
+  // it, and a manager of any tenant could read another business's invoices and
+  // card details, or open a Customer Portal session against them. Per-tenant
+  // billing has been the real path since Phase 3; the fallback outlived its
+  // transition. Setting it in a .env is harmless now; it is simply ignored.
   STRIPE_PORTAL_RETURN_URL: z
     .string()
     .url()
@@ -290,24 +293,22 @@ const envSchema = z
   // Area code to prefer when buying AU numbers (e.g. "2" for Sydney).
   PROVISIONING_TWILIO_AREA_CODE: z.string().optional(),
 
-  // Legal layer (agreement wizard step). The Client Services Agreement and
-  // Privacy & Data Handling Schedule are published on biteperk.com.au; the app
-  // records WHICH version (plus content hashes of the published pages) each
-  // owner accepted. "DRAFT" is a sentinel meaning "no executed documents yet":
-  // the agreement endpoint refuses it in production, and superRefine below
-  // refuses to boot production with self-serve signup on while it stands.
-  TERMS_DOCUMENT_SET_VERSION: z.string().trim().min(1).default("DRAFT"),
-  // Interim URLs are the live site terms/privacy pages; switch to the
-  // versioned CSA/Schedule URLs when the executed documents publish.
-  TERMS_CSA_URL: z.string().url().default("https://biteperk.com.au/legal/terms/"),
-  TERMS_SCHEDULE_URL: z.string().url().default("https://biteperk.com.au/legal/privacy/"),
-  TERMS_CSA_SHA256: z.string().trim().optional(),
-  TERMS_SCHEDULE_SHA256: z.string().trim().optional(),
   // Self-serve signup: lets a verified account that is NOT in
   // DASHBOARD_ALLOWED_EMAILS create a restaurant and enter the wizard (the
   // allowlist remains the gate while this is off, and stays authoritative for
   // admin routes regardless). Kill-switch pattern: ships OFF.
   SELF_SERVE_SIGNUP_ENABLED: boolFlag(),
+  // The published legal-documents manifest (same object the wizard reads from
+  // GCS). When set, POST /api/onboarding/agreement verifies the submitted
+  // version/URLs/hashes against it before writing the acceptance ledger —
+  // the ledger is only evidence if the server, not the browser, vouches for
+  // what was accepted. superRefine below requires it in production whenever
+  // self-serve signup is on.
+  LEGAL_DOCUMENTS_MANIFEST_URL: z.string().url().optional(),
+  // Allows acceptances against an unpublished (SAMPLE-*/DRAFT-*) document
+  // set. Kill-switch pattern: ships OFF. Staging turns it on so the wizard
+  // stays testable before the real CSA text publishes; production never does.
+  TERMS_ALLOW_UNPUBLISHED_DOCS: boolFlag(),
   // VoxConcierge is contracted "when released" — the wizard only offers it
   // once this flag is on. VoxDrive is deliberately not a service value
   // anywhere: it is a concept and must never be sold.
@@ -419,6 +420,19 @@ const envSchema = z
         path: ["PUBLIC_API_BASE_URL"],
         message: "Production PUBLIC_API_BASE_URL must be a public HTTPS URL."
       });
+    }
+
+    // Self-serve signups record legal acceptances; without the manifest the
+    // route would either fail every acceptance (fail-closed) or record
+    // unverified evidence. Refuse the boot instead. NOTE for deploys: add
+    // LEGAL_DOCUMENTS_MANIFEST_URL to the Terraform env map BEFORE promoting
+    // this code to an environment that has self-serve on, or it dies on this
+    // gate at startup.
+    if (value.SELF_SERVE_SIGNUP_ENABLED) {
+      requireInProd(
+        "LEGAL_DOCUMENTS_MANIFEST_URL",
+        "LEGAL_DOCUMENTS_MANIFEST_URL is required when SELF_SERVE_SIGNUP_ENABLED=true (acceptances are verified against the published manifest)."
+      );
     }
 
     requireInProd("RETELL_API_KEY", "RETELL_API_KEY is required in production.");
@@ -548,29 +562,6 @@ const envSchema = z
         path: ["RETELL_TEMPLATE_AGENT_ID"],
         message: "RETELL_TEMPLATE_AGENT_ID is required when PROVISIONING_AUTO_ENABLED=true."
       });
-    }
-
-    // Legal layer — self-serve signup must never run against DRAFT documents:
-    // an acceptance recorded against "DRAFT" is evidence of nothing. The
-    // content hashes pin the acceptance to the exact published bytes.
-    if (value.SELF_SERVE_SIGNUP_ENABLED) {
-      if (value.TERMS_DOCUMENT_SET_VERSION === "DRAFT") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["TERMS_DOCUMENT_SET_VERSION"],
-          message:
-            "TERMS_DOCUMENT_SET_VERSION must name a published document set (not DRAFT) " +
-            "when SELF_SERVE_SIGNUP_ENABLED=true."
-        });
-      }
-      requireInProd(
-        "TERMS_CSA_SHA256",
-        "TERMS_CSA_SHA256 is required when SELF_SERVE_SIGNUP_ENABLED=true."
-      );
-      requireInProd(
-        "TERMS_SCHEDULE_SHA256",
-        "TERMS_SCHEDULE_SHA256 is required when SELF_SERVE_SIGNUP_ENABLED=true."
-      );
     }
   });
 

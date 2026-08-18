@@ -23,6 +23,7 @@
 
 import { pool } from "../db/pool";
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 import { purgeOpsStateByPrefix } from "../repositories/opsState";
 import { purgeStaleKdsHeartbeats } from "../services/kdsHeartbeats";
 import { purgeStaleRetellAuthBuckets } from "../services/retellAuthHealth";
@@ -51,11 +52,31 @@ async function tick(): Promise<void> {
       SELECT count(*)::int AS deleted FROM deleted
       `
     );
+    // Only PROCESSED inbox events are retention candidates.
+    //
+    // This used to delete on age alone, unlike the outbox delete directly
+    // above which correctly guards on succeeded_at IS NOT NULL. That mattered
+    // because routes/cal.ts processes inbox events inline and, on failure,
+    // marks them failed and returns 200 "deferred" — so Cal.com never retries.
+    // The worker that was supposed to retry them (claimUnprocessedInbox) has
+    // no callers; it was never built.
+    //
+    // So a BOOKING_CANCELLED that failed once left a table booked in our
+    // database while the guest saw a cancellation, and thirty days later this
+    // query deleted the only evidence it ever arrived — taking the row out of
+    // getInboxStats().failuresLast24h and clearing the alerter's latch with it.
+    //
+    // Keeping unprocessed rows means they accumulate if nothing ever drains
+    // them. That is the correct pressure: an inbox row nobody handled is a
+    // guest whose cancellation we ignored, and it should stay visible until
+    // someone deals with it.
     const inbox = await pool.query<{ deleted: number }>(
       `
       WITH deleted AS (
         DELETE FROM inbox_calcom_events
-         WHERE received_at < now() - interval '${RETENTION_INTERVAL_SQL}'
+         WHERE processed_at IS NOT NULL
+           AND process_error IS NULL
+           AND received_at < now() - interval '${RETENTION_INTERVAL_SQL}'
          RETURNING 1
       )
       SELECT count(*)::int AS deleted FROM deleted
@@ -131,6 +152,9 @@ export function startCleanupWorker(): void {
   });
   firstTickTimer = setTimeout(() => {
     void withTickLogContext("cleanup", () => tick());
+    // Only registered once the worker genuinely starts ticking, so a
+    // flag-disabled no-op is never reported as stalled.
+    registerTickExpectation("cleanup", TICK_INTERVAL_MS);
     intervalHandle = setInterval(() => void withTickLogContext("cleanup", () => tick()), TICK_INTERVAL_MS);
     intervalHandle.unref();
   }, INITIAL_DELAY_MS);

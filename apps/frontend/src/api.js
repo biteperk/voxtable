@@ -1,4 +1,5 @@
 import { auth, signOutUser } from "./firebase";
+import { fetchLegalDocumentsManifest } from "./lib/legalDocuments";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3050";
 
@@ -153,8 +154,12 @@ export function advanceOnboarding(event) {
   });
 }
 
-export function getAgreement() {
-  return authedFetch(`/api/onboarding/agreement`);
+export async function getAgreement() {
+  const [agreement, legalDocuments] = await Promise.all([
+    authedFetch(`/api/onboarding/agreement`),
+    fetchLegalDocumentsManifest()
+  ]);
+  return { ...agreement, ...legalDocuments };
 }
 
 export function submitAgreement(payload) {
@@ -511,5 +516,92 @@ export function acceptStaffInvite(token) {
   return authedFetch("/api/staff/accept-invite", {
     method: "POST",
     body: JSON.stringify({ token })
+  });
+}
+
+// ===== Platform admin (BitePerk staff, cross-tenant) =====
+// All of these hit /api/admin/* — email-allowlist gated server-side
+// (DASHBOARD_ADMIN_EMAILS). A stray X-Restaurant-Id header is harmless: the
+// admin router never resolves a tenant.
+
+export function getAdminOnboardingHealth() {
+  return authedFetch(`/api/admin/onboarding-health`);
+}
+
+export function getAdminProvisioningQueue() {
+  return authedFetch(`/api/admin/provisioning-queue`);
+}
+
+export function getAdminRestaurants({ status, q } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (q) params.set("q", q);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return authedFetch(`/api/admin/restaurants${suffix}`);
+}
+
+export function getAdminRestaurant(id) {
+  return authedFetch(`/api/admin/restaurants/${id}`);
+}
+
+export function getAdminRestaurantSubscription(id) {
+  return authedFetch(`/api/admin/restaurants/${id}/subscription`);
+}
+
+export function adminBindProvisioning(id, payload) {
+  return authedFetch(`/api/admin/restaurants/${id}/provisioning`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function adminUnbindProvisioning(id, payload) {
+  return authedFetch(`/api/admin/restaurants/${id}/unbind`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function adminGoLive(id) {
+  return authedFetch(`/api/admin/restaurants/${id}/go-live`, { method: "POST" });
+}
+
+export function getAdminProvisioningJobs(status) {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return authedFetch(`/api/admin/provisioning-jobs${suffix}`);
+}
+
+export function adminReenqueueJob(id, payload) {
+  return authedFetch(`/api/admin/provisioning-jobs/${id}/re-enqueue`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {})
+  });
+}
+
+export function getAdminOpsSummary() {
+  return authedFetch(`/api/admin/ops-summary`);
+}
+
+export function getAdminActivity() {
+  return authedFetch(`/api/admin/activity`);
+}
+
+export function getAdminFlags() {
+  return authedFetch(`/api/admin/flags`);
+}
+
+export function getAdminActions(limit = 25) {
+  return authedFetch(`/api/admin/actions?limit=${limit}`);
+}
+
+export function getAdminSupportRequests(status) {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return authedFetch(`/api/admin/support-requests${suffix}`);
+}
+
+export function adminSetSupportStatus(id, status) {
+  return authedFetch(`/api/admin/support-requests/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status })
   });
 }
