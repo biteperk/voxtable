@@ -17,11 +17,15 @@ on:
       csa_path:
         description: Repo path to the Client Services Agreement PDF
         required: true
-        default: legal-documents/versions/CSA-2026-08/client-services-agreement.pdf
+        # Defaults point at the only document set that exists. CSA-2026-08 is the
+        # real set we intend to publish (#164) but has never been committed, so
+        # accepting the old defaults failed at "Validate inputs" with a missing
+        # file. Override both paths when the real set lands.
+        default: legal-documents/versions/SAMPLE-2026-08/client-services-agreement.pdf
       schedule_path:
         description: Repo path to the Privacy & Data Handling Schedule PDF
         required: true
-        default: legal-documents/versions/CSA-2026-08/privacy-data-handling-schedule.pdf
+        default: legal-documents/versions/SAMPLE-2026-08/privacy-data-handling-schedule.pdf
       publish_current:
         description: Update current/manifest.json to point at this version
         required: true
