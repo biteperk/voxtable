@@ -25,7 +25,12 @@ on:
 
 concurrency:
   group: deploy-frontend-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  # Never cancel a deploy that is already running. A second push landing partway
+  # through `firebase deploy` would otherwise kill it mid-upload and leave hosting
+  # in whatever state it had reached. deploy-backend.yml has always been false for
+  # the same reason; this one was true, which was an inconsistency rather than a
+  # decision. Queuing the second deploy costs a minute; interrupting one does not.
+  cancel-in-progress: false
 
 permissions:
   contents: read
