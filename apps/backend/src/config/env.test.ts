@@ -39,7 +39,10 @@ const productionEnv = {
   TWILIO_AUTH_TOKEN: "tok",
   TWILIO_VALIDATE_SIGNATURE: "true",
   DASHBOARD_VERIFY_AUTH: "true",
-  DASHBOARD_ALLOWED_EMAILS: "sam@example.com"
+  DASHBOARD_ALLOWED_EMAILS: "sam@example.com",
+  // Required in every production, not just self-serve ones: the acceptance
+  // ledger is only evidence if the server decides what was accepted.
+  LEGAL_DOCUMENTS_MANIFEST_URL: "https://storage.googleapis.com/bp-legal/current/manifest.json"
 };
 
 const issuePaths = (result: ReturnType<typeof validateEnv>): string[] =>
@@ -221,4 +224,33 @@ test("production with the full order-payments config boots", () => {
     PUBLIC_ORDER_RETURN_BASE_URL: "https://app.biteperk.com.au"
   });
   assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});
+
+test("production refuses to boot without the legal-documents manifest, even invite-only", () => {
+  // This gate used to fire only when SELF_SERVE_SIGNUP_ENABLED=true, which
+  // defaults false. An invite-only production therefore booted with no manifest
+  // URL, and the agreement route fell back to writing the browser's own version
+  // string and document hashes into the append-only ledger with a log line.
+  // Self-serve is not what makes the evidence matter — a manually onboarded
+  // venue signs the same agreement.
+  const { LEGAL_DOCUMENTS_MANIFEST_URL, ...withoutManifest } = productionEnv;
+  void LEGAL_DOCUMENTS_MANIFEST_URL;
+
+  const inviteOnly = validateEnv({ ...withoutManifest, SELF_SERVE_SIGNUP_ENABLED: "false" });
+  assert.equal(inviteOnly.success, false, "invite-only production must not boot unverified");
+  assert.ok(issuePaths(inviteOnly).includes("LEGAL_DOCUMENTS_MANIFEST_URL"));
+
+  // And the case that was already covered, so the stricter rule keeps it.
+  const selfServe = validateEnv({ ...withoutManifest, SELF_SERVE_SIGNUP_ENABLED: "true" });
+  assert.equal(selfServe.success, false);
+  assert.ok(issuePaths(selfServe).includes("LEGAL_DOCUMENTS_MANIFEST_URL"));
+});
+
+test("development does not need the manifest — it is the local escape hatch", () => {
+  const result = validateEnv({
+    APP_ENV: "development",
+    DATABASE_URL: DB,
+    PUBLIC_API_BASE_URL: "http://localhost:3050"
+  });
+  assert.equal(result.success, true);
 });
