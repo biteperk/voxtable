@@ -107,8 +107,22 @@ Most risky integrations are behind kill switches that default off:
 - `MENU_OCR_ENABLED`
 - `NOTIFICATIONS_ENABLED`
 - `PROVISIONING_AUTO_ENABLED`
-- `MULTITENANCY_LEGACY_FALLBACK`
 - `CALCOM_SYNC_ENABLED`
+- `SELF_SERVE_SIGNUP_ENABLED`
+- `EMAIL_VERIFICATION_CODE_ENABLED`
+- `ORDER_PAYMENTS_ENABLED`
+- `STRIPE_CONNECT_ENABLED`
+- `SERVICES_VOXCONCIERGE_ENABLED`
+- `TERMS_ALLOW_UNPUBLISHED_DOCS` (staging only — production must never set it)
+
+`MULTITENANCY_LEGACY_FALLBACK` is **not** in this list any more. It was removed on
+2 Aug 2026; dashboard access is `restaurant_members` and nothing else. Only tombstone
+comments remain in the source. Do not look for a flag that re-opens the old fallback —
+there isn't one, and granting someone access means inserting a membership row.
+
+One exception to the "default off" rule: `VOICE_BOOKING_ENABLED` is a kill switch built on
+`gateFlag()`, so it defaults **true**. A forgotten env var must never silence the phone
+line, so it fails the other way from every flag above.
 
 Production env validation requires the relevant credentials when a feature flag is enabled. Do not bypass those checks.
 
