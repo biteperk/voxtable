@@ -10,6 +10,11 @@ dashboard and how is it deployed on staging".
 > API) and [#203](https://github.com/biteperk/voxtable/pull/203) (the `/admin` console). Staging
 > serves image `api:6a429af…`, migrations ran, frontend deployed. §1 and §3 are updated to match.
 
+> **Updated Mon 18 Aug, midday.** The §2 blocker is **gone** — platform PR #23 merged and the
+> staging Terraform apply ran on 17 Aug, both verified against the running service. Five more PRs
+> merged this morning (#211, #212, #213, #214, #182); staging now serves `api:c61740b…`. §1, §2
+> and §3 updated; two new items in §4.
+
 ## 1. The admin dashboard: it exists as of today
 
 - When Abhishek asked, the honest answer was "there isn't one — admin is five curl-only API
@@ -26,8 +31,8 @@ dashboard and how is it deployed on staging".
 - Deployment: nothing separate — the API ships in the api image, the page ships with the normal
   dashboard deploy. Both are already on staging.
 - Auth: Firebase ID token + the `DASHBOARD_ADMIN_EMAILS` allowlist. Empty allowlist fails closed
-  with `503 ADMIN_ROLE_NOT_CONFIGURED` — which is staging's state until the Terraform apply in §2
-  lands. That apply is the only thing between us and using the console.
+  with `503 ADMIN_ROLE_NOT_CONFIGURED`. That **was** staging's state; the §2 apply has since run,
+  the allowlist is populated, and the console is usable on staging today.
 
 ## 2. Why onboarding sticks at "provisioning in progress" — by design, plus one missing env var
 
@@ -43,19 +48,34 @@ Two independent facts:
 2. **The admin API was unusable on staging** because `DASHBOARD_ADMIN_EMAILS` was never set on
    `voxtable-stg-api` — every admin call 503s, so nobody could bind even deliberately.
 
-### Fix in flight (platform repo)
+### Fix — DONE, verified 18 Aug
 
-- Platform PR [#23](https://github.com/biteperk/biteperk-cloud-platform/pull/23) (from 14 Aug,
-  checks green) plumbs `DASHBOARD_ADMIN_EMAILS` through Terraform for stg + prod, empty default.
-- The staging GitHub Environment variable is now set:
-  `DASHBOARD_ADMIN_EMAILS=skalaliya@gmail.com,biteperk@gmail.com`.
-- **Remaining (Sam, ~2 min): merge PR #23, then run the manual `terraform.yml` apply for
-  voxtable/staging.** Verify afterwards: `GET /api/admin/funnel` with an allowlisted Firebase
-  token returns 200, not 503.
-- Open question for the call: should Abhishek's email go on the admin allowlist too? (Env change
-  only — edit the GitHub Environment variable and re-apply.)
+This section previously read "Remaining (Sam, ~2 min): merge PR #23, then run the apply."
+Both happened on 17 Aug and the console is usable on staging now. Nothing is outstanding here.
 
-### How to finish a STAGING TEST tenant once the apply lands
+- Platform PR [#23](https://github.com/biteperk/biteperk-cloud-platform/pull/23) — **merged**.
+- The manual `terraform.yml` apply — **`Deploy voxtable stg apply` succeeded, 17 Aug 17:31**.
+- Read back off the running `voxtable-stg-api` service (not from the Terraform plan):
+
+  | Variable | Value on staging |
+  |---|---|
+  | `DASHBOARD_ADMIN_EMAILS` | `skalaliya@gmail.com,biteperk@gmail.com` |
+  | `LEGAL_DOCUMENTS_MANIFEST_URL` | set (the stg legal-documents bucket manifest) |
+  | `TERMS_ALLOW_UNPUBLISHED_DOCS` | `true` |
+
+- Behavioural check: `/api/admin/funnel`, `/venues`, `/ops-health` and `/provisioning-queue`
+  all return **`401 MISSING_BEARER_TOKEN`** unauthenticated — i.e. the routes are live and the
+  admin gate is configured. A `503 ADMIN_ROLE_NOT_CONFIGURED` would have meant the allowlist
+  was still empty; we no longer get one.
+- Staging is serving `api:c61740b…` and `worker:c61740b…` — the current `integration` tip.
+
+**Still open for the call: should Abhishek go on the allowlist?** Note he is on *neither*
+list today. He can sign in (staging runs `SELF_SERVE_SIGNUP_ENABLED=true`, so the dashboard
+allowlist is not enforced for sign-up), but `/admin` checks `DASHBOARD_ADMIN_EMAILS`, which
+holds only Sam's two addresses. Adding him is a GitHub Environment variable edit plus a
+re-apply — no code, no PR.
+
+### How to finish a STAGING TEST tenant (the apply has landed — this works now)
 
 Easiest path (from today): sign in on the staging dashboard as an allowlisted admin, open
 **`/admin`** → Provisioning queue → **Bind…** (both fields) → **Go live**. The same steps via
@@ -97,9 +117,13 @@ Four follow-ups are filed; the first one matters most:
   writing; mismatch → 409, manifest unreachable → 503 (fail closed). PR
   [#201](https://github.com/biteperk/voxtable/pull/201) implements this (closes #196/#197/#198)
   and **is merged + on staging as of 17 Aug** — walk Abhishek through the change on the call.
-  Note: the verification only becomes active on staging once Terraform sets
-  `LEGAL_DOCUMENTS_MANIFEST_URL` + `TERMS_ALLOW_UNPUBLISHED_DOCS=true` there (follow-up to
-  platform #23).
+  Update 18 Aug: both `LEGAL_DOCUMENTS_MANIFEST_URL` and `TERMS_ALLOW_UNPUBLISHED_DOCS=true`
+  **are now set on `voxtable-stg-api`**, so the verification is live on staging — an acceptance
+  there is now checked against the published manifest rather than trusted from the browser.
+  ⚠️ Caveat worth raising: the production gate only demands that variable when
+  `SELF_SERVE_SIGNUP_ENABLED=true` (default `false`), so an **invite-only production would boot
+  without it and fall back to recording browser-supplied hashes** with only a log warning. A fix
+  is in flight to require it in production unconditionally.
 - [#197](https://github.com/biteperk/voxtable/issues/197) — `csa_url`/`schedule_url` are
   validated then discarded; add columns + store them.
 - [#198](https://github.com/biteperk/voxtable/issues/198) — the DRAFT/production guards were
@@ -117,13 +141,20 @@ on both branches (payment-link rejection fix, Connect accounts API fix).
 
 ## 4. Suggested agenda
 
-1. Merge + apply platform PR #23 live on the call, then fix Abhishek's stuck tenant **through the
-   new `/admin` console** (§2) — it doubles as the admin-dashboard demo.
+1. Fix Abhishek's stuck tenant **live, through the new `/admin` console** (§2) — the apply has
+   landed, so this works now and doubles as the admin-dashboard demo.
 2. Admin dashboard (§1) — tour of what shipped (#202/#203), including that #151 (his issue) is
    implemented in it; agree any follow-ups.
-3. PR #195 feedback (§3) — walk the merged hardening PR #201 and the two staging env vars it
-   still needs.
+3. PR #195 feedback (§3) — walk the merged hardening PR #201, note the verification is now live
+   on staging, and agree the invite-only-production gap is worth closing before real onboarding.
 4. Who produces the real `CSA-2026-08` document text (#164) — the pipeline is ready for it; the
    text is a Sam/legal task, not code.
-5. Abhishek on the admin allowlist: yes/no.
+5. Abhishek on the admin allowlist: yes/no. (He is on *neither* list today — see §2.)
 6. Demo scope for the wider demo he proposed.
+7. **Staging SMS is not switchable yet.** `NOTIFICATIONS_ENABLED` and `NOTIFICATIONS_SMS_FROM`
+   are unset on the staging *worker*, so leg 6 of `deploy/runbooks/staging-call-battery.md`
+   (insert an outbox row, expect an SMS) will leave the row pending. That is issue #185 — a
+   Terraform change, not a bug. Decide whether it goes in before the phone battery is run.
+8. **Backlog hygiene.** #196, #197 and #198 were fixed by the merged PR #201, and #200 was
+   delivered by #203, but all four are still open — no recent PR used closing keywords. Worth
+   agreeing who closes them so the board reflects reality.
