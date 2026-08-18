@@ -56,7 +56,8 @@
     "audit:production": "npm run audit:backend && npm run audit:frontend && npm run audit:kds",
     "audit:all": "npm audit",
     "firebase": "firebase",
-    "dashboard": "node scripts/project-dashboard.mjs"
+    "dashboard": "node scripts/project-dashboard.mjs",
+    "smoke:staging": "npm run smoke:staging --workspace=@vocotable/backend"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
