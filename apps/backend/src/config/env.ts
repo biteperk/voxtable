@@ -25,6 +25,19 @@ const boolFlag = () =>
 const gateFlag = () =>
   z.enum(["true", "false"]).default("true").transform((value) => value === "true");
 
+// An optional variable that the surrounding config system may hand us as an
+// empty string rather than omitting. Two systems do exactly that: `.env.example`
+// ships these keys blank for a human to fill in, and Terraform renders an unset
+// optional variable as KEY="". Both mean "not set" — but `z.string().url()`
+// rejects "" and `z.coerce.number()` turns it into 0, so without this the whole
+// process refuses to boot on a value nobody supplied. Blank is normalised to
+// undefined BEFORE validation, so a genuinely malformed value still fails.
+const blankAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    schema
+  );
+
 const envSchema = z
   .object({
   // No default. Which environment this is decides how the whole file behaves,
@@ -141,7 +154,7 @@ const envSchema = z
   // in production when CALCOM_SYNC_ENABLED=true.
   CALCOM_SYNC_ENABLED: boolFlag(),
   CALCOM_API_KEY: z.string().optional(),
-  CALCOM_EVENT_TYPE_ID: z.coerce.number().int().positive().optional(),
+  CALCOM_EVENT_TYPE_ID: blankAsUnset(z.coerce.number().int().positive().optional()),
   CALCOM_BASE_URL: z.string().url().default("https://api.cal.com/v2"),
   CALCOM_WEBHOOK_SECRET: z.string().optional(),
   CALCOM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
@@ -150,21 +163,21 @@ const envSchema = z
   // Audit Sweep I: per-day Cal.com API request threshold. When today's count
   // crosses this, healthAlerter fires a Slack ping. Default is 80% of free
   // tier (100k/mo ÷ 30 days × 0.8 ≈ 2666/day). Override when on a paid plan.
-  CALCOM_DAILY_QUOTA_THRESHOLD: z.coerce.number().int().positive().optional(),
+  CALCOM_DAILY_QUOTA_THRESHOLD: blankAsUnset(z.coerce.number().int().positive().optional()),
 
   // Operations alerting — Slack webhook for outbox depth + circuit breaker events.
-  OPS_SLACK_WEBHOOK_URL: z.string().url().optional(),
+  OPS_SLACK_WEBHOOK_URL: blankAsUnset(z.string().url().optional()),
   // Dead-man's switch: the health alerter GETs this URL (healthchecks.io
   // style) at the end of every tick. The external service alerts when pings
   // STOP — the one failure mode every in-process alert shares is "the worker
   // that would have alerted is dead", and until this existed every probe ran
   // on the same box it was probing.
-  OPS_HEARTBEAT_URL: z.string().url().optional(),
+  OPS_HEARTBEAT_URL: blankAsUnset(z.string().url().optional()),
 
   // Sentry — error tracking. No-op when unset; safe to ship the scaffolding
   // without a DSN. Not enforced in production yet (Phase 5 calls for it but
   // we're staging the rollout) — set it when the Sentry project exists.
-  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_DSN: blankAsUnset(z.string().url().optional()),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 
   // Stripe billing — read-only mirror of the restaurant's real invoices,
@@ -224,7 +237,7 @@ const envSchema = z
   // Base URL for the "openai" provider (ignored for anthropic). E.g.
   // https://openrouter.ai/api/v1 , https://api.together.xyz/v1 ,
   // https://generativelanguage.googleapis.com/v1beta/openai .
-  MENU_OCR_BASE_URL: z.string().url().optional(),
+  MENU_OCR_BASE_URL: blankAsUnset(z.string().url().optional()),
   // Default model is Anthropic's; override per provider, e.g.
   // "qwen/qwen-2.5-vl-72b-instruct" (OpenRouter) or "gemini-2.0-flash".
   MENU_OCR_MODEL: z.string().default("claude-3-5-sonnet-latest"),
@@ -304,7 +317,7 @@ const envSchema = z
   // the ledger is only evidence if the server, not the browser, vouches for
   // what was accepted. superRefine below requires it in production whenever
   // self-serve signup is on.
-  LEGAL_DOCUMENTS_MANIFEST_URL: z.string().url().optional(),
+  LEGAL_DOCUMENTS_MANIFEST_URL: blankAsUnset(z.string().url().optional()),
   // Allows acceptances against an unpublished (SAMPLE-*/DRAFT-*) document
   // set. Kill-switch pattern: ships OFF. Staging turns it on so the wizard
   // stays testable before the real CSA text publishes; production never does.
@@ -332,7 +345,7 @@ const envSchema = z
   ORDER_PAYMENT_FEE_FLAT_CENTS: z.coerce.number().int().min(0).default(0),
   // Where Stripe sends the guest after paying/cancelling — the dashboard
   // frontend origin (serves /order/paid and /order/cancelled), NOT the API.
-  PUBLIC_ORDER_RETURN_BASE_URL: z.string().url().optional()
+  PUBLIC_ORDER_RETURN_BASE_URL: blankAsUnset(z.string().url().optional())
   })
   .superRefine((value, ctx) => {
     const publicUrl = new URL(value.PUBLIC_API_BASE_URL);
