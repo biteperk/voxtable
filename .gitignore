@@ -111,12 +111,23 @@ asic/
 # Customer collateral (menus, talk tracks, account plans) — belongs in the
 # private customers repo / Drive, never in the code repo. Per-venue folders:
 Cuban-Corner/
+# Mazcina's source menu PDF is ~433 MB of scanned page images. Committing it
+# would put it in history permanently (removal = a history rewrite), so the
+# folder is ignored as a whole. The derived import JSON is small, but it is
+# still the venue's menu data, so it stays here too — the runbook records how
+# to regenerate it.
+mazcina/
 
 # Vendor correspondence saved to the repo root (Twilio compliance notices,
 # bundle approvals, Stripe quotes). They carry account identifiers, ticket
 # numbers and contact details — the decisions belong in the runbooks, the
 # documents belong in Drive.
 /*.pdf
+# Same reasoning for docs/ — the ACMA sender-ID approvals landed here as email
+# attachments carrying the director's name and service-of-notice address. The
+# filed copies live in asic/04-correspondence/ (also ignored); nothing in docs/
+# is tracked as a PDF today.
+docs/*.pdf
 
 # Generated project dashboard (rebuild with: npm run dashboard)
 /voxtable-dashboard.html
