@@ -4,58 +4,295 @@
   "product_summary": "VoxTable answers a restaurant's phone with a voice AI (Bella), takes the booking or pickup order, writes it to the database, and shows it live on the dashboard and kitchen display. Built by BitePerk Pty Ltd. First venue: Natalia's Bistro (Sydney) — her line has not answered since the legacy Twilio account was suspended on 5 Aug 2026, so no venue is taking live calls today. Second install: Cuban Corner (staging).",
 
   "where_we_are": "Staging runs end-to-end on Cloud Run with its own Twilio number and Retell workspace, and every merge to integration deploys there automatically once CI passes. Production still runs on the original VM and is deployed by hand — moving it onto Cloud Run is the cutover that go-live planning revolves around. The board's Production Go Live milestone (23 Aug) tracks exactly what stands between here and there.",
-
   "executive_summary_curated": {
     "win": "Staging is a real environment now — own phone number, own Retell workspace, auto-deployed on every merge, rehearsable end to end.",
     "risk": "Telephony compliance is the long pole: sender-ID registration binds to one Twilio account, and the account-architecture decision (#166) gates it.",
     "decision_needed": "Settle the Twilio ISV/subaccount model (#166) before any venue is auto-provisioned — it cannot be rehearsed in staging and is expensive to redo."
   },
-
   "workstreams": [
-    { "key": "infra",      "name": "Infra & pipeline",      "labels": ["devops"],       "exclude_labels": ["compliance"], "note": "CI, Cloud Run, Terraform, deploys" },
-    { "key": "telephony",  "name": "Telephony",             "issue_numbers": [127, 165, 166], "note": "Twilio accounts, numbers, SIP, Retell" },
-    { "key": "compliance", "name": "Compliance & legal",    "labels": ["compliance"],   "note": "ACMA, recording consent, retention, invoices" },
-    { "key": "billing",    "name": "Billing & payments",    "issue_numbers": [170],     "labels": [], "match_title": ["stripe", "payment", "checkout", "invoice"], "note": "Stripe billing, Connect, order payments" },
-    { "key": "product",    "name": "Product & venues",      "labels": ["enhancement"],  "exclude_labels": ["compliance", "resiliency"], "note": "Features, onboarding, menus, KDS" },
-    { "key": "resiliency", "name": "Resiliency & drills",   "labels": ["resiliency", "Testing"], "note": "Backups, rollback drills, call batteries" }
+    {
+      "key": "infra",
+      "name": "Infra & pipeline",
+      "labels": [
+        "devops"
+      ],
+      "exclude_labels": [
+        "compliance"
+      ],
+      "note": "CI, Cloud Run, Terraform, deploys"
+    },
+    {
+      "key": "telephony",
+      "name": "Telephony",
+      "issue_numbers": [
+        127,
+        165,
+        166
+      ],
+      "note": "Twilio accounts, numbers, SIP, Retell"
+    },
+    {
+      "key": "compliance",
+      "name": "Compliance & legal",
+      "labels": [
+        "compliance"
+      ],
+      "note": "ACMA, recording consent, retention, invoices"
+    },
+    {
+      "key": "billing",
+      "name": "Billing & payments",
+      "issue_numbers": [
+        170
+      ],
+      "labels": [],
+      "match_title": [
+        "stripe",
+        "payment",
+        "checkout",
+        "invoice"
+      ],
+      "note": "Stripe billing, Connect, order payments"
+    },
+    {
+      "key": "product",
+      "name": "Product & venues",
+      "labels": [
+        "enhancement"
+      ],
+      "exclude_labels": [
+        "compliance",
+        "resiliency"
+      ],
+      "note": "Features, onboarding, menus, KDS"
+    },
+    {
+      "key": "resiliency",
+      "name": "Resiliency & drills",
+      "labels": [
+        "resiliency",
+        "Testing"
+      ],
+      "note": "Backups, rollback drills, call batteries"
+    }
   ],
-
   "journey": [
-    { "date": "2026-05", "title": "MVP voice booking", "detail": "Caller dials, Bella books, row lands in Postgres, dashboard shows it — proven at Natalia's Bistro." },
-    { "date": "2026-06", "title": "Pre-ordering + kitchen display", "detail": "Bookings can carry food orders; the KDS app shows them to the kitchen in real time." },
-    { "date": "2026-07", "title": "VoxTable brand ships", "detail": "Product renamed after trademark clearance; api/worker split into two services; self-serve onboarding with the legal agreement layer merges behind kill switches; Stripe billing goes live." },
-    { "date": "2026-08-05", "title": "Cloud Run staging pipeline", "detail": "integration deploys to a full Cloud Run staging stack automatically; infrastructure moves to Terraform in the platform repo." },
-    { "date": "2026-08-10", "title": "Hardening sprint lands + backlog built", "detail": "Seven resilience/ops PRs merged (kill switch, double-send lease, durable breaker, business alerts); the full go-live backlog goes onto the project board." },
-    { "date": "2026-08-12", "title": "Voice-order payments", "detail": "Stripe Checkout links texted to callers who pre-order, with Connect destination charges — merged behind kill switches." },
-    { "date": "2026-08-13", "title": "Cuban Corner + real staging", "detail": "Venue #2 shipped to staging (pickup orders, menu windows, bulk import). Staging gets its own Twilio number and Retell workspace; main branch protection turned on." },
-    { "date": "2026-08-23", "title": "Production Go Live target", "detail": "The milestone this whole board points at.", "upcoming": true },
-    { "date": "2026-09", "title": "Cloud Run production cutover", "detail": "Retire the VM; production joins staging on Cloud Run (bp-voxtable-prod).", "upcoming": true },
-    { "date": "2026-Q4", "title": "Sydney data residency", "detail": "Move compute and database from Iowa to australia-southeast1.", "upcoming": true }
+    {
+      "date": "2026-05",
+      "title": "MVP voice booking",
+      "detail": "Caller dials, Bella books, row lands in Postgres, dashboard shows it — proven at Natalia's Bistro."
+    },
+    {
+      "date": "2026-06",
+      "title": "Pre-ordering + kitchen display",
+      "detail": "Bookings can carry food orders; the KDS app shows them to the kitchen in real time."
+    },
+    {
+      "date": "2026-07",
+      "title": "VoxTable brand ships",
+      "detail": "Product renamed after trademark clearance; api/worker split into two services; self-serve onboarding with the legal agreement layer merges behind kill switches; Stripe billing goes live."
+    },
+    {
+      "date": "2026-08-05",
+      "title": "Cloud Run staging pipeline",
+      "detail": "integration deploys to a full Cloud Run staging stack automatically; infrastructure moves to Terraform in the platform repo."
+    },
+    {
+      "date": "2026-08-10",
+      "title": "Hardening sprint lands + backlog built",
+      "detail": "Seven resilience/ops PRs merged (kill switch, double-send lease, durable breaker, business alerts); the full go-live backlog goes onto the project board."
+    },
+    {
+      "date": "2026-08-12",
+      "title": "Voice-order payments",
+      "detail": "Stripe Checkout links texted to callers who pre-order, with Connect destination charges — merged behind kill switches."
+    },
+    {
+      "date": "2026-08-13",
+      "title": "Cuban Corner + real staging",
+      "detail": "Venue #2 shipped to staging (pickup orders, menu windows, bulk import). Staging gets its own Twilio number and Retell workspace; main branch protection turned on."
+    },
+    {
+      "date": "2026-08-15",
+      "title": "Stripe key becomes managed config",
+      "detail": "STRIPE_SECRET_KEY now flows GitHub Secret → Secret Manager → Cloud Run via Terraform on both roots (platform PR #24); staging apply green the same hour."
+    },
+    {
+      "date": "2026-08-16",
+      "title": "Terms-and-conditions groundwork mapped",
+      "detail": "Audit confirmed the agreement ledger and config plumbing already shipped (migration 018); the real work is publishing the versioned CSA, setting the TERMS_* config, and backfilling offline acceptances — tracked in #164/#188 with follow-ups #190–#193."
+    },
+    {
+      "date": "2026-08-23",
+      "title": "Production Go Live target",
+      "detail": "The milestone this whole board points at.",
+      "upcoming": true
+    },
+    {
+      "date": "2026-09",
+      "title": "Cloud Run production cutover",
+      "detail": "Retire the VM; production joins staging on Cloud Run (bp-voxtable-prod).",
+      "upcoming": true
+    },
+    {
+      "date": "2026-Q4",
+      "title": "Sydney data residency",
+      "detail": "Move compute and database from Iowa to australia-southeast1.",
+      "upcoming": true
+    }
   ],
-
   "decisions": [
-    { "date": "2026-08-01", "title": "integration-first branching", "rationale": "Work merges to integration (auto-deploys staging); main is release-only, reached by promotion. Merged no longer means live." },
-    { "date": "2026-08-06", "title": "Staging boots from the database, not env vars", "rationale": "Per-restaurant identifiers are data. Closed platform PR #20, shipped as #107 — staging needs no per-venue config to boot." },
-    { "date": "2026-08-06", "title": "No extra rollback tooling", "rationale": "Deploy recovery is a manual Cloud Run revision rollback; production deploys come from main only (review on #100)." },
-    { "date": "2026-08-06", "title": "Cloud SQL native backups", "rationale": "Postgres backup is GCP-native (automated backups + PITR), not a repo-side upload chain (review on #103)." },
-    { "date": "2026-08-13", "title": "Prove it in staging, then repeat it in production", "rationale": "Promotion means five different things (code, image, infra, schema, vendor config) and only code is automatic — the doctrine is written into CLAUDE.md with the honest list of what staging cannot rehearse." },
-    { "date": "2026-08-13", "title": "main is protected", "rationale": "PR + green CI required, force-push blocked; the production GitHub environment only accepts deploys from main." },
-    { "date": "2026-08-13", "title": "Fresh vendor estate under BitePerk", "rationale": "New Retell workspace and Twilio accounts under biteperk.com.au identities; the legacy Algorythmos accounts stay funded as rollback until cutover completes." }
+    {
+      "date": "2026-08-01",
+      "title": "integration-first branching",
+      "rationale": "Work merges to integration (auto-deploys staging); main is release-only, reached by promotion. Merged no longer means live."
+    },
+    {
+      "date": "2026-08-06",
+      "title": "Staging boots from the database, not env vars",
+      "rationale": "Per-restaurant identifiers are data. Closed platform PR #20, shipped as #107 — staging needs no per-venue config to boot."
+    },
+    {
+      "date": "2026-08-06",
+      "title": "No extra rollback tooling",
+      "rationale": "Deploy recovery is a manual Cloud Run revision rollback; production deploys come from main only (review on #100)."
+    },
+    {
+      "date": "2026-08-06",
+      "title": "Cloud SQL native backups",
+      "rationale": "Postgres backup is GCP-native (automated backups + PITR), not a repo-side upload chain (review on #103)."
+    },
+    {
+      "date": "2026-08-13",
+      "title": "Prove it in staging, then repeat it in production",
+      "rationale": "Promotion means five different things (code, image, infra, schema, vendor config) and only code is automatic — the doctrine is written into CLAUDE.md with the honest list of what staging cannot rehearse."
+    },
+    {
+      "date": "2026-08-13",
+      "title": "main is protected",
+      "rationale": "PR + green CI required, force-push blocked; the production GitHub environment only accepts deploys from main."
+    },
+    {
+      "date": "2026-08-13",
+      "title": "Fresh vendor estate under BitePerk",
+      "rationale": "New Retell workspace and Twilio accounts under biteperk.com.au identities; the legacy Algorythmos accounts stay funded as rollback until cutover completes."
+    }
   ],
-
   "curated_risks": [
-    { "severity": "serious", "risk": "Dependabot opened major-version bumps (vite 6→8, Tailwind 3→4) that could sit unreviewed and rot", "owner": "Sam + Abhishek", "link": "https://github.com/biteperk/voxtable/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2Fdependabot" },
-    { "severity": "serious", "risk": "Production image is rebuilt on main under a version tag — staging proved a different artifact (promotion-by-digest not yet done)", "owner": "Abhishek", "link": "" },
-    { "severity": "warning", "risk": "Legacy Algorythmos vendor accounts still carry pieces of production (recordings, rollback path) until the estate migration completes", "owner": "Sam", "link": "" }
+    {
+      "severity": "serious",
+      "risk": "Dependabot opened major-version bumps (vite 6→8, Tailwind 3→4) that could sit unreviewed and rot",
+      "owner": "Sam + Abhishek",
+      "link": "https://github.com/biteperk/voxtable/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2Fdependabot"
+    },
+    {
+      "severity": "serious",
+      "risk": "Production image is rebuilt on main under a version tag — staging proved a different artifact (promotion-by-digest not yet done)",
+      "owner": "Abhishek",
+      "link": ""
+    },
+    {
+      "severity": "warning",
+      "risk": "Legacy Algorythmos vendor accounts still carry pieces of production (recordings, rollback path) until the estate migration completes",
+      "owner": "Sam",
+      "link": ""
+    }
   ],
-
   "ideas": [
-    { "idea": "Daily owner summary email — yesterday's calls, bookings and orders in one message", "status": "already an issue: #146" },
-    { "idea": "Promotion-by-digest: production runs the exact image staging tested", "status": "raise as issue when prod Cloud Run exists" },
-    { "idea": "Per-venue analytics page for restaurant owners (calls answered vs missed, busiest hours)", "status": "parking lot" },
-    { "idea": "Multilingual Bella (Mandarin, Vietnamese, Greek, Italian) once English is stable", "status": "deliberately deferred — scope guardrail" }
+    {
+      "idea": "Daily owner summary email — yesterday's calls, bookings and orders in one message",
+      "status": "already an issue: #146"
+    },
+    {
+      "idea": "Promotion-by-digest: production runs the exact image staging tested",
+      "status": "raise as issue when prod Cloud Run exists"
+    },
+    {
+      "idea": "Per-venue analytics page for restaurant owners (calls answered vs missed, busiest hours)",
+      "status": "parking lot"
+    },
+    {
+      "idea": "Multilingual Bella (Mandarin, Vietnamese, Greek, Italian) once English is stable",
+      "status": "deliberately deferred — scope guardrail"
+    }
   ],
-
+  "naming": {
+    "$comment": "Mirror of NAMES.md for the team view. NAMES.md is the registry of record — when they disagree, NAMES.md wins. Update BOTH when a name changes.",
+    "hostnames": [
+      {
+        "surface": "Client dashboard",
+        "new": "app.biteperk.com.au",
+        "old": "vocotable.biteperk.com.au · vocotable.web.app",
+        "status": "Firebase Hosting target app; custom domain pending (Phase 5)"
+      },
+      {
+        "surface": "Backend API",
+        "new": "api.biteperk.com.au",
+        "old": "vocotable.algorythmos.com.au",
+        "status": "Live on both names since 3 Aug; Stripe repointed; Cal.com → Retell → Twilio cut over one at a time"
+      },
+      {
+        "surface": "Kitchen display",
+        "new": "kds.biteperk.com.au",
+        "old": "kitchen.vocotable.biteperk.com.au · vocotable-kds.web.app",
+        "status": "Firebase Hosting target kds; custom domain pending (Phase 5)"
+      },
+      {
+        "surface": "Public brand site",
+        "new": "biteperk.com.au",
+        "old": "—",
+        "status": "Live (Vox rename shipped 22 Jul)"
+      }
+    ],
+    "infrastructure": [
+      {
+        "thing": "Staging GCP project",
+        "name": "bp-voxtable-stg"
+      },
+      {
+        "thing": "Production GCP project (created at cutover)",
+        "name": "bp-voxtable-prod — always -prod, never -prd (Terraform enforces it)"
+      },
+      {
+        "thing": "Shared registry project",
+        "name": "bp-shared-artifacts"
+      },
+      {
+        "thing": "Docker images",
+        "name": "australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/{api, worker}"
+      },
+      {
+        "thing": "Cloud Run — staging",
+        "name": "voxtable-stg-api · voxtable-stg-worker · voxtable-stg-migrate · Cloud SQL voxtable-stg-postgres"
+      },
+      {
+        "thing": "Cloud Run — production (at cutover)",
+        "name": "voxtable-prod-api · voxtable-prod-worker · voxtable-prod-migrate · voxtable-prod-postgres"
+      },
+      {
+        "thing": "Firebase Hosting (new world)",
+        "name": "bp-voxtable-stg.web.app / bp-voxtable-prod.web.app"
+      },
+      {
+        "thing": "Database roles (Cloud SQL, migration 029)",
+        "name": "voxtable_owner (migrations) / voxtable_app (runtime)"
+      },
+      {
+        "thing": "Infra repo — Terraform source of truth",
+        "name": "biteperk/biteperk-cloud-platform"
+      },
+      {
+        "thing": "Product repo",
+        "name": "biteperk/voxtable (renamed from biteperk/vocotable)"
+      }
+    ],
+    "never_rename": [
+      "bookings.vocotable.algorythmos.com.au — the synthetic-email domain baked into existing Cal.com bookings; must never change",
+      "vocotable_number API field, event/storage keys, and Firebase project ids vocotable / vocotable-497209 — retained until their own migration tier",
+      "Old hostnames keep serving — the migration is additive; nothing is torn down until every vendor webhook is verified on the new name with a live test call",
+      "API A records stay DNS-only (gray cloud) in Cloudflare, and every new hostname must be added to Firebase Auth authorized domains or Google sign-in breaks on it"
+    ]
+  },
   "links": {
     "board": "https://github.com/orgs/biteperk/projects/1",
     "repo": "https://github.com/biteperk/voxtable",
