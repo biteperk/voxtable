@@ -46,3 +46,9 @@ rather than fix it.
 
 For a full rehearsal (dates, closed-day behaviour), paste the volatile values into the
 dashboard's `{ }` test-variable panel instead — per-test, never persisted.
+
+## Addendum — unresolved-date guard
+
+Same guard as the Mazcina snapshot's addendum: a 20:45 web test made the agent invent
+`2024-06-12` for "tonight" when `{{today}}` was unresolved. The Time anchor now forbids
+guessing a date and requires asking for it (year included) or taking a message.
