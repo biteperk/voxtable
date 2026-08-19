@@ -72,3 +72,20 @@ compliant long form is preserved in `20260819-humanize-pre/llm.json`.
 3. Backend promotion is blocked on `LEGAL_DOCUMENTS_MANIFEST_URL`, which the VM's `.env`
    lacks — the new code refuses to boot without it. Sequence when ready: publish legal docs
    → add the env var → apply 025–034 → deploy → then delete the temporary venue section.
+
+## Bind applied and verified, 19 Aug 2026 23:18 AEST
+
+`UPDATE 1` on the venue row (Sam ran it; the permission layer holds production routing
+writes for a human). Signed probes against `https://api.biteperk.com.au` then confirmed the
+whole chain:
+
+| Probe | Result |
+|---|---|
+| `/retell/inbound` (`to_number +61468202846`) | 200 · `override_agent_id agent_3bedcbdd77…` · `restaurant_name Mazcina` · all served variables present |
+| `menu_lookup` (no query) | Mazcina's REAL sections — Mushroom Ceviche, Mazcina Earth Board, Red Mechada Pasta. **No fixture items.** |
+| `menu_lookup` ("empanadas") | Cocktail Empanadas ($5) |
+| `check_availability` Wed 26 Aug | `available: false` — but the message is the generic *"No suitable table is available near the requested time."* This is precisely why the prompt must answer closed days itself; the tool cannot distinguish shut from full on this backend. |
+| `check_availability` Thu 20 Aug | `available: true`, table T1 |
+
+Remaining before the line is customer-facing: Sam's real test call, clicking **Publish** in
+the dashboard (optional — webhook mode serves the draft), and restoring the disclosure.
