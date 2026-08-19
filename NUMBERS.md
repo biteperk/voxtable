@@ -1,5 +1,16 @@
 # NUMBERS.md — the telephony registry
 
+> 🟢 **UPDATE 19 Aug 2026 — +61 468 202 846 is now WIRED END TO END (production).**
+> Retell: number imported into the **Biteperk** workspace in webhook mode →
+> `https://api.biteperk.com.au/retell/inbound`; agent `agent_3bedcbdd77017136e5b4ade412`
+> ("Mazcina (production)"), LLM `llm_5774e05076475b2b0cdba5329ad5`. Database: venue row
+> `44444444-4444-4444-8444-444444444444` (Mazcina) with real hours, 10 tables and a
+> 31-item menu. Anything below saying this number "reaches nothing" is superseded.
+> ⚠️ Its greeting carries **no AI/recording disclosure** — Sam's explicit decision; restore
+> it before the number is publicised (see `legal-brief-call-recording.md`).
+> Snapshots: `deploy/retell-snapshots/20260819-prod-mazcina-{pre,post}/`.
+
+
 > ☎️ **Every phone number BitePerk owns, what it can actually do, and what is still
 > unwired.** Read this before you quote a number, wire a number, send an SMS, test a call,
 > or tell anyone a number "works". **BitePerk owns exactly two numbers** (§1) — anything
