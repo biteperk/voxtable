@@ -27,6 +27,25 @@ contract, not the text.
 missing `{{name}}` literally. Order: backend change → deploy → probe (`probe-inbound.mjs`)
 → then wire into the prompt.
 
+## Testing in the dashboard, where NO webhook fires
+
+Dashboard "Run Test" / web calls do not call `/retell/inbound`, so every variable is unset
+and Bella speaks the placeholder aloud ("…calling restaurant name"). Two ways to test:
+
+1. **Per-test, no config change**: the `{ }` panel beside Test Audio takes a JSON object of
+   dynamic variables. Best for rehearsing dates and closed-day behaviour, since you can set
+   `today`/`weekday_local`/`today_status` to whatever scenario you want.
+2. **Persisted, for the venue's own agent**: put ONLY the static identity in
+   `default_dynamic_variables` — `restaurant_name`, `owner_name`, `restaurant_timezone`,
+   and (for a venue trading every day) a weekday-free `today_status`. Every dashboard test
+   then greets correctly with no setup.
+
+⚠️ **Never persist `today`, `tomorrow`, `weekday_local`, `now_local` or `caller_phone` as
+defaults.** Nothing refreshes them, and they are the fallback when the webhook fails — a
+frozen date or a stranger's phone number is the "confidently wrong" failure NUMBERS.md §6
+was written about. `assert-agent.mjs` hard-fails on those five keys and merely notes the
+static ones.
+
 ## Section map of the golden prompt (~10k chars) and each section's non-negotiables
 
 1. **Identity** (2 sentences): who Bella is, "never like anyone reading a script". De-venued.

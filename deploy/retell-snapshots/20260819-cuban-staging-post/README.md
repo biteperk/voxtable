@@ -23,3 +23,26 @@ dynamic variables, and {{venue_faq}}/{{today_status}} only resolve for real once
 venue is seeded and bound in an environment with its own number.
 
 Rollback: re-apply the sibling `-pre/` snapshots (one PATCH per object).
+
+## Addendum — static default_dynamic_variables added for dashboard testing
+
+Dashboard tests don't fire `/retell/inbound`, so Bella was speaking the placeholder
+("thanks for calling restaurant name"). Set as defaults, deliberately limited to what
+cannot go wrong on this venue's own agent:
+
+```json
+{"restaurant_name":"Cuban Corner Parramatta","owner_name":"the team",
+ "restaurant_timezone":"Australia/Sydney","today_status":"OPEN today, 7 AM to 9 PM."}
+```
+
+`today_status` is weekday-free on purpose: Cuban Corner trades 07:00–21:00 seven days, so
+that sentence stays true on any future date.
+
+**EXCLUDED, and they must stay excluded**: `today`, `tomorrow`, `weekday_local`,
+`now_local` (frozen dates — the exact "months-old dates" fallback failure in NUMBERS.md §6)
+and `caller_phone` (would book a stranger under someone else's number). `venue_faq` is also
+excluded: the venue's `faq_json` is empty in the database and a default here would hide that
+rather than fix it.
+
+For a full rehearsal (dates, closed-day behaviour), paste the volatile values into the
+dashboard's `{ }` test-variable panel instead — per-test, never persisted.

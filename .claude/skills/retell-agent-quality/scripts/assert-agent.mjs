@@ -23,7 +23,17 @@ check(!names.some((n) => prose.includes(n)), "prompt + greeting are de-venued (n
 const functional = (llm.general_tools ?? []).filter((t) => t.type === "custom");
 check(functional.length > 0 && functional.every((t) => t.speak_during_execution === true && t.speak_after_execution === true),
   "every functional tool has speak_during + speak_after = true");
-check(Object.keys(llm.default_dynamic_variables ?? {}).length === 0, "default_dynamic_variables is empty {}");
+// NUMBERS.md §6: defaults are the fallback when /retell/inbound fails, and nothing
+// refreshes them — so they may only ever be VAGUE, never WRONG. Time-varying and
+// caller-specific keys go stale into confidently-wrong answers; a single-venue agent's
+// own identity cannot. Hard-fail the dangerous set, flag the rest.
+const VOLATILE_DEFAULTS = ["today", "tomorrow", "weekday_local", "now_local", "caller_phone"];
+const dv = llm.default_dynamic_variables ?? {};
+const volatileLeak = VOLATILE_DEFAULTS.filter((k) => k in dv);
+check(volatileLeak.length === 0, `default_dynamic_variables carries no volatile keys${volatileLeak.length ? ` (found: ${volatileLeak})` : ""}`);
+if (Object.keys(dv).length > 0) {
+  console.log(`  note: static defaults set (${Object.keys(dv).join(", ")}) — safe only while they match THIS agent's one venue; clear them if the agent is ever re-pointed.`);
+}
 
 // Golden knobs (see SKILL.md table).
 check(agent.stt_mode === "fast", "stt_mode = fast");
