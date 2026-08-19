@@ -57,6 +57,7 @@ the Cloud SQL bootstrap set (`db-*`) or does not exist yet.
 | `voxtable-stg-twilio-auth-token` | `Biteperk-staging` auth token | api + worker |
 | `voxtable-stg-menu-ocr-api-key` | Vision provider key for menu OCR | worker |
 | `voxtable-stg-smoke-user-password` | Firebase password for the smoke-suite user | `smoke:*` against staging |
+| `voxtable-stg-twilio-au1-key-sid` / `-key-secret` | Twilio **AU1-region** API key pair (created 19 Aug 2026). The voice estate — trunk `voxtable-staging-au1`, the number's voice binding — lives in AU1 and is **invisible to US1 endpoints and refused by the US1 auth token** (NUMBERS.md §3a). Use against `https://{product}.sydney.au1.twilio.com`. ⚠️ Created via chat/console during the 19 Aug incident — rotate at the next quiet moment | ops scripts touching the voice estate (no service reads it) |
 | `db-app-url` / `db-app-password` | Cloud SQL runtime role | Terraform / migrations |
 | `db-owner-url` / `db-owner-password` | Cloud SQL owner role — migrations run as this, never `postgres` (migration 029) | migration job |
 
