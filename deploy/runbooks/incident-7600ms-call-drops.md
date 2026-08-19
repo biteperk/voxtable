@@ -87,12 +87,17 @@ no phantom calls holding slots.
 - Sam then called **with caller ID withheld (CLIR / "private number") from the same handset:
   the call ran 143 s and completed cleanly** (16:27, `call_751a2518…`) — booking made,
   agent-side hangup.
-- One data point, but a sharp one: same phone, same carrier, only the presentation changed.
-  CLIR calls commonly take a different interconnect/routing path, which is consistent with a
-  carrier-path fault tied to how this line's presented-ID calls route. Add this to the Twilio
-  ticket: dead legs all carry P-Asserted-Identity +61450011140; the surviving control call
-  was CLIR from the same subscriber.
-- The different-phone test is STILL the decider and still outstanding.
+- ~~One data point, but a sharp one: same phone, same carrier, only the presentation
+  changed…~~ **RETRACTED 16:46**: a second CLIR call from the same handset died at
+  7,593 ms. Caller-ID presentation is NOT the discriminator — the earlier CLIR success was
+  the ~50% coin flip. Eleven dead calls now (7,593–7,653 ms band), all from the one
+  subscriber, with and without caller ID.
+- The different-phone test is STILL the decider and still outstanding. A synthetic
+  alternative that needs no second handset: a Twilio REST-API outbound call from the staging
+  number to itself (`From`/`To` both +61 468 203 234, TwiML `<Pause>`) — a Twilio-originated
+  caller on a completely different ingress path than a mobile. If those also die at ~7.6 s,
+  the fault is on the inbound/Twilio side and production is exposed; if they never die
+  across several attempts, the caller's mobile path is implicated.
 
 ## Next actions
 
