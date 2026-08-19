@@ -154,10 +154,15 @@ const envSchema = z
   // in production when CALCOM_SYNC_ENABLED=true.
   CALCOM_SYNC_ENABLED: boolFlag(),
   CALCOM_API_KEY: z.string().optional(),
-  // Dev/local fallback ONLY. The authoritative value is per-venue
-  // (restaurants.calcom_event_type_id, migration 035) because a single global
-  // event type sends every venue's bookings to one venue's public calendar.
-  // The production superRefine below refuses to boot if this is set.
+  // DEPRECATED and read by nothing. Migration 035 moved the authoritative value
+  // onto restaurants.calcom_event_type_id, and both the outbound push and the
+  // inbound resolve read it from there — a venue with no binding is simply not
+  // mirrored, in every environment including dev. This key survives ONLY so the
+  // production gate below can refuse a deployment that still sets it, which is
+  // the thing that stops a global value being quietly reintroduced and routing
+  // every venue's bookings to one venue's calendar.
+  //
+  // It is not a fallback. Setting it outside production changes no behaviour.
   CALCOM_EVENT_TYPE_ID: blankAsUnset(z.coerce.number().int().positive().optional()),
   CALCOM_BASE_URL: z.string().url().default("https://api.cal.com/v2"),
   CALCOM_WEBHOOK_SECRET: z.string().optional(),

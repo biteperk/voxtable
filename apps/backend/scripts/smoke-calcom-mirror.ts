@@ -42,6 +42,14 @@ interface OutboxRowLite {
   failed_at: string | null;
 }
 
+async function reservationCount(restaurantId: string): Promise<number> {
+  const r = await pool.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM reservations WHERE restaurant_id = $1",
+    [restaurantId]
+  );
+  return Number(r.rows[0]!.n);
+}
+
 async function outboxRows(reservationId: string): Promise<OutboxRowLite[]> {
   const result = await pool.query<OutboxRowLite>(
     `SELECT id, op, payload, attempts, succeeded_at, failed_at
@@ -242,6 +250,31 @@ async function main(): Promise<void> {
       "035: unbinding a venue still lets its live bookings be cancelled",
       (await outboxRows(stranded.bookingId)).some((r) => r.op === "cancel"),
       (await outboxRows(stranded.bookingId)).map((r) => r.op)
+    );
+
+    // ---- 035: a tenant mismatch must never create a booking ---------------
+    //
+    // An event type rebound from venue A to venue B while a push for an A
+    // booking was in flight. The echo carries A's reservation id; the event type
+    // now resolves to B. This used to `return false`, which fell through to the
+    // web-booking path and created a PHANTOM reservation at B — the voice
+    // caller's name and party size, occupying one of B's tables — while A's
+    // reservation never got its uid, so its cancel never mirrored.
+    const beforeMismatch = await reservationCount(unboundId);
+    let mismatchThrew = false;
+    try {
+      await reconcileMirroredBooking(
+        { vocotable_reservation_id: voice.bookingId },
+        `uid-mismatch-${SMOKE_SUFFIX}`,
+        unboundId // resolved venue differs from the reservation's venue
+      );
+    } catch {
+      mismatchThrew = true;
+    }
+    assert("035: a tenant mismatch is terminal, not a fall-through", mismatchThrew);
+    assert(
+      "035: a tenant mismatch creates NO reservation at the resolved venue",
+      (await reservationCount(unboundId)) === beforeMismatch
     );
   } finally {
     await cleanupSmokeRestaurant(restaurantId);

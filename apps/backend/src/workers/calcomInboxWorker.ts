@@ -73,11 +73,11 @@ function backoffMsForAttempt(attempts: number): number {
   return Math.min(base * 2 ** attempts, max);
 }
 
-async function processBatch(): Promise<void> {
+async function processBatch(onlyEventIds?: string[]): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const rows = await claimRetryableInbox(BATCH_SIZE, client);
+    const rows = await claimRetryableInbox(BATCH_SIZE, client, onlyEventIds);
     if (rows.length === 0) {
       await client.query("ROLLBACK");
       return;
@@ -89,6 +89,13 @@ async function processBatch(): Promise<void> {
       // transaction, and every later query on this client fails — including the
       // markInboxRetry in the catch. The row would then be re-claimed every
       // tick with its attempts counter rolled back, forever.
+      // The savepoint is released in a `finally`, not after the catch. The catch
+      // below issues two more queries on this same batch client; if either
+      // throws, an un-released savepoint would let the exception escape the loop
+      // into the outer handler, which ROLLBACKs the whole batch — discarding
+      // every markInboxProcessed and every attempts increment already made this
+      // tick, so those rows are re-claimed next tick with their counters rolled
+      // back. That is the exact forever-loop the savepoint exists to prevent.
       await client.query("SAVEPOINT inbox_row");
       const envelope = row.raw_payload as {
         triggerEvent?: unknown;
@@ -114,7 +121,7 @@ async function processBatch(): Promise<void> {
           attempts: row.attempts + 1
         });
       } catch (error) {
-        await client.query("ROLLBACK TO SAVEPOINT inbox_row");
+        await client.query("ROLLBACK TO SAVEPOINT inbox_row").catch(() => {});
         const message = (error as Error).message ?? String(error);
         const nextAttempt = row.attempts + 1;
 
@@ -153,8 +160,9 @@ async function processBatch(): Promise<void> {
             error: message
           });
         }
+      } finally {
+        await client.query("RELEASE SAVEPOINT inbox_row").catch(() => {});
       }
-      await client.query("RELEASE SAVEPOINT inbox_row");
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -200,9 +208,18 @@ export function startInboxWorker(): void {
   intervalHandle.unref();
 }
 
-/** Test-only: one batch, no interval. Drives the real retry/dead-letter policy. */
-export async function processInboxBatchOnce(): Promise<void> {
-  await processBatch();
+/**
+ * Test-only: one batch, no interval. Drives the real retry/dead-letter policy.
+ *
+ * `onlyEventIds` scopes the claim to the caller's own rows. Without it the smoke
+ * test runs the real batch against whatever DATABASE_URL is set and claims up to
+ * BATCH_SIZE rows it does not own — and because the smoke injects a no-op
+ * processor for its success case, any genuine pending row swept into that batch
+ * would be marked processed WITHOUT being processed. The runbooks tell operators
+ * to run smoke scripts, so that is not a hypothetical.
+ */
+export async function processInboxBatchOnce(onlyEventIds?: string[]): Promise<void> {
+  await processBatch(onlyEventIds);
 }
 
 export async function stopInboxWorker(): Promise<void> {

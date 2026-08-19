@@ -13,7 +13,8 @@ import crypto from "node:crypto";
 import { test } from "node:test";
 
 import { env } from "../config/env";
-import { verifyCalcomSignature } from "./calcomService";
+import { AppError } from "../domain/errors";
+import { isTerminalBookingRefusal, verifyCalcomSignature } from "./calcomService";
 
 const SECRET = env.CALCOM_WEBHOOK_SECRET;
 const BODY = JSON.stringify({ triggerEvent: "BOOKING_CREATED", payload: { uid: "abc" } });
@@ -64,4 +65,33 @@ test("an odd-length hex string is rejected", () => {
   // two buffers of different lengths.
   assert.doesNotThrow(() => verifyCalcomSignature(BODY, sign(BODY).slice(0, 63)));
   assert.equal(verifyCalcomSignature(BODY, sign(BODY).slice(0, 63)), false);
+});
+
+// --- inbound failure classification (the cancel-back decision) ---------------
+//
+// This is the test that matters most on the inbound path, because getting it
+// wrong is not a crash — it is cancelling a real guest's table.
+//
+// TABLE_JUST_TAKEN is a 409, so the old statusCode-based test called it a
+// refusal and cancelled the guest's Cal.com booking. But it is raised ONLY by
+// the overlap constraint firing, i.e. a concurrent writer beat us. That is
+// contention, and it must be retried.
+
+test("a genuine 'no table' refusal is terminal — the guest is told", () => {
+  assert.equal(isTerminalBookingRefusal(new AppError(409, "BOOKING_NOT_AVAILABLE", "full")), true);
+  assert.equal(isTerminalBookingRefusal(new AppError(400, "BOOKING_DATE_IN_PAST", "past")), true);
+  assert.equal(isTerminalBookingRefusal(new AppError(409, "TABLE_NOT_AVAILABLE", "no fit")), true);
+});
+
+test("TABLE_JUST_TAKEN is contention, not a decision — it must be retried", () => {
+  // Same HTTP status as a real refusal. Only the code tells them apart.
+  assert.equal(isTerminalBookingRefusal(new AppError(409, "TABLE_JUST_TAKEN", "raced")), false);
+});
+
+test("infrastructure failures are never treated as a refusal", () => {
+  assert.equal(isTerminalBookingRefusal(new Error("connection terminated")), false);
+  assert.equal(isTerminalBookingRefusal(new AppError(500, "INTERNAL", "boom")), false);
+  // An unlisted code defaults to retry: a retry costs work, a wrong refusal
+  // costs a guest their table.
+  assert.equal(isTerminalBookingRefusal(new AppError(409, "SOME_NEW_CODE", "?")), false);
 });

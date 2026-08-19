@@ -89,7 +89,7 @@ calRouter.post(
     const triggerEvent = payload.triggerEvent;
     const createdAt = payload.createdAt ?? "";
 
-    // Replay-window guard: reject events older than 5 minutes. Cal.com retries
+    // Replay-window guard: reject events outside the replay window. Cal.com retries
     // 5xx but should not be retrying ancient events with a fresh signature
     // (signatures are over the body, not the timestamp, so a replay attacker
     // could otherwise resubmit indefinitely).
@@ -99,7 +99,7 @@ calRouter.post(
         throw new AppError(
           400,
           "CALCOM_REPLAY_REJECTED",
-          `Cal.com event createdAt (${createdAt}) is outside the 5-minute replay window.`
+          `Cal.com event createdAt (${createdAt}) is outside the replay window.`
         );
       }
     }

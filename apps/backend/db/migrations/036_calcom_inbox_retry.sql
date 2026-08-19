@@ -54,6 +54,27 @@ BEGIN
   END IF;
 END $$;
 
+-- Settle the pre-036 backlog so the new worker never replays it.
+--
+-- The OLD markInboxFailed set only `process_error` and left `processed_at` NULL.
+-- After the columns above, every one of those rows satisfies the worker's claim
+-- (processed_at IS NULL, failed_at IS NULL, next_attempt_at <= now()) with
+-- attempts = 0 — so the first tick after this migration would pick them up ten
+-- at a time and replay them.
+--
+-- Replaying a months-old BOOKING_CREATED is not harmless: createBooking refuses
+-- it as a past date, that is a terminal refusal, and the refusal path cancels
+-- the booking back on Cal.com. We would be issuing cancellations for bookings
+-- that were resolved one way or another long ago.
+--
+-- They are kept, not deleted: they are the record of the bookings the missing
+-- worker lost, which is the whole reason it now exists.
+UPDATE inbox_calcom_events
+   SET failed_at = now(),
+       process_error = COALESCE(process_error, 'Pre-036 backlog; never processed, not replayed')
+ WHERE processed_at IS NULL
+   AND failed_at IS NULL;
+
 -- The worker's hot path: rows still owed work, in due order. Partial so it
 -- stays small — the table is mostly settled rows.
 CREATE INDEX IF NOT EXISTS idx_inbox_calcom_retryable

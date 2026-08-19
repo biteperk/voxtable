@@ -232,7 +232,11 @@ export async function getOutboxStatsForRestaurant(
     `
     SELECT
       COUNT(*) FILTER (WHERE o.succeeded_at IS NULL AND o.failed_at IS NULL)::text AS pending_depth,
-      MIN(o.next_attempt_at) FILTER (
+      -- created_at, matching the unscoped getOutboxStats above. next_attempt_at
+      -- answers "when will we next try", which for any backed-off row is in the
+      -- FUTURE — the dashboard would render an "oldest pending" timestamp later
+      -- than now.
+      MIN(o.created_at) FILTER (
         WHERE o.succeeded_at IS NULL AND o.failed_at IS NULL
       )::text AS oldest_pending_at,
       COUNT(*) FILTER (
@@ -243,6 +247,9 @@ export async function getOutboxStatsForRestaurant(
       )::text AS succeeded_last_1h,
       MAX(o.succeeded_at)::text AS last_success_at
     FROM outbox_calcom o
+    -- INNER JOIN is safe only because outbox_calcom.reservation_id is
+    -- ON DELETE CASCADE (migration 004), so an outbox row can never outlive its
+    -- reservation. If that ever changes, this silently under-counts.
     JOIN reservations r ON r.id = o.reservation_id
     WHERE r.restaurant_id = $1
     `,

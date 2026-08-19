@@ -32,15 +32,35 @@ export interface RecordInboxEventInput {
  * if this event_id has already been seen (replay). Callers should only
  * proceed with side effects when `true` is returned.
  */
+/**
+ * How long the caller that just inserted a row owns the first attempt.
+ *
+ * This is a LEASE, not a delay. routes/cal.ts inserts the row and then processes
+ * it inline, so without it the row is claimable by the retry worker the instant
+ * the INSERT commits — while the inline attempt is still running. Both would
+ * pass the loop guard (neither has stamped a uid yet) and both would call
+ * createBooking: either two reservations for one guest, or the loser hits the
+ * overlap constraint and we cancel the guest's Cal.com booking while their table
+ * sits confirmed in our database.
+ *
+ * FOR UPDATE SKIP LOCKED only serialises worker against worker; the inline path
+ * takes no row lock, so the lease is what serialises inline against worker.
+ *
+ * Comfortably longer than an inline attempt can take: statement_timeout is 15 s
+ * and the pool's connect timeout is 5 s, so 60 s means a wedged inline attempt
+ * has already died before the worker is allowed near the row.
+ */
+const INLINE_ATTEMPT_LEASE_MS = 60_000;
+
 export async function recordInboxEvent(input: RecordInboxEventInput, db: DbClient = pool): Promise<boolean> {
   const result = await db.query<{ inserted: boolean }>(
     `
-    INSERT INTO inbox_calcom_events (event_id, trigger_event, raw_payload)
-    VALUES ($1, $2, $3::jsonb)
+    INSERT INTO inbox_calcom_events (event_id, trigger_event, raw_payload, next_attempt_at)
+    VALUES ($1, $2, $3::jsonb, now() + ($4::bigint || ' milliseconds')::interval)
     ON CONFLICT (event_id) DO NOTHING
     RETURNING true AS inserted
     `,
-    [input.eventId, input.triggerEvent, JSON.stringify(input.rawPayload)]
+    [input.eventId, input.triggerEvent, JSON.stringify(input.rawPayload), INLINE_ATTEMPT_LEASE_MS]
   );
   return result.rows.length > 0;
 }
@@ -57,7 +77,12 @@ export async function recordInboxEvent(input: RecordInboxEventInput, db: DbClien
  * Ordered by due time, then received time, so an old row that has exhausted its
  * backoff does not sit behind a newer one that has not.
  */
-export async function claimRetryableInbox(limit: number, db: DbClient): Promise<InboxRow[]> {
+export async function claimRetryableInbox(
+  limit: number,
+  db: DbClient,
+  /** Test-only scope. Production passes nothing and claims everything due. */
+  onlyEventIds?: string[]
+): Promise<InboxRow[]> {
   const result = await db.query<InboxRow>(
     `
     SELECT event_id, trigger_event, raw_payload, received_at,
@@ -66,18 +91,29 @@ export async function claimRetryableInbox(limit: number, db: DbClient): Promise<
      WHERE processed_at IS NULL
        AND failed_at IS NULL
        AND next_attempt_at <= now()
+       AND ($2::text[] IS NULL OR event_id = ANY($2::text[]))
      ORDER BY next_attempt_at, received_at
      LIMIT $1
      FOR UPDATE SKIP LOCKED
     `,
-    [limit]
+    [limit, onlyEventIds ?? null]
   );
   return result.rows;
 }
 
+/**
+ * The `AND failed_at IS NULL` predicate is not decoration. Two paths can hold an
+ * opinion about one row (the inline attempt and the retry worker), and
+ * migration 036's chk_inbox_calcom_terminal_state forbids a row being both
+ * processed and dead-lettered. Without the predicate that CHECK is reachable,
+ * and it throws from inside the worker's catch block — the worst place for it.
+ * A dead-lettered row simply stays dead-lettered; last writer does not win.
+ */
 export async function markInboxProcessed(eventId: string, db: DbClient = pool): Promise<void> {
   await db.query(
-    "UPDATE inbox_calcom_events SET processed_at = now(), process_error = NULL WHERE event_id = $1",
+    `UPDATE inbox_calcom_events
+        SET processed_at = now(), process_error = NULL
+      WHERE event_id = $1 AND failed_at IS NULL`,
     [eventId]
   );
 }
@@ -102,7 +138,7 @@ export async function markInboxRetry(
         SET attempts = attempts + 1,
             process_error = $2,
             next_attempt_at = now() + ($3::bigint || ' milliseconds')::interval
-      WHERE event_id = $1`,
+      WHERE event_id = $1 AND processed_at IS NULL AND failed_at IS NULL`,
     [eventId, error.slice(0, 1000), Math.max(0, Math.round(delayMs))]
   );
 }
@@ -120,7 +156,7 @@ export async function markInboxDeadLettered(
   await db.query(
     `UPDATE inbox_calcom_events
         SET attempts = attempts + 1, process_error = $2, failed_at = now()
-      WHERE event_id = $1`,
+      WHERE event_id = $1 AND processed_at IS NULL`,
     [eventId, error.slice(0, 1000)]
   );
 }

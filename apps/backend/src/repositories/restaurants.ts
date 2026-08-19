@@ -400,11 +400,19 @@ export async function getRestaurantIdByCalcomEventTypeId(
  * does far more work than one indexed lookup, and a stale answer here means
  * either a silently unmirrored booking or a row that dead-letters — both worse
  * than the query.
+ *
+ * ⚠️ Callers inside a transaction MUST pass their client. `createBooking` calls
+ * this while holding the per-day advisory lock, so defaulting to the pool there
+ * takes a SECOND write connection per booking — halving effective concurrency
+ * and, at pool max, starving itself: every connection held by a booking waiting
+ * for a connection nobody can release. pool.ts documents that max was raised
+ * precisely because one-connection-per-booking was already the bottleneck.
  */
 export async function getRestaurantCalcomEventTypeId(
-  restaurantId: string
+  restaurantId: string,
+  db: DbClient = pool
 ): Promise<number | null> {
-  const result = await pool.query<{ calcom_event_type_id: number | null }>(
+  const result = await db.query<{ calcom_event_type_id: number | null }>(
     "SELECT calcom_event_type_id FROM restaurants WHERE id = $1",
     [restaurantId]
   );

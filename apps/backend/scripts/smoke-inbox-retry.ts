@@ -18,6 +18,11 @@
 import { env } from "../src/config/env";
 import { pool } from "../src/db/pool";
 import { PermanentInboxError } from "../src/domain/errors";
+import {
+  markInboxDeadLettered,
+  markInboxProcessed,
+  recordInboxEvent
+} from "../src/repositories/inbox";
 import { processInboxBatchOnce, setInboxProcessor } from "../src/workers/calcomInboxWorker";
 import { assert, reportAndExit, SMOKE_SUFFIX as SUFFIX } from "./lib/smoke-harness";
 
@@ -40,11 +45,14 @@ async function stateOf(eventId: string): Promise<InboxState> {
 }
 
 async function insertEvent(key: string, attempts: number): Promise<string> {
-  const eventId = `smoke-inbox-${key}-${SUFFIX}`;
+  return insertEventWithId(`smoke-inbox-${key}-${SUFFIX}`, attempts);
+}
+
+async function insertEventWithId(eventId: string, attempts: number): Promise<string> {
   const envelope = {
     triggerEvent: "BOOKING_RESCHEDULED",
     createdAt: new Date().toISOString(),
-    payload: { uid: `smoke-uid-${key}-${SUFFIX}`, startTime: "2027-06-01T09:00:00.000Z" }
+    payload: { uid: `uid-${eventId}`, startTime: "2027-06-01T09:00:00.000Z" }
   };
   await pool.query(
     `INSERT INTO inbox_calcom_events
@@ -73,7 +81,7 @@ async function main(): Promise<void> {
 
     const retrying = await insertEvent("retry", 0);
     ids.push(retrying);
-    await processInboxBatchOnce();
+    await processInboxBatchOnce(ids);
     const afterOne = await stateOf(retrying);
     assert(
       "a transient failure records an attempt instead of being stranded",
@@ -89,7 +97,7 @@ async function main(): Promise<void> {
 
     // Backoff must actually hold the row back — otherwise a repeatedly failing
     // event spins on every tick.
-    await processInboxBatchOnce();
+    await processInboxBatchOnce(ids);
     assert(
       "a row inside its backoff is NOT re-claimed on the next tick",
       (await stateOf(retrying)).attempts === 1
@@ -98,7 +106,7 @@ async function main(): Promise<void> {
     // ---- at the ceiling, a transient failure dead-letters ------------------
     const doomed = await insertEvent("doomed", env.CALCOM_INBOX_MAX_ATTEMPTS - 1);
     ids.push(doomed);
-    await processInboxBatchOnce();
+    await processInboxBatchOnce(ids);
     const dead = await stateOf(doomed);
     assert(
       "at the attempts ceiling the event dead-letters",
@@ -108,7 +116,7 @@ async function main(): Promise<void> {
 
     // A dead letter is evidence, not work. If it stayed claimable it would burn
     // a batch slot every tick forever.
-    await processInboxBatchOnce();
+    await processInboxBatchOnce(ids);
     assert(
       "a dead-lettered event is never claimed again",
       (await stateOf(doomed)).attempts === env.CALCOM_INBOX_MAX_ATTEMPTS
@@ -125,7 +133,7 @@ async function main(): Promise<void> {
 
     const refused = await insertEvent("refused", 0);
     ids.push(refused);
-    await processInboxBatchOnce();
+    await processInboxBatchOnce(ids);
     const refusedState = await stateOf(refused);
     assert(
       "a permanent failure dead-letters immediately, without burning the ceiling",
@@ -142,7 +150,7 @@ async function main(): Promise<void> {
     setInboxProcessor(async () => {});
     const recovering = await insertEvent("recovers", 2);
     ids.push(recovering);
-    await processInboxBatchOnce();
+    await processInboxBatchOnce(ids);
     const settled = await stateOf(recovering);
     assert(
       "a later attempt that succeeds marks the event processed",
@@ -150,6 +158,49 @@ async function main(): Promise<void> {
       settled
     );
     assert("a successful retry clears the stale error", settled.process_error === null);
+
+    // ---- the lease: a freshly recorded event is NOT claimable ---------------
+    //
+    // routes/cal.ts records the row and then processes it inline. Without a
+    // lease the worker can claim it mid-flight, and both callers pass the loop
+    // guard and both call createBooking: two reservations for one guest, or the
+    // loser hits the overlap constraint and we cancel the guest's booking while
+    // their table sits confirmed. FOR UPDATE SKIP LOCKED does not help — the
+    // inline path takes no row lock.
+    const leased = `smoke-inbox-leased-${SUFFIX}`;
+    ids.push(leased);
+    await recordInboxEvent({
+      eventId: leased,
+      triggerEvent: "BOOKING_RESCHEDULED",
+      rawPayload: { triggerEvent: "BOOKING_RESCHEDULED", payload: { uid: leased } }
+    });
+    let claimedDuringLease = false;
+    setInboxProcessor(async () => {
+      claimedDuringLease = true;
+    });
+    await processInboxBatchOnce(ids);
+    assert(
+      "a just-recorded event is leased to the inline attempt, not claimable",
+      claimedDuringLease === false && (await stateOf(leased)).attempts === 0
+    );
+
+    // ---- a settled row cannot be resurrected by the other path -------------
+    //
+    // Both paths can hold an opinion about one row, and migration 036 forbids a
+    // row being processed AND dead-lettered. Without state predicates that CHECK
+    // is reachable — and it throws from inside the worker's catch, the worst
+    // possible place.
+    const settledRow = `smoke-inbox-settled-${SUFFIX}`;
+    ids.push(settledRow);
+    await insertEventWithId(settledRow, 0);
+    await markInboxDeadLettered(settledRow, "terminal");
+    await markInboxProcessed(settledRow);
+    const afterBoth = await stateOf(settledRow);
+    assert(
+      "marking a dead-lettered row processed is a no-op, not a constraint violation",
+      afterBoth.failed_at !== null && afterBoth.processed_at === null,
+      afterBoth
+    );
   } finally {
     setInboxProcessor(original);
     if (ids.length > 0) {

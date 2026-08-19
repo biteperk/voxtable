@@ -294,7 +294,7 @@ test("the credentials that ARE deployment config are still demanded", () => {
   assert.ok(paths.includes("CALCOM_WEBHOOK_SECRET"));
 });
 
-test("outside production a global event type is still allowed as a dev fallback", () => {
+test("outside production the deprecated key parses but changes nothing", () => {
   const result = validateEnv({
     APP_ENV: "development",
     DATABASE_URL: DB,
