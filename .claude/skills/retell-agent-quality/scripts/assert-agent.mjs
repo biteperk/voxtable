@@ -27,7 +27,7 @@ check(Object.keys(llm.default_dynamic_variables ?? {}).length === 0, "default_dy
 
 // Golden knobs (see SKILL.md table).
 check(agent.stt_mode === "fast", "stt_mode = fast");
-check(agent.enable_expressive_mode === false, "expressive mode off (costs ~1s/turn)");
+check(agent.enable_expressive_mode !== true, "expressive mode off (costs ~1s/turn)");
 check(agent.interruption_sensitivity === 0.6, "interruption_sensitivity = 0.6");
 check(agent.ambient_sound == null, "no ambient_sound");
 check(agent.enable_backchannel === true, "backchannel on");

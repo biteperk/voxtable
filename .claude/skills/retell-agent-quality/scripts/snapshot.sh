@@ -9,7 +9,9 @@ mkdir -p "$3"
 curl -sf "https://api.retellai.com/get-agent/$1" -H "Authorization: Bearer $RETELL_API_KEY" > "$3/agent.json"
 curl -sf "https://api.retellai.com/get-retell-llm/$2" -H "Authorization: Bearer $RETELL_API_KEY" > "$3/llm.json"
 node -e '
-const a=require(process.argv[1]+"/agent.json"), l=require(process.argv[1]+"/llm.json");
+const path = require("path");
+const dir = path.resolve(process.argv[1]);
+const a = require(path.join(dir, "agent.json")), l = require(path.join(dir, "llm.json"));
 console.log("agent:", a.agent_id, "voice:", a.voice_id, "| llm:", l.llm_id, "prompt", l.general_prompt.length, "chars");
 console.log("Snapshot written. Add a README (what/why/rollback) before committing.");
 ' "$3"
