@@ -197,9 +197,11 @@ disclosure.
 - Prompt carries **no venue name in prose**. Identity is `{{restaurant_name}}` and
   `{{owner_name}}`, injected fresh per call by `/retell/inbound`. Assert on the finished
   payload that "Natalia" appears nowhere.
-- Remove the line *"You speak in a warm, calm, unmistakably Australian voice"* — `11labs-Anna`
-  is catalogued **American**, so it claims something untrue and prompt text does not affect
-  timbre anyway.
+- **Keep** the line *"You speak in a warm, calm, unmistakably Australian voice"*. This file
+  used to say remove it, on the grounds that `11labs-Anna` is catalogued American. Both
+  staging agents now run the custom ElevenLabs voice **"Australian female early 30s"**
+  (verified against the live workspace 19 Aug 2026), so the line is accurate and should
+  stay. Copy the voice from the existing staging agent rather than naming a stock voice.
 - `default_dynamic_variables`: **empty**.
 - The prompt must consume **`{{venue_faq}}`** — answer from it when it covers the question,
   otherwise offer to take a message, and **never invent an answer** (§9). Ship the backend
@@ -228,21 +230,25 @@ Record the new agent + LLM ids in NAMES.md §6 and in [`staging-venue.md`](stagi
 
 Snapshot the live agent first (`GET /get-agent/<id>`) — **that snapshot is the rollback.**
 
-### 8a. Pin the voice model
+### 8a. Pin the voice model — ✅ ALREADY DONE, copy it rather than set it
 
-`voice_model` is unset on every agent in the repo's history, so Retell picks its own default
-for `11labs-Anna` — the low-latency `eleven_flash_*` family, which is audibly flatter. That is
-the "robotic" report.
-
-The instability matters more than the flatness: an unpinned model is Retell's to change, with
-no edit on our side and no movement in `last_modification_timestamp`. That is the most likely
-mechanic behind "the voice changed", and pinning is the only fix.
+⚠️ **This section was written from a stale snapshot and its premise was wrong.** Read back
+from the live Staging workspace on 19 Aug 2026, both staging agents already carry:
 
 ```
-voice_model:        "eleven_multilingual_v2"
-fallback_voice_ids: [ … ]      # explicit, so a fallback lands somewhere we chose
-voice_id:           "11labs-Anna"   # unchanged
+voice_id:            custom_voice_e86a46d4b039b222fb6b31a0ad   # "Australian female early 30s"
+voice_model:         eleven_multilingual_v2
+reminder_trigger_ms: 18000
+default_dynamic_variables: (empty)
 ```
+
+So there is nothing to fix here. **Do not apply the block this file used to carry** — it
+said `voice_id: "11labs-Anna"   # unchanged`, and applying that literally would replace an
+Australian voice with an American one. That is a regression, and a subtle one: the call
+still works, it just stops sounding like the venue's country.
+
+The reasoning below still explains *why* these values are right, and still applies when
+building Mazcina's agent: copy them from the existing staging agent.
 
 `eleven_multilingual_v2` earns it twice over here: better prosody, and far better handling of
 the Spanish and Chilean names all over Mazcina's menu. The flash family mangles them.
@@ -252,10 +258,13 @@ the Spanish and Chilean names all over Mazcina's menu. The flash family mangles 
 `eleven_flash_v2_5` — still pinned, still stable, just flatter. **Pinning is the
 non-negotiable part; which model is a tunable.**
 
-### 8b. Restore `reminder_trigger_ms` — and only that
+### 8b. `reminder_trigger_ms` — ✅ ALREADY 18000 on both staging agents
 
-`20260529-busy-fix` set `reminder_trigger_ms: 18000` and `reminder_max_count: 1`; both are
-absent from every snapshot since 13 Aug.
+Verified against the live workspace 19 Aug 2026. Nothing to restore; carry `18000` onto
+Mazcina's agent when you build it. This file previously said the value was absent from every
+snapshot since 13 Aug — true of the *snapshots*, false of the *agents*, which is the same
+build-from-live-not-from-snapshots trap §6 warns about, landing on the person following the
+runbook instead of the person writing the prompt.
 
 - `reminder_trigger_ms` — SDK default is **10000 ms**. Without the 18s setting Bella interjects
   a canned "are you still there?" after 10s of silence, and an availability check plus a
