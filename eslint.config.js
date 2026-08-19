@@ -30,6 +30,7 @@ export default [
       "**/build/**",
       "**/coverage/**",
       "node_modules/**",
+      ".claude/**",
       "apps/backend/db/baseline-sydney/**",
       "public/**",
       "**/*.min.js"
