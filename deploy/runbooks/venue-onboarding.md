@@ -1,5 +1,10 @@
 # Venue onboarding — the repeatable checklist
 
+> 🎙️ For the AGENT half of onboarding (build from the golden snapshot, prompt contract,
+> voice/latency tuning, the verification battery), the SSOT is the skill
+> `.claude/skills/retell-agent-quality/` — it cites this file's traps rather than
+> duplicating them.
+
 How a real restaurant gets onto VoxTable (+ VoxOrder) today, distilled from the
 Cuban Corner install (13 Aug 2026). This is the **manual** path;
 `provisioningWorker` automates buy-number → create-agent → bind when
