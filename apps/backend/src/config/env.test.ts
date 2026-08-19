@@ -226,6 +226,37 @@ test("production with the full order-payments config boots", () => {
   assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
 });
 
+test("production order-payments boots on the Messaging Service alone, with no NOTIFICATIONS_SMS_FROM", () => {
+  // The branded-SMS configuration: the Messaging Service owns the sender pool,
+  // so there is no bare `from` to set. Before the sender ID landed this gate
+  // demanded NOTIFICATIONS_SMS_FROM unconditionally, which would have made a
+  // correctly-configured branded deployment refuse to boot.
+  const result = validateEnv({
+    ...productionEnv,
+    ORDER_PAYMENTS_ENABLED: "true",
+    STRIPE_CONNECT_ENABLED: "true",
+    NOTIFICATIONS_ENABLED: "true",
+    EMAIL_PROVIDER: "zeptomail",
+    ZEPTOMAIL_TOKEN: "ztok",
+    STRIPE_SECRET_KEY: "sk_test_x",
+    STRIPE_WEBHOOK_SECRET: "whsec_x",
+    NOTIFICATIONS_MESSAGING_SERVICE_SID: "MG7ceaa2aaa3cea6195ea7979d57b78b14",
+    PUBLIC_ORDER_RETURN_BASE_URL: "https://app.biteperk.com.au"
+  });
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});
+
+test("a malformed Messaging Service SID is rejected at boot, not at send time", () => {
+  // A typo'd SID would otherwise surface as a Twilio 400 on the first payment
+  // link — mid phone call, with the caller waiting on a text that never comes.
+  const result = validateEnv({
+    ...productionEnv,
+    NOTIFICATIONS_MESSAGING_SERVICE_SID: "MG-nope"
+  });
+  assert.equal(result.success, false);
+  assert.ok(issuePaths(result).includes("NOTIFICATIONS_MESSAGING_SERVICE_SID"));
+});
+
 test("production refuses to boot without the legal-documents manifest, even invite-only", () => {
   // This gate used to fire only when SELF_SERVE_SIGNUP_ENABLED=true, which
   // defaults false. An invite-only production therefore booted with no manifest

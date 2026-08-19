@@ -36,7 +36,7 @@ Anything on an **Algorythmos** account is a different company's infrastructure a
 | Number | Environment | Account | Takes a call today? | SMS? |
 |---|---|---|---|---|
 | `+61 468 202 846` | **Production** | Biteperk-production | ❌ No Retell agent bound yet | ✅ Enabled (never actually sent) |
-| `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ✅ Bound — imported to the Staging workspace (webhook mode) 13 Aug; `VoxTable Staging Venue` resolves | ✅ Enabled, stamped `Unverified` |
+| `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ✅ Bound — imported to the Staging workspace (webhook mode) 13 Aug; `VoxTable Staging Venue` resolves | ✅ Enabled and **proven 18 Aug 2026** — delivers from the number. Cannot send branded: `BitePerk` is production-only, and the fallback is silent (no `Unverified` stamp) |
 
 That is the whole platform estate. If a number is not in this table, **it is not ours to wire** —
 do not put it in a `restaurants` row, do not register it with Retell, and do not "reconcile" it
@@ -71,7 +71,7 @@ Two numbers get mistaken for platform numbers often enough to name:
 | Regulatory bundle | `BU8cb2353e1b34a75c6ed0cec20e163356` (AU Mobile Business, approved 13 Aug, instant) |
 | Compliance address | `AD3ea533a6a658f822c84cb37ebd88233e` |
 | Customer profile | `BU975db7eebfb0b5525d6762f3d77e2087` (approved) |
-| Alphanumeric sender ID | `BUce1fa0ad6053c4444f3faca4c7957f25` — **in review**, Twilio ticket `28926493` |
+| Alphanumeric sender ID | `BitePerk` — ✅ **ACMA-approved 18 Aug 2026**. Twilio bundle `BUce1fa0ad6053c4444f3faca4c7957f25`, ticket `28926493`. **Not yet attached to the Messaging Service, and nothing sends as it** |
 
 **Region split: `AU1 — Voice` / `US1 — Messaging`.** Twilio has no messaging in AU1, so this is
 the only shape available, not a misconfiguration. Never "fix" it by moving the number back to US1
@@ -89,7 +89,7 @@ the only shape available, not a misconfiguration. Never "fix" it by moving the n
 | **Resolves to a restaurant** | ❌ **No `restaurants` row** — `getRestaurantIdByDialedNumber` returns nothing and the backend fails closed |
 | Sends SMS from the number | ✅ Traffic Status **Messaging enabled** — but **never actually sent**; treat as unproven until one test SMS lands |
 | Receives SMS | ❌ No inbound webhook — number-level Messaging configuration reads "Set up", webhook URL blank. Intentional; nothing consumes inbound SMS |
-| Sends SMS as `BitePerk` | ⚠️ Sender ID `BUce1fa0ad…` still in review; one-way only when approved |
+| Sends SMS as `BitePerk` | ⚠️ **ACMA-approved, not wired.** Needs the account-wide alphanumeric toggle on, `BitePerk` added as a sender on `voxtable-prod-notifications`, and `notificationWorker` repointed. One-way only — no copy may invite a reply. Runbook §6 |
 | Survives a Retell outage | ❌ **No Disaster Recovery URL** (verified blank) — callers would get dead air |
 
 **This number is not live yet.** Twilio-side wiring is done; Retell-side and database-side are not.
@@ -112,7 +112,7 @@ route around. It becomes BitePerk's production line — and Natalia's line — a
 | Regulatory bundle | `BUd5fe40c147a21757f04616a1180cdd89` (approved 13 Aug, ~1 day from documents) |
 | Compliance address | `AD0b3b71dc0a972ac2e678cb633e3a2c3d` |
 | Customer profile | **None** — staging has never had one |
-| Alphanumeric sender ID | **None** — see the warning below |
+| Alphanumeric sender ID | **None.** `BitePerk` is approved against the *production* Account SID only |
 
 Same **Twilio** wiring as production, verified item-for-item: origination
 `sip:sip.retellai.com;transport=tls` (pri 10, wt 10, enabled), Traffic Status **Voice enabled** and
@@ -191,11 +191,15 @@ not exist" from a US1 response is making the 19 Aug mistake again.
 
 - **Never customer-facing.** Internal end-to-end testing only. It must not appear in marketing
   copy, a customer email, a `restaurants` row on production, or any directory.
-- ⚠️ **SMS from staging is stamped `Unverified` on the handset.** The `BitePerk` alphanumeric
-  sender ID is registered against the **production** Account SID only, and there is no clone API
-  for sender IDs. Adding staging means asking Twilio support to add
-  `AC8116857da2064ef3251533f3ade56f32` to ticket `28926493`. Until then, any branded-SMS test on
-  staging measures the wrong thing.
+- ⚠️ **Branded SMS cannot be proven from staging — and the failure is silent, not stamped.**
+  Tested 18 Aug 2026: with `BitePerk` sitting in the staging pool, the send delivered **from
+  `+61 468 203 234`** with no `Unverified` mark and no error. Do not look for a stamp as the
+  signal. ACMA approval did not change this: `BitePerk` was approved on 18 Aug 2026 against the
+  **production** Account SID only, and
+  there is no clone API for sender IDs. Adding staging means asking Twilio support to add
+  `AC8116857da2064ef3251533f3ade56f32` to ticket `28926493` — now a support round-trip rather than
+  a free amendment during review. **Branded-SMS testing therefore happens on production**, not
+  here; a staging send measures the wrong account.
 - Staging bills separately from production. Balance was **$11.75 on 13 Aug 2026** — watch it,
   because a zero balance suspends the account and every test fails with `20005` for reasons that
   look like a code bug. Production sat at the same $11.75; **neither account has auto-recharge**,
@@ -259,7 +263,7 @@ Both numbers BitePerk owns. Nothing else belongs in this table.
 | Monthly cost | $8.25 | $8.25 |
 | Inbound voice | ✅ Twilio side only — no Retell agent bound | ✅ Twilio side only |
 | Outbound voice | ❌ deliberate — no trunk termination configured | ❌ |
-| Outbound SMS | ✅ enabled, **never sent** | ✅ enabled, **never sent** + `Unverified` |
+| Outbound SMS | ✅ enabled, **never sent** | ✅ **proven 18 Aug 2026** — delivered from the number; branded sending is not possible here (§8 item 9a) |
 | Inbound SMS | ❌ no webhook (deliberate — nothing consumes it) | ❌ no webhook (deliberate) |
 | Bella answers | ❌ not yet | ❌ not yet |
 | Voice region | AU1 | AU1 |
@@ -386,7 +390,8 @@ before Natalia's is touched, so a failure delays the restoration rather than dee
 
 | # | Action | Blocks | Owner |
 |---|---|---|---|
-| 9 | Add staging's Account SID to sender-ID ticket `28926493` | Branded-SMS testing on staging | Sam |
+| 9 | **Wire the approved `BitePerk` sender ID** — ✅ ACMA approved it 18 Aug 2026, but nothing sends as it yet. ✅ **The code half shipped 18 Aug 2026** — `notificationWorker` now sends via `messagingServiceSid` (a bare alphanumeric `from` has no fallback and fails outright where unsupported), verified by `npm run smoke:sms-sender`. **What remains is console-only:** the account-wide *Alphanumeric Sender ID* toggle ON, AU enabled in Geo Permissions, and `BitePerk` added as a sender on `voxtable-prod-notifications` keeping the number as fallback. Runbook §6 | Branded SMS. Sends today still show the number, which is correct but unbranded | Sam |
+| 9a | Add staging's Account SID to sender-ID ticket `28926493` — now a support round-trip, not a free amendment during review. **Until then branded-SMS testing must happen on production** — a staging send silently delivers from the number instead (proven 18 Aug 2026: no `Unverified` stamp, no error, indistinguishable from success) | Branded-SMS testing on staging (and leg 6 of the call battery) | Sam |
 | 10 | Fix the recording exposure ([#173](https://github.com/biteperk/voxtable/issues/173)) — cheapest **before** real calls exist | Nothing today; every real call once Natalia's is live inherits it | — |
 | 11 | Settle `(02) 7501 1140` in brand collateral **with Algorythmos** | A brand question, not a telephony one | Sam |
 | 12 | Decide Direct Customer vs ISV before the first auto-provisioned venue | Per-venue provisioning at scale | Sam |
@@ -399,6 +404,7 @@ before Natalia's is touched, so a failure delays the restoration rather than dee
 | Date | Change |
 |---|---|
 | 13 Aug 2026 | File created. Production `+61 468 202 846` and staging `+61 468 203 234` bought and wired (trunk + messaging service, AU1 voice / US1 messaging). Confirmed the live Bella number sits on the **Algorythmos** account, not either BitePerk account, and that account is suspended for funds. |
+| 18 Aug 2026 | **ACMA approved branded SMS.** Both decisions granted 16:00 AEST — participation by Biteperk Pty Ltd, and registration of the sender ID **`BitePerk`** (submitted by Twilio Inc.; both automated; s558(1) appeal window to ~15 Sep 2026). Evidence in `asic/04-correspondence/2026-08-18_ACMA_SenderID_*.pdf`. ⚠️ Approval alone changes nothing on a handset — the sender ID is not attached to the Messaging Service and `notificationWorker` still sends from the number. Staging remains out of scope (production Account SID only). |
 | 13 Aug 2026 | **Full console audit of both numbers.** Corrected: both show Traffic Status **Messaging enabled** and an **Approved** AU Mobile compliance registration — the earlier "pending registration" note was wrong. Confirmed origination URI, region split, messaging-service binding on both. Recorded trunk hardening state (§3a): Secure Trunking **off** and Disaster Recovery URL **blank** on both. Noted the stale compliance prompts (§3b) are for lost numbers, not ours. |
 | 13 Aug 2026 | **Restructured around ownership.** BitePerk's vendor estate moved to company-owned identities — Twilio under `twilio@biteperk.com.au` (same Account SIDs), Retell under a new account with **Biteperk** and **Staging** workspaces. §1 now separates the two BitePerk platform numbers from the marketing and Algorythmos lines, which are *not* platform infrastructure. §4 rewritten as the legacy/handover entry: Natalia's is migrating to `+61 468 202 846`, and until then the old account must stay **funded** because it is the rollback, and the legacy Retell workspace must stay **alive** because it hosts the recordings the dashboard plays back. §5 corrected — SMS is *enabled but never sent* on both numbers, not "pending". §6 gained the deprecated `inbound_agent_id` field, the dual-binding fallback trap, and the residual Algorythmos dependencies (agents still call back to `vocotable.algorythmos.com.au`; `SYNTH_EMAIL_DOMAIN` is permanent). §8 re-ordered into a gated sequence. |
 | 13 Aug 2026 | **Algorythmos removed from scope.** It is a separate company; its number, Twilio account and Retell workspace are no longer tracked here. §1 states plainly that BitePerk owns two numbers and everything else is out of scope; §4 is now a boundary note rather than an inventory entry; §5 and §8 cover only BitePerk's estate. The recordings that appeared to block separation were **test calls, not customer audio**, so no export is needed and the legacy workspace carries no obligation — the exposure mechanism behind them is still tracked in [#173](https://github.com/biteperk/voxtable/issues/173) because it will apply to real calls. **There is no rollback to the old number**, so the cutover now proves the new one against a throwaway restaurant row first. |

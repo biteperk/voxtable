@@ -39,7 +39,8 @@ across accounts**.
 
 | Account | SID | Customer Profile | AU Mobile Bundle | Sender ID |
 |---|---|---|---|---|
-| **Biteperk-production** | `ACd423bd09e9649e552a0b6d19a9eed338` | `BU975db7eebfb0b5525d6762f3d77e2087` (approved) | `BU8cb2353e1b34a75c6ed0cec20e163356` (approved 13 Aug, instant) | `BUce1fa0ad6053c4444f3faca4c7957f25` — **in review** |
+| **Biteperk-production** | `ACd423bd09e9649e552a0b6d19a9eed338` | `BU975db7eebfb0b5525d6762f3d77e2087` (approved) | `BU8cb2353e1b34a75c6ed0cec20e163356` (approved 13 Aug, instant) | `BUce1fa0ad6053c4444f3faca4c7957f25` — **✅ ACMA-approved 18 Aug 2026** (not yet attached to the Messaging Service) |
+| **Biteperk-staging** | `AC8116857da2064ef3251533f3ade56f32` | none | `BUd5fe40c147a21757f04616a1180cdd89` (approved 13 Aug, ~1 day) | **none — open action** |
 
 **Numbers owned (production):** **`+61 468 202 846`** — AU Mobile, Voice + SMS, $8.25/mo,
 purchased 13 Aug 2026 against bundle `BU8cb2353e…` and address `AD3ea533a6a658f822c84cb37ebd88233e`.
@@ -79,11 +80,14 @@ termination URI unless outbound genuinely ships.
 
 - **Retell side is untouched** — the number is not imported into Retell and no agent is bound.
 - **No `restaurants` row** binds it, so `getRestaurantIdByDialedNumber` will not resolve it.
-- **Messaging shows "Messaging disabled — Submit registration"** (AU messaging registration), and
-  the `BitePerk` alphanumeric sender ID is still in review on ticket 28926493. Voice shows
-  **"Voice enabled"**, confirming the trunk wiring took effect.
+- ~~Messaging shows "Messaging disabled — Submit registration"~~ **Corrected 13 Aug 2026 by console
+  audit:** Traffic Status reads **"Messaging enabled"** *and* **"Voice enabled"**, and the number's
+  compliance registration shows *Australia: Mobile – BitePerk Pty Ltd — **Approved***. Outbound SMS
+  from the number is available; it has simply never been sent.
+- **The `BitePerk` alphanumeric sender ID is ✅ ACMA-approved (18 Aug 2026)** — but **not attached to
+  `voxtable-prod-notifications`**, so sends still show the number. Wiring steps:
+  [`acma-sender-id-registration.md`](acma-sender-id-registration.md) §6.
 - Emergency Address Status is **Unregistered**.
-| **Biteperk-staging** | `AC8116857da2064ef3251533f3ade56f32` | none | `BUd5fe40c147a21757f04616a1180cdd89` (approved 13 Aug, ~1 day) | **none — open action** |
 
 ### Staging voice + messaging wiring (built 13 Aug 2026)
 
@@ -102,8 +106,10 @@ Region split identical to production: **AU1 Voice / US1 Messaging**. Traffic Sta
 **Purpose:** internal end-to-end testing only. Never customer-facing.
 
 **Still unwired:** no Retell agent, no staging `restaurants` row. Note also that the `BitePerk`
-alphanumeric sender ID is registered against **production only** — any SMS sent from staging is
-stamped `Unverified` on the handset regardless of that approval.
+alphanumeric sender ID is registered against **production only** — so staging cannot produce a
+branded send regardless of that approval. ⚠️ **The failure is silent:** tested 18 Aug 2026, a
+staging send with `BitePerk` in the pool delivered from `+61 468 203 234` with no `Unverified`
+stamp and no error. See [`acma-sender-id-registration.md`](acma-sender-id-registration.md) §5.
 
 Both are sibling accounts under one Organization. **Neither is a subaccount**
 (`Parent Account SID: N/A`) — this matters, see §6.

@@ -89,8 +89,16 @@ test("SMS copy: venue first, total, url, expiry, and no invitation to reply", ()
   assert.equal(new URL(link).pathname, "/c/pay/cs_test_abc");
   assert.ok(sms.includes("45 minutes"));
   assert.ok(sms.includes("Do not reply"));
-  // Alphanumeric sender IDs are one-way; nothing may invite a response.
-  assert.ok(!/reply (yes|now|to confirm)/i.test(sms));
+  // Alphanumeric sender IDs are one-way; nothing may invite a response. The
+  // `BitePerk` sender ID is ACMA-approved as of 18 Aug 2026, so this is now a
+  // live constraint rather than an anticipated one. Strip the one sanctioned
+  // mention of "reply" first, then assert nothing else asks for one — the
+  // earlier /reply (yes|now|to confirm)/ form would have waved through
+  // "reply STOP to opt out" or "text us back".
+  const withoutDisclaimer = sms.replace("Do not reply to this message.", "");
+  assert.ok(!/\b(reply|respond|text (us|back)|sms us)\b/i.test(withoutDisclaimer));
+  // STOP can never be processed on a one-way sender, so offering it is a lie.
+  assert.ok(!/\bSTOP\b/.test(sms));
 });
 
 // --- transition table -------------------------------------------------------
