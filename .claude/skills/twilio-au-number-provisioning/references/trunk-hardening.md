@@ -6,6 +6,18 @@ script as well as console.
 
 ## General tab
 
+### ⚠️ MEASURED CAVEAT (20 Aug 2026) — TLS origination is under investigation
+
+Both AU1 trunks built to the recipe below (`transport=tls` + Secure Trunking) drop
+**~a third of inbound calls at a fixed 7,593–7,653 ms**, from their first day, on two
+separate accounts. The only trunk that has never done this is US1 with
+`sip:sip.retellai.com;transport=tcp` and `secure=false` (25 calls, zero drops).
+
+Transport and region are still confounded; the isolating experiment and full evidence are in
+[`deploy/runbooks/incident-7600ms-call-drops.md`](../../../deploy/runbooks/incident-7600ms-call-drops.md).
+**Until that resolves, do not treat TLS origination as proven-good for a new AU1 venue
+trunk** — build it, then call it six times before handing the number to anyone.
+
 ### Secure Trunking — ENABLE [`Secure`]
 
 TLS for SIP signalling, SRTP for media. Twilio's own security guidance recommends it wherever

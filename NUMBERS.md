@@ -9,6 +9,10 @@
 > ⚠️ Its greeting carries **no AI/recording disclosure** — Sam's explicit decision; restore
 > it before the number is publicised (see `legal-brief-call-recording.md`).
 > Snapshots: `deploy/retell-snapshots/20260819-prod-mazcina-{pre,post}/`.
+> 🔴 **Do NOT publicise this number yet.** Its first call dropped at 7,595 ms — the same
+> fixed-timer fault that affects the staging line, present on both AU1 trunks since their
+> first day and killing roughly a third of calls. Evidence and the isolating experiment:
+> [`deploy/runbooks/incident-7600ms-call-drops.md`](deploy/runbooks/incident-7600ms-call-drops.md).
 
 
 > ☎️ **Every phone number BitePerk owns, what it can actually do, and what is still

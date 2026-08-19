@@ -1,128 +1,154 @@
-# Incident: staging calls dropping at ~7.6 seconds — evidence log
+# Incident: calls dropping at a fixed ~7.6 seconds
 
-**Status: OPEN, cause narrowed to the caller/carrier side of Twilio. 19 Aug 2026.**
+**Status: OPEN — narrowed to the SIP trunk. One experiment away from a verdict. 20 Aug 2026.**
 
-## Symptom
+⚠️ **This file previously concluded the caller's handset/carrier was the prime suspect and
+that "calling from a different phone is the decider". That conclusion was WRONG** and is
+retracted below. The evidence that overturned it is in §2 and §3.
 
-Calls to the staging line `+61 468 203 234` intermittently die at a machine-precise
-**7,594–7,648 ms** media duration (one outlier at 8,532 ms), mid-caller-sentence. The agent
-answers and greets normally first. Roughly half of the day's calls were affected; the other
-half ran 37–166 s without issue, interleaved:
+## 1. Symptom
 
-| Time (AEST) | Result | Duration |
+Calls die at a machine-precise **7,593–7,653 ms** (one outlier 8,532 ms), on both AU1 mobile
+numbers, across two separate Twilio accounts:
+
+| Number | Trunk | Environment |
 |---|---|---|
-| 11:36, 11:44 | DEAD | 7.6 s |
-| 12:18 | alive | 59 s |
-| 12:53 | DEAD | 7.6 s |
-| 12:59–13:09 (4 calls) | alive | 37–70 s |
-| 13:34 | DEAD | 8.5 s |
-| 13:40 | alive | 71 s |
-| 14:32 | DEAD | 7.6 s |
-| 14:45 | alive | 166 s |
-| 15:04, 15:05 | DEAD | 7.6 s |
+| `+61 468 203 234` | `voxtable-staging-au1` (`AC8116857da…`) | staging |
+| `+61 468 202 846` | `voxtable-prod-au1` (`ACd423bd09…`) | production — **dropped its very first call**, 7,595 ms, 20 Aug |
 
-⚠️ **The morning "greeting died at ~7.6 s twice" incident (11:36, 11:44) was this same
-fault.** It was attributed to `ambient_sound` transcription/self-interruption at the time;
-ambient sound was removed at ~12:10 and the 7.6 s deaths continued (12:53, 13:34, 14:32,
-15:04, 15:05). The ambient-sound removal stands on its own merits, but it was not the fix
-for this.
+Twilio records them as `completed`; Retell records `user_hangup` (i.e. it received a BYE).
+Both vendors point at the other, which is itself the finding: the BYE originates upstream of
+Retell.
 
-## What each side reports
+## 2. It is a fixed timer, independent of the conversation
 
-- **Twilio (AU1 regional API — `api.sydney.au1.twilio.com`; the US1 API shows trunking
-  calls not at all)**: `status: completed`, 8 s, direction `trunking-originating`. A clean,
-  normally-terminated call. No debugger alerts, no notifications on the call.
-- **Retell**: `disconnection_reason: user_hangup` — it received a BYE. Its per-call debug
-  log shows a healthy setup (inbound webhook resolved Mazcina, variables injected) and then
-  just "Ending call" with no error.
+On **13 Aug** staging still ran the long 16-second disclosure greeting and dropped at
+**7,611 ms** — mid-greeting, before the caller had spoken. On **19–20 Aug**, with a
+4-second greeting and the caller mid-sentence, drops land at 7,593–7,653 ms.
 
-Both ends say the other side ended it → the BYE originated **upstream of Twilio**, on the
-PSTN/caller side.
+Same instant, completely different call content. That eliminates the agent, the prompt, the
+caller's behaviour, and any "she talked too long" theory — and no human hangs up inside a
+60 ms band, eleven times.
 
-## Repro under live watch, 15:29 AEST
+## 3. It has been present since these trunks' first day
 
-With a full pre-call audit green minutes earlier (account active/funded, zero alerts, trunk
-healthy in AU1, Retell webhook mode resolving in 454 ms, agent config verified), Sam's 15:29
-call died at **7,600 ms**, `user_hangup`, same handset. Eight dead calls now sit in a 54 ms
-duration window (7,594–7,648 ms). Retell workspace concurrency was 0-of-20 at the time —
-no phantom calls holding slots.
+Staging, by day. **Trunk configuration unchanged since 13 Aug:**
 
-## Ruled out (each verified, not assumed)
+| Day | Calls | 7.6 s drops |
+|---|---|---|
+| 13 Aug (first day of the number) | 5 | 1 |
+| 16 Aug | 3 | 1 |
+| 17 Aug | 3 | 0 |
+| 19 Aug | 23 | 10 |
 
-- **Twilio trunk config** — `TKdebe2aa1…` is healthy *in the AU1 API view*: origination
-  `sip:sip.retellai.com;transport=tls` enabled, number attached, transfer disabled, CNAM
-  off. (⚠️ Query AU1 via `trunking.sydney.au1.twilio.com` with the AU1 API key from Secret
-  Manager — the US1 endpoints 404 on AU1 trunks, which mid-investigation looked exactly
-  like a deleted trunk.)
-- **Secure Trunking toggle** — flipped false→true at 13:49:06 AEST (audit event; the AU1
-  API key SK6c56b892… was minted 13:47 and stored in Secret Manager 13:49:27 — automation
-  fingerprint, matches the cold-start background task's window and the provisioning
-  skill's hardening step). Not the cause: failures predate it (11:36) and the longest
-  success (14:45, 166 s) postdates it.
-- **Retell agent/config changes** — failures bracket every config change made today
-  (hours FAQ, prompt rewrite, greeting, expressive mode on AND off).
-- **A bad Retell media node** — `lk-real-ip` on dead calls (.121/.122/.123) overlaps
-  completely with alive calls.
-- **Cloud Run cold start** — the agent answered and greeted on every dead call; the
-  inbound webhook completed in ~350 ms on the 15:05 dead call.
-- **Twilio account health** — active, $11.55 balance, no alerts.
-- **Retell concurrency** — 0 of 20 in use at repro time; no stuck ongoing calls.
-- **Retell number binding** — webhook mode (`inbound_webhook_url` → staging API), no static
-  `inbound_agent_id`; resolution round-trip 454 ms at repro time.
+19 Aug only *looked* like an onset because 23 calls were made that day. The real rate is
+roughly **a third of all calls, from the beginning**. Nothing "broke" on 19 Aug, and no
+config change of ours caused it.
 
-## What's left (in probability order)
+## 4. The trunk diff — every field
 
-1. **The caller's handset/carrier path.** Every observed call today — dead and alive — is
-   from the same handset (+61 450 011 1xx). A VoLTE/WiFi-calling handover or carrier
-   answer-supervision fault can produce fixed-timer teardowns that Twilio sees as a normal
-   remote BYE.
-2. **Twilio AU1 ↔ carrier interop** — invisible to us; only Twilio can pull the SIP/Q.850
-   release cause for the dead legs.
+The one trunk that has never dropped a call is `algorythmos` (US1), which carried the pilot
+line `+61 2 7501 1140`: **25 calls, zero drops**, durations 5 s–232 s.
 
-## New evidence, 16:02–16:30 AEST
+| Field | WORKING `algorythmos` | BOTH BROKEN trunks |
+|---|---|---|
+| **origination transport** | **`tcp`** | **`tls`** |
+| **region** | **US1** | **AU1** |
+| `secure` | false | staging false until 13:49 on 19 Aug, then true |
+| `domain_name` | `algorithmos.pstn.twilio.com` | null |
+| `auth_type` | CREDENTIAL_LIST | none |
+| cnam · symmetric_rtp · transfer · recording | — | identical |
 
-- Two more visible-number calls from the usual handset died back-to-back at 7,602 ms and
-  7,653 ms (16:02, 16:03). **Ten dead calls total**, all from +61 450 011 140 with caller ID
-  presented, all in a 60 ms band.
-- Sam then called **with caller ID withheld (CLIR / "private number") from the same handset:
-  the call ran 143 s and completed cleanly** (16:27, `call_751a2518…`) — booking made,
-  agent-side hangup.
-- ~~One data point, but a sharp one: same phone, same carrier, only the presentation
-  changed…~~ **RETRACTED 16:46**: a second CLIR call from the same handset died at
-  7,593 ms. Caller-ID presentation is NOT the discriminator — the earlier CLIR success was
-  the ~50% coin flip. Eleven dead calls now (7,593–7,653 ms band), all from the one
-  subscriber, with and without caller ID.
-- The different-phone test is STILL the decider and still outstanding. A synthetic
-  alternative that needs no second handset: a Twilio REST-API outbound call from the staging
-  number to itself (`From`/`To` both +61 468 203 234, TwiML `<Pause>`) — a Twilio-originated
-  caller on a completely different ingress path than a mobile. If those also die at ~7.6 s,
-  the fault is on the inbound/Twilio side and production is exposed; if they never die
-  across several attempts, the caller's mobile path is implicated.
+**Ruled out from this table:** `secure` (staging dropped calls for six days while it was
+false), and `domain_name`/`auth_type` (both termination-only, i.e. outbound — irrelevant to
+an inbound call).
 
-## Next actions
+**Surviving candidates: transport (TLS vs TCP) and region (AU1 vs US1).** They are
+confounded in the existing data.
 
-1. **Discriminating test (decides between 1 and 2, five minutes):** call the staging line
-   several times from a *different* phone on a different carrier. Also worth one test from
-   the usual handset with WiFi calling disabled.
-   - Other phone never drops → handset/carrier path; production exposure low.
-   - Other phone also drops at ~7.6 s → Twilio interop; production (+61 468 202 846, same
-     AU1-trunk shape) IS exposed; escalate the ticket below immediately.
-2. **Twilio support ticket** (draft below) — they can read the Q.850 release cause on the
-   dead legs regardless of which way the test goes.
-3. Regardless of this incident: the trunk still has **no Disaster Recovery URL** (known
-   outstanding gap — callers get dead air if Retell is unreachable).
+⚠️ **Honest caveat on the pilot comparison:** the pilot line's most recent call was
+**11 Aug**, two days before the staging number existed, so "different trunk" is partly
+confounded with "different time period". What survives: its clean record spans three months,
+and at the observed ~35 % failure rate, 25 consecutive clean calls has probability ~0.003 %.
+A purely time-based cause would have had to begin in the 48 hours between 11 and 13 Aug.
+Unlikely — but this is why the next step is an experiment, not an assumption.
 
-## Draft Twilio ticket
+## 5. Also ruled out (each verified, not assumed)
 
-> Subject: Inbound trunking calls to +61468203234 intermittently released at ~7.6 s
-> (account AC8116857da2064ef3251533f3ade56f32, AU1 trunk TKdebe2aa1a4287ca4b2f22da0e9d10ed7)
+- Retell agent/prompt/config — failures bracket every change made on 19 Aug, and predate
+  them all by six days.
+- `ambient_sound` self-interruption — the original 13 Aug theory; ambient was removed on
+  19 Aug and the drops continued unchanged.
+- A bad Retell media node — `lk-real-ip` on dead calls (.120–.123) overlaps completely with
+  healthy calls.
+- Retell concurrency — 0 of 20 in use at a repro.
+- Caller ID presentation — a withheld-ID call dropped at 7,593 ms (an earlier "CLIR is
+  protective" clue was retracted the same hour).
+- Twilio account health — both accounts active, funded, zero Monitor alerts.
+- Cloud Run cold start / backend — the agent answers and greets on every dead call, and
+  production (a different backend entirely, on the VM) drops identically.
+
+## 6. The experiment — one variable, staging, reversible
+
+Align staging's trunk with the only configuration that has never dropped a call:
+
+```bash
+# 1. Secure Trunking OFF first — it REQUIRES TLS and rejects non-encrypted calls,
+#    so changing transport underneath it would break the line instead of testing it.
+curl -u "$AU1_KEY_SID:$AU1_KEY_SECRET" -X POST \
+  "https://trunking.sydney.au1.twilio.com/v1/Trunks/TKdebe2aa1a4287ca4b2f22da0e9d10ed7" \
+  --data-urlencode "Secure=false"
+
+# 2. Origination transport TLS -> TCP (everything else byte-identical)
+curl -u "$AU1_KEY_SID:$AU1_KEY_SECRET" -X POST \
+  "https://trunking.sydney.au1.twilio.com/v1/Trunks/TKdebe2aa1a4287ca4b2f22da0e9d10ed7/OriginationUrls/OU23100ba01330a692af3b64e244277847" \
+  --data-urlencode "SipUrl=sip:sip.retellai.com;transport=tcp"
+```
+
+Keys: `voxtable-stg-twilio-au1-key-{sid,secret}` in Secret Manager, project
+`bp-voxtable-stg`. ⚠️ Use the **AU1 host** — `trunking.twilio.com` 404s on AU1 trunks and
+looks exactly like a deleted trunk.
+
+Then place **6 calls** to `+61 468 203 234` and run
+`.claude/skills/retell-agent-quality/scripts/latency-report.mjs 8`:
+
+- **Zero drops in 6 calls** → transport confirmed (~93 % confidence at a 35 % failure rate).
+  Repeat on `voxtable-prod-au1` (Twilio console — no BitePerk-production API credentials
+  exist outside it).
+- **Any 7.6 s drop** → transport exonerated; **AU1 is the remaining variable**, and a
+  trunk's region cannot be changed after creation, so testing it means building a US1 trunk
+  and re-attaching the number. Bring that back as its own decision.
+
+Rollback: `Secure=true` and `transport=tls` — the values recorded in §4.
+
+## 7. The trade-off
+
+TCP sends SIP **signalling** unencrypted between Twilio and Retell; Secure Trunking off also
+drops SRTP on the media leg. Weighed against: production has run exactly this posture for
+months (the pilot line is `secure=false` + TCP), Retell is US-based so audio leaves Australia
+either way, and the alternative is a restaurant line that drops a third of its calls. If the
+experiment proves transport, the right end state is still TLS that works — so file the ticket
+too.
+
+## 8. Twilio ticket (needs a human on the console)
+
+> Subject: Inbound trunk calls released at a fixed ~7.6 s on AU1 trunks (accounts
+> AC8116857da2064ef3251533f3ade56f32 and ACd423bd09e9649e552a0b6d19a9eed338)
 >
-> Roughly half of inbound calls to +61468203234 are being released ~7.6 s after setup while
-> the caller is mid-sentence. Your Calls API records them as `completed` (8 s); our SIP
-> endpoint (Retell) receives a BYE. Interleaved calls from the same caller minutes apart
-> run for minutes without issue, so our origination endpoint is reachable and answering.
-> Example dead call SIDs (19 Aug 2026, AEST): CA48c4ea0e17c20dbfc38f2830d19d5195 (15:05),
-> CA6c9f06c2efefa0b56965ddfd23db0904 (15:04), CAf47e12f94dcbcc2e937d867f14fd1c4e (14:32).
-> Example healthy call for comparison: CAa5e3f887956dbdf4bb930da16fdd5714 (14:45, 168 s).
-> Please pull the SIP traces / Q.850 release cause for the dead legs and advise which side
-> initiated the release and why.
+> Roughly a third of inbound calls to +61468203234 and +61468202846 are released
+> 7,593–7,653 ms after setup, regardless of call content — we have drops mid-greeting and
+> drops mid-caller-sentence at the same instant. Your Calls API records them `completed`;
+> our SIP endpoint (Retell) receives a BYE. Present since each trunk's first day, on two
+> separate accounts built to the same recipe (AU1, origination
+> `sip:sip.retellai.com;transport=tls`). A US1 trunk with `transport=tcp` on a third account
+> has 25 calls and zero such drops.
+> Dead calls: CA0302138db8f3cfe3af2c0735a581f766 (20 Aug, prod),
+> CA48c4ea0e17c20dbfc38f2830d19d5195, CA6c9f06c2efefa0b56965ddfd23db0904 (19 Aug, staging).
+> Healthy control: CAa5e3f887956dbdf4bb930da16fdd5714.
+> Please provide the Q.850 release cause and which side initiated BYE, and advise whether
+> AU1 + TLS origination to an out-of-region SIP endpoint is expected to behave this way.
+
+## 9. Related open gap
+
+Neither AU1 trunk has a **Disaster Recovery URL**, so a Retell outage gives callers dead air.
+Independent of this incident, still outstanding.
