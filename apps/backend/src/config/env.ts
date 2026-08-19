@@ -154,6 +154,10 @@ const envSchema = z
   // in production when CALCOM_SYNC_ENABLED=true.
   CALCOM_SYNC_ENABLED: boolFlag(),
   CALCOM_API_KEY: z.string().optional(),
+  // Dev/local fallback ONLY. The authoritative value is per-venue
+  // (restaurants.calcom_event_type_id, migration 035) because a single global
+  // event type sends every venue's bookings to one venue's public calendar.
+  // The production superRefine below refuses to boot if this is set.
   CALCOM_EVENT_TYPE_ID: blankAsUnset(z.coerce.number().int().positive().optional()),
   CALCOM_BASE_URL: z.string().url().default("https://api.cal.com/v2"),
   CALCOM_WEBHOOK_SECRET: z.string().optional(),
@@ -470,14 +474,32 @@ const envSchema = z
     if (value.CALCOM_SYNC_ENABLED) {
       requireInProd("CALCOM_API_KEY", "CALCOM_API_KEY is required when CALCOM_SYNC_ENABLED=true.");
       requireInProd(
-        "CALCOM_EVENT_TYPE_ID",
-        "CALCOM_EVENT_TYPE_ID is required when CALCOM_SYNC_ENABLED=true."
-      );
-      requireInProd(
         "CALCOM_WEBHOOK_SECRET",
         "CALCOM_WEBHOOK_SECRET is required when CALCOM_SYNC_ENABLED=true " +
           "(used to verify Cal.com webhook HMAC signatures)."
       );
+      // CALCOM_EVENT_TYPE_ID is deliberately NOT required, for exactly the
+      // reason RETELL_AGENT_ID and TWILIO_PHONE_NUMBER are not (see above).
+      // Migration 035 moved it to restaurants.calcom_event_type_id, so it is
+      // per-restaurant DATA, not deployment config. Demanding it here would
+      // mean a deployment could only boot once someone invented a fake global
+      // value — and that fake value then becomes the fallback that pushes every
+      // venue's bookings onto one venue's public calendar.
+      //
+      // The assertion is inverted instead: in production the only correct
+      // number of global event types is zero. This gates config rather than
+      // data, so it is always satisfiable.
+      if (value.CALCOM_EVENT_TYPE_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CALCOM_EVENT_TYPE_ID"],
+          message:
+            "CALCOM_EVENT_TYPE_ID must NOT be set in production. Cal.com event " +
+            "types are per-venue (restaurants.calcom_event_type_id, migration " +
+            "035); a global value would route every venue's bookings to one " +
+            "venue's calendar. Unset it and bind each venue via /api/admin."
+        });
+      }
     }
 
     // Stripe billing — only enforce credential presence when the flag is on,

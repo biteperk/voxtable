@@ -213,6 +213,16 @@ export interface CalcomRequestOptions {
    * Idempotency-Key header per RFC draft.
    */
   idempotencyKey?: string;
+  /**
+   * Override the `cal-api-version` header for a single call.
+   *
+   * Cal.com versions PER ENDPOINT, not per API: bookings are pinned below at
+   * 2024-08-13, but /event-types is documented at 2024-06-14 and sending the
+   * bookings version there is not guaranteed to resolve. A blanket bump of the
+   * default would break create and cancel, so the override is per-call and the
+   * default stays where every proven call path already is.
+   */
+  apiVersion?: string;
 }
 
 export interface CalcomResponse<T> {
@@ -252,8 +262,9 @@ export async function calcomRequest<T = unknown>(options: CalcomRequestOptions):
     "content-type": "application/json",
     accept: "application/json",
     // Cal.com v2 requires an explicit API version header to avoid silent
-    // breakage when they ship a new default.
-    "cal-api-version": "2024-08-13"
+    // breakage when they ship a new default. Versioned per endpoint — see
+    // CalcomRequestOptions.apiVersion before changing this default.
+    "cal-api-version": options.apiVersion ?? "2024-08-13"
   };
   if (options.idempotencyKey) {
     // Standard Idempotency-Key header — Cal.com returns the same booking on a

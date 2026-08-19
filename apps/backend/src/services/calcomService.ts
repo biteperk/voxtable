@@ -41,7 +41,11 @@ import {
   OutboxExecutorRow,
   setOutboxExecutor
 } from "../workers/calcomOutboxWorker";
-import { getRestaurantTimezone } from "../repositories/restaurants";
+import {
+  getRestaurantCalcomEventTypeId,
+  getRestaurantIdByCalcomEventTypeId,
+  getRestaurantTimezone
+} from "../repositories/restaurants";
 import { utcIsoToZonedWallClock, zonedWallClockToUtcISO } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 import { logger } from "../utils/logger";
@@ -89,6 +93,14 @@ export interface CreatePayloadInput {
   customerEmail?: string | null;
   /** Restaurant tz, e.g. "Australia/Sydney". Resolved by caller. */
   restaurantTimezone: string;
+  /**
+   * The VENUE's Cal.com event type (restaurants.calcom_event_type_id), resolved
+   * by the caller. Passed in rather than read from env here: a single global
+   * event type meant every venue's bookings landed on one venue's public
+   * calendar, which is correct with exactly one venue and a cross-tenant bug
+   * with two.
+   */
+  eventTypeId: number;
 }
 
 /**
@@ -112,7 +124,7 @@ export function buildCreatePayload(input: CreatePayloadInput): Record<string, un
   const suppressEmail = input.reservation.source !== "web";
 
   return {
-    eventTypeId: env.CALCOM_EVENT_TYPE_ID,
+    eventTypeId: input.eventTypeId,
     start: startIso,
     attendee: {
       name: input.customerName,
@@ -248,13 +260,32 @@ async function executeCreate(row: OutboxExecutorRow, db: DbClient): Promise<Outb
     return { outcome: "succeeded" };
   }
 
+  // Belt and braces. The enqueue gate should already have prevented a row
+  // existing for a venue with no Cal.com event type, but a venue can also be
+  // UNBOUND between enqueue and push. Pushing regardless would send
+  // `eventTypeId: undefined`, which JSON.stringify drops, which Cal.com 400s,
+  // which classifies as permanent — so every booking at an unbound venue would
+  // dead-letter, and healthAlerter pages Slack at a dead-letter threshold of
+  // zero. "This venue does not use Cal.com" must not read as an incident.
+  const eventTypeId = await getRestaurantCalcomEventTypeId(reservation.restaurant_id);
+  if (!eventTypeId) {
+    logger.info({
+      evt: "calcom_push_skipped_unbound_venue",
+      op: "create",
+      reservation_id: reservation.id,
+      restaurant_id: reservation.restaurant_id
+    });
+    return { outcome: "succeeded" };
+  }
+
   const restaurantTimezone = await getRestaurantTimezone(reservation.restaurant_id);
   const payload = buildCreatePayload({
     reservation,
     customerName: reservation.customer_name,
     customerPhone: reservation.customer_phone,
     customerEmail: reservation.customer_email,
-    restaurantTimezone
+    restaurantTimezone,
+    eventTypeId
   });
 
   try {
@@ -449,12 +480,29 @@ export function installCalcomExecutor(): void {
  * it rolls back, no orphan push.
  *
  * No-op when `CALCOM_SYNC_ENABLED=false` so PR 1 keeps deploying cleanly.
+ *
+ * Also a no-op when the venue holds no Cal.com event type. That is the
+ * per-venue opt-in, and it has to be checked HERE rather than at push time: an
+ * outbox row for an unbound venue can only ever dead-letter, healthAlerter
+ * pages Slack at a dead-letter threshold of zero, and those `failed_at` rows
+ * are never swept by the cleanup worker — so a venue that simply doesn't use
+ * Cal.com would look like a permanent, growing incident.
+ *
+ * ⚠️ Deliberately asymmetric with cancel/reschedule below, which are NOT gated
+ * this way. They gate on the reservation already holding a Cal.com uid. If
+ * they gated on the venue's binding instead, unbinding a venue — the per-venue
+ * kill switch — would strand every booking already live on Cal.com as an
+ * uncancellable ghost, still holding public availability nobody can release.
+ * Stopping new mirroring and abandoning existing bookings are different things.
  */
 export async function enqueueCreateForReservation(
   reservationId: string,
+  restaurantId: string,
   db: DbClient
 ): Promise<void> {
   if (!env.CALCOM_SYNC_ENABLED) return;
+  const eventTypeId = await getRestaurantCalcomEventTypeId(restaurantId);
+  if (!eventTypeId) return;
   await enqueueOutbox(
     {
       reservationId,
@@ -511,6 +559,102 @@ export async function enqueueRescheduleForReservation(
     },
     db
   );
+}
+
+// --- admin bind verification --------------------------------------------------
+
+export interface CalcomEventTypeVerdict {
+  title: string | null;
+  /** Non-null and > 0 means the event type is configured for seats. */
+  seatsPerTimeSlot: number | null;
+  /** The event type asks the booker how many people — see buildCreatePayload. */
+  hasPartySizeField: boolean;
+  /** Loose name match against the venue, same spirit as verifyAgentForVenue. */
+  matchesVenue: boolean;
+}
+
+/**
+ * Prove a Cal.com event type before storing it on a venue.
+ *
+ * `restaurants.calcom_event_type_id` is a bare integer that decides which venue
+ * an inbound web booking belongs to, so a typo here silently seats one
+ * restaurant's diners at another's tables — the Cal.com-shaped version of the
+ * incident migration 034 was written for.
+ *
+ * Throws CalcomTransientError / CalcomPermanentError; the caller decides how a
+ * 404 versus an outage should be reported.
+ */
+export async function verifyCalcomEventTypeForVenue(
+  eventTypeId: number,
+  venueName: string
+): Promise<CalcomEventTypeVerdict> {
+  let data: unknown;
+  try {
+    const response = await calcomRequest<unknown>({
+      method: "GET",
+      // /event-types is documented at its own API version — the bookings
+      // default would not necessarily resolve here.
+      apiVersion: "2024-06-14",
+      path: `/event-types/${eventTypeId}`
+    });
+    data = response.data;
+  } catch (error) {
+    // A 404 and an outage are both "we could not prove this event type exists",
+    // and neither may be stored — an unverifiable binding is the exact state
+    // this function exists to prevent. Same treatment as verifyAgentForVenue:
+    // one 409, the underlying error to the log (redacted there) and never into
+    // the HTTP response. Without this a Cal.com blip would surface as a 500 and
+    // read as our bug rather than as a binding that was correctly refused.
+    logger.error({
+      evt: "calcom_event_type_verify_failed",
+      event_type_id: eventTypeId,
+      error
+    });
+    throw new AppError(
+      409,
+      "CALCOM_EVENT_TYPE_NOT_FOUND",
+      `Cal.com has no event type ${eventTypeId}, or it could not be reached. ` +
+        `The binding was not saved.`
+    );
+  }
+
+  const record = (data as { data?: Record<string, unknown> })?.data ?? (data as Record<string, unknown>);
+  const title = typeof record?.["title"] === "string" ? (record["title"] as string) : null;
+
+  // Seats has lived at two shapes across versions: a `seats` object and a flat
+  // `seatsPerTimeSlot`. Read both — guessing one would let a seated event type
+  // through the refusal below, which is the whole point of the check.
+  const seatsObject = record?.["seats"] as { seatsPerTimeSlot?: unknown } | undefined;
+  const rawSeats = seatsObject?.seatsPerTimeSlot ?? record?.["seatsPerTimeSlot"];
+  const seatsPerTimeSlot = typeof rawSeats === "number" && rawSeats > 0 ? rawSeats : null;
+
+  const bookingFields = Array.isArray(record?.["bookingFields"])
+    ? (record["bookingFields"] as Array<Record<string, unknown>>)
+    : [];
+  const hasPartySizeField = bookingFields.some((field) => field?.["slug"] === "party-size");
+
+  return {
+    title,
+    seatsPerTimeSlot,
+    hasPartySizeField,
+    matchesVenue: looksLikeSameVenue(title, venueName)
+  };
+}
+
+/**
+ * Loose containment either way, lowercased and stripped of punctuation, so
+ * "Mazcina" matches "Mazcina — Online Bookings" without matching an unrelated
+ * venue. Deliberately permissive: the name check is the overridable one, while
+ * the uniqueness and existence checks are not.
+ */
+function looksLikeSameVenue(title: string | null, venueName: string): boolean {
+  if (!title) return false;
+  const normalise = (value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const a = normalise(title);
+  const b = normalise(venueName);
+  if (!a || !b) return false;
+  return a.includes(b) || b.includes(a);
 }
 
 // --- inbox: HMAC verify + event processing -----------------------------------
@@ -660,8 +804,53 @@ async function handleBookingCreated(
   // stranger's web booking arriving while a voice push was in flight got its
   // uid stamped onto the voice reservation — and the stranger's later
   // cancellation cancelled the voice caller's table.
-  const reconciled = await reconcileMirroredBooking(data.metadata, uid);
+  //
+  // Resolved here rather than at the web-booking path below so the reconciler
+  // can cross-check it. Note it is NOT fail-closed at this point: our own echo
+  // must still reconcile even if the venue has since been unbound from Cal.com,
+  // otherwise unbinding a venue would make us cancel our own voice bookings.
+  // Fail-closed applies only to the genuine web-booking path further down.
+  const resolvedRestaurantId =
+    (await getRestaurantIdByCalcomEventTypeId(data.eventTypeId)) ??
+    (env.APP_ENV !== "production" ? env.DEFAULT_RESTAURANT_ID : null);
+
+  const reconciled = await reconcileMirroredBooking(data.metadata, uid, resolvedRestaurantId);
   if (reconciled) return;
+
+  // Resolve the venue from the event type the webhook carries, the way
+  // twilioService resolves one from the dialed number. This block used to
+  // hardcode env.DEFAULT_RESTAURANT_ID with a comment admitting it would become
+  // a cross-tenant bug the moment Cal.com config went per-restaurant. Migration
+  // 035 is that moment.
+  //
+  // Fails closed in production, matching resolveAgentId in retellService: an
+  // unresolved venue must never fall back to a default. "Fail closed" means
+  // something different here than on a phone call, though — a caller who
+  // reaches silence simply rings back, whereas this guest is already holding a
+  // Cal.com confirmation email. Dropping the booking quietly sends them to a
+  // restaurant that has never heard of them, so we cancel it back on Cal.com
+  // and let them find out now rather than at the door.
+  if (!resolvedRestaurantId) {
+    logger.error({
+      evt: "calcom_inbox_unmapped_event_type",
+      uid,
+      event_type_id: data.eventTypeId ?? null,
+      reason: data.eventTypeId
+        ? "no restaurant holds this Cal.com event type"
+        : "webhook payload carried no eventTypeId"
+    });
+    await cancelOnCalcomBestEffort(
+      uid,
+      "VoxTable could not match this booking to a venue. Please call the restaurant directly."
+    );
+    // Throwing marks the inbox row failed, which is the durable evidence an
+    // operator needs to find this later. It is deliberately not swallowed:
+    // an unmapped event type is a misconfiguration someone must fix, not a
+    // transient blip.
+    throw new Error(
+      `Cal.com event type ${data.eventTypeId ?? "(absent)"} is not bound to any restaurant`
+    );
+  }
 
   // Genuine web-channel booking. Funnel through bookingService so capacity
   // rules and double-booking guards still run. Defensive narrowing on the
@@ -724,16 +913,7 @@ async function handleBookingCreated(
     });
   }
 
-  // NOT the same class of bug as the Twilio call-log leak that was fixed
-  // alongside this. Cal.com is configured with a SINGLE global
-  // CALCOM_EVENT_TYPE_ID and there is no per-restaurant Cal.com config in the
-  // schema, so today every inbound web booking genuinely does belong to the
-  // default restaurant — there is nothing to resolve against.
-  //
-  // This becomes a real cross-tenant bug the moment Cal.com config goes
-  // per-restaurant. At that point resolve the tenant from the event type on the
-  // webhook payload, the way twilioService resolves from the dialed number.
-  const restaurantTimezone = await getRestaurantTimezone(env.DEFAULT_RESTAURANT_ID);
+  const restaurantTimezone = await getRestaurantTimezone(resolvedRestaurantId);
   const { date, time } = utcIsoToZonedWallClock(startTime, restaurantTimezone);
 
   // Booking goes through. We don't refuse it — the customer already has a
@@ -750,7 +930,7 @@ async function handleBookingCreated(
     // email-as-phone both violates the review-flag design and can collide on
     // the customers (restaurant_id, phone) unique key across guests).
     const booking = await createBooking({
-      restaurantId: env.DEFAULT_RESTAURANT_ID,
+      restaurantId: resolvedRestaurantId,
       customerName,
       customerPhone: normalizedPhone ?? `web:${uid}`,
       allowUnparseablePhone: !normalizedPhone,
@@ -776,16 +956,32 @@ async function handleBookingCreated(
     // outbox/inbox audit gives ops the info to handle manually).
     const message = (error as Error).message ?? String(error);
     logger.error({ evt: "calcom_inbox_web_booking_rejected", uid, error });
-    try {
-      await calcomRequest({
-        method: "POST",
-        path: `/bookings/${encodeURIComponent(uid)}/cancel`,
-        body: { cancellationReason: `VoxTable rejected: ${message}` }
-      });
-    } catch (cancelError) {
-      logger.error({ evt: "calcom_inbox_undo_cancel_failed", uid, error: cancelError });
-    }
+    await cancelOnCalcomBestEffort(uid, `VoxTable rejected: ${message}`);
     throw error;
+  }
+}
+
+/**
+ * Cancel a booking back on Cal.com, best effort.
+ *
+ * Used on the two paths where we have accepted a webhook but cannot honour the
+ * booking: the venue could not be resolved, and our own capacity check refused
+ * it. In both cases the guest already holds a Cal.com confirmation email, so
+ * leaving the booking standing is worse than failing — they would arrive at a
+ * restaurant with no record of them.
+ *
+ * Never throws. A Cal.com outage here must not mask the original failure, and
+ * the inbox row plus these logs are what an operator works from.
+ */
+async function cancelOnCalcomBestEffort(uid: string, reason: string): Promise<void> {
+  try {
+    await calcomRequest({
+      method: "POST",
+      path: `/bookings/${encodeURIComponent(uid)}/cancel`,
+      body: { cancellationReason: reason }
+    });
+  } catch (cancelError) {
+    logger.error({ evt: "calcom_inbox_undo_cancel_failed", uid, error: cancelError });
   }
 }
 
@@ -827,7 +1023,8 @@ async function handleBookingCancelled(
  */
 export async function reconcileMirroredBooking(
   metadata: Record<string, unknown> | undefined,
-  uid: string
+  uid: string,
+  expectedRestaurantId?: string | null
 ): Promise<boolean> {
   const reservationId =
     metadata && typeof metadata["vocotable_reservation_id"] === "string"
@@ -835,11 +1032,36 @@ export async function reconcileMirroredBooking(
       : null;
   if (!reservationId) return false;
 
-  const result = await pool.query<{ id: string; calcom_booking_uid: string | null }>(
-    "SELECT id, calcom_booking_uid FROM reservations WHERE id = $1",
+  const result = await pool.query<{
+    id: string;
+    restaurant_id: string;
+    calcom_booking_uid: string | null;
+  }>(
+    "SELECT id, restaurant_id, calcom_booking_uid FROM reservations WHERE id = $1",
     [reservationId]
   );
   const row = result.rows[0];
+  if (row && expectedRestaurantId && row.restaurant_id !== expectedRestaurantId) {
+    // Cross-environment tripwire, and the cheapest one available.
+    //
+    // Staging and production share one Cal.com account, so nothing at the
+    // vendor stops both environments binding the same event type — and a
+    // staging test booking reaching production would otherwise stamp a uid onto
+    // a real venue's reservation. A staging push carries a staging restaurant
+    // UUID that does not exist in the production database, so the mismatch is
+    // decisive. Also catches an event type genuinely rebound between venues.
+    //
+    // Return false, not true: this is not our echo, so let it fall through to
+    // the normal path rather than silently claiming someone else's booking.
+    logger.error({
+      evt: "calcom_inbox_tenant_mismatch",
+      uid,
+      reservation_id: row.id,
+      metadata_restaurant_id: row.restaurant_id,
+      resolved_restaurant_id: expectedRestaurantId
+    });
+    return false;
+  }
   if (!row) {
     // Ours, but the reservation is gone (deleted between push and webhook).
     // Still not a web booking — swallow rather than double-create.

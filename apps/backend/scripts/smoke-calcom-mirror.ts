@@ -99,6 +99,26 @@ async function main(): Promise<void> {
     ]
   });
 
+  // Migration 035: a venue is mirrored to Cal.com only while it holds an event
+  // type. Derived from the pid so concurrent smoke runs can't collide on the
+  // partial unique index.
+  const eventTypeId = 900_000 + (process.pid % 90_000);
+  await pool.query("UPDATE restaurants SET calcom_event_type_id = $2 WHERE id = $1", [
+    restaurantId,
+    eventTypeId
+  ]);
+
+  // A second venue that is deliberately NOT bound to Cal.com — most venues are
+  // voice-only, and that must be free.
+  const { restaurantId: unboundId } = await createSmokeRestaurant({
+    name: `smoke-calcom-unbound-${SMOKE_SUFFIX}`,
+    phoneNumber: "+61255500098",
+    tables: [
+      { label: "U1", minCapacity: 1, maxCapacity: 4 },
+      { label: "U2", minCapacity: 1, maxCapacity: 4 }
+    ]
+  });
+
   try {
     // ---- B4a: a moved booking enqueues a reschedule op --------------------
     const moved = await book(restaurantId, "12:00", "+61255511001");
@@ -186,8 +206,46 @@ async function main(): Promise<void> {
       `uid-ours-${SMOKE_SUFFIX}`
     );
     assert("B15: replayed echo is claimed (idempotent), never a web booking", replay === true);
+
+    // ---- 035: a venue with no Cal.com event type is not mirrored ----------
+    //
+    // The gate has to be at ENQUEUE, not at push. An outbox row written for an
+    // unbound venue can only ever dead-letter, healthAlerter pages Slack at a
+    // dead-letter threshold of zero, and those failed rows are never swept — so
+    // "this venue is voice-only" would present as a permanent, growing incident.
+    const unbound = await book(unboundId, "18:00", "+61255511009");
+    assert(
+      "035: an unbound venue enqueues NO outbox row",
+      (await outboxRows(unbound.bookingId)).length === 0,
+      await outboxRows(unbound.bookingId)
+    );
+
+    // The asymmetry that keeps unbinding safe: cancelling a booking that is
+    // already live on Cal.com must still push, or the per-venue kill switch
+    // would strand it as an uncancellable ghost holding public availability.
+    // Bind, book, unbind, then cancel — the cancel gates on the reservation's
+    // uid, never on the venue's current binding.
+    await pool.query("UPDATE restaurants SET calcom_event_type_id = $2 WHERE id = $1", [
+      unboundId,
+      eventTypeId + 1
+    ]);
+    const stranded = await book(unboundId, "19:00", "+61255511010");
+    await pool.query("UPDATE reservations SET calcom_booking_uid = $2 WHERE id = $1", [
+      stranded.bookingId,
+      `uid-stranded-${SMOKE_SUFFIX}`
+    ]);
+    await pool.query("UPDATE restaurants SET calcom_event_type_id = NULL WHERE id = $1", [
+      unboundId
+    ]);
+    await cancelBooking({ bookingId: stranded.bookingId, restaurantId: unboundId });
+    assert(
+      "035: unbinding a venue still lets its live bookings be cancelled",
+      (await outboxRows(stranded.bookingId)).some((r) => r.op === "cancel"),
+      (await outboxRows(stranded.bookingId)).map((r) => r.op)
+    );
   } finally {
     await cleanupSmokeRestaurant(restaurantId);
+    await cleanupSmokeRestaurant(unboundId);
     await pool.end();
   }
 

@@ -139,6 +139,20 @@ interface DialedNumberEntry {
 }
 const dialedNumberCache = new Map<string, DialedNumberEntry>();
 
+// Maps a Cal.com event type id -> restaurant id, so an inbound Cal.com webhook
+// can resolve its tenant the same way an inbound call resolves one from the
+// dialed number. Identical hazard, identical shape, identical consequence if
+// got wrong: a diner booking venue B lands on venue A's floor.
+//
+// Hits only, and it expires. An event type moved from venue A to venue B leaves
+// an entry keyed by the EVENT TYPE holding A's id, so a purge scoped to B
+// deletes nothing — callers must purge by event type id too (see
+// invalidateRestaurantCache). The TTL is the backstop for rebinds that never
+// reach this process: runbooks rebind by direct SQL, and each api/worker
+// instance holds its own Map. Negative results are deliberately NOT cached, so
+// binding a venue later is visible within one query rather than at restart.
+const calcomEventTypeCache = new Map<number, DialedNumberEntry>();
+
 export async function getRestaurantTimezone(restaurantId: string): Promise<string> {
   const cached = readCache(timezoneCache, restaurantId);
   if (cached) return cached;
@@ -330,6 +344,74 @@ export async function getRestaurantIdByDialedNumber(
 }
 
 /**
+ * Which venue owns this Cal.com event type. The inbound webhook carries
+ * `eventTypeId`, so this is how a web booking finds its tenant — the Cal.com
+ * equivalent of resolving a call from the dialed number, and it exists for the
+ * same reason: before it, every inbound Cal.com booking was hardcoded to
+ * DEFAULT_RESTAURANT_ID, which is correct with exactly one venue and a
+ * cross-tenant bug with two.
+ *
+ * Returns null when nothing claims the event type. Callers MUST fail closed on
+ * null in production rather than falling back to a default — a guest already
+ * holds a Cal.com confirmation email at this point, so guessing a venue seats
+ * them at a restaurant that has no idea they are coming.
+ */
+export async function getRestaurantIdByCalcomEventTypeId(
+  eventTypeId: number | null | undefined
+): Promise<string | null> {
+  if (typeof eventTypeId !== "number" || !Number.isInteger(eventTypeId) || eventTypeId <= 0) {
+    return null;
+  }
+
+  const cached = calcomEventTypeCache.get(eventTypeId);
+  if (cached && cached.expiresAt > Date.now()) return cached.restaurantId;
+
+  // Migration 035's partial unique index makes at most one row match. ORDER BY
+  // keeps the result deterministic anyway, matching the dialed-number lookup:
+  // the index rejects a duplicate on write, but a pair that predates it must
+  // not resolve differently between two queries.
+  const result = await pool.query<{ id: string }>(
+    `SELECT id FROM restaurants
+      WHERE calcom_event_type_id = $1
+      ORDER BY id
+      LIMIT 1`,
+    [eventTypeId]
+  );
+  const id = result.rows[0]?.id ?? null;
+  if (id) {
+    calcomEventTypeCache.set(eventTypeId, {
+      restaurantId: id,
+      expiresAt: Date.now() + DIALED_NUMBER_TTL_MS
+    });
+  }
+  return id;
+}
+
+/**
+ * This venue's Cal.com event type, or null when it has none.
+ *
+ * The outbound gate reads this: a venue with no event type is not mirrored, and
+ * that is the per-venue opt-in. It has to be checked at ENQUEUE time — an
+ * outbox row written for an unbound venue can only ever dead-letter, and
+ * healthAlerter pages Slack at a dead-letter threshold of zero, so "this venue
+ * doesn't use Cal.com" would read as a continuous incident.
+ *
+ * Deliberately NOT cached. It is read once per booking on a path that already
+ * does far more work than one indexed lookup, and a stale answer here means
+ * either a silently unmirrored booking or a row that dead-letters — both worse
+ * than the query.
+ */
+export async function getRestaurantCalcomEventTypeId(
+  restaurantId: string
+): Promise<number | null> {
+  const result = await pool.query<{ calcom_event_type_id: number | null }>(
+    "SELECT calcom_event_type_id FROM restaurants WHERE id = $1",
+    [restaurantId]
+  );
+  return result.rows[0]?.calcom_event_type_id ?? null;
+}
+
+/**
  * Drop all memoized values for a restaurant. Call after any write that changes
  * a restaurant's name, timezone, or dialed-number bindings (profile edit,
  * provisioning bind/unbind) so stale cache entries can't route calls or render
@@ -340,10 +422,15 @@ export async function getRestaurantIdByDialedNumber(
  * that already point AT this restaurant; an entry for a number being taken FROM
  * another venue points at that other venue and survives, which is a silent
  * wrong-venue route until the process restarts.
+ *
+ * `eventTypeIds` carries the same obligation for Cal.com bindings, with the same
+ * consequence in a different channel: a surviving entry sends the new venue's
+ * online diners to the old venue's floor.
  */
 export function invalidateRestaurantCache(
   restaurantId: string,
-  numbers: Array<string | null | undefined> = []
+  numbers: Array<string | null | undefined> = [],
+  eventTypeIds: Array<number | null | undefined> = []
 ): void {
   timezoneCache.delete(restaurantId);
   nameCache.delete(restaurantId);
@@ -354,6 +441,16 @@ export function invalidateRestaurantCache(
   for (const raw of numbers) {
     if (!raw) continue;
     dialedNumberCache.delete(normalizePhone(raw) ?? raw.trim());
+  }
+  for (const [eventTypeId, entry] of calcomEventTypeCache) {
+    if (entry.restaurantId === restaurantId) calcomEventTypeCache.delete(eventTypeId);
+  }
+  // Same reason the numbers are passed explicitly: an event type being taken
+  // FROM another venue has a cache entry pointing at that other venue, and a
+  // purge scoped to this restaurant id leaves it in place.
+  for (const eventTypeId of eventTypeIds) {
+    if (typeof eventTypeId !== "number") continue;
+    calcomEventTypeCache.delete(eventTypeId);
   }
 }
 
@@ -682,6 +779,7 @@ export interface ProvisioningRow {
   twilio_phone_number: string | null;
   retell_phone_number: string | null;
   retell_agent_id: string | null;
+  calcom_event_type_id: number | null;
   created_at: string;
 }
 
@@ -717,7 +815,8 @@ export async function listByOnboardingStatus(
 ): Promise<ProvisioningRow[]> {
   const result = await pool.query<ProvisioningRow>(
     `SELECT id, name, contact_email, onboarding_status,
-            twilio_phone_number, retell_phone_number, retell_agent_id, created_at
+            twilio_phone_number, retell_phone_number, retell_agent_id,
+            calcom_event_type_id, created_at
        FROM restaurants
       WHERE onboarding_status = $1::onboarding_status
       ORDER BY created_at ASC`,
@@ -753,7 +852,8 @@ export async function listRestaurantsAdmin(filter: {
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const result = await pool.query<AdminRestaurantRow>(
     `SELECT id, name, contact_email, onboarding_status,
-            twilio_phone_number, retell_phone_number, retell_agent_id, created_at,
+            twilio_phone_number, retell_phone_number, retell_agent_id,
+            calcom_event_type_id, created_at,
             terms_version,
             stripe_customer_id IS NOT NULL AS has_stripe_customer,
             stripe_connect_charges_enabled, stripe_connect_payouts_enabled
@@ -774,9 +874,23 @@ export async function listRestaurantsAdmin(filter: {
  */
 export async function clearProvisioningBindings(
   restaurantId: string,
-  fields: Array<"twilio_phone_number" | "retell_phone_number" | "retell_agent_id">
+  fields: Array<
+    | "twilio_phone_number"
+    | "retell_phone_number"
+    | "retell_agent_id"
+    | "calcom_event_type_id"
+  >
 ): Promise<ProvisioningRow | null> {
-  const allowed = new Set(["twilio_phone_number", "retell_phone_number", "retell_agent_id"]);
+  // Deliberately independent of the route's schema — this is the last gate
+  // before column names are interpolated into the SQL below. A field missing
+  // here is not an error, it is a silent no-op, so it must be kept in step with
+  // ADMIN_UNBINDABLE_FIELDS in http/schemas.ts.
+  const allowed = new Set([
+    "twilio_phone_number",
+    "retell_phone_number",
+    "retell_agent_id",
+    "calcom_event_type_id"
+  ]);
   const safe = fields.filter((f) => allowed.has(f));
   if (safe.length === 0) return getProvisioning(restaurantId);
   const sets = safe.map((f) => `${f} = NULL`).join(", ");
@@ -784,7 +898,8 @@ export async function clearProvisioningBindings(
     `UPDATE restaurants SET ${sets}
       WHERE id = $1
       RETURNING id, name, contact_email, onboarding_status,
-                twilio_phone_number, retell_phone_number, retell_agent_id, created_at`,
+                twilio_phone_number, retell_phone_number, retell_agent_id,
+            calcom_event_type_id, created_at`,
     [restaurantId]
   );
   if (!result.rows[0]) return null;
@@ -795,7 +910,8 @@ export async function clearProvisioningBindings(
 export async function getProvisioning(restaurantId: string): Promise<ProvisioningRow | null> {
   const result = await pool.query<ProvisioningRow>(
     `SELECT id, name, contact_email, onboarding_status,
-            twilio_phone_number, retell_phone_number, retell_agent_id, created_at
+            twilio_phone_number, retell_phone_number, retell_agent_id,
+            calcom_event_type_id, created_at
        FROM restaurants WHERE id = $1`,
     [restaurantId]
   );
@@ -822,6 +938,29 @@ export async function getRestaurantByRetellAgentId(
   return result.rows[0] ?? null;
 }
 
+/**
+ * Which restaurant, if any, already claims this Cal.com event type. Mirrors
+ * getRestaurantByRetellAgentId and exists for the same reason: two venues
+ * sharing one event type means one venue's diners silently book the other
+ * venue's tables. Migration 035's partial unique index is the backstop, but a
+ * raw duplicate-key surfaces as a 500 — the admin bind uses this to refuse with
+ * a 409 naming the other venue. Excludes `exceptId` so re-binding a venue to
+ * the event type it already holds is not a conflict.
+ */
+export async function getRestaurantByCalcomEventTypeId(
+  eventTypeId: number,
+  exceptId?: string
+): Promise<{ id: string; name: string } | null> {
+  const result = await pool.query<{ id: string; name: string }>(
+    `SELECT id, name FROM restaurants
+      WHERE calcom_event_type_id = $1 AND ($2::uuid IS NULL OR id <> $2::uuid)
+      ORDER BY id
+      LIMIT 1`,
+    [eventTypeId, exceptId ?? null]
+  );
+  return result.rows[0] ?? null;
+}
+
 /** Per-restaurant Retell agent (falls back to the env default at the call site). */
 export async function getRetellAgentId(restaurantId: string): Promise<string | null> {
   const result = await pool.query<{ retell_agent_id: string | null }>(
@@ -842,20 +981,23 @@ export async function setProvisioningBindings(
     twilioPhoneNumber?: string | null;
     retellPhoneNumber?: string | null;
     retellAgentId?: string | null;
+    calcomEventTypeId?: number | null;
   }
 ): Promise<RestaurantProfile> {
   const result = await pool.query<RestaurantProfile>(
     `UPDATE restaurants SET
        twilio_phone_number = COALESCE($2, twilio_phone_number),
        retell_phone_number = COALESCE($3, retell_phone_number),
-       retell_agent_id = COALESCE($4, retell_agent_id)
+       retell_agent_id = COALESCE($4, retell_agent_id),
+       calcom_event_type_id = COALESCE($5, calcom_event_type_id)
      WHERE id = $1
      RETURNING ${PROFILE_COLUMNS}`,
     [
       restaurantId,
       bindings.twilioPhoneNumber ?? null,
       bindings.retellPhoneNumber ?? null,
-      bindings.retellAgentId ?? null
+      bindings.retellAgentId ?? null,
+      bindings.calcomEventTypeId ?? null
     ]
   );
   if (!result.rows[0]) {
@@ -864,10 +1006,11 @@ export async function setProvisioningBindings(
   // Pass the numbers explicitly: if either was previously bound to a DIFFERENT
   // venue, its cache entry points at that venue and a purge scoped to this
   // restaurant id would leave it in place.
-  invalidateRestaurantCache(restaurantId, [
-    bindings.twilioPhoneNumber,
-    bindings.retellPhoneNumber
-  ]);
+  invalidateRestaurantCache(
+    restaurantId,
+    [bindings.twilioPhoneNumber, bindings.retellPhoneNumber],
+    [bindings.calcomEventTypeId]
+  );
   return result.rows[0];
 }
 

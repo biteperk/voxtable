@@ -276,8 +276,9 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     // Cal.com mirror — enqueue OUTSIDE the advisory-lock-held critical query
     // ordering but still INSIDE the transaction, so atomicity holds. No-op
     // when CALCOM_SYNC_ENABLED=false (defensive — no Cal.com side-effects in
-    // tests / dev).
-    await enqueueCreateForReservation(reservation.id, lockClient);
+    // tests / dev), and also when this venue holds no Cal.com event type,
+    // which is the per-venue opt-in.
+    await enqueueCreateForReservation(reservation.id, input.restaurantId, lockClient);
 
     await lockClient.query("COMMIT");
 

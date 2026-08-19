@@ -267,7 +267,11 @@ function BindPanel({ prov, busy, run, venueId }) {
   const [form, setForm] = useState({
     twilio_phone_number: prov?.twilio_phone_number ?? "",
     retell_phone_number: prov?.retell_phone_number ?? "",
-    retell_agent_id: prov?.retell_agent_id ?? ""
+    retell_agent_id: prov?.retell_agent_id ?? "",
+    calcom_event_type_id:
+      prov?.calcom_event_type_id === null || prov?.calcom_event_type_id === undefined
+        ? ""
+        : String(prov.calcom_event_type_id)
   });
 
   const willHaveNumber = form.twilio_phone_number.trim() || prov?.twilio_phone_number;
@@ -276,7 +280,12 @@ function BindPanel({ prov, busy, run, venueId }) {
 
   const submit = () => {
     const payload = {};
-    for (const key of ["twilio_phone_number", "retell_phone_number", "retell_agent_id"]) {
+    for (const key of [
+      "twilio_phone_number",
+      "retell_phone_number",
+      "retell_agent_id",
+      "calcom_event_type_id"
+    ]) {
       if (form[key].trim()) payload[key] = form[key].trim();
     }
     if (Object.keys(payload).length === 0) return;
@@ -315,6 +324,24 @@ function BindPanel({ prov, busy, run, venueId }) {
           onChange={(e) => setForm((f) => ({ ...f, retell_agent_id: e.target.value }))}
         />
       </label>
+      <h4>Online bookings (Cal.com)</h4>
+      <label className="admin-field">
+        <span>Cal.com event type id</span>
+        <input
+          className="admin-input"
+          value={form.calcom_event_type_id}
+          placeholder="e.g. 3414737 — leave blank for voice-only venues"
+          inputMode="numeric"
+          onChange={(e) => setForm((f) => ({ ...f, calcom_event_type_id: e.target.value }))}
+        />
+      </label>
+      <p className="admin-muted">
+        Optional, and independent of the phone line. This is what an inbound Cal.com webhook
+        is matched against, so binding another venue's event type would seat this
+        restaurant's online diners at that venue's tables — the API refuses an event type
+        another venue already holds. Clearing it stops new bookings mirroring while leaving
+        bookings already on Cal.com cancellable.
+      </p>
       {halfBound ? (
         <p className="admin-warning" role="alert">
           Set BOTH the Twilio number and the Retell agent. Saving one alone keeps the other's
@@ -375,7 +402,8 @@ function DangerZone({ prov, venueId, venueName, busy, run }) {
           {[
             ["twilio_phone_number", prov?.twilio_phone_number],
             ["retell_phone_number", prov?.retell_phone_number],
-            ["retell_agent_id", prov?.retell_agent_id]
+            ["retell_agent_id", prov?.retell_agent_id],
+            ["calcom_event_type_id", prov?.calcom_event_type_id]
           ].map(([name, value]) => (
             <label key={name} className="admin-check">
               <input
