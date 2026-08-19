@@ -1,7 +1,7 @@
 {
   "agent_id": "agent_7b67073710604d306443cc569c",
   "channel": "voice",
-  "last_modification_timestamp": 1787114380766,
+  "last_modification_timestamp": 1787115071074,
   "agent_name": "Mazcina",
   "response_engine": {
     "type": "retell-llm",
@@ -76,7 +76,7 @@
   "voice_speed": 1,
   "enable_dynamic_voice_speed": true,
   "volume": 1,
-  "enable_expressive_mode": true,
+  "enable_expressive_mode": false,
   "expressive_emotion_tags": [
     "empathetic",
     "excited",

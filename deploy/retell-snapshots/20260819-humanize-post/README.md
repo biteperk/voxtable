@@ -20,10 +20,20 @@ Read back from the API after the change. Three moves, per Sam's explicit decisio
    menu three modes + never-recite rule, modify-after-create, never-fake-it honesty,
    party≥7 callback, Aria correction, end_call discipline, venue_faq boundary,
    de-venued prose (verified: no venue name anywhere).
-3. **Expressive Mode ON** (`enable_expressive_mode: true`, tags: empathetic, excited,
-   happy, curious, surprised, pause, emphasis). Everything else untouched — voice
-   retell-Cimo, temperature 1.1, speed 1, interruption 0.6, backchannel — one lever at
-   a time so the next test call attributes cleanly.
+3. **Expressive Mode: tried and ROLLED BACK the same afternoon.** Enabled at ~14:15;
+   Sam's 14:45 test call measured **e2e p50 3,029 ms** against the pre-expressive Cimo
+   baseline of ~2,085 ms (13:40 call) — the tagging layer costs ~1 s on every single
+   turn, and Retell's community thread confirms it as a known latency cost with no
+   mitigation setting. Disabled again (`enable_expressive_mode: false`); warmth comes
+   from the prompt + backchannel instead. Re-enabling is one PATCH if the trade is ever
+   wanted (e.g. for a demo where wow beats snappiness). Everything else untouched —
+   voice retell-Cimo, temperature 1.1, speed 1, interruption 0.6, backchannel on,
+   `stt_mode: accurate` kept deliberately (it's what recognises "Mechada" and
+   "Barros Luco").
+4. **Instant-open rule added to the prompt** (now 9,231 chars): every turn starts with
+   a tiny natural word ("Yep!", "Sure —", "Righto") before the substance — the first
+   token streams to TTS sooner, so perceived response time drops without touching any
+   pipeline knob.
 
 ⚠️ The Retell **dashboard draft is stale** — it predates the same-day open/closed and
 menu-mode fixes. Publishing it would erase them; discard the draft and treat the API
