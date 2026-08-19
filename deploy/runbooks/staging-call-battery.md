@@ -20,7 +20,7 @@ First green machine run: **14 Aug 2026** (all six suites, both negative controls
 
 | Thing | Value |
 |---|---|
-| Dial | **+61 468 203 234** (VoxTable Staging Venue — the dummy test restaurant) |
+| Dial | **+61 468 203 234** (**Mazcina** — the real Darlinghurst venue, converted 19 Aug 2026; agent `agent_7b67073710604d306443cc569c`) |
 | Dashboard | `https://bp-voxtable-stg.web.app` — sign in as `biteperk@gmail.com` (the ONLY email on staging's allowlist today; Google sign-in needs #111 done, password sign-in works now) |
 | KDS | staging KDS once deployed (no pipeline yet — see the staging-venue runbook / issue tracker) |
 | Log tail | `gcloud logging read 'resource.type="cloud_run_revision" resource.labels.service_name="voxtable-stg-api"' --project bp-voxtable-stg --freshness 10m --format='value(textPayload)'` — grep `retell_tool_call`, `create_booking`, `create_order` |

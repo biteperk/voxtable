@@ -1,5 +1,22 @@
 # Converting the staging venue to Mazcina
 
+> ✅ **EXECUTED 19 Aug 2026.** The staging line answers as Mazcina. What actually ran, where it
+> diverged from the steps below, and the identifiers that now matter:
+>
+> | | |
+> |---|---|
+> | Agent | `agent_7b67073710604d306443cc569c` — **built by Sam in the Retell dashboard**, then audited and corrected via API (steps below describe an API build; adopting the dashboard build was equivalent after the audit) |
+> | LLM | `llm_c1d40dbe180e737dd2ce1309ed3f` |
+> | Corrections applied to the dashboard build | prompt de-venued (it carried "Thanks for calling **Natalia's Bistro**" in the booking steps — the clone brought it along); party threshold 9→7 (largest table seats 6); `{{venue_faq}}` section appended; `boosted_keywords` rewritten from Natalia's + fixture menu to Mazcina + its real dishes |
+> | Bind method | SQL with the admin API's checks replicated by hand (agent exists in Staging, named for the venue, held by no other row) — recorded because the admin-API path needs the smoke-user password and the run was deliberately zero-round-trip |
+> | Verified | `smoke:retell-signed` + `smoke:retell-orders` green against live staging; signed `/retell/inbound` returns `restaurant_name: "Mazcina"`, `owner_name: "Camilo"`, `venue_faq` 758 chars |
+> | **Dead-air fix, found during this work** | every functional tool carried `speak_after_execution: false`, so the agent held tool results silently unless its turn happened to still be open — the "talks very bad" report. Set to `true` on all three staging LLMs' functional tools. ⚠️ **The live pilot LLM carries the same `false` flags** — real callers on `+61 2 7501 1140` still play that lottery; fix at the production cutover |
+> | Audio fix | `ambient_sound: coffee-shop` removed (it was being transcribed and triggering self-interruption — greeting died at ~7.6 s twice); `interruption_sensitivity` 0.7→0.4; `denoising_mode: noise-and-background-speech-cancellation` |
+> | Still open | pronunciation of "Mazcina" (ask Camilo — no dictionary entry yet); Wednesday hours; corkage amount; happy-hour times; drinks list; the nine-leg call battery |
+>
+> Rollback: `deploy/retell-snapshots/20260819-mazcina-staging-pre/` (agents/LLMs) +
+> `rollback-venue.sql` (the database half).
+
 Turns the staging venue row into **Mazcina** — real name, real menu, its own Retell agent —
 so staging stops being a synthetic fixture and becomes the rehearsal we promote to production
 from. Also fixes the voice quality reported on the 18 Aug call.

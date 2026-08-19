@@ -41,6 +41,11 @@ agent to this row.** Extend this venue; don't clone it.
 > index, and the routing query is now `ORDER BY`'d so the cross-column `twilio OR retell`
 > match cannot resolve arbitrarily either.
 
+> ✅ **RESOLVED 19 Aug 2026.** The venue is now **Mazcina** and is bound to its own agent,
+> `agent_7b67073710604d306443cc569c` (LLM `llm_c1d40dbe180e737dd2ce1309ed3f`), with a fully
+> de-venued prompt. `agent_b9087333…` remains in the workspace as Natalia's staging agent and
+> is bound to nothing. The section below stands as the history of why the constraint exists.
+
 ## The agent this venue must NOT use
 
 `agent_b9087333b7030f0cee06a19ffc` is **`Natalia's Bistro (STAGING)`**, not this venue's
