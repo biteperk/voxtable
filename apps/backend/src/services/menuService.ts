@@ -310,6 +310,41 @@ export interface MenuLookupMatch {
   available_until: string | null;
 }
 
+/**
+ * Callers ask for "the menu" as a thing, not a dish — and the LLM passes those
+ * words through as a search query, which can never match an item name. Route
+ * them to the category overview instead of a nonsense "couldn't find menu" miss.
+ */
+const GENERIC_MENU_QUERY = /^(the |your |whole |full )*(menu|menus|food|meals|dishes|options|specials|everything)\s*$/i;
+
+/** The real category overview, built from THIS venue's menu. */
+async function categoryOverview(restaurantId: string): Promise<{
+  matches: MenuLookupMatch[];
+  overview: string;
+}> {
+  // Skip restricted items — Bella must never offer what she has to refuse.
+  const menu = await getMenu(restaurantId);
+  const offerableItems = (items: MenuItemPayload[]) => items.filter((i) => !i.is_restricted);
+  const overview = menu.categories
+    .slice(0, 4)
+    .map((c) => `${c.name}: ${offerableItems(c.items).slice(0, 2).map((i) => i.name).join(" or ") || "(empty)"}`)
+    .join("; ");
+  return {
+    overview,
+    matches: menu.categories.flatMap((c) =>
+      offerableItems(c.items).slice(0, 1).map((i) => ({
+        id: i.id,
+        name: i.name,
+        price_cents: i.base_price_cents,
+        category_id: c.id,
+        is_restricted: i.is_restricted,
+        available_from: i.available_from,
+        available_until: i.available_until
+      }))
+    )
+  };
+}
+
 export async function lookupMenu(input: {
   restaurantId: string;
   query?: string;
@@ -319,13 +354,17 @@ export async function lookupMenu(input: {
   speakable_summary: string;
   ambiguous: boolean;
 }> {
-  if (input.query && input.query.trim().length > 0) {
+  if (input.query && input.query.trim().length > 0 && !GENERIC_MENU_QUERY.test(input.query.trim())) {
     const matches = await searchMenuItemsByName(input.restaurantId, input.query.trim(), 6);
     if (matches.length === 0) {
+      // The old reply hardcoded "mains, salads, kids meals, and drinks" — the
+      // FIXTURE menu's categories, spoken verbatim to every venue's callers.
+      // Build the miss reply from the venue's real categories instead.
+      const { overview } = await categoryOverview(input.restaurantId);
       return {
         matches: [],
         ambiguous: false,
-        speakable_summary: `I couldn't find anything matching ${input.query}. We have mains, salads, kids meals, and drinks. Which are you after?`
+        speakable_summary: `I couldn't find anything matching ${input.query}. We have ${overview}. Would any of those suit?`
       };
     }
     const ambiguous = matches.length > 1 && Math.abs(matches[0]!.similarity - matches[1]!.similarity) < 0.1;
@@ -358,26 +397,10 @@ export async function lookupMenu(input: {
     };
   }
 
-  // No query: read the top of each category as a category overview. Skip
-  // restricted items — Bella must never offer what she has to refuse.
-  const menu = await getMenu(input.restaurantId);
-  const offerableItems = (items: MenuItemPayload[]) => items.filter((i) => !i.is_restricted);
-  const overview = menu.categories
-    .slice(0, 4)
-    .map((c) => `${c.name}: ${offerableItems(c.items).slice(0, 2).map((i) => i.name).join(" or ") || "(empty)"}`)
-    .join("; ");
+  // No query (or a generic "the menu" one): read the category overview.
+  const { matches, overview } = await categoryOverview(input.restaurantId);
   return {
-    matches: menu.categories.flatMap((c) =>
-      offerableItems(c.items).slice(0, 1).map((i) => ({
-        id: i.id,
-        name: i.name,
-        price_cents: i.base_price_cents,
-        category_id: c.id,
-        is_restricted: i.is_restricted,
-        available_from: i.available_from,
-        available_until: i.available_until
-      }))
-    ),
+    matches,
     ambiguous: false,
     speakable_summary: `We have ${overview}. What would you like?`
   };
