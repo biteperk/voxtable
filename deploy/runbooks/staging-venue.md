@@ -14,7 +14,7 @@ The end-to-end test restaurant on staging. One venue, one number, committed as c
 | Bound number | `+61 468 203 234` (staging Twilio, `Biteperk-staging`) |
 | Retell agent | ⚠️ **unbound** — see "The agent this venue must NOT use" below |
 | Tables | **10, the venue's real floor plan** — T1–T4 (1-2) · T5–T8 (2-4) · T9–T10 (4-6). Largest seats **6**; S1–S4 are retired (deactivated, not deleted). |
-| Hours | 09:00–23:00 every day |
+| Hours | Mazcina's real hours since 19 Aug 2026: Thu–Sat 12:00–21:30 · Sun–Mon 12:00–21:00 · **closed Tue & Wed** (confirmed by Sam; also spoken via the `hours` entry in `faq_json`). Source: `deploy/seeds/mazcina-venue.sql` |
 | Menu | 5 items — see below, the prices are load-bearing |
 | Seed | `deploy/seeds/staging-venue.sql` (idempotent; applied + re-applied 14 Aug 2026) |
 

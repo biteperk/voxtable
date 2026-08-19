@@ -49,21 +49,17 @@ WHERE id = '33333333-3333-4333-8333-333333333333';
 -- so omitting the key would work too, but stating it makes the closure visible
 -- rather than an accident of absence.
 --
--- ⚠️ TWO CELLS ARE UNCONFIRMED — the venue's two public listings disagree:
+-- ✅ WEDNESDAY RESOLVED (19 Aug 2026): Sam confirmed the venue is closed Tuesday
+-- AND Wednesday, settling the listing disagreement in Google's favour. For the
+-- record, the two public listings disagreed:
 --
 --     day  | Google (used here) | OpenTable
 --     -----+--------------------+---------------
 --     Mon  | 12:00-21:00        | 12:00-21:30
 --     Wed  | CLOSED             | 16:00-21:30
 --
--- Google is used because it is the safer error. Booking a caller into a closed
--- night sends them to a locked door; refusing a Wednesday only costs a booking,
--- and there are no real callers on this line yet.
---
--- The tiebreak evidence leans Google's way: OpenTable's own booking form, opened
--- Tue 18 Aug 11:28pm, offered "next available Thu 20 Aug" — skipping Wednesday
--- entirely, which a venue open Wed 16:00-21:30 would not do. That is inference,
--- not confirmation. ASK CAMILO before this line takes a real call.
+-- Monday's close time (21:00 vs 21:30) is the one cell still on Google's word
+-- alone — a 30-minute error there costs at most one late booking.
 --
 -- Note what this implies for bookings: with a 90-minute duration, the last
 -- bookable slot is 20:00 on a 21:30 close and 19:30 on a 21:00 close. A caller
@@ -90,14 +86,17 @@ WHERE restaurant_id = '33333333-3333-4333-8333-333333333333';
 -- what a dietary claim really means.
 --
 -- Keys become spoken labels ("wheelchair_access" -> "Wheelchair access"), and
--- the whole thing is capped at 12 entries / 800 characters because it is
--- injected into EVERY call's prompt, answered or not. See services/venueFaq.ts.
+-- the whole thing is capped at 16 entries / 1200 characters (FAQ_MAX_* in
+-- services/venueFaq.ts) because it is injected into EVERY call's prompt,
+-- answered or not. Over-budget entries are dropped WHOLE, in alphabetical key
+-- order — so count before adding.
 --
 -- ⚠️ DELIBERATELY OMITTED until Camilo confirms the specifics:
 --   * happy hour TIMES — the listing says it exists, not when.
 --   * the corkage AMOUNT — likewise.
 -- A wrong number spoken aloud is worse than "let me take a message".
 UPDATE restaurant_settings SET faq_json = '{
+  "hours": "Open Thursday to Monday from 12 noon - until 9:30pm Thursday to Saturday, and 9pm Sunday and Monday. Closed Tuesdays and Wednesdays.",
   "parking": "There is street parking on Palmer Street and around Darlinghurst.",
   "wheelchair_access": "Yes, the venue is wheelchair accessible.",
   "dogs": "Dogs are welcome at the outdoor tables.",

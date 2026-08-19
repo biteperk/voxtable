@@ -12,7 +12,7 @@
 > | Verified | `smoke:retell-signed` + `smoke:retell-orders` green against live staging; signed `/retell/inbound` returns `restaurant_name: "Mazcina"`, `owner_name: "Camilo"`, `venue_faq` 758 chars |
 > | **Dead-air fix, found during this work** | every functional tool carried `speak_after_execution: false`, so the agent held tool results silently unless its turn happened to still be open — the "talks very bad" report. Set to `true` on all three staging LLMs' functional tools. ⚠️ **The live pilot LLM carries the same `false` flags** — real callers on `+61 2 7501 1140` still play that lottery; fix at the production cutover |
 > | Audio fix | `ambient_sound: coffee-shop` removed (it was being transcribed and triggering self-interruption — greeting died at ~7.6 s twice); `interruption_sensitivity` 0.7→0.4; `denoising_mode: noise-and-background-speech-cancellation` |
-> | Still open | pronunciation of "Mazcina" (ask Camilo — no dictionary entry yet); Wednesday hours; corkage amount; happy-hour times; drinks list; the nine-leg call battery |
+> | Still open | pronunciation of "Mazcina" (ask Camilo — no dictionary entry yet); corkage amount; happy-hour times; drinks list; the nine-leg call battery. ~~Wednesday hours~~ — resolved 19 Aug 2026: Sam confirmed closed Tue AND Wed; the hours are now also in `faq_json` so the agent can say them without an availability probe |
 >
 > Rollback: `deploy/retell-snapshots/20260819-mazcina-staging-pre/` (agents/LLMs) +
 > `rollback-venue.sql` (the database half).
