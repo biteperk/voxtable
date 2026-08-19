@@ -24,24 +24,27 @@ First green machine run: **14 Aug 2026** (all six suites, both negative controls
 | Dashboard | `https://bp-voxtable-stg.web.app` — sign in as `biteperk@gmail.com` (the ONLY email on staging's allowlist today; Google sign-in needs #111 done, password sign-in works now) |
 | KDS | staging KDS once deployed (no pipeline yet — see the staging-venue runbook / issue tracker) |
 | Log tail | `gcloud logging read 'resource.type="cloud_run_revision" resource.labels.service_name="voxtable-stg-api"' --project bp-voxtable-stg --freshness 10m --format='value(textPayload)'` — grep `retell_tool_call`, `create_booking`, `create_order` |
-| Menu you're ordering from | Fish & Chips (variants + required drink) · Garden Salad · Big Breakfast (09:00–11:30 only) · Coke · House Lager (licensed) |
+| Menu you're ordering from | Mazcina's real menu (31 items): Barros Luco (required side; try Provenzal potatoes) · Chorrillana · Sopaipillas · Mazcina Grilled Barramundi · Celestinos. No licensed or windowed items yet — leg 4 is blocked on the drinks list. |
 
 Every call must land in `call_logs` with `restaurant_id = 33333333-…` — that row is the
 canonical proof of connectivity (NUMBERS.md). Check via the throwaway job
 (`deploy/runbooks/staging-venue.md`) with:
 `SELECT provider_call_id, created_at FROM call_logs WHERE restaurant_id='33333333-3333-4333-8333-333333333333' ORDER BY created_at DESC LIMIT 10;`
 
-## The seven legs
+## The ten legs
 
 | # | Say / do | Pass looks like |
 |---|---|---|
 | 1 | **Happy-path booking.** "Table for 2 tomorrow at 7pm, name Sam." | Bella **names this venue and no other** (see below); opens with the AI + recording disclosure; booking confirmed by voice; row appears on the dashboard live-feed **during** the call. |
-| 2 | **Booking + pre-order.** Book, then "and we'll have a large Fish & Chips with a Coke." | Order confirmed with an order number; ticket on the KDS within one 2 s poll. |
-| 3 | **Menu question.** "What mains do you have?" | Answer drawn from the seeded menu (Fish & Chips, Garden Salad — not an invented list). |
-| 4 | **Refusals.** "Add a House Lager." Then (after 11:30) "and a Big Breakfast." | Lager refused with the licensing line; Big Breakfast refused as outside its window. |
+| 2 | **Booking + pre-order.** Book, then "and we'll have a Barros Luco with the Provenzal potatoes." | Order confirmed with an order number and the modifier read back; ticket on the KDS within one 2 s poll. *(Updated 19 Aug 2026 — the fixture Fish & Chips is retired; this is a real Mazcina item with a real required side.)* |
+| 3 | **Menu question.** "What mains do you have?" | Answer drawn from Mazcina's real menu — Chorrillana, Mazcina Grilled Barramundi, Saltado — not an invented list, and **no fixture item** (Fish & Chips or Garden Salad appearing means the retire step regressed). |
+| 4 | **Refusals.** ⚠️ **BLOCKED until the drinks list arrives** (19 Aug 2026): the imported menu has zero licensed and zero windowed items — the fixture House Lager and Big Breakfast are retired — so there is currently nothing for Bella to refuse. The venue does serve alcohol (pisco sours, wine jugs per its reviews), so this leg is deferred, not deleted. When the bar list is imported with `is_restricted` set, refuse a licensed item; when any item carries a window, order it outside the window. | Licensed item refused with the responsible-service line; windowed item refused as outside its hours. |
 | 5 | **Modify by voice, cancel by dashboard.** "Actually make it 8pm." Then hang up and cancel the booking from the dashboard. | Bella re-checks availability and confirms the new time (modify-booking tool); dashboard cancel succeeds. There is deliberately no voice-cancel tool. |
 | 6 | **SMS infrastructure leg.** Via the throwaway job, insert one outbox row: `INSERT INTO notifications_outbox (channel, recipient, kind, body) VALUES ('sms', '+61…your mobile', 'staging_smoke', 'VoxTable staging SMS test');` | The worker delivers it from +61 468 203 234. ⚠️ **Corrected 18 Aug 2026 — do NOT expect an `Unverified` stamp.** This leg used to predict one. A real send proved otherwise: `BitePerk` is bound to the production Twilio account, and AU sender-selection quietly deprioritises the unregistered ID rather than emit something that would read `Unverified`, so the message simply **arrives from the number with no stamp and no error**. Record that it delivered; the absence of branding is the expected result here, not a fault. Requires `NOTIFICATIONS_ENABLED=true` plus a sender on the staging worker (Terraform) — if unset, the row stays pending: that's the finding, not a failure of this leg. **Prefer `NOTIFICATIONS_MESSAGING_SERVICE_SID=MG692c54a793f914c2e43c7d691f4cb41e` and leave `NOTIFICATIONS_SMS_FROM` unset**: that is the configuration production runs, so this leg exercises the real code path and the either-or boot gate rather than a staging-only variant. Run `npm run smoke:sms-sender` first to confirm the service belongs to the staging account before sending anything. |
 | 7 | **Negatives.** Call once with caller ID withheld. (The unknown-number path is covered by the signed smoke posting an unbound `to_number` — do NOT unbind the live venue row to test it.) | Withheld caller ID still books (caller phone recorded as unknown); no crash. |
+| 8 | **Honest capacity.** "Table for 8, Friday at 7pm." | Bella does NOT offer alternative times — none can ever work, the largest table seats 6 and nothing combines tables. She says so plainly and offers a callback. `checkAvailability` returns `reason: "party_too_large"`; if you hear a time suggestion, the prompt is ignoring it. |
+| 9 | **A party that just fits.** "Table for 6, Friday at 7pm." | Succeeds, on T9 or T10. The control for leg 8: it proves the new floor plan is reachable rather than merely inserted, so a refusal in leg 8 means the ceiling, not a broken table set. |
+| 10 | **Closed day.** "Table for 2 next Tuesday at 7pm." | Bella declines — Mazcina is closed Tuesday and Wednesday — and offers an open day instead. She must NOT book into a closed day, and must not blame the time (it is the day that is wrong). Nothing in the automated suite covers a fully-closed weekday; this leg is the only cover. |
 
 
 ### The floor plan is real now
@@ -54,8 +57,8 @@ and 9 exist because that ceiling is the one thing about the new floor plan a cal
 
 ### The venue is becoming Mazcina
 
-From 18 Aug 2026 this line answers as **Mazcina**, not "VoxTable Staging Venue", with a real
-28-item menu — see [`mazcina-staging-conversion.md`](mazcina-staging-conversion.md). Two legs
+Since **19 Aug 2026 the conversion is executed** — the line answers as **Mazcina** with the real
+31-item menu — see [`mazcina-staging-conversion.md`](mazcina-staging-conversion.md). Two legs
 change with it:
 
 - **Leg 3 (menu question)** now runs against a real menu with six mains and five items whose

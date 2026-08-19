@@ -148,6 +148,25 @@ states the trade-off plainly: with it off, "SIP messages may be sent unencrypted
 TLS. Any SRTP encrypted calls will be rejected." Turn it on **before** the first customer call, and
 turn it on in staging first.
 
+⚠️ **This stopped being theoretical on 19 Aug 2026.** A staging call (`CA6cb88e2c31f0aae148facf3d7bcec321`,
+Retell `call_04ca66ce86bd9fdbfa9c936830e`, 02:53 UTC) connected, the agent spoke her full greeting —
+and the caller's media never arrived: the multichannel recording shows the **caller channel at
+digital zero for the entire 7.6 s call** while the agent channel carries steady speech. The caller
+heard silence and hung up; Retell filed it as `user_hangup`, which is how a media-path failure
+disguises itself as a caller choice. It is intermittent — 3 of that day's 4 calls had working
+media — which makes it exactly the class of fault that erodes trust in the line while every log
+reads clean. Retell's own log shows no error: from its side the PSTN leg simply ended.
+
+Two lessons for whoever debugs the next "it dropped": **identical short durations are a machine,
+not a person** (the day's three failed calls died at 7594/7601/7640 ms — a 46 ms spread across
+three "human hangups" is nothing of the sort), and **the multichannel recording is the instrument**
+— per-channel RMS separates "caller hung up on working audio" from "caller never had audio" in
+one look, when transcript, webhook log and disconnection reason are all identical between the two.
+
+When Secure Trunking is toggled, test with **several** calls, not one — the fault is intermittent,
+so a single good call proves nothing. And if no-media calls recur with SRTP on, it becomes a
+Twilio support ticket, with the SIDs above as evidence.
+
 ### Rules for this number
 
 - **Never customer-facing.** Internal end-to-end testing only. It must not appear in marketing
@@ -326,8 +345,8 @@ it does.
 | 2 | ~~Build both agents in the **Staging** workspace~~ ✅ 13 Aug — both built, every URL pointing at the staging API, verified by 15 read-back assertions | — | — |
 | 2a | ~~Staging key into `voxtable-stg-retell-api-key` + roll a revision~~ ✅ 13 Aug — version 4, revisions `api-00031` / `worker-00027`; signed request verifies **204**, wrong key **401** | — | — |
 | 2b | ~~`restaurants` row bound to `+61 468 203 234`~~ ✅ 13 Aug — number imported to the Staging workspace (webhook mode) and `VoxTable Staging Venue` resolves with fresh per-call variables; unknown numbers fail closed | — | — |
-| 2c | **Make a real call to `+61 468 203 234`** — everything but audio is proven. The machine half is green (`npm run smoke:staging`, first green run 14 Aug); what remains is the seven-leg human battery in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md), whose results table is still empty. Leg 6 (SMS) additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker — issue #185, not set today | Confidence before the production cutover | Sam |
-| 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first | Plain-RTP media today; dead air during a Retell outage | — |
+| 2c | **Make a real call to `+61 468 203 234`** — everything but audio is proven. The machine half is green (`npm run smoke:staging`, first green run 14 Aug); what remains is the ten-leg human battery (legs 8–9 added 19 Aug 2026: honest capacity, closed day; leg 4 blocked on the drinks list) in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md), whose results table is still empty. Leg 6 (SMS) additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker — issue #185, not set today | Confidence before the production cutover | Sam |
+| 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first — ⚠️ **now urgent, not hygiene**: a 19 Aug staging call lost caller media entirely (zero inbound audio, §3a) on the plain-RTP path, intermittently. One-command toggle recorded in §3a's incident note; verify with several calls, and escalate to Twilio with the recorded SIDs if no-media calls recur under SRTP | Plain-RTP media today; dead air during a Retell outage; intermittent no-media calls indistinguishable from caller hangups | Sam |
 | 4 | Move the API hostname to `api.biteperk.com.au` and repoint the agents' `webhook_url` + 5 tool URLs | The last operational tie to the other company — see §6 | — |
 
 ### Put Natalia's back on the air
