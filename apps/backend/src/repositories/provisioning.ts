@@ -7,6 +7,13 @@ export interface ProvisioningJobPayload {
   twilio_sid?: string;
   retell_agent_id?: string;
   /**
+   * Recorded as soon as the venue's LLM exists, BEFORE the agent is created.
+   * Retell has no "create agent and LLM atomically" call, so a failure between
+   * the two would otherwise leak an orphan LLM into the workspace on every one
+   * of the six retries. See the create_agent step in workers/provisioningWorker.ts.
+   */
+  retell_llm_id?: string;
+  /**
    * Set immediately BEFORE we ask Twilio for a number, so a crash between the
    * purchase and recording the result is detectable. Without it the reaper
    * re-runs buy_number against an empty payload and buys a SECOND number we pay

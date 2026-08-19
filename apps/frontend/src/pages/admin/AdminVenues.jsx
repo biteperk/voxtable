@@ -317,12 +317,20 @@ function BindPanel({ prov, busy, run, venueId }) {
       </label>
       {halfBound ? (
         <p className="admin-warning" role="alert">
-          Only one of the two required bindings will be set — the owner's wizard stays on
-          “Provisioning in progress” until BOTH the Twilio number and the Retell agent are bound.
+          Set BOTH the Twilio number and the Retell agent. Saving one alone keeps the other's
+          previous value, which points the new number at the old venue's agent — the line then
+          answers in the wrong restaurant's voice. The API rejects a half-bind for that reason.
+          To remove a binding, use “Clear bindings” below.
         </p>
       ) : null}
       <div className="admin-panel-actions">
-        <button className="primary-button" type="button" disabled={busy} onClick={submit}>
+        <button
+          className="primary-button"
+          type="button"
+          disabled={busy || halfBound}
+          title={halfBound ? "Bind the number and the agent together" : ""}
+          onClick={submit}
+        >
           Save bindings
         </button>
         <button
