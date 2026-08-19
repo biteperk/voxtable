@@ -13,6 +13,7 @@ import {
   adminUnbindSchema
 } from "../http/schemas";
 import { listAdminActions, recordAdminAction } from "../repositories/adminActions";
+import { verifyAgentForVenue } from "../services/retellProvisioning";
 import { getLatestAcceptance } from "../repositories/agreements";
 import { getInboxStats } from "../repositories/inbox";
 import { listRestaurantMembers } from "../repositories/members";
@@ -28,6 +29,7 @@ import {
 import {
   clearProvisioningBindings,
   getProvisioning,
+  getRestaurantByRetellAgentId,
   getOnboardingFunnel,
   getOnboardingStatus,
   getStripeCustomerId,
@@ -294,6 +296,64 @@ adminRouter.patch(
   asyncHandler(async (request, response) => {
     const id = request.params.id!;
     const body = adminProvisioningSchema.parse(request.body);
+
+    // Prove the agent before storing it. `restaurants.retell_agent_id` is plain
+    // TEXT and is what /retell/inbound returns as override_agent_id, so a typo
+    // or another venue's id here routes live calls to the wrong persona with no
+    // error anywhere downstream. See verifyAgentForVenue for the incident.
+    // Only the NAME check is overridable. An agent may legitimately be named for
+    // a brand rather than the venue; it may never be shared between venues (see
+    // migration 034), because the agent is where a venue's identity and tools
+    // live, and one agent serving two venues is the bug itself.
+    const allowNameMismatch = request.query.allow_name_mismatch === "true";
+    if (body.retell_agent_id) {
+      const venue = await getProvisioning(id);
+      if (!venue) throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
+
+      const conflict = await getRestaurantByRetellAgentId(body.retell_agent_id, id);
+      if (conflict) {
+        throw new AppError(
+          409,
+          "RETELL_AGENT_ALREADY_BOUND",
+          `Agent ${body.retell_agent_id} is already bound to "${conflict.name}". Two venues ` +
+            `sharing an agent means one of them answers in the other's voice. Build this venue ` +
+            `its own agent and LLM — see deploy/runbooks/venue-onboarding.md.`
+        );
+      }
+
+      // Skipped only where Retell is genuinely not configured, which the boot
+      // gate makes impossible in production (and on staging, which runs the
+      // production posture) — so this never weakens a real environment.
+      if (env.RETELL_API_KEY) {
+        const verdict = await verifyAgentForVenue(body.retell_agent_id, venue.name);
+        if (!verdict.matchesVenue && !allowNameMismatch) {
+          throw new AppError(
+            409,
+            "RETELL_AGENT_VENUE_MISMATCH",
+            `Agent ${body.retell_agent_id} is named "${verdict.agentName ?? "(unnamed)"}", ` +
+              `which does not look like "${venue.name}". Binding another venue's agent makes ` +
+              `this line answer in that venue's voice. Re-send with ?allow_name_mismatch=true ` +
+              `if this is deliberate.`
+          );
+        }
+        if (!verdict.matchesVenue) {
+          logger.warn({
+            evt: "admin_agent_venue_mismatch_override",
+            restaurant_id: id,
+            agent_id: body.retell_agent_id,
+            agent_name: verdict.agentName,
+            venue_name: venue.name
+          });
+        }
+      } else {
+        logger.warn({
+          evt: "admin_agent_verify_skipped_no_retell_key",
+          restaurant_id: id,
+          agent_id: body.retell_agent_id
+        });
+      }
+    }
+
     const updated = await setProvisioningBindings(id, {
       twilioPhoneNumber: body.twilio_phone_number
         ? normalizePhone(body.twilio_phone_number) ?? body.twilio_phone_number
@@ -309,7 +369,10 @@ adminRouter.patch(
     if (prov?.twilio_phone_number && prov?.retell_agent_id) {
       void notifyRestaurant("number_ready", id, { number: prov.twilio_phone_number });
     }
-    await audit(request, "provisioning_bind", { restaurantId: id, params: body });
+    await audit(request, "provisioning_bind", {
+      restaurantId: id,
+      params: { ...body, allow_name_mismatch: allowNameMismatch }
+    });
     // The profile response omits binding columns; the fresh ProvisioningRow
     // lets the UI render the result without a second fetch.
     response.json({ profile: updated, provisioning: prov });

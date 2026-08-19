@@ -41,7 +41,10 @@
     "smoke:notification-lease": "tsx scripts/smoke-notification-lease.ts",
     "smoke:payments": "tsx scripts/smoke-payments.ts",
     "menu:import": "tsx scripts/import-menu.ts",
-    "smoke:staging": "tsx scripts/smoke-staging.ts"
+    "smoke:staging": "tsx scripts/smoke-staging.ts",
+    "smoke:agent-routing": "tsx scripts/smoke-agent-routing.ts",
+    "smoke:menu-guards": "tsx scripts/smoke-menu-guards.ts",
+    "smoke:capacity-ceiling": "tsx scripts/smoke-capacity-ceiling.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",

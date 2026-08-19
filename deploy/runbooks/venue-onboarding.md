@@ -52,10 +52,24 @@ NAMES.md §per-venue resources.
    snapshot had, so a snapshot rebuild would silently strip a legal
    disclosure off a customer-facing line. `GET /get-retell-llm/<id>` and
    `/get-agent/<id>` first, then diff.
-3. **De-venue the prompt properly.** Replacing the restaurant name is not
-   enough: the live prompt also names the *owner* ("let me get Natalia to ring
-   you back"). Assert on the finished payload that no previous venue's name
+3. **De-venue the prompt properly — the prompt must carry NO venue name at all.**
+   Replacing the restaurant name is not enough: the live prompt also names the
+   *owner* ("let me get Natalia to ring you back"). Use the dynamic variables
+   instead — `{{restaurant_name}}` and `{{owner_name}}`, both injected fresh per
+   call by `/retell/inbound` — in the system prompt, the greeting AND the
+   callback line. Assert on the finished payload that no previous venue's name
    survives anywhere.
+
+   This is the 18 Aug 2026 failure. The staging venue was bound to Natalia's
+   staging agent; the number resolved to the right venue and the webhook sent
+   the right `restaurant_name`, and the caller was still greeted with "Natalia's
+   Bistro" because the greeting ignored the variable and said it in prose. A
+   parameterised prompt cannot fail that way: a mis-bind then produces a
+   wrong-but-generic call instead of a confident lie.
+
+   `createVenueLlm` now refuses a template whose prompt has no
+   `{{restaurant_name}}` placeholder, so auto-provisioning cannot clone a
+   venue-specific prompt.
 4. **Leave `default_dynamic_variables` empty.** Production has no worker that
    refreshes them (`RETELL_LLM_ID` is unreferenced on `main`), so anything set
    there is frozen forever and surfaces only when the inbound webhook fails —
@@ -124,12 +138,63 @@ Bella enforces both on the voice path only.
 
 1. `PATCH /api/admin/restaurants/:id/provisioning` with `twilio_phone_number`
    (the trusted dialled-number key, E.164-normalised) and `retell_agent_id`.
-2. **Dress-rehearsal call** — the go/no-go gate: disclosure heard, booking
-   lands on the dashboard mid-call, menu question answered, pickup order hits
-   the KDS, a licensed drink is refused with the licensing line.
-3. `POST /api/admin/restaurants/:id/go-live`.
-4. Backfill `contact_email`; Stripe checkout with the owner (trial days per
+   **Both together — the endpoint now rejects one without the other**, because
+   the UPDATE is COALESCE-only and a lone number kept the *previous* venue's
+   agent. The endpoint also verifies the agent against Retell before storing it:
+   `409 RETELL_AGENT_NOT_FOUND` if it does not exist, `409
+   RETELL_AGENT_ALREADY_BOUND` if another venue holds it (migration 034 makes
+   that impossible at the database too), and `409 RETELL_AGENT_VENUE_MISMATCH`
+   if its `agent_name` names a different venue — override that last one with
+   `?allow_name_mismatch=true`, which is recorded in `admin_actions`.
+2. ⚠️ **Confirm no other booking system writes to these tables.** Mazcina was
+   already live on OpenTable when we started onboarding it — real inventory,
+   real bookings. Two systems booking the same floor cannot see each other:
+   migration 025's `reservations_no_overlap` protects OUR rows only, so it will
+   seat two parties at one table and report success. Integration is out of scope,
+   so there are exactly two acceptable outcomes: the other system is switched
+   off, or the venue accepts the double-booking risk **in writing**. Check this
+   before the rehearsal call, not after.
+3. **Dress-rehearsal call** — the go/no-go gate: **Bella names THIS venue**,
+   disclosure heard, booking lands on the dashboard mid-call, menu question
+   answered, pickup order hits the KDS, a licensed drink is refused with the
+   licensing line. The venue name is first on that list deliberately: every
+   other item can pass while the caller is told they have reached somewhere
+   else.
+4. `POST /api/admin/restaurants/:id/go-live`.
+5. Backfill `contact_email`; Stripe checkout with the owner (trial days per
    `STRIPE_TRIAL_DAYS`; checkout is safe from `provisioning`/`live` status).
+
+## 5b. If the venue already uses another booking platform
+
+Mazcina was live on OpenTable before we started, and this will not be the last venue that
+arrives already using something. Two systems booking one floor cannot see each other:
+migration 025's `reservations_no_overlap` protects **our** rows only, so two parties can be
+seated at one table with both systems reporting success.
+
+Three outcomes, and only these three:
+
+1. **The other system is switched off** at go-live. Cleanest; a commercial conversation.
+2. **Inventory is split** — a disjoint subset of tables per system, via the `is_active` flag
+   that already exists. Collision becomes structurally impossible with no integration, at the
+   cost of some of Bella's inventory.
+3. **The risk is accepted in writing by the venue**, recorded with a date. Only defensible at
+   low volume, and it must be their decision, not ours.
+
+**The OpenTable Partner API would solve it properly** — OAuth2 with a sandbox, covering
+availability, **slot locks**, create/modify/cancel, guest records, webhooks and partner sync
+feeds. Two-way, so it prevents collisions rather than reporting them. Access is the obstacle,
+not capability: no self-serve signup and no public developer portal — you apply, present a
+business case, and sign a commercial agreement before documentation is shared. Partners are
+either restaurant-side software (POS, guest management) or booking partners (established
+consumer apps); "data-only use cases generally don't qualify".
+
+**Apply as restaurant-side software, with the venue sponsoring.** That framing is honest:
+VoxTable answers the venue's phone, it is not a consumer marketplace competing for diners.
+Treat it as a BD track measured in weeks-to-months, not sprint work.
+
+⚠️ Do **not** substitute the third-party OpenTable data APIs that surface in search results.
+They are read-only and unofficial, and without slot lock they cannot prevent a collision —
+which is the only thing that would matter.
 
 ## 6. After the install
 

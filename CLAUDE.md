@@ -246,9 +246,19 @@ scoped to one restaurant; this is deliberately not.
 - ⚠️ `DASHBOARD_ADMIN_EMAILS` is **not** demanded by any boot gate, so a deployment that
   omits it starts cleanly and then 503s every admin call. Add it to the Terraform env map.
 - ⚠️ Binding a phone number here is the one place a venue's dialled-number routing can be
-  changed by hand. Bind **both** `twilio_phone_number` and `retell_agent_id` — the PATCH
-  COALESCEs omitted fields, so a half-bind leaves the onboarding wizard silently stuck with
-  no error anywhere.
+  changed by hand, and it is now **enforced rather than merely documented** (18 Aug 2026):
+  the PATCH rejects `twilio_phone_number` without `retell_agent_id` or vice versa (the
+  COALESCE half-bind used to leave the *previous* venue's agent bound, and the wizard stuck
+  with no error anywhere), and it verifies the agent against Retell before storing it —
+  `409` if it does not exist, if another venue already holds it, or if its `agent_name`
+  names a different venue (override with `?allow_name_mismatch=true`, audited).
+- ⚠️ **A venue must never share another venue's Retell agent.** The agent carries the
+  venue's identity, prompt and tool endpoints, so a shared one answers in the wrong venue's
+  voice — with the right venue's data underneath, which is why it reads as a mystery rather
+  than a bug. Migration `034` adds the partial unique index on `retell_agent_id` that `008`
+  omitted. Prompts must carry **no** venue name in prose: identity comes from the
+  `{{restaurant_name}}` / `{{owner_name}}` dynamic variables that `/retell/inbound` injects
+  fresh per call. See `deploy/runbooks/venue-onboarding.md` §1 trap 3.
 
 ### Legal documents and the acceptance ledger (#195 / #201, Aug 2026)
 
