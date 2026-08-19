@@ -167,6 +167,26 @@ When Secure Trunking is toggled, test with **several** calls, not one — the fa
 so a single good call proves nothing. And if no-media calls recur with SRTP on, it becomes a
 Twilio support ticket, with the SIDs above as evidence.
 
+⚠️ **The trunks are invisible to the default Twilio API — and the empty responses look like
+missing infrastructure, not a wrong hostname.** Learned the hard way, 19 Aug 2026, chasing the
+incident above: `GET https://trunking.twilio.com/v1/Trunks` on the staging account returns an
+empty list, the trunk SID 404s, `Calls.json` shows no calls ever, and the number shows no
+`trunk_sid` — four independent readings that together look exactly like a deleted voice estate.
+None of it was true. **Those are all US1 endpoints, and this estate is AU1**: regional resources
+only answer at `{product}.sydney.au1.twilio.com` (the edge segment is mandatory —
+`trunking.sydney.twilio.com` does not resolve, and the older `api.au1.twilio.com` form is
+deprecated, dead 28 Apr 2026). **AU1 also requires region-scoped credentials** — the account's
+US1 auth token gets `401 Authenticate` at the Sydney FQDN, so the working paths into the AU1
+estate are the console (which sees all regions) or an API key created with Region = AU1
+(Console → Account → API keys). No AU1 API key exists as of 19 Aug 2026 — creating one and
+storing it in staging Secret Manager (suggested names `voxtable-stg-twilio-au1-key-sid` /
+`-key-secret`) is what makes the voice estate automatable at all.
+
+The same blindness applies in reverse and explains an old §2 note: messaging lives in US1, voice
+in AU1, so **no single API view ever shows the whole number**. Anyone auditing "what does this
+account have?" must query both regions or use the console, and an agent asserting "the trunk does
+not exist" from a US1 response is making the 19 Aug mistake again.
+
 ### Rules for this number
 
 - **Never customer-facing.** Internal end-to-end testing only. It must not appear in marketing
