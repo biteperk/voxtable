@@ -185,6 +185,54 @@ export function nowTimeInTz(timeZone: string, now: Date = new Date()): string {
   return hmInTz(now, timeZone);
 }
 
+/** Calendar-arithmetic date shift, DST-safe for the same reason tomorrowInTz is. */
+function addDaysToYmd(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(y!, m! - 1, d! + days));
+  const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(next.getUTCDate()).padStart(2, "0");
+  return `${next.getUTCFullYear()}-${mm}-${dd}`;
+}
+
+/**
+ * One sentence the voice agent can speak VERBATIM about whether the venue is
+ * open right now's calendar day — injected per call as the `today_status`
+ * dynamic variable so the LLM never has to derive open/closed from the hours
+ * table mid-call (a real caller heard "Yeah, we're open today — actually,
+ * we're closed" while it worked that out aloud, and a booking ask for a closed
+ * night cost a needless check_availability round trip).
+ *
+ * Returns "" when the venue has no hours configured — the prompt treats an
+ * empty variable as "don't make claims about hours".
+ */
+export function formatTodayStatus(
+  openingHours: OpeningHours,
+  timeZone: string,
+  now: Date = new Date()
+): string {
+  const today = todayInTz(timeZone, now);
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const todayWindows = getOpeningWindowsForDate(today, openingHours);
+
+  if (todayWindows.length > 0) {
+    const spans = todayWindows
+      .map((w) => `${formatVoiceTime(w.open)} to ${formatVoiceTime(w.close)}`)
+      .join(" and ");
+    return `OPEN today (${cap(getDayName(today))}), ${spans}.`;
+  }
+
+  for (let i = 1; i <= 7; i++) {
+    const d = addDaysToYmd(today, i);
+    const windows = getOpeningWindowsForDate(d, openingHours);
+    if (windows.length > 0) {
+      const when = i === 1 ? `tomorrow (${cap(getDayName(d))})` : cap(getDayName(d));
+      return `CLOSED today (${cap(getDayName(today))}). Next open ${when} from ${formatVoiceTime(windows[0]!.open)}.`;
+    }
+  }
+
+  return "";
+}
+
 export function dayNameInTz(timeZone: string, now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" })
     .format(now)
