@@ -17,6 +17,16 @@
 > Rollback: `deploy/retell-snapshots/20260819-mazcina-staging-pre/` (agents/LLMs) +
 > `rollback-venue.sql` (the database half).
 
+> ⚠️ **Humanize pass, later 19 Aug 2026** (`deploy/retell-snapshots/20260819-humanize-{pre,post}/`):
+> greeting cut to one line — **the AI + recording disclosure was deliberately removed**, at
+> Sam's direction, for this internal staging line only. Per the open legal brief
+> ([`legal-brief-call-recording.md`](legal-brief-call-recording.md), NSW SDA 2007), **that
+> greeting must not reach production or any line real callers dial without legal sign-off
+> or the disclosure restored.** Same pass: prompt rewritten (12.7k → 9k chars, fixture
+> examples genericized, accent claim dropped — the voice is now `retell-Cimo`, American,
+> switched by Sam in the dashboard), and Expressive Mode enabled. The **dashboard draft is
+> stale** — publishing it would erase the same-day API fixes; discard it.
+
 Turns the staging venue row into **Mazcina** — real name, real menu, its own Retell agent —
 so staging stops being a synthetic fixture and becomes the rehearsal we promote to production
 from. Also fixes the voice quality reported on the 18 Aug call.
