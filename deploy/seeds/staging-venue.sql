@@ -1,3 +1,20 @@
+-- ⚠️ SUPERSEDED IN PART, 18 Aug 2026 — the staging venue is becoming Mazcina.
+--
+-- This file still describes the venue's ROW, SETTINGS, TABLES and MEMBERS, and
+-- those are still correct. Its MENU is not: the five fixture items below are
+-- being retired in favour of Mazcina's real 31-item menu.
+--   * retire the fixtures: deploy/seeds/mazcina-retire-fixture-menu.sql
+--   * import the real menu: mazcina/mazcina-menu-voxtable-import.json
+--   * the whole procedure:  deploy/runbooks/mazcina-staging-conversion.md
+--
+-- The venue name, hours and tables here are ALSO still the synthetic ones. They
+-- are deliberately not rewritten yet: the real trading hours and floor plan have
+-- not been supplied, and inventing them would make every availability and
+-- booking test meaningless. Update this file once they arrive.
+--
+-- Note the restaurants INSERT is ON CONFLICT (id) DO NOTHING, so editing this
+-- file never changes the LIVE staging row — the runbook's API calls do.
+--
 -- staging-venue.sql — VoxTable Staging Venue, the STAGING end-to-end test
 -- restaurant. Pattern: Cuban-Corner/cuban-corner-restaurant.sql.
 --
@@ -11,9 +28,16 @@
 --     either the id or a natural-key constraint absorbs the duplicate.
 --   * Additive — touches only this venue's rows.
 --
--- THE ONE RULE: never bind a second venue to +61 468 203 234. Dialled-number
--- routing is `WHERE twilio_phone_number = $1 ... LIMIT 1` with NO uniqueness
--- constraint — two rows on one number would route calls arbitrarily.
+-- THE ONE RULE: never bind a second venue to +61 468 203 234, and never bind
+-- another venue's Retell agent to this row.
+--
+-- (Correction, 18 Aug 2026: this comment used to claim the number columns have
+-- NO uniqueness constraint. They do — migration 007 gives each a partial unique
+-- index — so a duplicate number is rejected by the database. The gap was the
+-- AGENT: `retell_agent_id` was bare TEXT with no constraint at all, which is
+-- how this very file came to bind Natalia's agent to this venue. Migration 034
+-- closes it, and the routing query is now ORDER BY'd so the cross-column
+-- twilio/retell OR cannot resolve arbitrarily either.)
 --
 -- Menu prices are load-bearing: smoke-orders.ts asserts Fish & Chips (2200)
 -- + Large (+400) + Coke (0) totals exactly 2600. Change a price and the
@@ -47,7 +71,18 @@ VALUES
    'provisioning',  -- matches the live row; go-live is the admin endpoint's job
    '+61468203234',                          -- the staging Twilio number
    '+61468203234',
-   'agent_b9087333b7030f0cee06a19ffc')      -- Staging workspace agent (Natalia's clone)
+   -- retell_agent_id is deliberately NULL. It used to carry
+   -- 'agent_b9087333b7030f0cee06a19ffc', which is "Natalia's Bistro (STAGING)"
+   -- — another venue's agent, whose prompt hard-codes that venue's name and its
+   -- owner's. On a real call (18 Aug 2026) this line resolved to the RIGHT
+   -- restaurant and then answered as the wrong one.
+   --
+   -- Binding an agent is now the admin endpoint's job, not the seed's:
+   -- PATCH /api/admin/restaurants/:id/provisioning verifies the agent exists in
+   -- Retell and is named for THIS venue before storing it. A seed cannot do
+   -- that, and a NULL now fails loudly (retell_inbound_no_agent_bound) instead
+   -- of quietly borrowing someone else's voice.
+   NULL)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO restaurant_settings (restaurant_id, booking_duration_minutes, opening_hours_json)
@@ -85,72 +120,65 @@ ON CONFLICT (user_id, restaurant_id) DO NOTHING;
 -- read back from staging 14 Aug 2026). Bare ON CONFLICT so either the fixed
 -- id or UNIQUE (restaurant_id, label) absorbs the duplicate — the live rows
 -- carry their own ids for these labels.
-INSERT INTO tables (id, restaurant_id, label, min_capacity, max_capacity) VALUES
-  ('33333333-3333-4333-8333-000000000001', '33333333-3333-4333-8333-333333333333', 'S1', 1, 2),
-  ('33333333-3333-4333-8333-000000000002', '33333333-3333-4333-8333-333333333333', 'S2', 2, 4),
-  ('33333333-3333-4333-8333-000000000003', '33333333-3333-4333-8333-333333333333', 'S3', 3, 6),
-  ('33333333-3333-4333-8333-000000000004', '33333333-3333-4333-8333-333333333333', 'S4', 4, 8)
-ON CONFLICT DO NOTHING;
-
--- ───────────────────────────── Test menu ─────────────────────────────
--- Small on purpose: exactly what the smokes and the call battery exercise.
---   * Fish & Chips — the smoke-orders contract (prices asserted, see header).
---   * House Lager  — is_restricted: Bella must refuse it with the licensing line.
---   * Big Breakfast — menu window 09:00–11:30: refused outside the window.
-
-INSERT INTO menu_categories (id, restaurant_id, name, display_order, is_active) VALUES
-  ('33333333-3333-4333-8333-000000000101', '33333333-3333-4333-8333-333333333333', 'Mains', 1, true),
-  ('33333333-3333-4333-8333-000000000102', '33333333-3333-4333-8333-333333333333', 'Breakfast', 2, true),
-  ('33333333-3333-4333-8333-000000000103', '33333333-3333-4333-8333-333333333333', 'Drinks', 3, true)
-ON CONFLICT DO NOTHING;
-
-INSERT INTO menu_items
-  (id, restaurant_id, category_id, name, description, base_price_cents,
-   is_available, display_order, available_from, available_until, is_restricted)
-VALUES
-  ('33333333-3333-4333-8333-000000000201', '33333333-3333-4333-8333-333333333333',
-   '33333333-3333-4333-8333-000000000101', 'Fish & Chips',
-   'Beer-battered flathead with hand-cut chips and tartare.', 2200, true, 1,
-   NULL, NULL, false),
-  ('33333333-3333-4333-8333-000000000202', '33333333-3333-4333-8333-333333333333',
-   '33333333-3333-4333-8333-000000000101', 'Garden Salad',
-   'Leaves, tomato, cucumber, house dressing.', 1400, true, 2,
-   NULL, NULL, false),
-  ('33333333-3333-4333-8333-000000000203', '33333333-3333-4333-8333-333333333333',
-   '33333333-3333-4333-8333-000000000102', 'Big Breakfast',
-   'Eggs, bacon, sausage, mushrooms, toast. Breakfast hours only.', 2400, true, 1,
-   '09:00', '11:30', false),
-  ('33333333-3333-4333-8333-000000000204', '33333333-3333-4333-8333-333333333333',
-   '33333333-3333-4333-8333-000000000103', 'Coke', NULL, 500, true, 1,
-   NULL, NULL, false),
-  ('33333333-3333-4333-8333-000000000205', '33333333-3333-4333-8333-333333333333',
-   '33333333-3333-4333-8333-000000000103', 'House Lager',
-   'Licensed item — dine-in with a meal only.', 900, true, 2,
-   NULL, NULL, true)
-ON CONFLICT DO NOTHING;
-
-INSERT INTO menu_item_variants (id, menu_item_id, name, price_delta_cents, display_order) VALUES
-  ('33333333-3333-4333-8333-000000000301', '33333333-3333-4333-8333-000000000201', 'Small',  -800, 1),
-  ('33333333-3333-4333-8333-000000000302', '33333333-3333-4333-8333-000000000201', 'Medium',    0, 2),
-  ('33333333-3333-4333-8333-000000000303', '33333333-3333-4333-8333-000000000201', 'Large',   400, 3)
-ON CONFLICT DO NOTHING;
-
-INSERT INTO menu_item_modifiers
-  (id, menu_item_id, group_name, name, price_delta_cents,
-   group_min_select, group_max_select, is_default, display_order)
-VALUES
-  ('33333333-3333-4333-8333-000000000401', '33333333-3333-4333-8333-000000000201',
-   'Drink', 'Coke', 0, 1, 1, true, 1),
-  ('33333333-3333-4333-8333-000000000402', '33333333-3333-4333-8333-000000000201',
-   'Drink', 'Lemonade', 0, 1, 1, false, 2),
-  ('33333333-3333-4333-8333-000000000403', '33333333-3333-4333-8333-000000000201',
-   'Drink', 'Sparkling Water', 0, 1, 1, false, 3)
-ON CONFLICT DO NOTHING;
+-- Mazcina's real floor plan: 10 tables, 36 seats (4x 1-2, 4x 2-4, 2x 4-6).
+--
+-- This block used to insert four synthetic tables S1-S4 with ON CONFLICT DO
+-- NOTHING. After the venue became Mazcina that was actively dangerous: different
+-- labels and different ids meant re-running this file would NOT dedupe against
+-- the real tables — it would resurrect S1-S4 alongside them, silently, giving
+-- the venue a fourteen-table room and a phantom 8-seat capacity.
+--
+-- Upserting by label instead makes this file agree with
+-- deploy/seeds/mazcina-tables.sql from any starting state. Apply that file for
+-- the retirement half (it also deactivates whatever is not in this set).
+INSERT INTO tables (restaurant_id, label, min_capacity, max_capacity, is_active) VALUES
+  ('33333333-3333-4333-8333-333333333333', 'T1',  1, 2, true),
+  ('33333333-3333-4333-8333-333333333333', 'T2',  1, 2, true),
+  ('33333333-3333-4333-8333-333333333333', 'T3',  1, 2, true),
+  ('33333333-3333-4333-8333-333333333333', 'T4',  1, 2, true),
+  ('33333333-3333-4333-8333-333333333333', 'T5',  2, 4, true),
+  ('33333333-3333-4333-8333-333333333333', 'T6',  2, 4, true),
+  ('33333333-3333-4333-8333-333333333333', 'T7',  2, 4, true),
+  ('33333333-3333-4333-8333-333333333333', 'T8',  2, 4, true),
+  ('33333333-3333-4333-8333-333333333333', 'T9',  4, 6, true),
+  ('33333333-3333-4333-8333-333333333333', 'T10', 4, 6, true)
+ON CONFLICT (restaurant_id, label) DO UPDATE
+  SET min_capacity = EXCLUDED.min_capacity,
+      max_capacity = EXCLUDED.max_capacity,
+      is_active    = true;
+-- MENU: deliberately not seeded here any more.
+--
+-- This file used to insert a five-item fixture menu (Fish & Chips, Garden Salad,
+-- Big Breakfast, Coke, House Lager) with fixed ids and ON CONFLICT DO NOTHING.
+-- Once the venue became Mazcina that turned into a live hazard, and the same one
+-- the tables block had: re-running this file RESURRECTED the fixture items
+-- alongside Mazcina's real menu, silently, and Bella would happily read
+-- "Fish & Chips" out to a caller at a Mediterranean/Chilean restaurant.
+-- Observed exactly that on a replica: 31 real items became 35.
+--
+-- Mazcina's menu is real data and lives with the venue, not in this repo:
+--
+--   npm run menu:import --workspace=@vocotable/backend -- \
+--     --restaurant-id 33333333-3333-4333-8333-333333333333 \
+--     --file mazcina/mazcina-menu-voxtable-import.json --dry-run
+--
+-- (drop --dry-run to apply; use --emit-sql for the private-only staging
+-- database). Full procedure: deploy/runbooks/mazcina-staging-conversion.md §4.
+--
+-- The licensed-item and menu-window paths that the fixture menu used to
+-- exercise now have real automated cover that provisions its own venue:
+--   npm run smoke:menu-guards
 
 COMMIT;
 
 -- CLEANUP (only if the venue must be rebuilt from scratch; order matters —
--- order_items/reservations FKs are RESTRICT):
+-- order_items references menu_items as RESTRICT, so menu rows must go in the
+-- order below. ⚠️ CORRECTION: reservations.table_id and orders.table_id are
+-- ON DELETE **SET NULL**, not RESTRICT. Deleting a table therefore does NOT
+-- error — it silently nulls table_id on every reservation, dropping those
+-- bookings out of migration 025's overlap guard (`WHERE table_id IS NOT NULL`)
+-- so their seats become sellable again. Never delete a table that has
+-- reservations; deactivate it (see deploy/seeds/mazcina-tables.sql):
 -- BEGIN;
 -- DELETE FROM menu_item_modifiers WHERE menu_item_id IN (SELECT id FROM menu_items WHERE restaurant_id = '33333333-3333-4333-8333-333333333333');
 -- DELETE FROM menu_item_variants  WHERE menu_item_id IN (SELECT id FROM menu_items WHERE restaurant_id = '33333333-3333-4333-8333-333333333333');
