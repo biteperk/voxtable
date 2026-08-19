@@ -39,6 +39,14 @@ for this.
 Both ends say the other side ended it → the BYE originated **upstream of Twilio**, on the
 PSTN/caller side.
 
+## Repro under live watch, 15:29 AEST
+
+With a full pre-call audit green minutes earlier (account active/funded, zero alerts, trunk
+healthy in AU1, Retell webhook mode resolving in 454 ms, agent config verified), Sam's 15:29
+call died at **7,600 ms**, `user_hangup`, same handset. Eight dead calls now sit in a 54 ms
+duration window (7,594–7,648 ms). Retell workspace concurrency was 0-of-20 at the time —
+no phantom calls holding slots.
+
 ## Ruled out (each verified, not assumed)
 
 - **Twilio trunk config** — `TKdebe2aa1…` is healthy *in the AU1 API view*: origination
@@ -58,6 +66,9 @@ PSTN/caller side.
 - **Cloud Run cold start** — the agent answered and greeted on every dead call; the
   inbound webhook completed in ~350 ms on the 15:05 dead call.
 - **Twilio account health** — active, $11.55 balance, no alerts.
+- **Retell concurrency** — 0 of 20 in use at repro time; no stuck ongoing calls.
+- **Retell number binding** — webhook mode (`inbound_webhook_url` → staging API), no static
+  `inbound_agent_id`; resolution round-trip 454 ms at repro time.
 
 ## What's left (in probability order)
 
