@@ -11,10 +11,10 @@
   },
   "dependencies": {
     "@calcom/embed-react": "^1.5.3",
-    "@sentry/react": "^10.54.0",
+    "@sentry/react": "^10.70.0",
     "firebase": "^12.17.1",
     "jspdf": "^4.2.1",
-    "libphonenumber-js": "^1.13.3",
+    "libphonenumber-js": "^1.13.11",
     "pdfjs-dist": "^6.2.108",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
