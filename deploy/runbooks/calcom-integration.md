@@ -153,14 +153,43 @@ SELECT id, reservation_id, op, attempts, last_error, failed_at
 ones, so this table is the durable record. Re-enqueue via the admin stuck-jobs
 surface rather than by editing rows.
 
+## When an inbound booking fails
+
+`/cal/webhook` persists every event, processes it inline, and always answers 200 —
+a 5xx makes Cal.com retry on its own schedule forever. Failures are then ours to
+recover, and `calcomInboxWorker` does it, on the same shape as the outbox worker:
+exponential backoff from a minute, capped at an hour, `CALCOM_INBOX_MAX_ATTEMPTS`
+attempts, then dead-letter.
+
+Two classes, and the difference matters:
+
+- **Transient** — a day-lock wait outliving `statement_timeout`, an exhausted
+  pool, a Postgres blip. Says nothing about the booking. Retried.
+- **Permanent** (`PermanentInboxError`) — a refusal (no table, a date in the
+  past), an unmapped event type, a payload the schema rejects. Dead-lettered on
+  the **first** attempt, without burning the ceiling. These paths have already
+  cancelled the booking back on Cal.com, so a retry that later succeeded would
+  create a reservation for a booking the guest has been told is off — and every
+  retry would re-issue that cancel-back.
+
+Dead letters are the ones to act on. One means a guest is holding a confirmation
+for a table nobody has:
+
+```sql
+SELECT event_id, trigger_event, attempts, failed_at, process_error
+  FROM inbox_calcom_events
+ WHERE failed_at IS NOT NULL
+ ORDER BY failed_at DESC
+ LIMIT 50;
+```
+
+The payload is kept, so the booking can be recreated by hand. `cleanupWorker`
+never sweeps these (#214). Slack alerts on the first one, no debounce.
+
 ## Known gaps
 
-- **There is no inbox retry worker.** `claimUnprocessedInbox` exists and has no
-  callers; `/cal/webhook` processes inline and turns every failure into a 200, so
-  Cal.com never retries either. A booking lost to a lock wait or a pool timeout is
-  lost. This must be built before Cal.com carries real public traffic.
 - **`BOOKING_RESCHEDULED` inbound is ignored** by design. A guest who reschedules
   on Cal.com gets a confirmation for the new time while the floor plan still shows
-  the old one.
-- **The tenant health endpoint reports platform-wide outbox and inbox stats.** Do
-  not surface it per venue until it is scoped.
+  the old one. This needs a decision before Cal.com carries real public traffic.
+- **One booking per time slot** — see the limitation above. This is the reason
+  Cal.com is not yet suitable for a venue with a busy single service.

@@ -1,5 +1,6 @@
 import { AppError } from "../domain/errors";
 import { BookingResult, CreateBookingInput, ReservationStatus } from "../domain/types";
+import type { PoolClient } from "pg";
 import { DbClient, pool, withTransaction } from "../db/pool";
 import {
   attachReservationToCallLog,
@@ -141,9 +142,14 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     }
   }
 
-  const lockClient = await pool.connect();
-
+  // Connect INSIDE the try. `connectionTimeoutMillis` is 5 s (db/pool.ts) and a
+  // burst of concurrent web webhooks each holds a write connection for the
+  // length of the day lock below, so exhaustion here is a real failure mode —
+  // not a theoretical one. Outside the try it rejected past every handler that
+  // knows what to do about it.
+  let lockClient: PoolClient | undefined;
   try {
+    lockClient = await pool.connect();
     await lockClient.query("BEGIN");
     // Per-DAY advisory lock. This was per-slot (restaurant:date:time), which
     // looked more granular but could not serialise the bookings that actually
@@ -293,10 +299,11 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     // and rethrowAsDoubleBookConflict never runs — turning a clean 409
     // TABLE_JUST_TAKEN into an opaque 500 mid-call. withTransaction and
     // cancelBooking already guard theirs; this one did not.
-    await lockClient.query("ROLLBACK").catch(() => {});
-    rethrowAsDoubleBookConflict(error);
+    // Guarded because lockClient is undefined when the failure WAS the connect.
+    await lockClient?.query("ROLLBACK").catch(() => {});
+    return rethrowAsDoubleBookConflict(error);
   } finally {
-    lockClient.release();
+    lockClient?.release();
   }
 }
 

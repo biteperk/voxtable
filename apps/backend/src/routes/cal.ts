@@ -18,9 +18,14 @@
 import { Router } from "express";
 
 import { env } from "../config/env";
-import { AppError } from "../domain/errors";
+import { AppError, PermanentInboxError } from "../domain/errors";
 import { asyncHandler } from "../http/asyncHandler";
-import { markInboxFailed, markInboxProcessed, recordInboxEvent } from "../repositories/inbox";
+import {
+  markInboxDeadLettered,
+  markInboxProcessed,
+  markInboxRetry,
+  recordInboxEvent
+} from "../repositories/inbox";
 import {
   computeInboxEventId,
   processInboxEvent,
@@ -31,7 +36,17 @@ import { logger } from "../utils/logger";
 
 type RequestWithRawBody = Express.Request & { rawBody?: string };
 
-const REPLAY_WINDOW_MS = 5 * 60 * 1000;
+// How long before the retry worker first looks at a row the inline attempt
+// failed on. Short: most inline failures are contention (a day lock, the pool)
+// that clears in seconds, and the worker's own backoff takes over from there.
+const INLINE_FAILURE_RETRY_MS = 15_000;
+
+// Cal.com's own retry schedule backs off well past five minutes, which is what
+// this used to be — so a legitimate vendor retry of an event we 5xx'd arrived
+// outside the window, got a 400, and Cal.com stopped trying. The window exists
+// to bound replay of a captured request, and an hour still does that: the
+// signature covers the body, and inbox_calcom_events dedupes on it regardless.
+const REPLAY_WINDOW_MS = 60 * 60 * 1000;
 
 export const calRouter = Router();
 
@@ -118,12 +133,28 @@ calRouter.post(
       await markInboxProcessed(eventId);
       response.status(200).json({ status: "processed" });
     } catch (error) {
-      // Mark the inbox row failed so ops can replay manually. Don't 5xx —
-      // we already accepted the event and persisted it; retrying via Cal.com
-      // won't help (deterministic failure most likely).
+      // Still a 200: we have already accepted and persisted the event, and a
+      // 5xx would make Cal.com retry on its own schedule forever.
+      //
+      // But this is now attempt ONE, not the end. The row stays claimable and
+      // calcomInboxWorker picks it up when its backoff elapses. Before that
+      // worker existed this branch only stamped an error, so a booking lost to
+      // a lock wait or a pool timeout was lost for good — we did not retry it
+      // and, because of the 200, neither did Cal.com.
       const message = (error as Error).message ?? String(error);
-      await markInboxFailed(eventId, message);
-      logger.error({ evt: "cal_webhook_process_failed", event_id: eventId, error });
+
+      // The inline path classifies exactly as the retry worker does, so the two
+      // cannot drift. A refusal or an unmapped venue has already cancelled the
+      // booking back on Cal.com — scheduling a retry would fire that cancel a
+      // second time and, if it ever succeeded, create a reservation for a
+      // booking the guest has been told is off.
+      if (error instanceof PermanentInboxError) {
+        await markInboxDeadLettered(eventId, `Not retryable: ${message}`);
+        logger.error({ evt: "cal_webhook_process_permanent", event_id: eventId, error });
+      } else {
+        await markInboxRetry(eventId, message, INLINE_FAILURE_RETRY_MS);
+        logger.error({ evt: "cal_webhook_process_failed", event_id: eventId, error });
+      }
       response.status(200).json({ status: "deferred", reason: message });
     }
   })

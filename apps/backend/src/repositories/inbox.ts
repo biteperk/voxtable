@@ -17,6 +17,8 @@ export interface InboxRow {
   received_at: string;
   processed_at: string | null;
   process_error: string | null;
+  attempts: number;
+  failed_at: string | null;
 }
 
 export interface RecordInboxEventInput {
@@ -44,19 +46,27 @@ export async function recordInboxEvent(input: RecordInboxEventInput, db: DbClien
 }
 
 /**
- * Used by the inbox worker (PR 2) to pull events that haven't been processed.
- * No locking primitive needed here because the worker pulls by `processed_at
- * IS NULL` and writes to it inside its own transaction — see Postgres's
- * default row-locking semantics in SELECT FOR UPDATE.
+ * Rows that are still owed a processing attempt and whose backoff has elapsed.
+ *
+ * Excludes dead-lettered rows (`failed_at`): those are evidence, not work.
+ * Without that exclusion a permanently-failing row — an unmapped event type,
+ * say — would be re-claimed every tick forever, and each attempt re-issues the
+ * cancel-back call to Cal.com.
+ *
+ * FOR UPDATE SKIP LOCKED so two worker processes can never take the same row.
+ * Ordered by due time, then received time, so an old row that has exhausted its
+ * backoff does not sit behind a newer one that has not.
  */
-export async function claimUnprocessedInbox(limit: number, db: DbClient): Promise<InboxRow[]> {
+export async function claimRetryableInbox(limit: number, db: DbClient): Promise<InboxRow[]> {
   const result = await db.query<InboxRow>(
     `
     SELECT event_id, trigger_event, raw_payload, received_at,
-           processed_at, process_error
+           processed_at, process_error, attempts, failed_at
       FROM inbox_calcom_events
      WHERE processed_at IS NULL
-     ORDER BY received_at
+       AND failed_at IS NULL
+       AND next_attempt_at <= now()
+     ORDER BY next_attempt_at, received_at
      LIMIT $1
      FOR UPDATE SKIP LOCKED
     `,
@@ -72,17 +82,56 @@ export async function markInboxProcessed(eventId: string, db: DbClient = pool): 
   );
 }
 
-export async function markInboxFailed(eventId: string, error: string, db: DbClient = pool): Promise<void> {
+/**
+ * Record a failed attempt and schedule the next one.
+ *
+ * Called by BOTH the inline path in routes/cal.ts and the retry worker, so an
+ * inline failure is simply attempt one — the row stays claimable and the worker
+ * picks it up when its backoff elapses. It used to only stamp `process_error`,
+ * which left the row unprocessed forever with nothing scheduled to look at it
+ * again, and nothing at Cal.com either, because we answer 200.
+ */
+export async function markInboxRetry(
+  eventId: string,
+  error: string,
+  delayMs: number,
+  db: DbClient = pool
+): Promise<void> {
   await db.query(
-    "UPDATE inbox_calcom_events SET process_error = $2 WHERE event_id = $1",
+    `UPDATE inbox_calcom_events
+        SET attempts = attempts + 1,
+            process_error = $2,
+            next_attempt_at = now() + ($3::bigint || ' milliseconds')::interval
+      WHERE event_id = $1`,
+    [eventId, error.slice(0, 1000), Math.max(0, Math.round(delayMs))]
+  );
+}
+
+/**
+ * Terminal. The row keeps its payload and its last error as the durable record
+ * of a booking we could not honour — cleanupWorker refuses to sweep it (#214),
+ * and it drops out of both the retry claim and the unprocessed-depth alert.
+ */
+export async function markInboxDeadLettered(
+  eventId: string,
+  error: string,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(
+    `UPDATE inbox_calcom_events
+        SET attempts = attempts + 1, process_error = $2, failed_at = now()
+      WHERE event_id = $1`,
     [eventId, error.slice(0, 1000)]
   );
 }
 
 export interface InboxStats {
+  /** Still owed work. Excludes dead letters, or the depth alert would latch. */
   unprocessedDepth: number;
   oldestUnprocessedAt: string | null;
   failuresLast24h: number;
+  /** Terminal failures — a guest holds a confirmation we could not honour. */
+  deadLetteredLast24h: number;
 }
 
 export async function getInboxStats(db: DbClient = readPool): Promise<InboxStats> {
@@ -90,14 +139,19 @@ export async function getInboxStats(db: DbClient = readPool): Promise<InboxStats
     unprocessed_depth: string;
     oldest_unprocessed_at: string | null;
     failures_last_24h: string;
+    dead_lettered_last_24h: string;
   }>(
     `
     SELECT
-      COUNT(*) FILTER (WHERE processed_at IS NULL)::text AS unprocessed_depth,
+      COUNT(*) FILTER (WHERE processed_at IS NULL
+                       AND failed_at IS NULL)::text AS unprocessed_depth,
       MIN(received_at)
-        FILTER (WHERE processed_at IS NULL)::text AS oldest_unprocessed_at,
+        FILTER (WHERE processed_at IS NULL
+                AND failed_at IS NULL)::text AS oldest_unprocessed_at,
       COUNT(*) FILTER (WHERE process_error IS NOT NULL
-                       AND received_at >= now() - INTERVAL '24 hours')::text AS failures_last_24h
+                       AND received_at >= now() - INTERVAL '24 hours')::text AS failures_last_24h,
+      COUNT(*) FILTER (WHERE failed_at IS NOT NULL
+                       AND failed_at >= now() - INTERVAL '24 hours')::text AS dead_lettered_last_24h
     FROM inbox_calcom_events
     `
   );
@@ -105,6 +159,7 @@ export async function getInboxStats(db: DbClient = readPool): Promise<InboxStats
   return {
     unprocessedDepth: Number(row.unprocessed_depth),
     oldestUnprocessedAt: row.oldest_unprocessed_at,
-    failuresLast24h: Number(row.failures_last_24h)
+    failuresLast24h: Number(row.failures_last_24h),
+    deadLetteredLast24h: Number(row.dead_lettered_last_24h)
   };
 }

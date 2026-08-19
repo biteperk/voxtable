@@ -49,7 +49,12 @@ import {
 const CHECK_INTERVAL_MS = 60_000; // every minute
 const OUTBOX_DEPTH_THRESHOLD = 100;
 const OUTBOX_DEPTH_CONSECUTIVE_CHECKS = 5; // ≥ 5 min lag before pinging
+// Was 5, which meant five guests could each be holding a Cal.com confirmation
+// for a table nobody knew about before anyone was told. A retried failure is
+// now normal and self-healing (calcomInboxWorker), so the interesting number is
+// dead letters, not attempts — and one of those is one guest too many.
 const INBOX_FAILURES_THRESHOLD = 5;
+const INBOX_DEAD_LETTER_THRESHOLD = 0;
 // Audit L4: any permanent-failed outbox row in the last 24h means a Cal.com
 // push hit MAX_ATTEMPTS and stopped retrying — there's a reservation in
 // Postgres that never reached Cal.com. Alert immediately, no debounce.
@@ -84,6 +89,7 @@ interface AlertState {
   outboxDepthAlerted: boolean;
   breakerAlerted: boolean;
   inboxFailuresAlerted: boolean;
+  inboxDeadLetterAlerted: boolean;
   outboxDeadLetterCount: number;
   outboxDeadLetterAlerted: boolean;
   kdsOldestPendingAlerted: boolean;
@@ -130,6 +136,7 @@ const DEFAULT_STATE: AlertState = {
   outboxDepthAlerted: false,
   breakerAlerted: false,
   inboxFailuresAlerted: false,
+  inboxDeadLetterAlerted: false,
   outboxDeadLetterCount: 0,
   outboxDeadLetterAlerted: false,
   kdsOldestPendingAlerted: false,
@@ -341,6 +348,23 @@ async function checkCalcom(): Promise<void> {
       // Don't post a recovery for inbox failures — they decay naturally with
       // the 24h window.
       state.inboxFailuresAlerted = false;
+    }
+
+    // 3b) A dead-lettered inbound event is a booking we accepted from Cal.com
+    //     and could not honour after every retry. Unlike a failure count, this
+    //     does not decay into nothing: someone is expecting a table. Alert on
+    //     the first one, no debounce, same posture as the outbox dead letter.
+    if (inbox.deadLetteredLast24h > INBOX_DEAD_LETTER_THRESHOLD) {
+      if (!state.inboxDeadLetterAlerted) {
+        await postToSlack(
+          `:rotating_light: Cal.com inbound bookings dead-lettered: ${inbox.deadLetteredLast24h} in the last 24h. ` +
+            `Each one is a guest holding a confirmation for a table we have no record of. ` +
+            `Payloads are kept in inbox_calcom_events (failed_at IS NOT NULL).`
+        );
+        state.inboxDeadLetterAlerted = true;
+      }
+    } else if (state.inboxDeadLetterAlerted) {
+      state.inboxDeadLetterAlerted = false;
     }
 
     // 4) Cal.com daily quota — edge-triggered alert (once per UTC day).

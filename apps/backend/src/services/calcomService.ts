@@ -21,7 +21,7 @@
 import crypto from "node:crypto";
 
 import { env } from "../config/env";
-import { AppError } from "../domain/errors";
+import { AppError, PermanentInboxError } from "../domain/errors";
 import { BookingSource } from "../domain/types";
 import { DbClient, pool, readPool } from "../db/pool";
 import {
@@ -32,6 +32,7 @@ import {
 } from "./calcomClient";
 import {
   ReservationRow,
+  cancelReservation,
   findReservationByCalcomUid,
   updateReservationCalcomUid
 } from "../repositories/reservations";
@@ -712,7 +713,7 @@ export function computeInboxEventId(payload: Record<string, unknown>): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
-interface CalcomWebhookPayload {
+export interface CalcomWebhookPayload {
   triggerEvent: string;
   createdAt: string;
   payload: Record<string, any>;
@@ -739,9 +740,10 @@ export async function processInboxEvent(event: CalcomWebhookPayload): Promise<vo
       trigger: event.triggerEvent,
       error: parsed.error
     });
-    throw new AppError(
-      400,
-      "CALCOM_PAYLOAD_INVALID",
+    // Permanent: the stored payload is immutable, so it will fail the same
+    // schema on every attempt. Retrying it would burn the ceiling and delay the
+    // dead-letter alert that tells someone Cal.com changed shape on us.
+    throw new PermanentInboxError(
       `Cal.com ${event.triggerEvent} payload failed schema: ${parsed.error}`
     );
   }
@@ -843,11 +845,12 @@ async function handleBookingCreated(
       uid,
       "VoxTable could not match this booking to a venue. Please call the restaurant directly."
     );
-    // Throwing marks the inbox row failed, which is the durable evidence an
-    // operator needs to find this later. It is deliberately not swallowed:
-    // an unmapped event type is a misconfiguration someone must fix, not a
-    // transient blip.
-    throw new Error(
+    // Permanent, for two reasons. An unmapped event type is a
+    // misconfiguration someone must fix, not a blip — but more importantly the
+    // cancel-back above has already told the guest their booking is off, so a
+    // retry that later succeeded would create a reservation for a booking the
+    // guest believes is cancelled. The row stays as durable evidence either way.
+    throw new PermanentInboxError(
       `Cal.com event type ${data.eventTypeId ?? "(absent)"} is not bound to any restaurant`
     );
   }
@@ -955,9 +958,28 @@ async function handleBookingCreated(
     // told. Best-effort; if Cal.com is unreachable we log and continue (the
     // outbox/inbox audit gives ops the info to handle manually).
     const message = (error as Error).message ?? String(error);
+
+    // Two very different failures arrive here and they must not be treated
+    // alike. A 4xx from bookingService is a decision — no table, a date in the
+    // past, a party we cannot seat — and it will be the same decision on every
+    // retry, so the guest is told now and the row is terminal. Anything else
+    // (a day-lock wait outliving statement_timeout, an exhausted pool, a
+    // Postgres blip) is infrastructure: it says nothing about the booking, it
+    // will very likely succeed on the next attempt, and cancelling the guest's
+    // booking over it would be plainly wrong.
+    //
+    // The old code cancelled back on every failure, which turned a five-second
+    // lock wait into a cancelled reservation.
+    const isRefusal = error instanceof AppError && error.statusCode >= 400 && error.statusCode < 500;
+
+    if (!isRefusal) {
+      logger.error({ evt: "calcom_inbox_web_booking_deferred", uid, error });
+      throw error;
+    }
+
     logger.error({ evt: "calcom_inbox_web_booking_rejected", uid, error });
     await cancelOnCalcomBestEffort(uid, `VoxTable rejected: ${message}`);
-    throw error;
+    throw new PermanentInboxError(message);
   }
 }
 
@@ -998,14 +1020,22 @@ async function handleBookingCancelled(
     logger.info({ evt: "calcom_inbox_cancel_no_match", uid });
     return;
   }
-  if (existing.status === "cancelled") {
-    return; // already cancelled — likely our own echo
-  }
-  // Cancel in our DB. Don't push back to Cal.com (it already happened there).
-  await pool.query(
-    "UPDATE reservations SET status = 'cancelled', cancellation_reason = $2, cancelled_at = now() WHERE id = $1",
-    [existing.id, "Cancelled via Cal.com"]
+  // Cancel in our DB. Don't push back to Cal.com — it already happened there.
+  //
+  // Via cancelReservation rather than a raw UPDATE: the guard belongs in the
+  // WHERE clause. The previous shape read the status, decided, then wrote, and
+  // two deliveries of the same cancellation could interleave between the two —
+  // the audit-M3 race that function was written to close. Returning null means
+  // somebody else got there first, which for a webhook is the common case (our
+  // own echo), not an error.
+  const cancelled = await cancelReservation(
+    { id: existing.id, reason: "Cancelled via Cal.com" },
+    pool
   );
+  if (!cancelled) {
+    logger.info({ evt: "calcom_inbox_cancel_already_applied", uid, reservation_id: existing.id });
+    return;
+  }
   logger.info({ evt: "calcom_inbox_cancel_applied", uid, reservation_id: existing.id });
 }
 

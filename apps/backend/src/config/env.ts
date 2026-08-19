@@ -163,6 +163,10 @@ const envSchema = z
   CALCOM_WEBHOOK_SECRET: z.string().optional(),
   CALCOM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   CALCOM_OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
+  // Attempts before an inbound webhook is declared unrecoverable. Same default
+  // and same backoff curve as the outbox, so both give roughly a day to ride
+  // out an outage before a booking is dead-lettered.
+  CALCOM_INBOX_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
 
   // Audit Sweep I: per-day Cal.com API request threshold. When today's count
   // crosses this, healthAlerter fires a Slack ping. Default is 80% of free
