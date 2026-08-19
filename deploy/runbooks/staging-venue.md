@@ -14,7 +14,7 @@ The end-to-end test restaurant on staging. One venue, one number, committed as c
 | Bound number | `+61 468 203 234` (staging Twilio, `Biteperk-staging`) |
 | Retell agent | ⚠️ **unbound** — see "The agent this venue must NOT use" below |
 | Tables | **10, the venue's real floor plan** — T1–T4 (1-2) · T5–T8 (2-4) · T9–T10 (4-6). Largest seats **6**; S1–S4 are retired (deactivated, not deleted). |
-| Hours | 09:00–23:00 every day |
+| Hours | Mazcina's real hours since 19 Aug 2026: Thu–Sat 12:00–21:30 · Sun–Mon 12:00–21:00 · **closed Tue & Wed** (confirmed by Sam; also spoken via the `hours` entry in `faq_json`). Source: `deploy/seeds/mazcina-venue.sql` |
 | Menu | 5 items — see below, the prices are load-bearing |
 | Seed | `deploy/seeds/staging-venue.sql` (idempotent; applied + re-applied 14 Aug 2026) |
 
@@ -40,6 +40,11 @@ agent to this row.** Extend this venue; don't clone it.
 > is how this venue came to be bound to another venue's agent. Migration 034 adds the missing
 > index, and the routing query is now `ORDER BY`'d so the cross-column `twilio OR retell`
 > match cannot resolve arbitrarily either.
+
+> ✅ **RESOLVED 19 Aug 2026.** The venue is now **Mazcina** and is bound to its own agent,
+> `agent_7b67073710604d306443cc569c` (LLM `llm_c1d40dbe180e737dd2ce1309ed3f`), with a fully
+> de-venued prompt. `agent_b9087333…` remains in the workspace as Natalia's staging agent and
+> is bound to nothing. The section below stands as the history of why the constraint exists.
 
 ## The agent this venue must NOT use
 

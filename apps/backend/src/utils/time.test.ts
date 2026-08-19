@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isWithinDailyWindow, tomorrowInTz, todayInTz, utcIsoToZonedWallClock, zonedWallClockToUtcISO } from "./time";
+import { formatTodayStatus, isWithinDailyWindow, tomorrowInTz, todayInTz, utcIsoToZonedWallClock, zonedWallClockToUtcISO } from "./time";
 
 const SYD = "Australia/Sydney";
 
@@ -142,4 +142,57 @@ test("one-sided windows are open-ended on the missing side", () => {
 
 test("zero-length window is never available (degenerate, mirrors opening hours)", () => {
   assert.equal(isWithinDailyWindow("12:00", "12:00", "12:00"), false);
+});
+
+// --- formatTodayStatus: the today_status dynamic variable ---------------------
+// Mazcina's real shape: closed Tue+Wed, so a Wednesday must say CLOSED and
+// point at Thursday — the case a live caller hit on 19 Aug 2026.
+
+
+const MAZCINA_HOURS = {
+  monday: [{ open: "12:00", close: "21:00" }],
+  tuesday: [],
+  wednesday: [],
+  thursday: [{ open: "12:00", close: "21:30" }],
+  friday: [{ open: "12:00", close: "21:30" }],
+  saturday: [{ open: "12:00", close: "21:30" }],
+  sunday: [{ open: "12:00", close: "21:00" }]
+};
+
+// 2026-08-19 is a Wednesday; noon UTC = 22:00 AEST, still the 19th in Sydney.
+const WEDNESDAY = new Date("2026-08-19T02:00:00Z");
+const THURSDAY = new Date("2026-08-20T02:00:00Z");
+const MONDAY = new Date("2026-08-17T02:00:00Z");
+
+test("closed day names the day and the next opening", () => {
+  assert.equal(
+    formatTodayStatus(MAZCINA_HOURS, SYD, WEDNESDAY),
+    "CLOSED today (Wednesday). Next open tomorrow (Thursday) from 12 PM."
+  );
+});
+
+test("open day speaks the window", () => {
+  assert.equal(
+    formatTodayStatus(MAZCINA_HOURS, SYD, THURSDAY),
+    "OPEN today (Thursday), 12 PM to 9:30 PM."
+  );
+});
+
+test("Monday (open, before a two-day closure) is still just OPEN", () => {
+  assert.equal(
+    formatTodayStatus(MAZCINA_HOURS, SYD, MONDAY),
+    "OPEN today (Monday), 12 PM to 9 PM."
+  );
+});
+
+test("Tuesday's next open skips Wednesday", () => {
+  const TUESDAY = new Date("2026-08-18T02:00:00Z");
+  assert.equal(
+    formatTodayStatus(MAZCINA_HOURS, SYD, TUESDAY),
+    "CLOSED today (Tuesday). Next open Thursday from 12 PM."
+  );
+});
+
+test("no hours at all returns empty — the prompt must not claim anything", () => {
+  assert.equal(formatTodayStatus({}, SYD, WEDNESDAY), "");
 });

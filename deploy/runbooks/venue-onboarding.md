@@ -70,6 +70,27 @@ NAMES.md §per-venue resources.
    `createVenueLlm` now refuses a template whose prompt has no
    `{{restaurant_name}}` placeholder, so auto-provisioning cannot clone a
    venue-specific prompt.
+
+   The prompt is not the only place a venue name hides: **`boosted_keywords` on
+   the agent** carries the venue's name and its menu vocabulary for the STT.
+   A clone inherits the previous venue's list, which both leaks the name and
+   mis-biases transcription toward the wrong menu. Rewrite it per venue: the
+   venue's own name plus the dishes a caller will actually say (found on
+   Mazcina 19 Aug 2026 — the clone still boosted "Natalia's Bistro" and
+   "fish and chips").
+3b. **Every functional tool needs `speak_after_execution: true`.** With `false`,
+   no LLM generation is triggered when a tool result arrives — the agent holds
+   the answer silently unless its own turn happens to still be open, which
+   turns "let me check the menu…" into 18 seconds of dead air and a hangup
+   (observed live, 19 Aug 2026: backend answered in 95 ms; the agent never
+   spoke it; identical durations on back-to-back calls because callers give up
+   at the same point). Both existing workspaces were built with `false`, so
+   **any agent built by copying inherits the dead air** — assert the flag on
+   every functional tool after building, and leave it `false` only on tools
+   whose result genuinely needs no spoken reply. The staging LLMs were fixed
+   19 Aug 2026; ⚠️ **the live pilot LLM (`llm_2cad4da6…`, Algorythmos
+   workspace) still carries `false` everywhere** — fix at the production
+   cutover, not before (it is another company's workspace).
 4. **Leave `default_dynamic_variables` empty.** Production has no worker that
    refreshes them (`RETELL_LLM_ID` is unreferenced on `main`), so anything set
    there is frozen forever and surfaces only when the inbound webhook fails —

@@ -310,6 +310,59 @@ export interface MenuLookupMatch {
   available_until: string | null;
 }
 
+/**
+ * Callers ask for "the menu" as a thing, not a dish — and the LLM passes those
+ * words through as a search query, which can never match an item name. Route
+ * them to the category overview instead of a nonsense "couldn't find menu" miss.
+ */
+const GENERIC_MENU_QUERY = /^(the |your |whole |full )*(menu|menus|food|meals|dishes|options|specials|everything)\s*$/i;
+
+function speakablePrice(cents: number): string {
+  return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
+
+function toLookupMatch(i: MenuItemPayload, categoryId: string): MenuLookupMatch {
+  return {
+    id: i.id,
+    name: i.name,
+    price_cents: i.base_price_cents,
+    category_id: categoryId,
+    is_restricted: i.is_restricted,
+    available_from: i.available_from,
+    available_until: i.available_until
+  };
+}
+
+/**
+ * The real category overview, built from THIS venue's menu. The summary speaks
+ * category NAMES only — an earlier version read 2 items from each of the first
+ * 4 categories, which on a real 8-category menu produced a 17-second monologue
+ * that also never mentioned half the menu. Names are short, complete, and
+ * invite the caller to pick a section; `matches` still carries one sample item
+ * per category so the agent has something concrete to suggest.
+ */
+async function categoryOverview(restaurantId: string): Promise<{
+  matches: MenuLookupMatch[];
+  categories: { id: string; name: string; items: MenuItemPayload[] }[];
+  names: string;
+}> {
+  // Skip restricted items — Bella must never offer what she has to refuse.
+  const menu = await getMenu(restaurantId);
+  const categories = menu.categories
+    .map((c) => ({ id: c.id, name: c.name, items: c.items.filter((i) => !i.is_restricted) }))
+    .filter((c) => c.items.length > 0);
+  const nameList = categories.map((c) => c.name);
+  const names =
+    nameList.length > 1
+      ? `${nameList.slice(0, -1).join(", ")} and ${nameList.at(-1)}`
+      : (nameList[0] ?? "");
+  return {
+    names,
+    categories,
+    matches: categories.flatMap((c) => c.items.slice(0, 1).map((i) => toLookupMatch(i, c.id)))
+  };
+}
+
 export async function lookupMenu(input: {
   restaurantId: string;
   query?: string;
@@ -319,13 +372,17 @@ export async function lookupMenu(input: {
   speakable_summary: string;
   ambiguous: boolean;
 }> {
-  if (input.query && input.query.trim().length > 0) {
+  if (input.query && input.query.trim().length > 0 && !GENERIC_MENU_QUERY.test(input.query.trim())) {
     const matches = await searchMenuItemsByName(input.restaurantId, input.query.trim(), 6);
     if (matches.length === 0) {
+      // The old reply hardcoded "mains, salads, kids meals, and drinks" — the
+      // FIXTURE menu's categories, spoken verbatim to every venue's callers.
+      // Build the miss reply from the venue's real categories instead.
+      const { names } = await categoryOverview(input.restaurantId);
       return {
         matches: [],
         ambiguous: false,
-        speakable_summary: `I couldn't find anything matching ${input.query}. We have mains, salads, kids meals, and drinks. Which are you after?`
+        speakable_summary: `I couldn't find anything matching ${input.query}. We have ${names}. Would any of those suit?`
       };
     }
     const ambiguous = matches.length > 1 && Math.abs(matches[0]!.similarity - matches[1]!.similarity) < 0.1;
@@ -336,7 +393,7 @@ export async function lookupMenu(input: {
     const summarySource = offerable.length > 0 ? offerable : matches;
     const summary = summarySource
       .slice(0, 3)
-      .map((m) => `${m.name} ($${(m.base_price_cents / 100).toFixed(2).replace(/\.00$/, "")})`)
+      .map((m) => `${m.name} (${speakablePrice(m.base_price_cents)})`)
       .join(", ");
     return {
       matches: matches.map((m) => ({
@@ -358,27 +415,42 @@ export async function lookupMenu(input: {
     };
   }
 
-  // No query: read the top of each category as a category overview. Skip
-  // restricted items — Bella must never offer what she has to refuse.
-  const menu = await getMenu(input.restaurantId);
-  const offerableItems = (items: MenuItemPayload[]) => items.filter((i) => !i.is_restricted);
-  const overview = menu.categories
-    .slice(0, 4)
-    .map((c) => `${c.name}: ${offerableItems(c.items).slice(0, 2).map((i) => i.name).join(" or ") || "(empty)"}`)
-    .join("; ");
+  const { matches, categories, names } = await categoryOverview(input.restaurantId);
+
+  // Category browse ("what drinks do you have?" → category: "drinks"). This
+  // parameter was in the tool schema and its Retell description from day one
+  // but was silently ignored — the agent browsing drinks got the generic food
+  // overview back and told the caller the drinks list was broken.
+  if (input.category && input.category.trim().length > 0) {
+    const wanted = input.category.trim().toLowerCase();
+    const hit = categories.find(
+      (c) => c.name.toLowerCase().includes(wanted) || wanted.includes(c.name.toLowerCase())
+    );
+    if (hit) {
+      const items = hit.items.slice(0, 6);
+      const spoken = items
+        .slice(0, 4)
+        .map((i) => `${i.name} (${speakablePrice(i.base_price_cents)})`)
+        .join(", ");
+      return {
+        matches: items.map((i) => toLookupMatch(i, hit.id)),
+        ambiguous: false,
+        speakable_summary: `For ${hit.name} we have ${spoken}${hit.items.length > 4 ? ", and a few more" : ""}. Want any of those?`
+      };
+    }
+    // Honest miss: the section genuinely isn't on the menu (e.g. Mazcina's
+    // menu has no drinks yet — the bar list is still outstanding).
+    return {
+      matches: [],
+      ambiguous: false,
+      speakable_summary: `We don't have a ${input.category} section on the menu. We have ${names}. Which would you like?`
+    };
+  }
+
+  // No query (or a generic "the menu" one): speak the category names.
   return {
-    matches: menu.categories.flatMap((c) =>
-      offerableItems(c.items).slice(0, 1).map((i) => ({
-        id: i.id,
-        name: i.name,
-        price_cents: i.base_price_cents,
-        category_id: c.id,
-        is_restricted: i.is_restricted,
-        available_from: i.available_from,
-        available_until: i.available_until
-      }))
-    ),
+    matches,
     ambiguous: false,
-    speakable_summary: `We have ${overview}. What would you like?`
+    speakable_summary: `We have ${names}. What sounds good?`
   };
 }

@@ -23,8 +23,10 @@ import {
 } from "../repositories/restaurants";
 import { normalizePhone } from "../utils/phone";
 import { enrichLogContext, logger } from "../utils/logger";
+import type { OpeningHours } from "../domain/types";
 import {
   dayNameInTz,
+  formatTodayStatus,
   formatVoiceTime,
   isWithinDailyWindow,
   nowTimeInTz,
@@ -206,7 +208,11 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
         today: todayInTz(tz, now),
         tomorrow: tomorrowInTz(tz, now),
         now_local: nowTimeInTz(tz, now),
-        weekday_local: dayNameInTz(tz, now)
+        weekday_local: dayNameInTz(tz, now),
+        // Precomputed open/closed sentence the agent speaks verbatim — no
+        // mid-call reasoning over the hours table, no check_availability call
+        // just to learn today is a closed day. "" = no hours configured.
+        today_status: formatTodayStatus(venue.openingHours as OpeningHours, tz, now)
       },
       metadata: {
         restaurant_id: restaurantId,

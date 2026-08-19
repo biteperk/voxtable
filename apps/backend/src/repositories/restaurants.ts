@@ -225,6 +225,8 @@ export interface RestaurantVoiceContext {
   ownerName: string;
   timezone: string;
   faq: Record<string, unknown>;
+  /** opening_hours_json as stored; {} when the venue has no settings row. */
+  openingHours: Record<string, unknown>;
 }
 
 const voiceContextCache = new Map<string, CachedField<RestaurantVoiceContext>>();
@@ -261,8 +263,9 @@ export async function getRestaurantVoiceContext(
     owner_name: string | null;
     timezone: string | null;
     faq_json: Record<string, unknown> | null;
+    opening_hours_json: Record<string, unknown> | null;
   }>(
-    `SELECT r.name, r.owner_name, r.timezone, s.faq_json
+    `SELECT r.name, r.owner_name, r.timezone, s.faq_json, s.opening_hours_json
        FROM restaurants r
        LEFT JOIN restaurant_settings s ON s.restaurant_id = r.id
       WHERE r.id = $1`,
@@ -274,7 +277,8 @@ export async function getRestaurantVoiceContext(
     name: row?.name ?? "the restaurant",
     ownerName: row?.owner_name?.trim() ? row.owner_name.trim() : "the manager",
     timezone: coerceUsableTimezone(row?.timezone ?? undefined, restaurantId),
-    faq: row?.faq_json ?? {}
+    faq: row?.faq_json ?? {},
+    openingHours: row?.opening_hours_json ?? {}
   };
 
   writeCache(voiceContextCache, restaurantId, context);
