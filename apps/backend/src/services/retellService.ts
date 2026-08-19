@@ -1,6 +1,7 @@
 import { Retell } from "retell-sdk";
 
 import { env } from "../config/env";
+import { formatVenueFaq } from "./venueFaq";
 import { AppError } from "../domain/errors";
 import { CallStatus } from "../domain/types";
 import {
@@ -16,7 +17,7 @@ import {
 import { getCallLogIdByProviderCallId, getRestaurantIdByProviderCallId, upsertCallLog } from "../repositories/callLogs";
 import {
   getRestaurantIdByDialedNumber,
-  getRestaurantName,
+  getRestaurantVoiceContext,
   getRestaurantTimezone,
   getRetellAgentId
 } from "../repositories/restaurants";
@@ -94,6 +95,32 @@ export async function handleRetellWebhook(body: unknown): Promise<void> {
   await persistRetellCall(event, call, payload);
 }
 
+/**
+ * Which Retell agent answers this call, and why.
+ *
+ * `RETELL_AGENT_ID` is a pre-multi-tenant relic: ONE agent for the whole
+ * deployment. Letting an unprovisioned venue borrow it hands the caller another
+ * venue's persona — the exact failure this path exists to prevent — so it is
+ * allowed only outside production posture, for local single-tenant dev.
+ * deploy-backend.yml already strips the variable from Cloud Run, so staging and
+ * production get `none` and emit no override at all: Retell then falls back to
+ * whatever the number itself carries, which on a correctly registered
+ * webhook-mode number is nothing. Silence is the honest outcome for a venue
+ * that was never finished being provisioned; another venue's greeting is not.
+ *
+ * Pure so the production branch is testable — `env` is parsed once at import,
+ * so APP_ENV cannot be flipped inside a test that imports this module.
+ */
+export function resolveOverrideAgentId(
+  perRestaurantAgentId: string | null,
+  appEnv: string,
+  envAgentId: string | undefined
+): { agentId: string | undefined; source: "venue" | "env" | "none" } {
+  if (perRestaurantAgentId) return { agentId: perRestaurantAgentId, source: "venue" };
+  if (appEnv !== "production" && envAgentId) return { agentId: envAgentId, source: "env" };
+  return { agentId: undefined, source: "none" };
+}
+
 export async function handleRetellInbound(body: unknown): Promise<unknown> {
   const payload = body as RetellPayload;
   const inbound = payload.call_inbound as RetellPayload | undefined;
@@ -129,14 +156,28 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
   const callerPhoneRaw = inbound.from_number ?? null;
   const callerPhone = normalizePhone(callerPhoneRaw) ?? callerPhoneRaw;
 
-  const [tz, restaurantName, perRestaurantAgentId] = await Promise.all([
-    getRestaurantTimezone(restaurantId),
-    getRestaurantName(restaurantId),
+  // One cached query for the venue's identity + FAQ, and one uncached query for
+  // the agent id (kept separate so a rebind lands on the very next call).
+  const [venue, perRestaurantAgentId] = await Promise.all([
+    getRestaurantVoiceContext(restaurantId),
     getRetellAgentId(restaurantId)
   ]);
-  // Route to the restaurant's own agent when provisioned; fall back to the
-  // single env agent (pre-multi-tenant default) otherwise.
-  const overrideAgentId = perRestaurantAgentId ?? env.RETELL_AGENT_ID;
+  const { timezone: tz, name: restaurantName, ownerName } = venue;
+  const agentChoice = resolveOverrideAgentId(perRestaurantAgentId, env.APP_ENV, env.RETELL_AGENT_ID);
+  const overrideAgentId = agentChoice.agentId;
+  if (agentChoice.source === "env") {
+    logger.warn({
+      evt: "retell_inbound_env_agent_fallback",
+      restaurant_id: restaurantId,
+      agent_id: overrideAgentId
+    });
+  } else if (agentChoice.source === "none") {
+    logger.error({
+      evt: "retell_inbound_no_agent_bound",
+      restaurant_id: restaurantId,
+      to_number: inbound.to_number ?? null
+    });
+  }
 
   await upsertCallLog({
     restaurantId,
@@ -154,6 +195,12 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
       dynamic_variables: {
         restaurant_id: restaurantId,
         restaurant_name: restaurantName,
+        // Supplied so prompts can name the owner without baking one in.
+        owner_name: ownerName,
+        // The venue's own answers to parking / access / dietary / BYO style
+        // questions. "" when the venue has none, which the prompt treats as
+        // "offer to take a message" — never invent an answer.
+        venue_faq: formatVenueFaq(venue.faq, restaurantId),
         restaurant_timezone: tz,
         caller_phone: callerPhone ?? "",
         today: todayInTz(tz, now),
@@ -252,6 +299,9 @@ export async function handleRetellFunction(
     );
     return {
       available: result.available,
+      // Lets the prompt tell "we're busy, try another time" apart from "we can
+      // never seat this many" — the second must offer a callback, not a slot.
+      reason: result.reason,
       requested_time: result.requestedTime,
       suggested_time: result.suggestedTime,
       suggested_times: result.suggestedTimes,
