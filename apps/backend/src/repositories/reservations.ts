@@ -113,8 +113,11 @@ export async function getReservationForTenant(
   return result.rows[0] ?? null;
 }
 
-export async function getReservationByCallLogId(callLogId: string): Promise<ReservationRow | null> {
-  const result = await pool.query<ReservationRow>(
+export async function getReservationByCallLogId(
+  callLogId: string,
+  db: DbClient = pool
+): Promise<ReservationRow | null> {
+  const result = await db.query<ReservationRow>(
     `SELECT * FROM reservations
      WHERE created_from_call_log_id = $1
        AND status NOT IN ('cancelled', 'no_show')

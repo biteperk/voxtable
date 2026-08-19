@@ -12,7 +12,7 @@ import {
   createRestaurantSchema,
   onboardingAdvanceSchema
 } from "../http/schemas";
-import { pool, withTransaction } from "../db/pool";
+import { withTransaction } from "../db/pool";
 import {
   getLatestAcceptance,
   insertAcceptance,
@@ -28,10 +28,17 @@ import {
   setOnboardingStatus
 } from "../repositories/restaurants";
 import {
+  assertAcceptanceMatchesPublished,
+  assertPublishedVersionAllowed,
+  getPublishedLegalDocuments,
+  legalDocumentsVerificationEnabled
+} from "../services/legalDocuments";
+import {
   computeChecklist,
   nextOnboardingStatus,
   type OnboardingEvent
 } from "../services/onboardingService";
+import { logger } from "../utils/logger";
 import { notifyRestaurant } from "../services/notificationService";
 import { createRestaurantLimiter } from "../http/rateLimiters";
 
@@ -189,9 +196,9 @@ onboardingRouter.post(
   })
 );
 
-// Agreement step config + state: which document set the wizard shows, which
-// services can be offered, and the latest recorded acceptance (if any). Read
-// is manager-level; accepting (below) is owner-only.
+// Agreement step state: which services can be offered, and the latest recorded
+// acceptance (if any). Legal document version/URLs/hashes come from the frontend
+// GCS manifest and are submitted in POST /api/onboarding/agreement.
 onboardingRouter.get(
   "/api/onboarding/agreement",
   requireFirebaseAuth,
@@ -201,9 +208,6 @@ onboardingRouter.get(
     const restaurantId = tenantId(request);
     const acceptance = await getLatestAcceptance(restaurantId);
     response.json({
-      document_set_version: env.TERMS_DOCUMENT_SET_VERSION,
-      csa_url: env.TERMS_CSA_URL,
-      schedule_url: env.TERMS_SCHEDULE_URL,
       // voxdrive is deliberately absent from AGREEMENT_SERVICES (concept only);
       // voxconcierge appears once its release flag is on.
       services_available: AGREEMENT_SERVICES.filter(
@@ -237,19 +241,35 @@ onboardingRouter.post(
     const user = actingUser(request);
     const body = agreementSchema.parse(request.body);
 
-    // An acceptance recorded against DRAFT documents is evidence of nothing.
-    // Boot-time env validation blocks the self-serve flag + DRAFT combination;
-    // this guards the admin-invited path too.
-    if (env.APP_ENV === "production" && env.TERMS_DOCUMENT_SET_VERSION === "DRAFT") {
-      throw new AppError(
-        503,
-        "TERMS_NOT_PUBLISHED",
-        "The service agreement isn't available yet — please try again later."
-      );
-    }
-
     if (body.services.includes("voxconcierge") && !env.SERVICES_VOXCONCIERGE_ENABLED) {
       throw new AppError(400, "SERVICE_NOT_AVAILABLE", "VoxConcierge isn't available yet.");
+    }
+
+    // The submitted version/URLs/hashes go into the append-only ledger, so
+    // they must match what we actually published — the browser doesn't get to
+    // choose what the evidence says (#196). Fail-closed: manifest unreachable
+    // means no acceptance is recorded. Only skipped when no manifest URL is
+    // configured, which is a local-dev-only state.
+    if (legalDocumentsVerificationEnabled()) {
+      const published = await getPublishedLegalDocuments();
+      assertPublishedVersionAllowed(published);
+      assertAcceptanceMatchesPublished(body, published);
+    } else if (env.APP_ENV === "production") {
+      // The boot gate above should have made this unreachable. It is repeated
+      // here because the failure mode is silent and permanent: an unverified
+      // row in an append-only ledger cannot be corrected later, only annotated.
+      // Refusing the acceptance costs one signup; recording an unverifiable one
+      // costs the evidence.
+      throw new AppError(
+        503,
+        "TERMS_VERIFICATION_UNAVAILABLE",
+        "Agreement acceptance is unavailable: published legal documents are not configured."
+      );
+    } else {
+      logger.warn({
+        message: "agreement_acceptance_unverified",
+        detail: "LEGAL_DOCUMENTS_MANIFEST_URL is not set; recording acceptance without manifest verification (dev only)."
+      });
     }
 
     const result = await withTransaction(async (db) => {
@@ -279,7 +299,7 @@ onboardingRouter.post(
           piiRedaction: body.pii_redaction,
           serviceStartDate: body.service_start_date ?? null
         },
-        env.TERMS_DOCUMENT_SET_VERSION,
+        body.document_set_version,
         db
       );
 
@@ -288,9 +308,11 @@ onboardingRouter.post(
           restaurantId,
           userId: user.uid,
           channel: "online",
-          documentSetVersion: env.TERMS_DOCUMENT_SET_VERSION,
-          csaSha256: env.TERMS_CSA_SHA256 ?? "DRAFT",
-          scheduleSha256: env.TERMS_SCHEDULE_SHA256 ?? "DRAFT",
+          documentSetVersion: body.document_set_version,
+          csaUrl: body.csa_url,
+          scheduleUrl: body.schedule_url,
+          csaSha256: body.csa_sha256,
+          scheduleSha256: body.schedule_sha256,
           consentTerms: body.consent_terms,
           consentOverseas: body.consent_overseas,
           consentDisclosure: body.consent_disclosure,

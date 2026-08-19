@@ -25,7 +25,9 @@
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "npm run test --workspace=@vocotable/backend",
     "test:frontend": "npm run test --workspace=@vocotable/frontend",
-    "check": "npm run build && npm run test",
+    "lint": "eslint . --max-warnings 27",
+    "lint:fix": "eslint . --fix",
+    "check": "npm run lint && npm run build && npm run test",
     "start:backend": "npm run start --workspace=@vocotable/backend",
     "start:worker": "npm run start:worker --workspace=@vocotable/backend",
     "db:migrate": "npm run db:migrate --workspace=@vocotable/backend",
@@ -33,8 +35,12 @@
     "db:migrate:prod": "npm run db:migrate:prod --workspace=@vocotable/backend",
     "preview:frontend": "npm run preview --workspace=@vocotable/frontend",
     "preview:kds": "npm run preview --workspace=@vocotable/kds",
+    "smoke:legal": "npm run smoke:legal --workspace=@vocotable/backend",
+    "smoke:admin": "npm run smoke:admin --workspace=@vocotable/backend",
+    "smoke:isolation": "npm run smoke:isolation --workspace=@vocotable/backend",
     "smoke:menu-ocr": "npm run smoke:menu-ocr --workspace=@vocotable/backend",
     "smoke:double-booking": "npm run smoke:double-booking --workspace=@vocotable/backend",
+    "smoke:retry-idempotency": "npm run smoke:retry-idempotency --workspace=@vocotable/backend",
     "smoke:tenant-attribution": "npm run smoke:tenant-attribution --workspace=@vocotable/backend",
     "smoke:calcom-mirror": "npm run smoke:calcom-mirror --workspace=@vocotable/backend",
     "smoke:outbox-deadletter": "npm run smoke:outbox-deadletter --workspace=@vocotable/backend",
@@ -50,6 +56,19 @@
     "audit:production": "npm run audit:backend && npm run audit:frontend && npm run audit:kds",
     "audit:all": "npm audit",
     "firebase": "firebase",
-    "dashboard": "node scripts/project-dashboard.mjs"
+    "dashboard": "node scripts/project-dashboard.mjs",
+    "smoke:staging": "npm run smoke:staging --workspace=@vocotable/backend",
+    "smoke:agent-routing": "npm run smoke:agent-routing --workspace=@vocotable/backend",
+    "smoke:menu-guards": "npm run smoke:menu-guards --workspace=@vocotable/backend",
+    "smoke:capacity-ceiling": "npm run smoke:capacity-ceiling --workspace=@vocotable/backend"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
+    "typescript-eslint": "^8.67.0"
   }
 }

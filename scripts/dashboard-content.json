@@ -1,6 +1,8 @@
 {
   "$comment": "Editable narrative layer for the project dashboard. Numbers come live from GitHub at generation time (npm run dashboard); this file holds the story, decisions, and curation that no API can produce. Keep entries short — one line each. New ideas: add to ideas[] here, and promote to a GitHub issue when they become real work so they enter the metrics.",
-  "product_summary": "VoxTable answers a restaurant's phone with a voice AI (Bella), takes the booking or pickup order, writes it to the database, and shows it live on the dashboard and kitchen display. Built by BitePerk Pty Ltd. First venue live: Natalia's Bistro (Sydney). Second install: Cuban Corner (staging).",
+
+  "product_summary": "VoxTable answers a restaurant's phone with a voice AI (Bella), takes the booking or pickup order, writes it to the database, and shows it live on the dashboard and kitchen display. Built by BitePerk Pty Ltd. First venue: Natalia's Bistro (Sydney) — her line has not answered since the legacy Twilio account was suspended on 5 Aug 2026, so no venue is taking live calls today. Second install: Cuban Corner (staging).",
+
   "where_we_are": "Staging runs end-to-end on Cloud Run with its own Twilio number and Retell workspace, and every merge to integration deploys there automatically once CI passes. Production still runs on the original VM and is deployed by hand — moving it onto Cloud Run is the cutover that go-live planning revolves around. The board's Production Go Live milestone (23 Aug) tracks exactly what stands between here and there.",
   "executive_summary_curated": {
     "win": "Staging is a real environment now — own phone number, own Retell workspace, auto-deployed on every merge, rehearsable end to end.",

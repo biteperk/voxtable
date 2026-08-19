@@ -1,6 +1,18 @@
-# VocoTable Architecture
+# VoxTable Architecture
 
-This document reflects the current codebase. For day-to-day agent guidance, also read the root [`CLAUDE.md`](../../../CLAUDE.md), [`AGENTS.md`](../../../AGENTS.md), and the deployment runbooks under [`deploy/runbooks`](../../../deploy/runbooks).
+> ⚠️ **STALE — do not trust this document. Last accurate 23 July 2026.**
+>
+> It predates the 29 Jul 2026 api/worker split, so it still draws the backend as a single
+> Express process on the GCP VM: there is no `worker.ts`, no Cloud Run staging, no `/admin`
+> surface, and no legal-documents layer in the diagrams below. CLAUDE.md has always
+> described this file as stale; the banner saying so was missing until now, and the line
+> that used to sit here claimed the opposite.
+>
+> For current architecture use the Confluence docs (Vocotable space) and the root
+> [`CLAUDE.md`](../../../CLAUDE.md). Kept in the repo for the historical picture of the
+> pre-split design, which the VM still resembles most closely.
+
+For day-to-day agent guidance, read the root [`CLAUDE.md`](../../../CLAUDE.md), [`AGENTS.md`](../../../AGENTS.md), and the deployment runbooks under [`deploy/runbooks`](../../../deploy/runbooks).
 
 ## System Overview
 

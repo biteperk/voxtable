@@ -13,6 +13,8 @@
 //   9. Served order falls off /api/orders/active
 //  10. /api/ops/kds-health snapshot reflects reality
 
+import { mintSmokeIdToken } from "./lib/firebaseToken";
+
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
 
 interface MenuItem {
@@ -37,12 +39,17 @@ interface OrderResponse {
   items: Array<{ id: string; status: string }>;
 }
 
+// Filled in main(): Bearer token + tenant header for servers running the full
+// production gates (staging). Empty in local dev with DASHBOARD_VERIFY_AUTH=false.
+let authHeaders: Record<string, string> = {};
+
 async function request<T>(path: string, init?: RequestInit & { expectStatus?: number }): Promise<T | { __error: { status: number; body: any } }> {
   const { expectStatus, ...fetchInit } = init ?? {};
   const response = await fetch(`${baseUrl}${path}`, {
     ...fetchInit,
     headers: {
       "content-type": "application/json",
+      ...authHeaders,
       ...(fetchInit?.headers ?? {})
     }
   });
@@ -65,23 +72,61 @@ function assert(cond: unknown, message: string): asserts cond {
 async function main(): Promise<void> {
   console.log(`Smoking ${baseUrl}`);
 
+  // Token-gated mode: every /api/* route on a production-posture server needs
+  // a Firebase Bearer token AND the tenant header (resolveTenant). Locally
+  // with DASHBOARD_VERIFY_AUTH=false neither is required and both are skipped.
+  const token = await mintSmokeIdToken();
+  const tenant = process.env.SMOKE_RESTAURANT_ID;
+  if (token) {
+    authHeaders = {
+      authorization: `Bearer ${token}`,
+      ...(tenant ? { "x-restaurant-id": tenant } : {})
+    };
+    console.log(`✓ minted Firebase token${tenant ? ` (tenant ${tenant})` : ""}`);
+  } else if (tenant) {
+    authHeaders = { "x-restaurant-id": tenant };
+    console.log("[SKIP] no SMOKE_FIREBASE_* env — running unauthenticated (local mode)");
+  }
+
   // 1) Health
   const health = await request<{ status: string }>("/health");
   console.log("✓ health", health);
 
-  // 2) Menu — find Fish & Chips + Large variant + Coke modifier
+  // 2) Menu — Barros Luco + its required Side choice + an Extras add-on.
+  //
+  // These are real Mazcina menu items, not fixtures. The staging venue stopped
+  // being a synthetic "VoxTable Staging Venue" with a 5-item test menu and
+  // became a real restaurant, so this suite reads what a caller would actually
+  // be offered. If it fails on "not in the menu", the likely cause is that the
+  // Mazcina import has not been applied to the target database yet — see
+  // deploy/runbooks/mazcina-staging-conversion.md.
   const menu = await request<{ categories: Array<{ items: MenuItem[] }> }>("/api/menu");
   const items = menu.categories.flatMap((c) => c.items);
-  const fishChips = items.find((i) => i.name === "Fish & Chips");
-  assert(fishChips, "Fish & Chips not in menu — has the seed run?");
-  const largeVariant = fishChips.variants.find((v) => v.name === "Large");
-  assert(largeVariant, "Fish & Chips Large variant missing");
-  const drinkGroup = fishChips.modifier_groups.find((g) => g.group_name === "Drink");
-  assert(drinkGroup, "Fish & Chips drink modifier group missing");
-  assert(drinkGroup.group_min_select === 1, "Drink group should be required (min 1)");
-  const coke = drinkGroup.options.find((o) => o.name === "Coke");
-  assert(coke, "Coke option missing");
-  console.log(`✓ menu — Fish & Chips ${fishChips.id} variant=${largeVariant.id} drink=${coke.id}`);
+  const sandwich = items.find((i) => i.name === "Barros Luco");
+  assert(sandwich, "Barros Luco not in menu — has the Mazcina menu been imported?");
+  const sideGroup = sandwich.modifier_groups.find((g) => g.group_name === "Side");
+  assert(sideGroup, "Barros Luco 'Side' modifier group missing");
+  // Required: the sandwich comes with chips, and swapping to provenzal is a
+  // priced upgrade — so the caller must choose one. This is what exercises the
+  // MODIFIER_REQUIRED path.
+  assert(sideGroup.group_min_select === 1, "'Side' group should be required (min 1)");
+  const provenzal = sideGroup.options.find((o) => o.name === "Provenzal potatoes");
+  assert(provenzal, "'Provenzal potatoes' side option missing");
+  const extrasGroup = sandwich.modifier_groups.find((g) => g.group_name === "Extras");
+  assert(extrasGroup, "Barros Luco 'Extras' modifier group missing");
+  const meltedCheese = extrasGroup.options.find((o) => o.name === "Melted cheese");
+  assert(meltedCheese, "'Melted cheese' extra missing");
+
+  // Variant coverage moved to an item that genuinely has variants — the
+  // empanadas are priced per piece with a filling choice. Nothing on the
+  // sandwiches is a variant, and inventing one to keep the old test shape would
+  // have meant lying about the menu.
+  const empanadas = items.find((i) => i.name === "Cocktail Empanadas");
+  assert(empanadas, "Cocktail Empanadas not in menu — has the Mazcina menu been imported?");
+  assert(empanadas.variants.length >= 3, "Cocktail Empanadas should carry its filling variants");
+  console.log(
+    `✓ menu — Barros Luco ${sandwich.id} side=${provenzal.id} extra=${meltedCheese.id}`
+  );
 
   // 3) Create order with idempotency key
   const idempotencyKey = `smoke-orders-${Date.now()}`;
@@ -92,9 +137,8 @@ async function main(): Promise<void> {
       source: "dashboard",
       items: [
         {
-          menu_item_id: fishChips.id,
-          variant_id: largeVariant.id,
-          modifier_ids: [coke.id],
+          menu_item_id: sandwich.id,
+          modifier_ids: [provenzal.id, meltedCheese.id],
           quantity: 1,
           special_requests: "Smoke test — please ignore"
         }
@@ -106,7 +150,9 @@ async function main(): Promise<void> {
   assert(!created.is_replay, "First POST should NOT be a replay");
   assert(created.order.status === "pending", `Expected status=pending, got ${created.order.status}`);
   assert(created.order.payment_status === "unpaid", `Expected unpaid, got ${created.order.payment_status}`);
-  assert(created.order.total_cents === 2600, `Expected total=2600, got ${created.order.total_cents}`); // 22+4=26
+  // 24.00 sandwich + 3.00 provenzal upgrade + 3.00 melted cheese. Load-bearing:
+  // change a Mazcina price and this fails on purpose.
+  assert(created.order.total_cents === 3000, `Expected total=3000, got ${created.order.total_cents}`);
   assert(created.order.items.length === 1, `Expected 1 line, got ${created.order.items.length}`);
   console.log(`✓ create order — #${created.order.order_number} ${created.order.id} total=$${created.order.total_cents / 100}`);
 
@@ -118,9 +164,8 @@ async function main(): Promise<void> {
       source: "dashboard",
       items: [
         {
-          menu_item_id: fishChips.id,
-          variant_id: largeVariant.id,
-          modifier_ids: [coke.id],
+          menu_item_id: sandwich.id,
+          modifier_ids: [provenzal.id, meltedCheese.id],
           quantity: 1
         }
       ]

@@ -139,7 +139,7 @@ const REVIEWABLE_KEYS = ["profile", "agreement", "menu"];
 
 export function OnboardingWizard({ navigate }) {
   const { memberships, refreshMe } = useAuth();
-  const [status, setStatus] = useState(null);
+  const [, setStatus] = useState(null);
   // Seeded from the marketing constant so the first paint isn't blank, then
   // replaced by the server's real value the moment status loads.
   const [trialDays, setTrialDays] = useState(TRIAL_DAYS);

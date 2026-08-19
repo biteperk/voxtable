@@ -1,4 +1,5 @@
 import { AppError } from "../domain/errors";
+import { logger } from "../utils/logger";
 import { DEFAULT_OPENING_HOURS, RestaurantSettings } from "../domain/types";
 import { DbClient, pool, withTransaction } from "../db/pool";
 import { normalizePhone } from "../utils/phone";
@@ -81,17 +82,65 @@ export async function getTransferPhoneNumber(restaurantId: string): Promise<stri
   return result.rows[0]?.transfer_phone_number ?? null;
 }
 
-const timezoneCache = new Map<string, string>();
-const nameCache = new Map<string, string>();
+/**
+ * Memoised per restaurant. Every entry expires.
+ *
+ * These are read on the inbound-call path (the venue name and time zone go into
+ * the dynamic variables Bella speaks), so caching them is worth it — but each
+ * api/worker process holds its OWN Map, and `invalidateRestaurantCache` only
+ * reaches the process that served the write. A rename through one instance is
+ * invisible to the others, and a rename by direct SQL — which the runbooks
+ * legitimately do — is invisible to all of them. Without expiry, warm instances
+ * would keep telling callers the venue's OLD name until the next deploy.
+ *
+ * A minute of staleness after a rename is acceptable; indefinite is not.
+ */
+const RESTAURANT_FIELD_TTL_MS = 60_000;
+
+interface CachedField<T> {
+  value: T;
+  expiresAt: number;
+}
+
+function readCache<T>(cache: Map<string, CachedField<T>>, key: string): T | undefined {
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  if (hit.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return undefined;
+  }
+  return hit.value;
+}
+
+function writeCache<T>(cache: Map<string, CachedField<T>>, key: string, value: T): void {
+  cache.set(key, { value, expiresAt: Date.now() + RESTAURANT_FIELD_TTL_MS });
+}
+
+const timezoneCache = new Map<string, CachedField<string>>();
+const nameCache = new Map<string, CachedField<string>>();
 // Maps a trusted dialed number (E.164) -> restaurant id. Immutable per number
 // in normal operation, but a number CAN be released and reassigned to a
 // different tenant, so the entry is invalidated whenever provisioning bindings
 // change (see invalidateRestaurantCache). Keyed by normalized number; the
-// value is the restaurant id so we can purge by restaurant on rebind.
-const dialedNumberCache = new Map<string, string>();
+// value carries the restaurant id so we can purge by restaurant on rebind.
+//
+// The entry also expires. Purging by restaurant id alone is not sufficient:
+// when number N moves from venue A to venue B, the poisoned entry is keyed by
+// N and holds A's id, so a purge scoped to B deletes nothing and every call to
+// N keeps reaching A. Callers therefore purge by NUMBER too (below) — and the
+// TTL is the backstop for the rebinds that never reach this process at all:
+// the runbooks legitimately rebind by direct SQL, and each api/worker instance
+// holds its own Map, so a bind through one instance is invisible to the others.
+// Without expiry those instances would route to the old venue until restart.
+const DIALED_NUMBER_TTL_MS = 60_000;
+interface DialedNumberEntry {
+  restaurantId: string;
+  expiresAt: number;
+}
+const dialedNumberCache = new Map<string, DialedNumberEntry>();
 
 export async function getRestaurantTimezone(restaurantId: string): Promise<string> {
-  const cached = timezoneCache.get(restaurantId);
+  const cached = readCache(timezoneCache, restaurantId);
   if (cached) return cached;
 
   const result = await pool.query<{ timezone: string }>(
@@ -99,13 +148,47 @@ export async function getRestaurantTimezone(restaurantId: string): Promise<strin
     [restaurantId]
   );
 
-  const tz = result.rows[0]?.timezone ?? "Australia/Sydney";
-  timezoneCache.set(restaurantId, tz);
+  const tz = coerceUsableTimezone(result.rows[0]?.timezone, restaurantId);
+  writeCache(timezoneCache, restaurantId, tz);
   return tz;
 }
 
+/**
+ * Never hand an unusable time zone to Intl.
+ *
+ * utils/time.ts passes this value straight to Intl.DateTimeFormat, which
+ * throws RangeError on anything that is not a real IANA zone. handleRetellInbound
+ * calls four of those helpers, so one bad row meant every inbound call for that
+ * venue 500'd and Retell could not start the call at all — a dead phone line
+ * from a profile-form typo.
+ *
+ * schemas.ts now refuses bad zones on the way in, but that only protects new
+ * writes. A row saved before that, or written by SQL, still has to not kill the
+ * line. A wrong-but-working zone shifts times; an invalid one answers nothing.
+ * The first is recoverable, so it is the safer failure — logged at error, since
+ * silently serving the wrong times is exactly the sort of thing that should
+ * page someone.
+ */
+export function coerceUsableTimezone(timezone: string | undefined, restaurantId: string): string {
+  const fallback = "Australia/Sydney";
+  if (!timezone) return fallback;
+  try {
+    new Intl.DateTimeFormat("en-AU", { timeZone: timezone });
+    return timezone;
+  } catch {
+    logger.error({
+      evt: "restaurant_timezone_invalid",
+      restaurant_id: restaurantId,
+      timezone,
+      fallback,
+      detail: "stored timezone is not a valid IANA zone; falling back so calls still answer"
+    });
+    return fallback;
+  }
+}
+
 export async function getRestaurantName(restaurantId: string): Promise<string> {
-  const cached = nameCache.get(restaurantId);
+  const cached = readCache(nameCache, restaurantId);
   if (cached) return cached;
 
   const result = await pool.query<{ name: string }>(
@@ -113,8 +196,93 @@ export async function getRestaurantName(restaurantId: string): Promise<string> {
     [restaurantId]
   );
   const name = result.rows[0]?.name ?? "the restaurant";
-  nameCache.set(restaurantId, name);
+  writeCache(nameCache, restaurantId, name);
   return name;
+}
+
+/**
+ * The name Bella uses when offering a callback ("let me get <owner> to ring you
+ * back"). Sent as a dynamic variable so no venue's owner is ever written into a
+ * prompt — the live Natalia prompt hard-coded "Natalia" there, which is why a
+ * cloned agent kept naming the wrong person even after its venue name was
+ * changed (venue-onboarding.md §1 trap 3).
+ *
+ * Falls back to a neutral phrase: `owner_name` is optional on the profile, and
+ * an unset column must never reach a caller as an empty gap or a literal
+ * placeholder.
+ */
+export async function getRestaurantOwnerName(restaurantId: string): Promise<string> {
+  const result = await pool.query<{ owner_name: string | null }>(
+    "SELECT owner_name FROM restaurants WHERE id = $1",
+    [restaurantId]
+  );
+  const owner = result.rows[0]?.owner_name?.trim();
+  return owner ? owner : "the manager";
+}
+
+export interface RestaurantVoiceContext {
+  name: string;
+  ownerName: string;
+  timezone: string;
+  faq: Record<string, unknown>;
+  /** opening_hours_json as stored; {} when the venue has no settings row. */
+  openingHours: Record<string, unknown>;
+}
+
+const voiceContextCache = new Map<string, CachedField<RestaurantVoiceContext>>();
+
+/**
+ * Everything /retell/inbound needs to greet a caller, in ONE query.
+ *
+ * Call setup used to fire four separate SELECTs against the same `restaurants`
+ * row — timezone, name, owner name, agent id — and adding the venue FAQ would
+ * have made five, plus a sixth against `restaurant_settings` (which
+ * getRestaurantSettings reads uncached). That all runs while the caller is
+ * waiting to hear anything, on the same latency budget we are already spending
+ * on a richer voice model.
+ *
+ * `retell_agent_id` is deliberately NOT folded in here: getRetellAgentId stays
+ * uncached so a rebind takes effect on the very next call. After the mis-bind
+ * incident that immediacy is worth its own round trip.
+ *
+ * The other getters stay too — calcomService, retellVariablesWorker and
+ * orderPaymentService use them, and consolidating those callers is a separate,
+ * riskier change than this one.
+ *
+ * LEFT JOIN, not JOIN: a restaurant without a settings row must still answer the
+ * phone with its name and time zone rather than failing the whole call.
+ */
+export async function getRestaurantVoiceContext(
+  restaurantId: string
+): Promise<RestaurantVoiceContext> {
+  const cached = readCache(voiceContextCache, restaurantId);
+  if (cached) return cached;
+
+  const result = await pool.query<{
+    name: string | null;
+    owner_name: string | null;
+    timezone: string | null;
+    faq_json: Record<string, unknown> | null;
+    opening_hours_json: Record<string, unknown> | null;
+  }>(
+    `SELECT r.name, r.owner_name, r.timezone, s.faq_json, s.opening_hours_json
+       FROM restaurants r
+       LEFT JOIN restaurant_settings s ON s.restaurant_id = r.id
+      WHERE r.id = $1`,
+    [restaurantId]
+  );
+
+  const row = result.rows[0];
+  const context: RestaurantVoiceContext = {
+    name: row?.name ?? "the restaurant",
+    ownerName: row?.owner_name?.trim() ? row.owner_name.trim() : "the manager",
+    timezone: coerceUsableTimezone(row?.timezone ?? undefined, restaurantId),
+    faq: row?.faq_json ?? {},
+    openingHours: row?.opening_hours_json ?? {}
+  };
+
+  writeCache(voiceContextCache, restaurantId, context);
+  return context;
 }
 
 /**
@@ -136,16 +304,28 @@ export async function getRestaurantIdByDialedNumber(
   if (!normalized) return null;
 
   const cached = dialedNumberCache.get(normalized);
-  if (cached) return cached;
+  if (cached && cached.expiresAt > Date.now()) return cached.restaurantId;
 
+  // ORDER BY makes the result deterministic. Migration 007 gives each number
+  // column its own partial unique index, but they are per-column: one venue's
+  // twilio_phone_number may legally equal another's retell_phone_number, and
+  // this OR would then let the planner decide which venue answers the phone.
+  // Migration 034 rejects that state on write; the sort keeps an existing row
+  // pair from routing differently between two queries in the meantime.
   const result = await pool.query<{ id: string }>(
     `SELECT id FROM restaurants
       WHERE twilio_phone_number = $1 OR retell_phone_number = $1
+      ORDER BY id
       LIMIT 1`,
     [normalized]
   );
   const id = result.rows[0]?.id ?? null;
-  if (id) dialedNumberCache.set(normalized, id);
+  if (id) {
+    dialedNumberCache.set(normalized, {
+      restaurantId: id,
+      expiresAt: Date.now() + DIALED_NUMBER_TTL_MS
+    });
+  }
   return id;
 }
 
@@ -154,12 +334,26 @@ export async function getRestaurantIdByDialedNumber(
  * a restaurant's name, timezone, or dialed-number bindings (profile edit,
  * provisioning bind/unbind) so stale cache entries can't route calls or render
  * names for the wrong/old value.
+ *
+ * `numbers` must carry every number involved in the write — both the ones being
+ * bound and the ones being cleared. Purging by restaurant id only finds entries
+ * that already point AT this restaurant; an entry for a number being taken FROM
+ * another venue points at that other venue and survives, which is a silent
+ * wrong-venue route until the process restarts.
  */
-export function invalidateRestaurantCache(restaurantId: string): void {
+export function invalidateRestaurantCache(
+  restaurantId: string,
+  numbers: Array<string | null | undefined> = []
+): void {
   timezoneCache.delete(restaurantId);
   nameCache.delete(restaurantId);
-  for (const [number, id] of dialedNumberCache) {
-    if (id === restaurantId) dialedNumberCache.delete(number);
+  voiceContextCache.delete(restaurantId);
+  for (const [number, entry] of dialedNumberCache) {
+    if (entry.restaurantId === restaurantId) dialedNumberCache.delete(number);
+  }
+  for (const raw of numbers) {
+    if (!raw) continue;
+    dialedNumberCache.delete(normalizePhone(raw) ?? raw.trim());
   }
 }
 
@@ -180,8 +374,8 @@ export async function warmRestaurantCache(restaurantId: string): Promise<void> {
   );
   const row = result.rows[0];
   if (!row) return;
-  if (row.timezone) timezoneCache.set(restaurantId, row.timezone);
-  if (row.name) nameCache.set(restaurantId, row.name);
+  if (row.timezone) writeCache(timezoneCache, restaurantId, row.timezone);
+  if (row.name) writeCache(nameCache, restaurantId, row.name);
 }
 
 // --- Onboarding & profile (migration 008) ----------------------------------
@@ -532,12 +726,98 @@ export async function listByOnboardingStatus(
   return result.rows;
 }
 
+/** ProvisioningRow plus the cheap local billing/legal columns the admin venue
+ * list shows. Live Stripe subscription state is deliberately NOT here — that
+ * is one Stripe API call per venue and loads lazily per-venue instead. */
+export interface AdminRestaurantRow extends ProvisioningRow {
+  terms_version: string | null;
+  has_stripe_customer: boolean;
+  stripe_connect_charges_enabled: boolean;
+  stripe_connect_payouts_enabled: boolean;
+}
+
+export async function listRestaurantsAdmin(filter: {
+  status?: OnboardingStatus;
+  query?: string;
+}): Promise<AdminRestaurantRow[]> {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (filter.status) {
+    params.push(filter.status);
+    clauses.push(`onboarding_status = $${params.length}::onboarding_status`);
+  }
+  if (filter.query) {
+    params.push(`%${filter.query}%`);
+    clauses.push(`name ILIKE $${params.length}`);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const result = await pool.query<AdminRestaurantRow>(
+    `SELECT id, name, contact_email, onboarding_status,
+            twilio_phone_number, retell_phone_number, retell_agent_id, created_at,
+            terms_version,
+            stripe_customer_id IS NOT NULL AS has_stripe_customer,
+            stripe_connect_charges_enabled, stripe_connect_payouts_enabled
+       FROM restaurants
+       ${where}
+      ORDER BY created_at DESC
+      LIMIT 200`,
+    params
+  );
+  return result.rows;
+}
+
+/**
+ * Null out the named binding columns (admin unbind). The bind PATCH is
+ * COALESCE-only so it can never clear a value; this is the explicit,
+ * confirm-gated counterpart. Field names are validated by adminUnbindSchema
+ * before they reach here — never interpolate caller input directly.
+ */
+export async function clearProvisioningBindings(
+  restaurantId: string,
+  fields: Array<"twilio_phone_number" | "retell_phone_number" | "retell_agent_id">
+): Promise<ProvisioningRow | null> {
+  const allowed = new Set(["twilio_phone_number", "retell_phone_number", "retell_agent_id"]);
+  const safe = fields.filter((f) => allowed.has(f));
+  if (safe.length === 0) return getProvisioning(restaurantId);
+  const sets = safe.map((f) => `${f} = NULL`).join(", ");
+  const result = await pool.query<ProvisioningRow>(
+    `UPDATE restaurants SET ${sets}
+      WHERE id = $1
+      RETURNING id, name, contact_email, onboarding_status,
+                twilio_phone_number, retell_phone_number, retell_agent_id, created_at`,
+    [restaurantId]
+  );
+  if (!result.rows[0]) return null;
+  invalidateRestaurantCache(restaurantId);
+  return result.rows[0];
+}
+
 export async function getProvisioning(restaurantId: string): Promise<ProvisioningRow | null> {
   const result = await pool.query<ProvisioningRow>(
     `SELECT id, name, contact_email, onboarding_status,
             twilio_phone_number, retell_phone_number, retell_agent_id, created_at
        FROM restaurants WHERE id = $1`,
     [restaurantId]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Which restaurant, if any, already claims this Retell agent. Used by the admin
+ * bind to refuse handing one venue's agent to another — the failure that put a
+ * caller through to the wrong venue's persona on 18 Aug. Excludes `exceptId` so
+ * re-binding a venue to the agent it already has is not treated as a conflict.
+ */
+export async function getRestaurantByRetellAgentId(
+  agentId: string,
+  exceptId?: string
+): Promise<{ id: string; name: string } | null> {
+  const result = await pool.query<{ id: string; name: string }>(
+    `SELECT id, name FROM restaurants
+      WHERE retell_agent_id = $1 AND ($2::uuid IS NULL OR id <> $2::uuid)
+      ORDER BY id
+      LIMIT 1`,
+    [agentId, exceptId ?? null]
   );
   return result.rows[0] ?? null;
 }
@@ -581,7 +861,13 @@ export async function setProvisioningBindings(
   if (!result.rows[0]) {
     throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
   }
-  invalidateRestaurantCache(restaurantId);
+  // Pass the numbers explicitly: if either was previously bound to a DIFFERENT
+  // venue, its cache entry points at that venue and a purge scoped to this
+  // restaurant id would leave it in place.
+  invalidateRestaurantCache(restaurantId, [
+    bindings.twilioPhoneNumber,
+    bindings.retellPhoneNumber
+  ]);
   return result.rows[0];
 }
 

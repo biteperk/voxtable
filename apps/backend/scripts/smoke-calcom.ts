@@ -124,10 +124,17 @@ async function main(): Promise<void> {
     assert(/duplicate/.test(second.body), `expected duplicate marker, got ${second.body}`);
   }
 
-  // Case 6: health endpoint requires auth.
+  // Case 6: health endpoint requires auth. Against a server deliberately run
+  // with DASHBOARD_VERIFY_AUTH=false (local dev only), the 401 cannot happen —
+  // SMOKE_DASHBOARD_AUTH_OFF=1 acknowledges that explicitly. Never set it when
+  // targeting staging: there a 200 without auth is a real alarm.
   const healthResp = await fetch(`${baseUrl}/api/ops/calcom-health`);
   console.log(`[6] health no-auth → ${healthResp.status}`);
-  assert(healthResp.status === 401, `expected 401, got ${healthResp.status}`);
+  if (process.env.SMOKE_DASHBOARD_AUTH_OFF === "1" && healthResp.status === 200) {
+    console.log("[6] tolerated 200 — SMOKE_DASHBOARD_AUTH_OFF=1 (local, auth off)");
+  } else {
+    assert(healthResp.status === 401, `expected 401, got ${healthResp.status}`);
+  }
 
   console.log("Smoke OK");
 }

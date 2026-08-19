@@ -36,8 +36,28 @@ Everything short of real audio is proven:
 | Wrong key rejected | ✅ **401** |
 | `+61 468 203 234` imported to the Staging workspace | ✅ webhook mode, no static agent binding |
 | Venue row exists and resolves | ✅ `VoxTable Staging Venue` `33333333-…`, 4 tables, 09:00–23:00 daily |
-| Dialled number → venue | ✅ returns `override_agent_id: agent_b9087333…` with **fresh** dynamic variables (correct venue name, timezone, today's dates) |
+| Dialled number → venue | ⚠️ **see the correction below** — returns `override_agent_id: agent_b9087333…` with **fresh** dynamic variables (correct venue name, timezone, today's dates) |
 | Unknown number fails closed | ✅ `restaurant_unconfigured: true`, no agent override |
+
+> ## ⚠️ Correction, 18 Aug 2026 — that row was not a pass
+>
+> `agent_b9087333b7030f0cee06a19ffc` is **`Natalia's Bistro (STAGING)`** (see the table at
+> the top of this file). Returning it for a call to `+61 468 203 234` — the **VoxTable
+> Staging Venue** number — is the bug, not the proof.
+>
+> The check was self-consistent rather than correct: it asserted that the webhook returned
+> *the agent the venue row named*, and the venue row named the wrong agent. Both halves
+> agreed, and both were wrong. The verification that was missing is whether the agent belongs
+> to the venue at all.
+>
+> On a live call this presented as the right venue's data underneath the wrong venue's voice:
+> correct `restaurant_name` in the dynamic variables, correct booking written to the correct
+> restaurant, and a caller told they had reached Natalia's Bistro — because that agent's
+> prompt hard-codes it, and the greeting ignores `{{restaurant_name}}` entirely.
+>
+> **Do not use this snapshot as a reference for a venue build.** Its prompts still carry
+> Natalia's venue name and owner name in prose. `deploy/runbooks/venue-onboarding.md` §1
+> trap 3 already warned about exactly this.
 
 That the dynamic variables come back computed per call — not the frozen
 `default_dynamic_variables` — is the specific thing worth re-checking after any

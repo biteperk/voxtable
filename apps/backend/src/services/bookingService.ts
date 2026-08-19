@@ -1,13 +1,18 @@
 import { AppError } from "../domain/errors";
 import { BookingResult, CreateBookingInput, ReservationStatus } from "../domain/types";
-import { pool, withTransaction } from "../db/pool";
-import { attachReservationToCallLog, upsertCallLog } from "../repositories/callLogs";
+import { DbClient, pool, withTransaction } from "../db/pool";
+import {
+  attachReservationToCallLog,
+  getCallLogIdByProviderCallId,
+  upsertCallLog
+} from "../repositories/callLogs";
 import {
   cancelReservation,
   createReservation,
   getReservationById,
   getReservationByCallLogId,
   getReservationForTenant,
+  ReservationRow,
   updateReservation,
   upsertCustomer
 } from "../repositories/reservations";
@@ -42,17 +47,52 @@ function rethrowAsDoubleBookConflict(error: unknown): never {
   throw error;
 }
 
+// A retried create_booking must return the FIRST reservation, never make a
+// second one. Shared by the pre-lock fast path and the re-check inside the
+// lock so the two can never word the confirmation differently.
+function replayResult(existing: ReservationRow, customerName: string): BookingResult {
+  return {
+    bookingId: existing.id,
+    status: existing.status,
+    confirmationMessage: `Confirmed. ${customerName} has a table for ${existing.party_size} on ${existing.reservation_date} at ${formatVoiceTime(existing.start_time.slice(0, 5))}.`
+  };
+}
+
+/**
+ * Resolve the call_logs.id this booking should be de-duplicated against.
+ *
+ * It has to come from provider_call_id, NOT from the tool arguments.
+ * `input.callLogId` arrives from the LLM — normalizeBookingArgs reads
+ * `parsed.call_log_id` — and Bella has no way to know that UUID, so on a real
+ * Retell retry it is always undefined. That made the idempotency guard dead on
+ * the only path that needed it: the retry took the day lock, found a DIFFERENT
+ * free table (the first booking now occupied the original), and inserted a
+ * second confirmed reservation. `reservations_no_overlap` cannot catch that —
+ * the table_id differs, so there is no overlap to reject. One caller ended up
+ * holding two tables and the dashboard showed only one of them, because
+ * attachReservationToCallLog overwrote call_logs.reservation_id.
+ */
+async function resolveReplayCallLogId(
+  input: CreateBookingInput,
+  db?: DbClient
+): Promise<string | null> {
+  if (input.callLogId) return input.callLogId;
+  if (!input.providerCallId) return null;
+  return getCallLogIdByProviderCallId(
+    input.provider ?? "retell",
+    input.providerCallId,
+    input.restaurantId,
+    db
+  );
+}
+
 export async function createBooking(input: CreateBookingInput): Promise<BookingResult> {
-  // Idempotency: if Retell retries the create_booking tool call, return the
-  // already-created reservation rather than inserting a duplicate.
-  if (input.callLogId) {
-    const existing = await getReservationByCallLogId(input.callLogId);
+  // Fast path: an obvious replay returns without taking the day lock at all.
+  const replayCallLogId = await resolveReplayCallLogId(input);
+  if (replayCallLogId) {
+    const existing = await getReservationByCallLogId(replayCallLogId);
     if (existing) {
-      return {
-        bookingId: existing.id,
-        status: existing.status,
-        confirmationMessage: `Confirmed. ${input.customerName} has a table for ${existing.party_size} on ${existing.reservation_date} at ${formatVoiceTime(existing.start_time.slice(0, 5))}.`
-      };
+      return replayResult(existing, input.customerName);
     }
   }
 
@@ -116,8 +156,12 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
       `${input.restaurantId}:${input.date}`
     ]);
 
+    // resolveReplayCallLogId already returned the id when the call log exists,
+    // so only create one when it genuinely does not. Skipping the redundant
+    // upsert also stops the booking path rewinding an already-'completed' call
+    // log back to 'in_progress'.
     const callLogId =
-      input.callLogId ??
+      replayCallLogId ??
       (input.providerCallId
         ? await upsertCallLog({
             restaurantId: input.restaurantId,
@@ -128,6 +172,19 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
             startedAt: new Date().toISOString()
           }, lockClient)
         : undefined);
+
+    // Re-check for a replay now that we hold the day lock. The fast path at the
+    // top of createBooking runs BEFORE the lock, so two retries arriving
+    // together can both miss it; only this check is serialised against a
+    // concurrent first insert. Without it the second retry would book a
+    // different table for the same caller.
+    if (callLogId) {
+      const alreadyBooked = await getReservationByCallLogId(callLogId, lockClient);
+      if (alreadyBooked) {
+        await lockClient.query("ROLLBACK");
+        return replayResult(alreadyBooked, input.customerName);
+      }
+    }
 
     let tableId: string;
 
@@ -230,7 +287,12 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
       confirmationMessage: `Confirmed. ${input.customerName} has a table for ${input.partySize} on ${input.date} at ${formatVoiceTime(input.time)}.`
     };
   } catch (error) {
-    await lockClient.query("ROLLBACK");
+    // ROLLBACK itself throws on a terminated connection (statement-timeout
+    // kill, pool eviction). Unguarded, that rejection REPLACES the real error
+    // and rethrowAsDoubleBookConflict never runs — turning a clean 409
+    // TABLE_JUST_TAKEN into an opaque 500 mid-call. withTransaction and
+    // cancelBooking already guard theirs; this one did not.
+    await lockClient.query("ROLLBACK").catch(() => {});
     rethrowAsDoubleBookConflict(error);
   } finally {
     lockClient.release();

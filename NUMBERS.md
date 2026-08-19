@@ -36,7 +36,7 @@ Anything on an **Algorythmos** account is a different company's infrastructure a
 | Number | Environment | Account | Takes a call today? | SMS? |
 |---|---|---|---|---|
 | `+61 468 202 846` | **Production** | Biteperk-production | ❌ No Retell agent bound yet | ✅ Enabled (never actually sent) |
-| `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ❌ No Retell agent bound yet | ✅ Enabled, stamped `Unverified` |
+| `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ✅ Bound — imported to the Staging workspace (webhook mode) 13 Aug; `VoxTable Staging Venue` resolves | ✅ Enabled, stamped `Unverified` |
 
 That is the whole platform estate. If a number is not in this table, **it is not ours to wire** —
 do not put it in a `restaurants` row, do not register it with Retell, and do not "reconcile" it
@@ -114,10 +114,15 @@ route around. It becomes BitePerk's production line — and Natalia's line — a
 | Customer profile | **None** — staging has never had one |
 | Alphanumeric sender ID | **None** — see the warning below |
 
-Same wiring state as production, verified item-for-item: origination
+Same **Twilio** wiring as production, verified item-for-item: origination
 `sip:sip.retellai.com;transport=tls` (pri 10, wt 10, enabled), Traffic Status **Voice enabled** and
-**Messaging enabled**, sender attached to `voxtable-staging-notifications`, no Retell agent, no
-`restaurants` row, no Disaster Recovery URL.
+**Messaging enabled**, sender attached to `voxtable-staging-notifications`, no Disaster Recovery URL.
+
+Beyond Twilio, staging has since gone **further than production**: the number was imported to the
+Retell **Staging** workspace in webhook mode on 13 Aug and a `restaurants` row (`VoxTable Staging
+Venue`) resolves it, with unknown numbers failing closed — see §8 item 2b. This paragraph
+previously said "no Retell agent, no `restaurants` row", which contradicted §8 and is corrected
+here. Production's `+61 468 202 846` remains unbound on both counts.
 
 ## 3a. Trunk configuration — audited 13 Aug 2026
 
@@ -133,7 +138,7 @@ read from the console, not assumed.
 | Call Transfer (SIP REFER) | Disabled | Disabled | ✅ |
 | Symmetric RTP | Disabled | Disabled | ✅ Twilio's recommended state |
 | CNAM Lookup | Off | Off | ✅ US/CA only, billed per lookup |
-| **Secure Trunking** | **Disabled** | **Disabled** | ⚠️ **should be ON** |
+| **Secure Trunking** | **Disabled** | **✅ ON** (19 Aug 2026, via AU1 API, read back `secure=true`) | prod still ⚠️ — flip at cutover |
 | **Disaster Recovery URL** | **blank** | **blank** | ⚠️ **should be set** |
 | Header manipulation | none | none | ✅ |
 
@@ -142,6 +147,45 @@ read from the console, not assumed.
 states the trade-off plainly: with it off, "SIP messages may be sent unencrypted or encrypted using
 TLS. Any SRTP encrypted calls will be rejected." Turn it on **before** the first customer call, and
 turn it on in staging first.
+
+⚠️ **This stopped being theoretical on 19 Aug 2026.** A staging call (`CA6cb88e2c31f0aae148facf3d7bcec321`,
+Retell `call_04ca66ce86bd9fdbfa9c936830e`, 02:53 UTC) connected, the agent spoke her full greeting —
+and the caller's media never arrived: the multichannel recording shows the **caller channel at
+digital zero for the entire 7.6 s call** while the agent channel carries steady speech. The caller
+heard silence and hung up; Retell filed it as `user_hangup`, which is how a media-path failure
+disguises itself as a caller choice. It is intermittent — 3 of that day's 4 calls had working
+media — which makes it exactly the class of fault that erodes trust in the line while every log
+reads clean. Retell's own log shows no error: from its side the PSTN leg simply ended.
+
+Two lessons for whoever debugs the next "it dropped": **identical short durations are a machine,
+not a person** (the day's three failed calls died at 7594/7601/7640 ms — a 46 ms spread across
+three "human hangups" is nothing of the sort), and **the multichannel recording is the instrument**
+— per-channel RMS separates "caller hung up on working audio" from "caller never had audio" in
+one look, when transcript, webhook log and disconnection reason are all identical between the two.
+
+When Secure Trunking is toggled, test with **several** calls, not one — the fault is intermittent,
+so a single good call proves nothing. And if no-media calls recur with SRTP on, it becomes a
+Twilio support ticket, with the SIDs above as evidence.
+
+⚠️ **The trunks are invisible to the default Twilio API — and the empty responses look like
+missing infrastructure, not a wrong hostname.** Learned the hard way, 19 Aug 2026, chasing the
+incident above: `GET https://trunking.twilio.com/v1/Trunks` on the staging account returns an
+empty list, the trunk SID 404s, `Calls.json` shows no calls ever, and the number shows no
+`trunk_sid` — four independent readings that together look exactly like a deleted voice estate.
+None of it was true. **Those are all US1 endpoints, and this estate is AU1**: regional resources
+only answer at `{product}.sydney.au1.twilio.com` (the edge segment is mandatory —
+`trunking.sydney.twilio.com` does not resolve, and the older `api.au1.twilio.com` form is
+deprecated, dead 28 Apr 2026). **AU1 also requires region-scoped credentials** — the account's
+US1 auth token gets `401 Authenticate` at the Sydney FQDN, so the working paths into the AU1
+estate are the console (which sees all regions) or an API key created with Region = AU1
+(Console → Account → API keys). No AU1 API key exists as of 19 Aug 2026 — creating one and
+storing it in staging Secret Manager (suggested names `voxtable-stg-twilio-au1-key-sid` /
+`-key-secret`) is what makes the voice estate automatable at all.
+
+The same blindness applies in reverse and explains an old §2 note: messaging lives in US1, voice
+in AU1, so **no single API view ever shows the whole number**. Anyone auditing "what does this
+account have?" must query both regions or use the console, and an agent asserting "the trunk does
+not exist" from a US1 response is making the 19 Aug mistake again.
 
 ### Rules for this number
 
@@ -321,8 +365,8 @@ it does.
 | 2 | ~~Build both agents in the **Staging** workspace~~ ✅ 13 Aug — both built, every URL pointing at the staging API, verified by 15 read-back assertions | — | — |
 | 2a | ~~Staging key into `voxtable-stg-retell-api-key` + roll a revision~~ ✅ 13 Aug — version 4, revisions `api-00031` / `worker-00027`; signed request verifies **204**, wrong key **401** | — | — |
 | 2b | ~~`restaurants` row bound to `+61 468 203 234`~~ ✅ 13 Aug — number imported to the Staging workspace (webhook mode) and `VoxTable Staging Venue` resolves with fresh per-call variables; unknown numbers fail closed | — | — |
-| 2c | **Make a real call to `+61 468 203 234`** — everything but audio is proven | Confidence before the production cutover | Sam |
-| 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first | Plain-RTP media today; dead air during a Retell outage | — |
+| 2c | **Make a real call to `+61 468 203 234`** — everything but audio is proven. The machine half is green (`npm run smoke:staging`, first green run 14 Aug); what remains is the ten-leg human battery (legs 8–9 added 19 Aug 2026: honest capacity, closed day; leg 4 blocked on the drinks list) in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md), whose results table is still empty. Leg 6 (SMS) additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker — issue #185, not set today | Confidence before the production cutover | Sam |
+| 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first — ✅ **staging trunk secured 19 Aug 2026** (AU1 API key in Secret Manager: `voxtable-stg-twilio-au1-key-sid`/`-secret`; readback `secure=true`); production trunk and both DR URLs still open — ⚠️ was upgraded to urgent by the no-media incident: a 19 Aug staging call lost caller media entirely (zero inbound audio, §3a) on the plain-RTP path, intermittently. One-command toggle recorded in §3a's incident note; verify with several calls, and escalate to Twilio with the recorded SIDs if no-media calls recur under SRTP | Plain-RTP media today; dead air during a Retell outage; intermittent no-media calls indistinguishable from caller hangups | Sam |
 | 4 | Move the API hostname to `api.biteperk.com.au` and repoint the agents' `webhook_url` + 5 tool URLs | The last operational tie to the other company — see §6 | — |
 
 ### Put Natalia's back on the air

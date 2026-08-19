@@ -1,4 +1,4 @@
-import { DbClient, pool, readPool } from "../db/pool";
+import { DbClient, readPool } from "../db/pool";
 
 export type OrderSource = "voice" | "waiter" | "qr" | "dashboard";
 export type OrderStatus = "pending" | "preparing" | "ready" | "served" | "cancelled";

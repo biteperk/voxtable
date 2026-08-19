@@ -26,9 +26,11 @@
     "smoke:retell-orders": "tsx scripts/smoke-retell-orders.ts",
     "smoke:isolation": "tsx scripts/smoke-onboarding-isolation.ts",
     "smoke:legal": "tsx scripts/smoke-legal.ts",
+    "smoke:admin": "tsx scripts/smoke-admin.ts",
     "smoke:verify-email": "tsx scripts/smoke-verify-email.ts",
     "smoke:menu-ocr": "tsx scripts/smoke-menu-ocr.ts",
     "smoke:double-booking": "tsx scripts/smoke-double-booking.ts",
+    "smoke:retry-idempotency": "tsx scripts/smoke-retry-idempotency.ts",
     "smoke:tenant-attribution": "tsx scripts/smoke-tenant-attribution.ts",
     "smoke:calcom-mirror": "CALCOM_SYNC_ENABLED=true tsx scripts/smoke-calcom-mirror.ts",
     "smoke:outbox-deadletter": "tsx scripts/smoke-outbox-deadletter.ts",
@@ -38,7 +40,11 @@
     "smoke:voice-kill-switch": "tsx scripts/smoke-voice-kill-switch.ts",
     "smoke:notification-lease": "tsx scripts/smoke-notification-lease.ts",
     "smoke:payments": "tsx scripts/smoke-payments.ts",
-    "menu:import": "tsx scripts/import-menu.ts"
+    "menu:import": "tsx scripts/import-menu.ts",
+    "smoke:staging": "tsx scripts/smoke-staging.ts",
+    "smoke:agent-routing": "tsx scripts/smoke-agent-routing.ts",
+    "smoke:menu-guards": "tsx scripts/smoke-menu-guards.ts",
+    "smoke:capacity-ceiling": "tsx scripts/smoke-capacity-ceiling.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",

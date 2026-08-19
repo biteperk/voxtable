@@ -48,11 +48,11 @@ const TEMPLATES: Record<NotificationKind, (v: Vars) => { subject: string; body: 
     subject: `🎉 ${v.restaurant ?? "Your restaurant"} is live on VoxTable`,
     body: `Bella is now answering your calls. Manage bookings, calls and your menu from your dashboard anytime.`
   }),
-  trial_ending: (v) => ({
+  trial_ending: (_v) => ({
     subject: `Your VoxTable trial ends soon`,
     body: `Your free trial is ending. No action needed to continue — your subscription will start automatically. Manage your plan anytime from Billing.`
   }),
-  payment_failed: (v) => ({
+  payment_failed: (_v) => ({
     subject: `Action needed: payment issue on your VoxTable account`,
     body: `We couldn't process your latest payment. Please update your card in Billing to keep Bella answering your calls.`
   })

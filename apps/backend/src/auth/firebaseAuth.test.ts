@@ -5,6 +5,7 @@ import test from "node:test";
 // in place before firebaseAuth is imported — hence the dynamic import (static
 // imports are hoisted above this assignment).
 process.env.DASHBOARD_ALLOWED_EMAILS = "sam@example.com, Mixed.Case@Example.COM ,";
+process.env.DASHBOARD_ADMIN_EMAILS = "admin@biteperk.com.au, Staff.Two@Biteperk.COM.AU";
 
 const firebaseAuth = import("./firebaseAuth");
 
@@ -25,4 +26,15 @@ test("isAllowlistedEmail rejects unlisted, empty, and missing emails", async () 
   assert.equal(isAllowlistedEmail(""), false);
   assert.equal(isAllowlistedEmail(null), false);
   assert.equal(isAllowlistedEmail(undefined), false);
+});
+
+test("isPlatformAdminEmail matches only the admin allowlist, case-insensitively", async () => {
+  const { isPlatformAdminEmail } = await firebaseAuth;
+  assert.equal(isPlatformAdminEmail("admin@biteperk.com.au"), true);
+  assert.equal(isPlatformAdminEmail("STAFF.TWO@biteperk.com.au"), true);
+  // Being dashboard-allowlisted does not make someone a platform admin.
+  assert.equal(isPlatformAdminEmail("sam@example.com"), false);
+  assert.equal(isPlatformAdminEmail(""), false);
+  assert.equal(isPlatformAdminEmail(null), false);
+  assert.equal(isPlatformAdminEmail(undefined), false);
 });

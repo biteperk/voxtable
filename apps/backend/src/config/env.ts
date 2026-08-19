@@ -25,6 +25,19 @@ const boolFlag = () =>
 const gateFlag = () =>
   z.enum(["true", "false"]).default("true").transform((value) => value === "true");
 
+// An optional variable that the surrounding config system may hand us as an
+// empty string rather than omitting. Two systems do exactly that: `.env.example`
+// ships these keys blank for a human to fill in, and Terraform renders an unset
+// optional variable as KEY="". Both mean "not set" — but `z.string().url()`
+// rejects "" and `z.coerce.number()` turns it into 0, so without this the whole
+// process refuses to boot on a value nobody supplied. Blank is normalised to
+// undefined BEFORE validation, so a genuinely malformed value still fails.
+const blankAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    schema
+  );
+
 const envSchema = z
   .object({
   // No default. Which environment this is decides how the whole file behaves,
@@ -141,7 +154,7 @@ const envSchema = z
   // in production when CALCOM_SYNC_ENABLED=true.
   CALCOM_SYNC_ENABLED: boolFlag(),
   CALCOM_API_KEY: z.string().optional(),
-  CALCOM_EVENT_TYPE_ID: z.coerce.number().int().positive().optional(),
+  CALCOM_EVENT_TYPE_ID: blankAsUnset(z.coerce.number().int().positive().optional()),
   CALCOM_BASE_URL: z.string().url().default("https://api.cal.com/v2"),
   CALCOM_WEBHOOK_SECRET: z.string().optional(),
   CALCOM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
@@ -150,21 +163,21 @@ const envSchema = z
   // Audit Sweep I: per-day Cal.com API request threshold. When today's count
   // crosses this, healthAlerter fires a Slack ping. Default is 80% of free
   // tier (100k/mo ÷ 30 days × 0.8 ≈ 2666/day). Override when on a paid plan.
-  CALCOM_DAILY_QUOTA_THRESHOLD: z.coerce.number().int().positive().optional(),
+  CALCOM_DAILY_QUOTA_THRESHOLD: blankAsUnset(z.coerce.number().int().positive().optional()),
 
   // Operations alerting — Slack webhook for outbox depth + circuit breaker events.
-  OPS_SLACK_WEBHOOK_URL: z.string().url().optional(),
+  OPS_SLACK_WEBHOOK_URL: blankAsUnset(z.string().url().optional()),
   // Dead-man's switch: the health alerter GETs this URL (healthchecks.io
   // style) at the end of every tick. The external service alerts when pings
   // STOP — the one failure mode every in-process alert shares is "the worker
   // that would have alerted is dead", and until this existed every probe ran
   // on the same box it was probing.
-  OPS_HEARTBEAT_URL: z.string().url().optional(),
+  OPS_HEARTBEAT_URL: blankAsUnset(z.string().url().optional()),
 
   // Sentry — error tracking. No-op when unset; safe to ship the scaffolding
   // without a DSN. Not enforced in production yet (Phase 5 calls for it but
   // we're staging the rollout) — set it when the Sentry project exists.
-  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_DSN: blankAsUnset(z.string().url().optional()),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 
   // Stripe billing — read-only mirror of the restaurant's real invoices,
@@ -174,10 +187,13 @@ const envSchema = z
   // are verified. superRefine below forces keys when enabled in production.
   STRIPE_BILLING_ENABLED: boolFlag(),
   STRIPE_SECRET_KEY: z.string().optional(),
-  // Legacy single-tenant fallback customer. With self-serve billing (Phase 3),
-  // each restaurant gets its own customer (restaurants.stripe_customer_id); this
-  // env is only a transition fallback for the original tenant.
-  STRIPE_CUSTOMER_ID: z.string().optional(),
+  // STRIPE_CUSTOMER_ID was removed on 18 Aug 2026. It was the legacy
+  // single-tenant fallback customer, read by routes/billing.ts with NO tenant
+  // check — so every restaurant that had not yet completed checkout resolved to
+  // it, and a manager of any tenant could read another business's invoices and
+  // card details, or open a Customer Portal session against them. Per-tenant
+  // billing has been the real path since Phase 3; the fallback outlived its
+  // transition. Setting it in a .env is harmless now; it is simply ignored.
   STRIPE_PORTAL_RETURN_URL: z
     .string()
     .url()
@@ -221,7 +237,7 @@ const envSchema = z
   // Base URL for the "openai" provider (ignored for anthropic). E.g.
   // https://openrouter.ai/api/v1 , https://api.together.xyz/v1 ,
   // https://generativelanguage.googleapis.com/v1beta/openai .
-  MENU_OCR_BASE_URL: z.string().url().optional(),
+  MENU_OCR_BASE_URL: blankAsUnset(z.string().url().optional()),
   // Default model is Anthropic's; override per provider, e.g.
   // "qwen/qwen-2.5-vl-72b-instruct" (OpenRouter) or "gemini-2.0-flash".
   MENU_OCR_MODEL: z.string().default("claude-3-5-sonnet-latest"),
@@ -290,24 +306,22 @@ const envSchema = z
   // Area code to prefer when buying AU numbers (e.g. "2" for Sydney).
   PROVISIONING_TWILIO_AREA_CODE: z.string().optional(),
 
-  // Legal layer (agreement wizard step). The Client Services Agreement and
-  // Privacy & Data Handling Schedule are published on biteperk.com.au; the app
-  // records WHICH version (plus content hashes of the published pages) each
-  // owner accepted. "DRAFT" is a sentinel meaning "no executed documents yet":
-  // the agreement endpoint refuses it in production, and superRefine below
-  // refuses to boot production with self-serve signup on while it stands.
-  TERMS_DOCUMENT_SET_VERSION: z.string().trim().min(1).default("DRAFT"),
-  // Interim URLs are the live site terms/privacy pages; switch to the
-  // versioned CSA/Schedule URLs when the executed documents publish.
-  TERMS_CSA_URL: z.string().url().default("https://biteperk.com.au/legal/terms/"),
-  TERMS_SCHEDULE_URL: z.string().url().default("https://biteperk.com.au/legal/privacy/"),
-  TERMS_CSA_SHA256: z.string().trim().optional(),
-  TERMS_SCHEDULE_SHA256: z.string().trim().optional(),
   // Self-serve signup: lets a verified account that is NOT in
   // DASHBOARD_ALLOWED_EMAILS create a restaurant and enter the wizard (the
   // allowlist remains the gate while this is off, and stays authoritative for
   // admin routes regardless). Kill-switch pattern: ships OFF.
   SELF_SERVE_SIGNUP_ENABLED: boolFlag(),
+  // The published legal-documents manifest (same object the wizard reads from
+  // GCS). When set, POST /api/onboarding/agreement verifies the submitted
+  // version/URLs/hashes against it before writing the acceptance ledger —
+  // the ledger is only evidence if the server, not the browser, vouches for
+  // what was accepted. superRefine below requires it in production whenever
+  // self-serve signup is on.
+  LEGAL_DOCUMENTS_MANIFEST_URL: blankAsUnset(z.string().url().optional()),
+  // Allows acceptances against an unpublished (SAMPLE-*/DRAFT-*) document
+  // set. Kill-switch pattern: ships OFF. Staging turns it on so the wizard
+  // stays testable before the real CSA text publishes; production never does.
+  TERMS_ALLOW_UNPUBLISHED_DOCS: boolFlag(),
   // VoxConcierge is contracted "when released" — the wizard only offers it
   // once this flag is on. VoxDrive is deliberately not a service value
   // anywhere: it is a concept and must never be sold.
@@ -331,7 +345,7 @@ const envSchema = z
   ORDER_PAYMENT_FEE_FLAT_CENTS: z.coerce.number().int().min(0).default(0),
   // Where Stripe sends the guest after paying/cancelling — the dashboard
   // frontend origin (serves /order/paid and /order/cancelled), NOT the API.
-  PUBLIC_ORDER_RETURN_BASE_URL: z.string().url().optional()
+  PUBLIC_ORDER_RETURN_BASE_URL: blankAsUnset(z.string().url().optional())
   })
   .superRefine((value, ctx) => {
     const publicUrl = new URL(value.PUBLIC_API_BASE_URL);
@@ -420,6 +434,22 @@ const envSchema = z
         message: "Production PUBLIC_API_BASE_URL must be a public HTTPS URL."
       });
     }
+
+    // Any production that can record a legal acceptance needs the manifest, so
+    // the server — not the browser — decides what was accepted. This used to be
+    // gated on SELF_SERVE_SIGNUP_ENABLED, which defaults false: an invite-only
+    // production therefore booted with no manifest URL and fell back to writing
+    // browser-supplied versions and digests into the append-only ledger with
+    // only a log line. Self-serve is not what makes the evidence matter — a
+    // manually onboarded venue signs the same agreement.
+    //
+    // NOTE for deploys: add LEGAL_DOCUMENTS_MANIFEST_URL to the Terraform env
+    // map (and the VM's .env) BEFORE promoting this code to production, or it
+    // dies on this gate at startup.
+    requireInProd(
+      "LEGAL_DOCUMENTS_MANIFEST_URL",
+      "LEGAL_DOCUMENTS_MANIFEST_URL is required in production (agreement acceptances are verified against the published manifest, not trusted from the browser)."
+    );
 
     requireInProd("RETELL_API_KEY", "RETELL_API_KEY is required in production.");
     requireInProd("TWILIO_ACCOUNT_SID", "TWILIO_ACCOUNT_SID is required in production.");
@@ -548,29 +578,6 @@ const envSchema = z
         path: ["RETELL_TEMPLATE_AGENT_ID"],
         message: "RETELL_TEMPLATE_AGENT_ID is required when PROVISIONING_AUTO_ENABLED=true."
       });
-    }
-
-    // Legal layer — self-serve signup must never run against DRAFT documents:
-    // an acceptance recorded against "DRAFT" is evidence of nothing. The
-    // content hashes pin the acceptance to the exact published bytes.
-    if (value.SELF_SERVE_SIGNUP_ENABLED) {
-      if (value.TERMS_DOCUMENT_SET_VERSION === "DRAFT") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["TERMS_DOCUMENT_SET_VERSION"],
-          message:
-            "TERMS_DOCUMENT_SET_VERSION must name a published document set (not DRAFT) " +
-            "when SELF_SERVE_SIGNUP_ENABLED=true."
-        });
-      }
-      requireInProd(
-        "TERMS_CSA_SHA256",
-        "TERMS_CSA_SHA256 is required when SELF_SERVE_SIGNUP_ENABLED=true."
-      );
-      requireInProd(
-        "TERMS_SCHEDULE_SHA256",
-        "TERMS_SCHEDULE_SHA256 is required when SELF_SERVE_SIGNUP_ENABLED=true."
-      );
     }
   });
 

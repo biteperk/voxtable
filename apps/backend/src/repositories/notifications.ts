@@ -1,4 +1,4 @@
-import { DbClient, pool } from "../db/pool";
+import { DbClient, pool, readPool } from "../db/pool";
 
 export interface NotificationRow {
   id: string;
@@ -99,4 +99,58 @@ export async function markNotificationFailed(id: string, error: string): Promise
     id,
     error.slice(0, 500)
   ]);
+}
+
+export interface NotificationOutboxStats {
+  pendingDepth: number;
+  oldestPendingAt: string | null;
+  failedLast24h: number;
+  sentLast1h: number;
+  // Which kind of message is failing matters more than how many: signup
+  // verification codes and payment links both ride this queue.
+  byKind: Array<{ channel: string; kind: string; pending: number; failed_24h: number }>;
+}
+
+/** Health snapshot mirroring getOutboxStats() for the Cal.com outbox. */
+export async function getNotificationOutboxStats(
+  db: DbClient = readPool
+): Promise<NotificationOutboxStats> {
+  const [totals, byKind] = await Promise.all([
+    db.query<{
+      pending_depth: string;
+      oldest_pending_at: string | null;
+      failed_last_24h: string;
+      sent_last_1h: string;
+    }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE status = 'pending')::text AS pending_depth,
+         MIN(created_at) FILTER (WHERE status = 'pending')::text AS oldest_pending_at,
+         COUNT(*) FILTER (WHERE status = 'failed' AND created_at >= now() - interval '24 hours')::text AS failed_last_24h,
+         COUNT(*) FILTER (WHERE status = 'sent' AND sent_at >= now() - interval '1 hour')::text AS sent_last_1h
+       FROM notifications_outbox`
+    ),
+    db.query<{ channel: string; kind: string; pending: string; failed_24h: string }>(
+      `SELECT channel, kind,
+              COUNT(*) FILTER (WHERE status = 'pending')::text AS pending,
+              COUNT(*) FILTER (WHERE status = 'failed' AND created_at >= now() - interval '24 hours')::text AS failed_24h
+         FROM notifications_outbox
+        WHERE status = 'pending'
+           OR (status = 'failed' AND created_at >= now() - interval '24 hours')
+        GROUP BY channel, kind
+        ORDER BY channel, kind`
+    )
+  ]);
+  const t = totals.rows[0]!;
+  return {
+    pendingDepth: Number(t.pending_depth),
+    oldestPendingAt: t.oldest_pending_at,
+    failedLast24h: Number(t.failed_last_24h),
+    sentLast1h: Number(t.sent_last_1h),
+    byKind: byKind.rows.map((r) => ({
+      channel: r.channel,
+      kind: r.kind,
+      pending: Number(r.pending),
+      failed_24h: Number(r.failed_24h)
+    }))
+  };
 }

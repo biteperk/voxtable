@@ -13,6 +13,7 @@
  */
 
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 import { reapStaleOrderPayments } from "../services/orderPaymentService";
 
 const TICK_INTERVAL_MS = 5 * 60 * 1000;
@@ -35,6 +36,9 @@ async function tick(): Promise<void> {
 export function startOrderPaymentReaper(): void {
   if (intervalHandle !== null) return;
   logger.info({ evt: "order_payment_reaper_started" });
+  // Only registered once the worker genuinely starts ticking, so a
+  // flag-disabled no-op is never reported as stalled.
+  registerTickExpectation("order-payment-reaper", TICK_INTERVAL_MS);
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;

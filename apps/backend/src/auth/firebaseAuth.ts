@@ -68,6 +68,16 @@ export function isAllowlistedEmail(email: string | null | undefined): boolean {
 }
 
 /**
+ * Is this email a platform admin (BitePerk staff)? Mirrors requireAdminRole's
+ * membership check so /api/me can tell the dashboard whether to show the
+ * admin entry point. UI hint only — every /api/admin/* call re-checks.
+ */
+export function isPlatformAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return adminEmails.has(email.toLowerCase());
+}
+
+/**
  * The Firebase Admin app, for the rare service that must write to Firebase
  * Auth itself (e.g. the verification-code flow marking an email verified).
  */

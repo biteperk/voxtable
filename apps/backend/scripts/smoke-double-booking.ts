@@ -26,6 +26,7 @@
  */
 import { pool } from "../src/db/pool";
 import { createBooking } from "../src/services/bookingService";
+import { checkAvailability } from "../src/services/availabilityService";
 import {
   assert,
   cleanupSmokeRestaurant,
@@ -136,6 +137,53 @@ async function main(): Promise<void> {
       console.log(`  (unexpected rejection: ${String(error)})`);
     }
     assert("a genuinely free later slot is still bookable", laterAccepted);
+
+    // ---- Scenario 5: availability must AGREE with the constraint at midnight ----
+    // The constraint has always spanned midnight; the availability queries did
+    // not. They filtered `reservation_date = <requested date>`, so a 23:00
+    // booking running to 00:30 the next day was invisible to a 00:00 request.
+    //
+    // The caller was offered a slot that was not free, accepted it, and then
+    // createBooking tripped reservations_no_overlap — so Bella told them "that
+    // time just got booked by another caller" about a table nobody had just
+    // booked. No double-booking (the database held), but a real customer was
+    // turned away from a real table. This proves the two layers now agree.
+    await pool.query(`DELETE FROM reservations WHERE restaurant_id = $1`, [restaurantId]);
+
+    const nextDay = new Date(`${DATE}T00:00:00Z`);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    const NEXT_DATE = nextDay.toISOString().slice(0, 10);
+
+    await book(restaurantId, "23:00", "+61400000006"); // runs to 00:30 on NEXT_DATE
+
+    const spillover = await checkAvailability({
+      restaurantId,
+      date: NEXT_DATE,
+      time: "00:00",
+      partySize: 2
+    });
+    assert(
+      "availability sees a booking that spilled over midnight from the previous day",
+      spillover.available === false,
+      { available: spillover.available, date: NEXT_DATE }
+    );
+
+    // Guards against "fixed it by refusing everything". 00:30 is the moment
+    // the spillover ends, and 00:30 + 90 minutes lands exactly on the 02:00
+    // close — so it is both non-overlapping (the range is half-open) and
+    // inside opening hours. 01:00 would run to 02:30 and be refused by the
+    // opening-hours check, which would make this assertion prove nothing.
+    const afterSpill = await checkAvailability({
+      restaurantId,
+      date: NEXT_DATE,
+      time: "00:30",
+      partySize: 2
+    });
+    assert(
+      "the slot starting exactly when the spillover ends is still offered",
+      afterSpill.available === true,
+      { available: afterSpill.available }
+    );
   } finally {
     await cleanupSmokeRestaurant(restaurantId);
     await pool.end();

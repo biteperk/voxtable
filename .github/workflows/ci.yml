@@ -65,8 +65,16 @@ jobs:
 
       - run: npm ci
 
+      # No --if-present. There was no `lint` script and no ESLint anywhere in
+      # the repo, so `npm run lint --if-present` exited 0 silently on every run
+      # and showed a green tick having executed nothing (issue #186). Without
+      # the flag, deleting the script fails the build loudly instead.
+      #
+      # The ceiling in the script is a ratchet: 0 errors, and the current
+      # warning count exactly. A new warning fails CI. Lower it as warnings are
+      # burned down — never raise it.
       - name: Lint
-        run: npm run lint --if-present
+        run: npm run lint
 
       - name: Build backend
         run: npm run build:backend
@@ -88,12 +96,47 @@ jobs:
       - name: Prove double-booking is impossible
         run: npm run smoke:double-booking
 
+      # A Retell tool-call retry must return the FIRST booking, never make a
+      # second one. The old guard keyed on an LLM-supplied call_log_id that
+      # Bella cannot know, so it never ran on the path that needed it: the
+      # retry found a DIFFERENT free table and committed. The exclusion
+      # constraint cannot catch that — different table_id, no overlap — so
+      # only this test can.
+      - name: Prove a retried tool call cannot book twice
+        run: npm run smoke:retry-idempotency
+
       # Two restaurants, two numbers: each call must land on the venue that was
       # actually dialled. Both Twilio handlers used to write the default tenant
       # unconditionally, which is invisible with one customer and files every
       # venue's calls against restaurant #1 the moment there are two.
       - name: Prove calls are attributed to the right restaurant
         run: npm run smoke:tenant-attribution
+
+      # The other half of that hop. Attribution proves number -> restaurant;
+      # this proves restaurant -> AGENT, which is what actually broke on a live
+      # call (18 Aug 2026): the venue resolved correctly and was then answered
+      # by another venue's agent, hard-coded with that venue's name and owner.
+      # The caller was told they had reached a different restaurant while the
+      # booking landed against the right one, and nothing objected anywhere.
+      - name: Prove each venue answers with its own agent
+        run: npm run smoke:agent-routing
+
+      # The two refusals Bella owes a caller: a licensed item (responsible
+      # service of alcohol) and an item outside its serving window. Both guards
+      # shipped with NO automated cover — they were exercised only by a human
+      # phone battery, against props planted in the staging venue's menu. This
+      # builds its own venue, so a real customer's menu never has to carry test
+      # fixtures for us.
+      - name: Prove the voice path refuses licensed and out-of-hours items
+        run: npm run smoke:menu-guards
+
+      # A capacity ceiling used to be reported as a TIME problem: a party of
+      # twelve was told the requested time was unavailable and offered nine
+      # alternative slots, none of which could ever help, because nothing in the
+      # platform combines tables. Live the moment a venue's largest table is
+      # smaller than a party that rings.
+      - name: Prove a too-large party is told the real reason
+        run: npm run smoke:capacity-ceiling
 
       # The calendar mirror's three divergence bugs: a moved booking that never
       # propagated, a cancel-racing-create that left a permanent ghost booking
@@ -152,6 +195,30 @@ jobs:
       # a counting fixture — no credentials needed.
       - name: Prove payment links replay, reconcile, and never cross into billing
         run: npm run smoke:payments
+
+      # The multi-tenancy guarantee the whole product rests on: a member of
+      # restaurant A can neither READ nor MUTATE restaurant B's rows by UUID.
+      # Needs two tenants that own reservations, which the synthetic-venue seed
+      # provides — it is idempotent and additive (fixed UUIDs, ON CONFLICT DO
+      # NOTHING), so it is safe to apply to the fresh CI database.
+      - name: Seed the synthetic tenants used by the isolation check
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f deploy/seeds/synthetic_test_restaurants.sql
+
+      - name: Prove one tenant cannot read or write another's rows
+        run: npm run smoke:isolation
+
+      # The admin console re-enqueues failed provisioning jobs. It MUST reset
+      # the row in place: a second row means buying a second Twilio number.
+      # Runs entirely in a rolled-back transaction — nothing persists.
+      - name: Prove admin re-enqueue never creates a second provisioning job
+        run: npm run smoke:admin
+
+      # The legal layer is evidence, not decoration: the agreement step cannot
+      # be skipped, a hash that disagrees with the published manifest is
+      # refused, an unpublished (SAMPLE-*) document set is refused, and the
+      # ledger's append-only triggers reject UPDATE and DELETE.
+      - name: Prove the agreement ledger refuses bad input and cannot be edited
+        run: npm run smoke:legal
 
       - name: Build frontend
         run: npm run build:frontend

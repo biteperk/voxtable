@@ -48,6 +48,13 @@ export interface AvailabilityInput {
 
 export interface AvailabilityResult {
   available: boolean;
+  /**
+   * Why `available` is false. `party_too_large` means no table at this venue can
+   * seat the party at ANY time, so offering a different slot is pointless — a
+   * distinction the single generic message used to hide, leaving the agent
+   * suggesting times to a party of twelve.
+   */
+  reason: "available" | "no_availability" | "party_too_large" | "closed";
   requestedTime: string;
   suggestedTime: string | null;
   suggestedTimes: string[];

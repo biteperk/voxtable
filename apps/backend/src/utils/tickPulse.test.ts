@@ -10,9 +10,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { recordTick, tickPulseSnapshot } from "./tickPulse";
+import {
+  recordTick,
+  registerTickExpectation,
+  STALE_INTERVAL_MULTIPLE,
+  stalledWorkers,
+  tickPulseSnapshot
+} from "./tickPulse";
 
-function snapshotFor(worker: string, now: number): { ticks: number; last_tick_ms_ago: number } | undefined {
+function snapshotFor(worker: string, now: number) {
   return tickPulseSnapshot(now).find((entry) => entry.worker === worker);
 }
 
@@ -42,4 +48,60 @@ test("workers are reported independently", () => {
 
 test("a worker that has never ticked is absent from the snapshot", () => {
   assert.equal(snapshotFor("pulse-test-never", 0), undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Staleness. Recording ticks was never the hard part — deciding that a worker
+// has stopped is, and /workerz answered 200 unconditionally until it could.
+// ---------------------------------------------------------------------------
+
+const INTERVAL = 1_000;
+const STALE_AFTER = INTERVAL * STALE_INTERVAL_MULTIPLE;
+
+test("a registered worker ticking on schedule is not stale", () => {
+  registerTickExpectation("pulse-stale-healthy", INTERVAL, 0);
+  recordTick("pulse-stale-healthy", 9_000);
+  const entry = snapshotFor("pulse-stale-healthy", 9_500);
+  assert.equal(entry?.stale, false);
+  assert.equal(entry?.expected_interval_ms, INTERVAL);
+  assert.ok(!stalledWorkers(9_500).includes("pulse-stale-healthy"));
+});
+
+test("a registered worker that stops ticking goes stale and is named", () => {
+  registerTickExpectation("pulse-stale-wedged", INTERVAL, 0);
+  recordTick("pulse-stale-wedged", 1_000);
+  const justBefore = 1_000 + STALE_AFTER;
+  assert.equal(snapshotFor("pulse-stale-wedged", justBefore)?.stale, false,
+    "exactly at the threshold is still healthy — the check must not flap");
+  const after = justBefore + 1;
+  assert.equal(snapshotFor("pulse-stale-wedged", after)?.stale, true);
+  assert.ok(stalledWorkers(after).includes("pulse-stale-wedged"));
+});
+
+test("a worker that registers and then never ticks at all goes stale", () => {
+  // The wedge-on-first-tick case: without a registration baseline this worker
+  // would have no pulse and look infinitely healthy.
+  registerTickExpectation("pulse-stale-bornDead", INTERVAL, 0);
+  const entry = snapshotFor("pulse-stale-bornDead", STALE_AFTER + 1);
+  assert.equal(entry?.ticks, 0);
+  assert.equal(entry?.stale, true);
+  assert.ok(stalledWorkers(STALE_AFTER + 1).includes("pulse-stale-bornDead"));
+});
+
+test("a worker that never registered an interval is never judged stale", () => {
+  // Flag-disabled workers never call registerTickExpectation, so a disabled
+  // feature must not make the health endpoint report a stall.
+  recordTick("pulse-stale-unregistered", 0);
+  const entry = snapshotFor("pulse-stale-unregistered", 10_000_000);
+  assert.equal(entry?.expected_interval_ms, null);
+  assert.equal(entry?.stale, false);
+  assert.ok(!stalledWorkers(10_000_000).includes("pulse-stale-unregistered"));
+});
+
+test("a slow worker on a long interval is not stale just because the clock moved", () => {
+  // cleanup ticks every 6h. A one-size threshold would flag it constantly.
+  const sixHours = 6 * 60 * 60 * 1000;
+  registerTickExpectation("pulse-stale-slow", sixHours, 0);
+  recordTick("pulse-stale-slow", sixHours);
+  assert.equal(snapshotFor("pulse-stale-slow", sixHours * 3)?.stale, false);
 });
