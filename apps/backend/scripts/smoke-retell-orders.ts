@@ -9,12 +9,14 @@
 //   * unset → the unsigned local-dev smoke it always was.
 //
 // Asserts:
-//   1. menu_lookup("fish and chips") returns Fish & Chips first match
+//   1. menu_lookup("barros luco") returns Barros Luco as the first match
+//      (deliberately NOT a "fish" query: the real menu has both a Fish Sandwich
+//      and Fish Bites, so that would be a genuinely ambiguous trigram match)
 //   2. menu_lookup("xyznonexistent") returns 0 matches + a fallback summary
 //   3. create_order with no reservation_id and no pickup_name → 400 ORDER_NEEDS_NAME
 //   3b. create_order with pickup_name and no reservation → 200 (takeaway)
 //   4. create_order with bogus item name → 404 MENU_ITEM_NOT_FOUND
-//   5. create_order with Fish & Chips, no drink choice → 400 MODIFIER_REQUIRED
+//   5. create_order with Barros Luco and no Side choice → 400 MODIFIER_REQUIRED
 //   6. create_order with full happy path → 200 + order_id + confirmation_message
 //   7. Replay same call_id → SAME order_id (idempotency)
 
@@ -144,21 +146,21 @@ async function main(): Promise<void> {
   }
 
   // 1) menu_lookup happy path
-  const lookup = await callTool("menu_lookup", { query: "fish and chips" });
+  const lookup = await callTool("menu_lookup", { query: "barros luco" });
   assert(lookup.status === 200, `menu_lookup status ${lookup.status}`);
   assert(
     lookup.body.matches && lookup.body.matches.length > 0,
     `menu_lookup should return matches: ${JSON.stringify(lookup.body)}`
   );
   assert(
-    lookup.body.matches![0]!.name === "Fish & Chips",
-    `top match should be Fish & Chips, got ${lookup.body.matches![0]?.name}`
+    lookup.body.matches![0]!.name === "Barros Luco",
+    `top match should be Barros Luco, got ${lookup.body.matches![0]?.name}`
   );
   assert(
     typeof lookup.body.speakable_summary === "string" && lookup.body.speakable_summary.length > 0,
     "speakable_summary must be present"
   );
-  console.log(`✓ menu_lookup("fish and chips") → top=${lookup.body.matches![0]!.name}`);
+  console.log(`✓ menu_lookup("barros luco") → top=${lookup.body.matches![0]!.name}`);
 
   // 2) menu_lookup zero matches
   const noMatch = await callTool("menu_lookup", { query: "xyznonexistent" });
@@ -183,7 +185,7 @@ async function main(): Promise<void> {
     "create_order",
     {
       call_id: "smoke-noname-" + Date.now(),
-      items: [{ name: "Fish & Chips", quantity: 1, variant_name: "Large", modifier_choices: { Drink: "Coke" } }]
+      items: [{ name: "Barros Luco", quantity: 1, modifier_choices: { Side: "Provenzal potatoes", Extras: "Melted cheese" } }]
     },
     "smoke-noname"
   );
@@ -204,7 +206,7 @@ async function main(): Promise<void> {
       call_id: pickupCallId,
       pickup_name: "Marco",
       pickup_time: "6:30pm",
-      items: [{ name: "Fish & Chips", quantity: 1, variant_name: "Large", modifier_choices: { Drink: "Coke" } }]
+      items: [{ name: "Barros Luco", quantity: 1, modifier_choices: { Side: "Provenzal potatoes", Extras: "Melted cheese" } }]
     },
     pickupCallId
   );
@@ -235,13 +237,13 @@ async function main(): Promise<void> {
   );
   console.log("✓ bogus item name → 404 MENU_ITEM_NOT_FOUND");
 
-  // 5) Fish & Chips with no drink → 400 MODIFIER_REQUIRED
+  // 5) Barros Luco with no Side choice → 400 MODIFIER_REQUIRED
   const noDrink = await callTool(
     "create_order",
     {
       call_id: "smoke-nodrink-" + Date.now(),
       reservation_id: bookingId,
-      items: [{ name: "Fish & Chips", quantity: 1, variant_name: "Large" }]
+      items: [{ name: "Barros Luco", quantity: 1 }]
     },
     "smoke-nodrink"
   );
@@ -261,10 +263,9 @@ async function main(): Promise<void> {
       reservation_id: bookingId,
       items: [
         {
-          name: "Fish & Chips",
+          name: "Barros Luco",
           quantity: 1,
-          variant_name: "Large",
-          modifier_choices: { Drink: "Coke" },
+          modifier_choices: { Side: "Provenzal potatoes", Extras: "Melted cheese" },
           special_requests: "smoke test"
         }
       ],
@@ -290,10 +291,9 @@ async function main(): Promise<void> {
       reservation_id: bookingId,
       items: [
         {
-          name: "Fish & Chips",
+          name: "Barros Luco",
           quantity: 1,
-          variant_name: "Large",
-          modifier_choices: { Drink: "Coke" },
+          modifier_choices: { Side: "Provenzal potatoes", Extras: "Melted cheese" },
           special_requests: "smoke test"
         }
       ],
@@ -319,10 +319,9 @@ async function main(): Promise<void> {
       reservation_id: bookingId,
       items: [
         {
-          name: "Fish & Chips",
+          name: "Barros Luco",
           quantity: 2,
-          variant_name: "Large",
-          modifier_choices: { Drink: "Coke" }
+          modifier_choices: { Side: "Provenzal potatoes", Extras: "Melted cheese" }
         }
       ]
     },

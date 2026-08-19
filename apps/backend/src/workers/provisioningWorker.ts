@@ -35,7 +35,8 @@ import {
   purchaseAuNumber,
   searchAuNumber
 } from "../services/twilioProvisioning";
-import { createAgentForRestaurant, importNumberToRetell } from "../services/retellProvisioning";
+import { createVenueAgent, createVenueLlm, importNumberToRetell } from "../services/retellProvisioning";
+import { PermanentProvisioningError } from "../domain/errors";
 
 const TICK_INTERVAL_MS = 5_000;
 const BATCH_SIZE = 2;
@@ -53,7 +54,9 @@ function backoffMsForAttempt(attempts: number): number {
  * A failure that retrying cannot fix — it needs a person. Fails the job on the
  * first occurrence instead of burning the retry budget on an identical error.
  */
-class PermanentProvisioningError extends Error {}
+// PermanentProvisioningError moved to domain/errors so the services this worker
+// calls can raise it too — a template that names a specific venue is a
+// misconfiguration no retry can fix.
 
 async function runStep(job: ProvisioningJob): Promise<void> {
   switch (job.step) {
@@ -127,7 +130,18 @@ async function runStep(job: ProvisioningJob): Promise<void> {
         return;
       }
       const profile = await getRestaurantProfile(job.restaurant_id);
-      const agentId = await createAgentForRestaurant(profile?.name ?? "Restaurant");
+
+      // Two Retell resources, no atomic call between them. Record the LLM id the
+      // moment it exists — patchProvisioningPayload, not advanceProvisioningStep,
+      // so the job keeps its 'processing' lease — otherwise a failure before the
+      // agent is created leaks an orphan LLM on every retry.
+      let llmId = job.payload.retell_llm_id;
+      if (!llmId) {
+        llmId = await createVenueLlm();
+        await patchProvisioningPayload(job.id, { retell_llm_id: llmId });
+      }
+
+      const agentId = await createVenueAgent(llmId, profile?.name ?? "Restaurant");
       await advanceProvisioningStep(job.id, "bind", { retell_agent_id: agentId });
       return;
     }

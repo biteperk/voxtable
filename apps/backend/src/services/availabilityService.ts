@@ -2,6 +2,7 @@ import { AppError } from "../domain/errors";
 import { DbClient, pool } from "../db/pool";
 import { AvailabilityInput, AvailabilityResult } from "../domain/types";
 import { findAvailableTable } from "../repositories/availability";
+import { getMaxTableCapacity } from "../repositories/tables";
 import { getRestaurantSettings } from "../repositories/restaurants";
 import { formatVoiceTime, fromMinutes, isWithinOpeningHours, toMinutes } from "../utils/time";
 
@@ -16,6 +17,9 @@ export async function checkAvailability(
 
   let primary: { time: string; tableId: string; tableLabel: string | null } | null = null;
   const alternatives: string[] = [];
+  // Did ANY candidate time fall inside opening hours? If none did, the venue is
+  // shut — a different answer from "we're full", and one the caller can act on.
+  let anyTimeWasOpen = false;
 
   for (const offset of suggestionOffsets) {
     const candidateTime = fromMinutes(toMinutes(input.time) + offset);
@@ -30,6 +34,7 @@ export async function checkAvailability(
     ) {
       continue;
     }
+    anyTimeWasOpen = true;
 
     const table = await findAvailableTable(
       {
@@ -63,14 +68,46 @@ export async function checkAvailability(
   }
 
   if (!primary) {
+    // Distinguish "we are busy" from "we could never seat you". Both used to
+    // return the same sentence about the requested TIME, so a party of twelve
+    // was invited to try another hour — nine offsets of advice that could not
+    // possibly help. The venue's largest table is a hard ceiling: there is no
+    // table-combining anywhere in the system, so one party must fit one table.
+    // Closed beats capacity: if the venue is shut that day, the party size is
+    // beside the point and quoting a table ceiling would be a non-sequitur.
+    if (!anyTimeWasOpen) {
+      return {
+        available: false,
+        reason: "closed",
+        requestedTime: input.time,
+        suggestedTime: null,
+        suggestedTimes: [],
+        tableIds: [],
+        tableLabel: null,
+        message:
+          "We're closed then, so I can't book that time. Would another day suit?",
+        naturalAlternativesMessage: null
+      };
+    }
+
+    const maxCapacity = await getMaxTableCapacity(input.restaurantId, db);
+    const partyTooLarge = maxCapacity !== null && input.partySize > maxCapacity;
+
     return {
       available: false,
+      reason: partyTooLarge ? "party_too_large" : "no_availability",
       requestedTime: input.time,
       suggestedTime: null,
       suggestedTimes: [],
       tableIds: [],
       tableLabel: null,
-      message: "No suitable table is available near the requested time.",
+      // maxCapacity === null means the venue has no active tables at all — a
+      // misconfiguration, not a party-size problem, so it keeps the generic
+      // wording rather than claiming "our largest table seats null".
+      message: partyTooLarge
+        ? `Our largest table seats ${maxCapacity}, so I can't fit a group of ${input.partySize} on one table. ` +
+          `Let me take your name and number and the team will call you back to sort something out.`
+        : "No suitable table is available near the requested time.",
       naturalAlternativesMessage: null
     };
   }
@@ -86,6 +123,7 @@ export async function checkAvailability(
 
   return {
     available: exactMatch,
+    reason: exactMatch ? "available" : "no_availability",
     requestedTime: input.time,
     suggestedTime: primary.time,
     suggestedTimes: allTimes,

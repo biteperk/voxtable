@@ -84,7 +84,19 @@ export function ManageTablesPage({ navigate, path }) {
   };
 
   const handleDelete = async (table) => {
-    if (!window.confirm(`Permanently delete table ${table.label}? Past bookings stay in history, but this table assignment will be removed.`)) return;
+    // The old wording said "past bookings stay in history", which understated it:
+    // the FK is ON DELETE SET NULL, so FUTURE confirmed bookings are unassigned
+    // too — and an unassigned booking drops out of the overlap guard (migration
+    // 025 is `WHERE table_id IS NOT NULL`), so its seat becomes bookable again.
+    if (
+      !window.confirm(
+        `Permanently delete table ${table.label}?\n\n` +
+          `Every booking on it — including future ones — will be left with no table, ` +
+          `which frees their seats to be booked again. Deactivate instead if the table ` +
+          `is only temporarily out of service.`
+      )
+    )
+      return;
     setError(null);
     try {
       await deleteTable(table.id);

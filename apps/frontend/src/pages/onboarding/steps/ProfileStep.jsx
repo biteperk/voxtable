@@ -3,10 +3,14 @@ import { getRestaurantProfile, updateRestaurantProfile } from "../../../api";
 import { isPlacesEnabled, loadPlacesLibrary, parsePlaceNew } from "../../../places";
 import { Icon } from "../../../components/Icon";
 
+// Must stay identical to CUISINE_OPTIONS in apps/backend/src/http/schemas.ts —
+// the backend rejects anything not in its enum, so an option missing here is an
+// option no venue can ever choose. cuisineOptions.test.ts fails on drift.
 const ONBOARDING_CUISINES = [
   "Italian", "Chinese", "Japanese", "Thai", "Indian", "Vietnamese", "Greek",
   "Lebanese", "Mexican", "French", "Modern Australian", "Cafe", "Steakhouse",
-  "Seafood", "Pizza", "Burgers", "Vegan", "Other"
+  "Seafood", "Pizza", "Burgers", "Vegan", "Mediterranean", "South American", "Chilean",
+  "Other"
 ];
 const ONBOARDING_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"];
 

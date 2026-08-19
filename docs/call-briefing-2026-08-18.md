@@ -69,11 +69,30 @@ Both happened on 17 Aug and the console is usable on staging now. Nothing is out
   was still empty; we no longer get one.
 - Staging is serving `api:c61740b…` and `worker:c61740b…` — the current `integration` tip.
 
-**Still open for the call: should Abhishek go on the allowlist?** Note he is on *neither*
-list today. He can sign in (staging runs `SELF_SERVE_SIGNUP_ENABLED=true`, so the dashboard
-allowlist is not enforced for sign-up), but `/admin` checks `DASHBOARD_ADMIN_EMAILS`, which
-holds only Sam's two addresses. Adding him is a GitHub Environment variable edit plus a
-re-apply — no code, no PR.
+**Abhishek on the allowlist — DECIDED AND DONE, 18 Aug.** He was on *neither* list; he is
+now on both, as `sales@biteperk.com`. The variables live in the **platform** repo
+(`biteperk/biteperk-cloud-platform`, `staging` environment) — not in `biteperk/voxtable`,
+which is where the previous wording implied — and are read by `terraform.yml` as
+`vars.DASHBOARD_ADMIN_EMAILS` / `vars.DASHBOARD_ALLOWED_EMAILS`. Both were edited and the
+`voxtable stg apply` re-run; read back off the running `voxtable-stg-api`:
+
+  | Variable | Value on staging |
+  |---|---|
+  | `DASHBOARD_ADMIN_EMAILS` | `skalaliya@gmail.com,biteperk@gmail.com,sales@biteperk.com` |
+  | `DASHBOARD_ALLOWED_EMAILS` | `biteperk@gmail.com,skalaliya@gmail.com,sales@biteperk.com` |
+
+He was added to `DASHBOARD_ALLOWED_EMAILS` as well as the admin list even though staging runs
+`SELF_SERVE_SIGNUP_ENABLED=true` (which stops that list gating sign-in): if that flag ever
+flips off, an admin-only entry would lock him out with a confusing `403`.
+
+⚠️ **The grant is only real if he signs in with a Google identity for that exact address.**
+Sign-in is Google-only (`signInWithPopup`), the match is exact-string, and `biteperk.com`
+resolves to Microsoft 365 mail — so the mailbox existing is not the same as a Google account
+existing. If `/admin` still refuses him, that is the reason, not the deploy.
+
+⚠️ **Production is untouched** — deliberately. `DASHBOARD_ADMIN_EMAILS` is unset in the
+platform repo's `production` environment, and production is still the VM, which is not on a
+build carrying `/admin` at all.
 
 ### How to finish a STAGING TEST tenant (the apply has landed — this works now)
 
@@ -149,7 +168,8 @@ on both branches (payment-link rejection fix, Connect accounts API fix).
    on staging, and agree the invite-only-production gap is worth closing before real onboarding.
 4. Who produces the real `CSA-2026-08` document text (#164) — the pipeline is ready for it; the
    text is a Sam/legal task, not code.
-5. Abhishek on the admin allowlist: yes/no. (He is on *neither* list today — see §2.)
+5. ~~Abhishek on the admin allowlist: yes/no.~~ **Done 18 Aug** — added as
+   `sales@biteperk.com` to both staging lists; see §2 for the Google-identity caveat.
 6. Demo scope for the wider demo he proposed.
 7. **Staging SMS is not switchable yet.** `NOTIFICATIONS_ENABLED` and `NOTIFICATIONS_SMS_FROM`
    are unset on the staging *worker*, so leg 6 of `deploy/runbooks/staging-call-battery.md`

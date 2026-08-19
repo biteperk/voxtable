@@ -1,14 +1,20 @@
 # The staging venue — VoxTable Staging Venue
 
+> 🔄 **Being converted to Mazcina (18 Aug 2026).** This venue is becoming a real restaurant —
+> real name, real menu, its own Retell agent — so staging rehearses production instead of
+> simulating it. Follow [`mazcina-staging-conversion.md`](mazcina-staging-conversion.md);
+> it supersedes the menu and agent sections below, and the steps are order-dependent.
+> The number, restaurant id and members are unchanged.
+
 The end-to-end test restaurant on staging. One venue, one number, committed as code.
 
 | Fact | Value |
 |---|---|
 | Restaurant id | `33333333-3333-4333-8333-333333333333` |
 | Bound number | `+61 468 203 234` (staging Twilio, `Biteperk-staging`) |
-| Retell agent | `agent_b9087333b7030f0cee06a19ffc` (Staging workspace) |
-| Tables | S1 (1-2) · S2 (2-4) · S3 (3-6) · S4 (4-8) |
-| Hours | 09:00–23:00 every day |
+| Retell agent | ⚠️ **unbound** — see "The agent this venue must NOT use" below |
+| Tables | **10, the venue's real floor plan** — T1–T4 (1-2) · T5–T8 (2-4) · T9–T10 (4-6). Largest seats **6**; S1–S4 are retired (deactivated, not deleted). |
+| Hours | Mazcina's real hours since 19 Aug 2026: Thu–Sat 12:00–21:30 · Sun–Mon 12:00–21:00 · **closed Tue & Wed** (confirmed by Sam; also spoken via the `hours` entry in `faq_json`). Source: `deploy/seeds/mazcina-venue.sql` |
 | Menu | 5 items — see below, the prices are load-bearing |
 | Seed | `deploy/seeds/staging-venue.sql` (idempotent; applied + re-applied 14 Aug 2026) |
 
@@ -24,9 +30,65 @@ The end-to-end test restaurant on staging. One venue, one number, committed as c
 
 ## THE ONE RULE
 
-**Never bind a second venue to `+61 468 203 234`.** Dialled-number routing is
-`WHERE twilio_phone_number = $1 … LIMIT 1` with no uniqueness constraint — two rows on one
-number route calls arbitrarily. Extend this venue; don't clone it.
+**Never bind a second venue to `+61 468 203 234`, and never bind another venue's Retell
+agent to this row.** Extend this venue; don't clone it.
+
+> **Correction, 18 Aug 2026.** This section used to say the routing query has "no uniqueness
+> constraint". That was wrong: migration 007 gives `twilio_phone_number` and
+> `retell_phone_number` a partial unique index each, so a duplicate number is rejected by the
+> database. The unguarded column was `retell_agent_id` — bare `TEXT`, no constraint — which
+> is how this venue came to be bound to another venue's agent. Migration 034 adds the missing
+> index, and the routing query is now `ORDER BY`'d so the cross-column `twilio OR retell`
+> match cannot resolve arbitrarily either.
+
+> ✅ **RESOLVED 19 Aug 2026.** The venue is now **Mazcina** and is bound to its own agent,
+> `agent_7b67073710604d306443cc569c` (LLM `llm_c1d40dbe180e737dd2ce1309ed3f`), with a fully
+> de-venued prompt. `agent_b9087333…` remains in the workspace as Natalia's staging agent and
+> is bound to nothing. The section below stands as the history of why the constraint exists.
+
+## The agent this venue must NOT use
+
+`agent_b9087333b7030f0cee06a19ffc` is **`Natalia's Bistro (STAGING)`**, not this venue's
+agent. The seed bound it here from the 13 Aug bring-up, labelled "Natalia's clone", and the
+prompt was never de-venued — it hard-codes Natalia's restaurant name in the system prompt and
+greeting, and her *name* in the callback line.
+
+On a real test call (18 Aug 2026) the effect was: the dialled number resolved to **this**
+venue, `/retell/inbound` returned this venue's name, timezone and dates — and the call was
+then answered by Natalia's Bistro. The caller was told, confidently, that they had reached a
+different restaurant, while the booking landed against the right one. Nothing objected
+anywhere: `retell_agent_id` had no constraint, the bind did no vendor round-trip, and go-live
+only checks the field is non-null.
+
+**The seed now leaves `retell_agent_id` NULL.** Bind this venue's agent through the admin
+endpoint instead, which verifies against Retell before storing:
+
+```
+PATCH /api/admin/restaurants/33333333-3333-4333-8333-333333333333/provisioning
+{ "twilio_phone_number": "+61468203234", "retell_agent_id": "<this venue's agent>" }
+```
+
+Until that agent exists and is bound, the line answers with nothing and the API logs
+`retell_inbound_no_agent_bound` — deliberately, because dead air is a better failure than a
+confident lie about which restaurant you have reached.
+
+⚠️ **Re-applying the seed will NOT fix the live staging row.** The insert is
+`ON CONFLICT (id) DO NOTHING`, so the existing row keeps whatever it already has — including
+`agent_b9087333…` if it is still there. Clear it explicitly, then bind the new agent:
+
+```
+POST  /api/admin/restaurants/33333333-3333-4333-8333-333333333333/unbind
+      { "confirm_name": "VoxTable Staging Venue", "fields": ["retell_agent_id"] }
+PATCH /api/admin/restaurants/33333333-3333-4333-8333-333333333333/provisioning
+      { "twilio_phone_number": "+61468203234", "retell_agent_id": "<new agent>" }
+```
+
+Read the result back off `GET /api/admin/restaurants/:id` afterwards — never trust the write
+response.
+
+⚠️ **Rebinding by direct SQL does not take effect immediately.** The number→venue map is
+cached per process, and each api/worker instance holds its own. The admin PATCH purges it;
+raw SQL does not, so a SQL rebind is only picked up when the 60-second TTL expires.
 
 ## (Re)applying the seed
 

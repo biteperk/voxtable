@@ -344,6 +344,14 @@ export const CUISINE_OPTIONS = [
   "Pizza",
   "Burgers",
   "Vegan",
+  // Added 18 Aug 2026: the first real venue to reach the profile step described
+  // itself as "a fusion of Mediterranean and South American" and could not say
+  // so — the closest options were "Seafood" and "Other". A cuisine list that
+  // cannot describe the restaurant makes the venue pick something untrue, and
+  // the value is read back to callers.
+  "Mediterranean",
+  "South American",
+  "Chilean",
   "Other"
 ] as const;
 
@@ -524,13 +532,35 @@ export const agreementSchema = z.object({
   })
 });
 
-// Admin provisioning bind (Phase 4a) — all optional so an admin can fill in
-// pieces as they're provisioned.
-export const adminProvisioningSchema = z.object({
-  twilio_phone_number: z.string().min(3).max(32).optional(),
-  retell_phone_number: z.string().min(3).max(32).optional(),
-  retell_agent_id: z.string().min(3).max(120).optional()
-});
+// Admin provisioning bind (Phase 4a). Fields are individually optional so an
+// admin can fill in pieces as they're provisioned, BUT the dialed number and
+// the agent must move together.
+//
+// Why: the UPDATE is COALESCE-only, so an omitted field keeps its old value.
+// PATCHing a new number on its own therefore leaves the PREVIOUS venue's agent
+// bound — the new number resolves to the right restaurant and then answers in
+// another venue's voice. That is the 18 Aug staging failure, and it produces no
+// error anywhere: `number_ready` fires on both columns being non-null, and
+// go-live only checks the same. A half-bind is never what the operator meant.
+export const adminProvisioningSchema = z
+  .object({
+    twilio_phone_number: z.string().min(3).max(32).optional(),
+    retell_phone_number: z.string().min(3).max(32).optional(),
+    retell_agent_id: z.string().min(3).max(120).optional()
+  })
+  .superRefine((value, ctx) => {
+    const hasNumber = value.twilio_phone_number !== undefined;
+    const hasAgent = value.retell_agent_id !== undefined;
+    if (hasNumber === hasAgent) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [hasNumber ? "retell_agent_id" : "twilio_phone_number"],
+      message:
+        "Bind twilio_phone_number and retell_agent_id together. Sending one alone keeps " +
+        "the other's previous value, which routes calls to the wrong venue's agent. " +
+        "Use POST /api/admin/restaurants/:id/unbind to clear a binding."
+    });
+  });
 
 // Admin unbind — the destructive counterpart of the bind PATCH (which is
 // COALESCE-only and can never null a column). Requires the venue's name typed

@@ -16,6 +16,14 @@
 > **not interchangeable**: one is staging-only and one is production. This file only
 > narrates; when they disagree, NUMBERS.md wins.
 
+> 🎙️ **Touching a voice agent — building or cloning one, editing a prompt or greeting,
+> changing a voice, chasing latency or "sounds robotic", or reviewing/diagnosing a call?
+> Read the skill `.claude/skills/retell-agent-quality/` first.** It carries the golden
+> config with measured costs, the de-venued prompt contract, the change discipline
+> (snapshot → PATCH → read-back → test call), a triage tree of real incidents, and runnable
+> probe/assert/review scripts. Numbers, trunks and SIP stay with
+> `twilio-au-number-provisioning`.
+
 > 🚦 **About to change anything outside your own machine — merge, deploy, click a vendor
 > console, run SQL, buy a number? Read [Environments and promotion](#environments-and-promotion)
 > below.** It is the SSOT for what "staging first" actually means here, which things
@@ -246,9 +254,19 @@ scoped to one restaurant; this is deliberately not.
 - ⚠️ `DASHBOARD_ADMIN_EMAILS` is **not** demanded by any boot gate, so a deployment that
   omits it starts cleanly and then 503s every admin call. Add it to the Terraform env map.
 - ⚠️ Binding a phone number here is the one place a venue's dialled-number routing can be
-  changed by hand. Bind **both** `twilio_phone_number` and `retell_agent_id` — the PATCH
-  COALESCEs omitted fields, so a half-bind leaves the onboarding wizard silently stuck with
-  no error anywhere.
+  changed by hand, and it is now **enforced rather than merely documented** (18 Aug 2026):
+  the PATCH rejects `twilio_phone_number` without `retell_agent_id` or vice versa (the
+  COALESCE half-bind used to leave the *previous* venue's agent bound, and the wizard stuck
+  with no error anywhere), and it verifies the agent against Retell before storing it —
+  `409` if it does not exist, if another venue already holds it, or if its `agent_name`
+  names a different venue (override with `?allow_name_mismatch=true`, audited).
+- ⚠️ **A venue must never share another venue's Retell agent.** The agent carries the
+  venue's identity, prompt and tool endpoints, so a shared one answers in the wrong venue's
+  voice — with the right venue's data underneath, which is why it reads as a mystery rather
+  than a bug. Migration `034` adds the partial unique index on `retell_agent_id` that `008`
+  omitted. Prompts must carry **no** venue name in prose: identity comes from the
+  `{{restaurant_name}}` / `{{owner_name}}` dynamic variables that `/retell/inbound` injects
+  fresh per call. See `deploy/runbooks/venue-onboarding.md` §1 trap 3.
 
 ### Legal documents and the acceptance ledger (#195 / #201, Aug 2026)
 
@@ -311,7 +329,7 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
 - **Frontend** on Firebase Hosting target `app`. Build with `VITE_API_BASE_URL` (a GitHub repo variable) before `firebase deploy --only hosting:app`. KDS is the separate Firebase Hosting target `kds`.
 - **DNS** managed in Cloudflare — legacy records under `algorythmos.com.au`, new ones under `biteperk.com.au` (both zones live in the same personal Cloudflare account). Any A record fronting the API must be **DNS-only (gray cloud)** — orange-cloud proxying breaks Let's Encrypt HTTP-01 and Retell/Twilio signature URLs. Adding a hostname to Firebase Auth's **authorized domains** is required or Google sign-in breaks on it.
 - **Retell: BitePerk now owns its own account — but production has NOT cut over yet.** Two estates exist and confusing them wastes a night:
-  - **New (BitePerk-owned)** — login `biteperk@gmail.com`, workspaces **Biteperk** (production) and **Staging**. The Biteperk workspace holds both venue agents, built 13 Aug from the *live* config: Natalia's `agent_5b5df167525452db98cda2112f` / `llm_18ad6f5adedc865b7ffd02a121e1`, Cuban Corner `agent_2892d65ceace4e68d8a3f3e80c` / `llm_53c6e9de9aac3b60270ffdd6bcba`. The **Staging** workspace carries a parallel pair pointed at the staging API. As at 18 Aug 2026 the wiring is done and the **machine** half is proven — staging key deployed, number imported, venue row resolving, and `npm run smoke:staging` green against the live staging API (first green run 14 Aug). The **human** half is not: the seven-leg phone battery in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md) has an empty results table, and NUMBERS.md §8 item 2c is still open. Treat "a real call has been answered end to end" as **unproven** until that table has rows — leg 6 additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker (issue #185), which are not set today.
+  - **New (BitePerk-owned)** — login `biteperk@gmail.com`, workspaces **Biteperk** (production) and **Staging**. The Biteperk workspace holds both venue agents, built 13 Aug from the *live* config: Natalia's `agent_5b5df167525452db98cda2112f` / `llm_18ad6f5adedc865b7ffd02a121e1`, Cuban Corner `agent_2892d65ceace4e68d8a3f3e80c` / `llm_53c6e9de9aac3b60270ffdd6bcba`. The **Staging** workspace carries a parallel pair pointed at the staging API. As at 18 Aug 2026 the wiring is done and the **machine** half is proven — staging key deployed, number imported, venue row resolving, and `npm run smoke:staging` green against the live staging API (first green run 14 Aug). The **human** half is not: the ten-leg phone battery in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md) has an empty results table, and NUMBERS.md §8 item 2c is still open. Treat "a real call has been answered end to end" as **unproven** until that table has rows — leg 6 additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker (issue #185), which are not set today.
   - **Legacy (Algorythmos-owned)** — `retellai@algorythmos.com.au`, org `org_f0DPXgKIQTMJL4je`. **A different company's workspace, out of scope.** It still answers the pilot line until Natalia's is cut over, and carries no obligation afterwards (the calls recorded there were tests, not customer audio). Do not add BitePerk resources to it.
   - **The backend serves exactly one Retell account per environment** — one `RETELL_API_KEY`, one `RETELL_WEBHOOK_SECRET`, checked by router-level middleware before any parsing. There is no gradual move; switching workspaces is an atomic env cutover. The new workspace's single API key is badged as its **Webhook key**, so both env values take the same string.
   - ⚠️ **The new agents still call back to `vocotable.algorythmos.com.au`** (`webhook_url` + all five tool URLs). Until the API hostname moves to `api.biteperk.com.au`, "migrated off Algorythmos" is not true — the agent moved, the dependency did not.
