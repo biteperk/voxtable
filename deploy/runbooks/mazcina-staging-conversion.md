@@ -1,6 +1,6 @@
 # Converting the staging venue to Mazcina
 
-Turns `VoxTable Staging Venue` into **Mazcina** — real name, real menu, its own Retell agent —
+Turns the staging venue row into **Mazcina** — real name, real menu, its own Retell agent —
 so staging stops being a synthetic fixture and becomes the rehearsal we promote to production
 from. Also fixes the voice quality reported on the 18 Aug call.
 
@@ -12,11 +12,20 @@ Natalia's Bistro) is not touched by any step here.
 ## Order matters — three traps
 
 1. **Unbind BEFORE the rename.** `POST /unbind` compares `confirm_name` against the venue's
-   *current* name with an exact `!==`. Do it first and it takes `"VoxTable Staging Venue"`;
-   do it after and it takes `"Mazcina"`. Harmless either way — but only if you know which.
+   *current* name with an exact `!==`. Do it first and it takes **`"Natalia Bistro"`** — the
+   row's actual name today, verified against the staging database 19 Aug 2026, *not* the
+   `"VoxTable Staging Venue"` this file used to say. Do it after and it takes `"Mazcina"`.
+
+   ⚠️ **The venue row is named "Natalia Bistro".** `staging-venue.sql` intends the name
+   `VoxTable Staging Venue`, but its `restaurants` INSERT is `ON CONFLICT (id) DO NOTHING`
+   and the row already existed, so that name was never applied and the seed does not
+   describe the live row. This matters beyond the confirmation string: `/retell/inbound`
+   injects `restaurant_name` from this row, so **both** halves of the 18 Aug call said
+   "Natalia" — the dynamic variable as well as the agent's hard-coded prompt. Sharing was
+   never the mechanism here; staging has exactly one agent on exactly one venue.
 2. **Rename BEFORE creating or binding the agent.** The bind verifies the Retell `agent_name`
    contains the venue name, so binding `Mazcina (VoxTable)` while the row still reads
-   "VoxTable Staging Venue" returns `409 RETELL_AGENT_VENUE_MISMATCH` — the guardrail working
+   "Natalia Bistro" returns `409 RETELL_AGENT_VENUE_MISMATCH` — the guardrail working
    correctly against you.
 3. **Retire the fixture menu with the script, not a DELETE.** `order_items` references
    `menu_items` with `ON DELETE RESTRICT` and staging has taken smoke orders, so a plain
@@ -56,12 +65,20 @@ that window. Expected. Do it in one sitting.
 
 ```
 POST /api/admin/restaurants/33333333-3333-4333-8333-333333333333/unbind
-{ "confirm_name": "VoxTable Staging Venue", "fields": ["retell_agent_id"] }
+{ "confirm_name": "Natalia Bistro", "fields": ["retell_agent_id"] }
 ```
 
-`agent_b9087333b7030f0cee06a19ffc` is **Natalia's Bistro (STAGING)** — the mis-bind behind
-the 18 Aug wrong-venue call. The row now has no agent and fails closed loudly
-(`retell_inbound_no_agent_bound`), which is the correct intermediate state.
+`agent_b9087333b7030f0cee06a19ffc` is **Natalia's Bistro (STAGING)**, and the row it sits on
+is itself named **Natalia Bistro** — so agent and venue currently agree with each other, and
+disagree only with what we wanted staging to be. That is why the 18 Aug call sounded
+confident rather than broken: nothing was inconsistent, it was consistently the wrong venue.
+
+The row then has no agent and fails closed loudly (`retell_inbound_no_agent_bound`), which is
+the correct intermediate state.
+
+⚠️ **Do not fix a name/agent mismatch by renaming the venue to match the agent.** It silences
+the guardrail and the 409 while leaving the venue answering as someone else — the direction of
+the fix is always to give the venue its own agent.
 
 ## 2. Rename the venue and set its real details
 

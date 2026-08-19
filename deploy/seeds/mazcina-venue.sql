@@ -1,8 +1,13 @@
 -- Mazcina Resto-Bar — the real venue details for the staging row.
 --
--- Applied as UPDATEs, not INSERTs: the row already exists (created by
--- staging-venue.sql as "VoxTable Staging Venue"), and that file's INSERT is
--- ON CONFLICT (id) DO NOTHING, so editing it would change nothing here.
+-- Applied as UPDATEs, not INSERTs: the row already exists, and staging-venue.sql's
+-- INSERT is ON CONFLICT (id) DO NOTHING, so editing that file would change nothing here.
+--
+-- ⚠️ The live row is named "Natalia Bistro", NOT "VoxTable Staging Venue" (verified
+-- against the staging database 19 Aug 2026). staging-venue.sql intends the latter, but
+-- because the row already existed its DO NOTHING never applied the name — so that seed
+-- does not describe the live row, and anything matching on the old name will miss.
+-- The UPDATEs below match on id, so they are unaffected.
 --
 -- PREFER THE API for the profile half. `PATCH /api/restaurant/profile` accepts
 -- every field below INCLUDING opening_hours, and it invalidates the name cache

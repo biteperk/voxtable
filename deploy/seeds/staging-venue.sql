@@ -15,6 +15,13 @@
 -- Note the restaurants INSERT is ON CONFLICT (id) DO NOTHING, so editing this
 -- file never changes the LIVE staging row — the runbook's API calls do.
 --
+-- ⚠️ NAME DRIFT (verified against staging 19 Aug 2026): the live row
+-- 33333333-… is named "Natalia Bistro", not "VoxTable Staging Venue". The
+-- restaurants INSERT below is ON CONFLICT (id) DO NOTHING and the row already
+-- existed, so this file's name never applied. Do not read the name below as a
+-- description of staging, and do not match on it — match on the id.
+-- deploy/runbooks/mazcina-staging-conversion.md §1 renames it to Mazcina.
+--
 -- staging-venue.sql — VoxTable Staging Venue, the STAGING end-to-end test
 -- restaurant. Pattern: Cuban-Corner/cuban-corner-restaurant.sql.
 --

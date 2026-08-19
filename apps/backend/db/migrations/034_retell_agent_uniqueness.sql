@@ -1,12 +1,18 @@
 -- One Retell agent belongs to exactly one venue.
 --
--- Why this exists (incident, 18 Aug 2026): the staging venue's row carried
--- `agent_b9087333…`, which is "Natalia's Bistro (STAGING)". Dialled-number ->
--- restaurant resolution was correct and /retell/inbound returned the right
--- restaurant_name, timezone and dates — and then handed the call to another
--- venue's agent, whose prompt hard-coded that venue's name and its owner's
--- name. The caller was told, confidently, that they had reached a different
--- restaurant, while the booking landed against the right one.
+-- Why this exists. On 18 Aug 2026 a call to the staging line was answered as a
+-- different venue. Checking the staging database on 19 Aug showed the row is
+-- named "Natalia Bistro" AND carries `agent_b9087333…` ("Natalia's Bistro
+-- (STAGING)"), so the venue and its agent agreed with each other — no agent was
+-- shared, and this index would not have caught it. The honest description is a
+-- venue configured as the wrong restaurant, not a cross-wired one.
+--
+-- The index is still worth having: it closes the gap that would let the same
+-- call happen for a reason nobody could see. `retell_agent_id` was added by 008
+-- as bare TEXT with no constraint, so two venues CAN hold one agent, and then
+-- the caller hears the wrong venue while the booking lands against the right
+-- one — with the venue name resolving correctly, which is what makes that
+-- version read as a mystery rather than a bug.
 --
 -- Nothing objected. `retell_agent_id` was added by 008 as bare TEXT with no
 -- constraint, while every other vendor identifier on this table (both phone
