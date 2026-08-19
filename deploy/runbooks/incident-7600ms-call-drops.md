@@ -79,6 +79,21 @@ no phantom calls holding slots.
 2. **Twilio AU1 ↔ carrier interop** — invisible to us; only Twilio can pull the SIP/Q.850
    release cause for the dead legs.
 
+## New evidence, 16:02–16:30 AEST
+
+- Two more visible-number calls from the usual handset died back-to-back at 7,602 ms and
+  7,653 ms (16:02, 16:03). **Ten dead calls total**, all from +61 450 011 140 with caller ID
+  presented, all in a 60 ms band.
+- Sam then called **with caller ID withheld (CLIR / "private number") from the same handset:
+  the call ran 143 s and completed cleanly** (16:27, `call_751a2518…`) — booking made,
+  agent-side hangup.
+- One data point, but a sharp one: same phone, same carrier, only the presentation changed.
+  CLIR calls commonly take a different interconnect/routing path, which is consistent with a
+  carrier-path fault tied to how this line's presented-ID calls route. Add this to the Twilio
+  ticket: dead legs all carry P-Asserted-Identity +61450011140; the surviving control call
+  was CLIR from the same subscriber.
+- The different-phone test is STILL the decider and still outstanding.
+
 ## Next actions
 
 1. **Discriminating test (decides between 1 and 2, five minutes):** call the staging line

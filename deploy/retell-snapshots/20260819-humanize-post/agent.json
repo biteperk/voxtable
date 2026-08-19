@@ -1,7 +1,7 @@
 {
   "agent_id": "agent_7b67073710604d306443cc569c",
   "channel": "voice",
-  "last_modification_timestamp": 1787115071074,
+  "last_modification_timestamp": 1787121181041,
   "agent_name": "Mazcina",
   "response_engine": {
     "type": "retell-llm",
@@ -121,7 +121,7 @@
   "responsiveness": 1,
   "enable_dynamic_responsiveness": true,
   "begin_message_delay_ms": 500,
-  "stt_mode": "accurate",
+  "stt_mode": "fast",
   "allow_user_dtmf": true,
   "user_dtmf_options": {},
   "denoising_mode": "noise-and-background-speech-cancellation"
