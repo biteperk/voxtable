@@ -17,7 +17,12 @@ import {
   markNotificationSent,
   type NotificationRow
 } from "../repositories/notifications";
-import { isEmailEnabled, isNotificationsEnabled, isSmsEnabled } from "../services/notificationService";
+import {
+  isEmailEnabled,
+  isNotificationsEnabled,
+  isSmsEnabled,
+  smsSenderParams
+} from "../services/notificationService";
 
 const TICK_INTERVAL_MS = 5_000;
 const BATCH_SIZE = 10;
@@ -90,7 +95,10 @@ async function sendEmail(row: NotificationRow): Promise<void> {
 }
 
 async function sendSms(row: NotificationRow): Promise<void> {
-  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.NOTIFICATIONS_SMS_FROM) {
+  // Exactly one sender parameter — see smsSenderParams for why passing both
+  // messagingServiceSid and from would silently disable the branded sender.
+  const sender = smsSenderParams();
+  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !sender) {
     const err = new Error("SMS not configured");
     (err as Error & { transient?: boolean }).transient = false;
     throw err;
@@ -103,8 +111,8 @@ async function sendSms(row: NotificationRow): Promise<void> {
   try {
     await client.messages.create({
       to: row.recipient,
-      from: env.NOTIFICATIONS_SMS_FROM,
-      body: row.body
+      body: row.body,
+      ...sender
     });
   } catch (error) {
     // Mirror sendEmail: only rate limits / 5xx are worth retrying. Twilio SDK

@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en-AU" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxTable — Voice Order Payments (Stripe) — Integration Plan</title>
+<style>
+:root{
+  color-scheme:dark;
+  --ink-0:#0a0b0d; --ink-1:#111317; --ink-2:#161a20; --ink-3:#1d222a;
+  --white:#f7f8fa; --text:#d5d9e0; --mist:#9aa1ad; --mist-2:#b8bec8;
+  --gold:#f5c418; --gold-dark:#d9aa0e; --gold-amber:#ffb840;
+  --gold-fill:#f5c418; --gold-fill-text:#1a0f04;
+  --green:#1a4d1a; --green-deep:#0e2f12; --green-light:#4a8a48;
+  --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.18);
+  --line-gold:rgba(245,196,24,.18);
+  --danger:#ff6b6b; --success:#6ee7a8;
+  --fill-subtle:rgba(255,255,255,.04);
+  --font-sans:"Inter Variable","Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-serif:"Source Serif 4",Georgia,serif;
+  --font-mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,monospace;
+  --r-sm:8px; --r-md:14px; --r-lg:24px; --r-xl:28px; --r-pill:999px;
+  --ease-out:cubic-bezier(.2,.7,.1,1); --dur-base:240ms;
+  --shadow-card:0 30px 80px -30px rgba(0,0,0,.7);
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --ink-0:#faf9f6; --ink-1:#ffffff; --ink-2:#f2f0e9; --ink-3:#e9e6dc;
+  --white:#14161a; --text:#333a44; --mist:#5f6774; --mist-2:#4a515c;
+  --gold:#7d6104; --gold-dark:#644e03; --gold-amber:#8a5a00;
+  --green:#1a4d1a; --green-light:#2e6b2c;
+  --line:rgba(20,22,26,.10); --line-strong:rgba(20,22,26,.22);
+  --line-gold:rgba(125,97,4,.30);
+  --danger:#b3261e; --success:#1a7a4a;
+  --fill-subtle:rgba(20,22,26,.04);
+  --shadow-card:0 24px 60px -28px rgba(20,22,26,.22);
+}
+*{box-sizing:border-box}
+body{background:var(--ink-0);color:var(--text);font-family:var(--font-sans);line-height:1.6;margin:0;
+  font-size:clamp(1rem,.95rem + .25vw,1.0625rem);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px 120px}
+h1,h2,h3,h4{color:var(--white);letter-spacing:-.02em;line-height:1.15}
+h1{font-size:clamp(2.1rem,1.2rem + 3vw,3.4rem);line-height:1.02;margin:0 0 12px}
+h2{font-size:clamp(1.6rem,1rem + 1.8vw,2.4rem);margin:64px 0 8px;padding-top:24px;border-top:1px solid var(--line)}
+h3{font-size:clamp(1.2rem,1rem + .7vw,1.55rem);margin:36px 0 8px}
+h4{font-size:1.05rem;margin:24px 0 6px;color:var(--gold)}
+p{margin:0 0 14px}
+a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--line-gold)}
+a:hover{border-bottom-color:var(--gold)}
+code{font-family:var(--font-mono);font-size:.87em;background:var(--fill-subtle);
+  border:1px solid var(--line);border-radius:6px;padding:1px 5px;color:var(--mist-2)}
+pre{background:var(--ink-1);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:18px 20px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.55;
+  margin:0 0 18px}
+pre code{background:none;border:none;padding:0;color:var(--text)}
+.tok-k{color:var(--gold-amber)} .tok-s{color:var(--success)} .tok-c{color:var(--mist);font-style:italic}
+.brand-name{font-weight:700;letter-spacing:-.02em;color:var(--white)}
+.brand-name .perk{color:var(--gold);font-style:italic;font-weight:700}
+header.masthead{padding:56px 0 8px;display:flex;align-items:center;gap:14px}
+.eyebrow{font-size:.75rem;text-transform:uppercase;letter-spacing:.14em;color:var(--mist);
+  font-weight:600;margin:0 0 10px}
+.lede{font-size:clamp(1.05rem,1rem + .5vw,1.3rem);line-height:1.5;color:var(--mist-2);
+  max-width:70ch;margin:0 0 8px}
+.meta{font-size:.82rem;color:var(--mist);margin:20px 0 0;padding-top:16px;border-top:1px solid var(--line)}
+.card{background:var(--ink-1);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:24px 26px;margin:0 0 20px}
+.card.gold{border-color:var(--line-gold);background:linear-gradient(180deg,rgba(245,196,24,.045),transparent 60%),var(--ink-1)}
+.card.warn{border-color:rgba(255,107,107,.28)}
+.card h3,.card h4{margin-top:0}
+table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--white);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;
+  border-bottom:1px solid var(--line-strong)}
+td code{white-space:nowrap}
+tbody tr:hover{background:var(--fill-subtle)}
+ul,ol{margin:0 0 16px;padding-left:22px}
+li{margin:0 0 7px}
+li::marker{color:var(--gold)}
+.pill{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 10px;border-radius:var(--r-pill);border:1px solid var(--line-strong);color:var(--mist-2)}
+.pill.do{background:var(--gold-fill);color:var(--gold-fill-text);border-color:transparent}
+.pill.dont{border-color:rgba(255,107,107,.4);color:var(--danger)}
+.pill.new{border-color:var(--line-gold);color:var(--gold)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}}
+.phase{display:flex;gap:18px;margin:0 0 4px;padding:22px 0;border-top:1px solid var(--line)}
+.phase-n{flex:0 0 62px;font-family:var(--font-mono);font-size:1.9rem;font-weight:700;
+  color:var(--gold);line-height:1;letter-spacing:-.04em}
+.phase-body{flex:1;min-width:0}
+.phase-body h3{margin-top:0}
+.flow{counter-reset:step;margin:0 0 20px;padding:0;list-style:none}
+.flow li{counter-increment:step;position:relative;padding:0 0 16px 46px;margin:0}
+.flow li::before{content:counter(step);position:absolute;left:0;top:0;width:28px;height:28px;
+  border-radius:50%;background:var(--gold-fill);color:var(--gold-fill-text);
+  display:grid;place-items:center;font-size:.8rem;font-weight:700;font-family:var(--font-mono)}
+.flow li strong{color:var(--white)}
+.toc{columns:2;column-gap:36px;font-size:.9rem}
+@media(max-width:700px){.toc{columns:1}}
+.toc a{display:block;padding:4px 0;border:none;color:var(--mist-2)}
+.toc a:hover{color:var(--gold)}
+.callout{border-left:3px solid var(--gold);padding:2px 0 2px 18px;margin:0 0 18px;color:var(--mist-2)}
+.callout.warn{border-left-color:var(--danger)}
+.q{background:var(--ink-2);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;margin:0 0 12px}
+.q strong{color:var(--white);display:block;margin-bottom:4px}
+.toggle{position:fixed;top:16px;right:16px;z-index:10;background:var(--ink-2);color:var(--mist-2);
+  border:1px solid var(--line-strong);border-radius:var(--r-pill);padding:7px 16px;font-size:.78rem;
+  font-family:var(--font-sans);cursor:pointer;font-weight:600}
+.toggle:hover{color:var(--gold);border-color:var(--line-gold)}
+footer{margin-top:80px;padding-top:24px;border-top:1px solid var(--line);font-size:.82rem;color:var(--mist)}
+@media print{.toggle{display:none}body{background:#fff}}
+</style>
+</head>
+<body>
+<button class="toggle" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">Theme</button>
+
+<div class="wrap">
+
+<header class="masthead">
+  <svg viewBox="0 0 64 64" width="44" height="44" aria-hidden="true">
+    <polygon points="32,4 39,24 60,24 43,37 49,58 32,46 15,58 21,37 4,24 25,24"
+             fill="#f5c418" stroke="#1a4d1a" stroke-width="1.2" stroke-linejoin="round"/>
+    <rect x="29" y="20" width="2.5" height="22" rx="0.8" fill="#1a4d1a"/>
+    <rect x="32.5" y="20" width="2.5" height="14" rx="0.8" fill="#1a4d1a"/>
+    <rect x="35.5" y="20" width="2.5" height="22" rx="0.8" fill="#1a4d1a"/>
+  </svg>
+  <span class="brand-name" style="font-size:1.5rem">bite<span class="perk">perk</span></span>
+</header>
+
+<p class="eyebrow">VoxTable · Engineering plan · Draft for review</p>
+<h1>Paying for a voice order,<br>on the phone in your hand</h1>
+<p class="lede">A caller asks Bella for fish and chips. Before they hang up, their phone buzzes with a
+link. They tap it, pay, and the kitchen display flips from UNPAID to PAID. This is the plan to build
+that — in the Stripe sandbox first, behind a kill switch, without touching the booking path.</p>
+
+<p class="meta">
+Prepared for Sam Kalaliya · 12 August 2026 · Source material: Niza's Stripe recap email
+(<code>Stripe __ Biteperk.pdf</code>), Stripe API reference, and the VoxTable repo at <code>integration</code>.<br>
+Target branch: feature branch → PR against <code>integration</code> → staging (<code>bp-voxtable-stg</code>). Never <code>main</code>.
+</p>
+
+<div class="card" style="margin-top:36px">
+<p class="eyebrow" style="margin-bottom:14px">Contents</p>
+<div class="toc">
+<a href="#decision">1. The decision, up front</a>
+<a href="#correction">2. Where the Stripe email is misleading</a>
+<a href="#money">3. Money flow: Connect destination charges</a>
+<a href="#flow">4. The call, end to end</a>
+<a href="#arch">5. What changes, file by file</a>
+<a href="#db">6. Database — migration 030</a>
+<a href="#service">7. The payment service</a>
+<a href="#tool">8. Bella's new tool</a>
+<a href="#sms">9. Getting the link to the phone</a>
+<a href="#webhook">10. Webhooks and reconciliation</a>
+<a href="#env">11. Environment and kill switches</a>
+<a href="#sandbox">12. Sandbox setup, step by step</a>
+<a href="#phases">13. Phased delivery</a>
+<a href="#testing">14. Testing</a>
+<a href="#risks">15. Risks and hard edges</a>
+<a href="#stripe">16. Questions for Stripe on 19 August</a>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="decision">1. The decision, up front</h2>
+
+<div class="card gold">
+<h3>Build it on Checkout Sessions, not Payment Links.</h3>
+<p>Niza's suggested workflow is architecturally right — AI extracts the order, generate a link, text it,
+listen for <code>checkout.session.completed</code>. But the primitive she named is the wrong one for a
+one-shot restaurant order, for a reason that has nothing to do with pricing.</p>
+<p style="margin-bottom:0"><strong>A Payment Link is a permanent, reusable, shareable URL.</strong> It has no
+expiry and no single-use mode. If a caller forwards their fish-and-chips link to a friend, the friend
+pays and you get a second phantom order. A Checkout Session is single-use and expires — you set
+<code>expires_at</code> anywhere from 30 minutes to 24 hours after creation. For a link that represents
+one specific person's one specific meal tonight, that is the correct object.</p>
+</div>
+
+<table>
+<thead><tr><th></th><th>Payment Link</th><th>Checkout Session</th></tr></thead>
+<tbody>
+<tr><td>Single-use</td><td>No — reusable by design, no expiry</td><td><strong>Yes</strong> — <code>expires_at</code> 30 min – 24 h, default 24 h</td></tr>
+<tr><td>Inline pricing</td><td>Yes, <code>price_data</code> is supported</td><td>Yes, <code>price_data</code></td></tr>
+<tr><td>Line items (payment mode)</td><td>Max 20</td><td><strong>Max 100</strong></td></tr>
+<tr><td>Reconciliation to our order</td><td><code>metadata</code></td><td><code>client_reference_id</code> (200 chars) <em>and</em> <code>metadata</code></td></tr>
+<tr><td>Connect destination charge</td><td>Supported</td><td>Supported, documented pattern</td></tr>
+<tr><td>Hosted page, wallets, Radar</td><td>Same</td><td>Same</td></tr>
+<tr><td>Right for</td><td>A deposit link, a fixed set menu, a QR code on the table</td><td><strong>One caller, one order, one payment</strong></td></tr>
+</tbody>
+</table>
+
+<p>Payment Links stay useful later — a table QR code or a standing deposit link is exactly what they're
+for. They are just not the object for tonight's fish and chips.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="correction">2. Where the Stripe email is misleading</h2>
+
+<p>Three things in Niza's recap need correcting before anyone builds from it.</p>
+
+<h4>"You'll need to create products and prices for your menu items first"</h4>
+<p>Not true, and it's the line that would have cost the most time. Both Payment Links and Checkout
+Sessions accept <code>line_items[].price_data</code>, which generates a Price inline from
+<code>currency</code>, <code>unit_amount</code> and <code>product_data.name</code>. Nothing needs to
+exist in Stripe beforehand.</p>
+<p>This matters because our menu is not a fixed price list. A line item's price is
+<code>base_price_cents + variant.price_delta_cents + Σ modifier.price_delta_cents</code>, computed per
+order in <code>orderService.ts</code>. Pre-creating a Stripe Price for every combination of size,
+half-serve and modifier is not a real option. With <code>price_data</code> we send the number we already
+computed and never sync a catalogue.</p>
+
+<div class="callout">
+<strong>Correction to earlier advice.</strong> An earlier read of this concluded Payment Links accept
+only a pre-created <code>price</code>. The current API reference for <code>POST /v1/payment_links</code>
+lists <code>line_items.price_data</code> as a supported alternative — "One of <code>price</code> or
+<code>price_data</code> is required." That was true historically and is no longer. The recommendation
+above stands, but on the reuse/expiry argument, not the pricing one.
+</div>
+
+<h4>Missing: the delayed-settlement trap</h4>
+<p>Stripe's own Checkout guidance is explicit that some payment methods take 2–14 days to confirm, and
+that <code>checkout.session.completed</code> means <em>the customer submitted the form</em>, not
+<em>the money arrived</em>. If we ever enable BECS Direct Debit, firing the kitchen on
+<code>completed</code> would cook food for a payment that later fails.</p>
+<p><strong>Mitigation, from day one:</strong> restrict this flow to cards and wallets, and handle all
+three events — <code>checkout.session.completed</code>, <code>checkout.session.async_payment_succeeded</code>,
+<code>checkout.session.async_payment_failed</code>. Only flip <code>orders.payment_status = 'paid'</code>
+when <code>session.payment_status === 'paid'</code>.</p>
+
+<h4>Missing: the question that decides the architecture</h4>
+<p>She sent the Connect docs without asking who receives the guest's money. That single question
+determines whether this is a two-week build or a two-month one. Answered in §3.</p>
+
+<h4>Also, for the record</h4>
+<ul>
+<li>The email is addressed to "Sameer" and spells the brand "Biteperk". It is <strong>Sam</strong> and <strong>BitePerk</strong>.</li>
+<li>She has <code>biteperk.com.au</code> only — no record of <code>biteperk.com</code> or the international locales.</li>
+<li>She captured "will collect monthly subscription" (our SaaS billing) but not that we also intend to
+process <em>guest</em> payments. Those are different products with different fees and different risk profiles.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="money">3. Money flow: Connect destination charges</h2>
+
+<p><span class="pill do">Chosen</span> Money lands in the BitePerk platform account and is immediately
+transferred to the venue's connected account, with BitePerk keeping a fee.</p>
+
+<p>Stripe's own framing puts this squarely in the marketplace bucket — "customers transact with your
+platform for products or services provided by your connected accounts." The caller dialled a BitePerk
+number and spoke to Bella; from their point of view they transacted with us. Destination charges are
+the documented shape for that.</p>
+
+<h3>The exact call</h3>
+<pre><code><span class="tok-c">// One Checkout Session. No Price, Product or Payment Link pre-created.</span>
+await stripe.checkout.sessions.create({
+  mode: <span class="tok-s">"payment"</span>,
+  client_reference_id: order.id,                    <span class="tok-c">// our UUID, ≤200 chars</span>
+  metadata: { order_id, restaurant_id, source: <span class="tok-s">"voice"</span> },
+  expires_at: Math.floor(Date.now()/1000) + 30*60,  <span class="tok-c">// 30 min — the floor Stripe allows</span>
+  line_items: order.items.map(i =&gt; ({
+    quantity: i.quantity,
+    price_data: {
+      currency: <span class="tok-s">"aud"</span>,
+      unit_amount: i.unit_price_cents,              <span class="tok-c">// already integer cents. No conversion.</span>
+      tax_behavior: <span class="tok-s">"inclusive"</span>,                  <span class="tok-c">// AU menu prices include GST</span>
+      product_data: { name: i.name_snapshot }
+    }
+  })),
+  payment_intent_data: {
+    transfer_data:        { destination: venue.stripe_connect_account_id },
+    on_behalf_of:         venue.stripe_connect_account_id,
+    application_fee_amount: feeCents(order.total_cents)
+  },
+  success_url: `${PUBLIC_WEB_BASE}/order/paid?session_id={CHECKOUT_SESSION_ID}`,
+  cancel_url:  `${PUBLIC_WEB_BASE}/order/cancelled`
+}, { idempotencyKey: `order-checkout:${order.id}:${order.version}` });</code></pre>
+
+<h4>Why <code>on_behalf_of</code> as well as <code>transfer_data.destination</code></h4>
+<p>It sets the venue as <em>settlement merchant</em>. Consequences, all of which we want:</p>
+<ul>
+<li>The <strong>venue's</strong> name appears on the guest's card statement, not BitePerk's. Fewer chargebacks from "who is BitePerk?".</li>
+<li>The venue's address and phone show on the statement.</li>
+<li>Settlement happens in the venue's country and currency, under the venue's fee structure.</li>
+<li>The Checkout page carries the venue's branding.</li>
+</ul>
+<p>Caveat from the docs: <code>on_behalf_of</code> only works for connected accounts with a payments
+capability such as <code>card_payments</code>. Accounts under the recipient service agreement cannot
+have it. Our onboarding must request <code>card_payments</code> and <code>transfers</code>.</p>
+
+<h4>Region constraint — fine for us, worth knowing</h4>
+<p>Unless a platform is eligible for cross-border payouts, platform and connected account must be in
+the same region for a destination charge. BitePerk is an Australian entity onboarding Australian
+venues, so this is a non-issue today. It becomes one the day a New Zealand venue signs up.</p>
+
+<h3>The obligations we are taking on</h3>
+<div class="card warn">
+<p>Choosing this model is a business decision with regulatory weight, not an integration detail. Going
+in with eyes open:</p>
+<ul>
+<li><strong>Disputes hit the platform.</strong> For destination charges, with or without
+<code>on_behalf_of</code>, Stripe debits dispute amounts and fees from the <em>platform</em> account. If
+a guest charges back a $28 meal, BitePerk is out $28 plus the dispute fee until we reverse the transfer.
+We need <code>charge.dispute.created</code> handled and a transfer-reversal path.</li>
+<li><strong>Refunds default against us.</strong> Refunding a charge with <code>transfer_data</code>
+leaves the venue holding the transferred funds and the platform covering the negative balance — unless
+we pass <code>reverse_transfer: true</code>. Every refund path must set it, plus
+<code>refund_application_fee</code> per commercial policy.</li>
+<li><strong>Per-venue KYC.</strong> Every restaurant needs a connected account onboarded and verified
+before it can take a cent. This is real onboarding friction that lands in the wizard.</li>
+<li><strong>Negative-balance liability.</strong> Stripe asks platforms to choose who is responsible.
+Pick "Stripe responsible" unless there is a strong reason not to — it is the recommended default for
+platforms new to embedding payments.</li>
+<li><strong>Australian regulatory posture.</strong> Handling guest funds and remitting them is a
+different activity from billing venues for software. Whether it engages payment-facilitator or AFSL
+considerations is a question for an Australian financial-services lawyer, not for Stripe sales and not
+for this document. <strong>Get that advice before live mode.</strong> It does not block sandbox work.</li>
+</ul>
+<p style="margin-bottom:0">Nothing here is a reason not to build it. It is a reason not to flip
+<code>ORDER_PAYMENTS_ENABLED=true</code> in production until the legal question has an answer.</p>
+</div>
+
+<h3>Cost stack</h3>
+<table>
+<thead><tr><th>Layer</th><th>Rate</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>AU domestic card processing</td><td>1.70% + A$0.30</td><td>Stripe support pages reference revised AU pricing effective 1 Oct 2026 — <strong>get the new rate from Niza in writing</strong> before modelling.</td></tr>
+<tr><td>Checkout / Payment Links</td><td>No additional fee</td><td>Included in standard pay-as-you-go.</td></tr>
+<tr><td>Connect — active account</td><td>~A$2 per monthly active account</td><td>Published Connect pricing. Active = a month in which a payout is sent. Confirm the AU figure.</td></tr>
+<tr><td>Connect — payout</td><td>~0.25% + A$0.25 per payout</td><td>Applies where the platform manages pricing. Confirm.</td></tr>
+<tr><td>Billing (our SaaS subs)</td><td>+0.7% pay-as-you-go</td><td>Separate product. A direct tax on our own subscription revenue — ask for the volume bands.</td></tr>
+<tr><td>Radar</td><td>Included</td><td>Advanced rules cost extra.</td></tr>
+</tbody>
+</table>
+<p>The application fee is capped at the transaction amount, computed in the transaction currency, and
+settles in the connected account's settlement currency. The platform pays the Stripe fee <em>after</em>
+the application fee lands, so our net on a $28 order is
+<code>application_fee − stripe_processing_fee</code>. Size the fee accordingly — a flat 30¢ platform
+fee would be loss-making after processing.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="flow">4. The call, end to end</h2>
+
+<ol class="flow">
+<li><strong>Caller dials the venue number.</strong> Twilio → SIP trunk → Retell. Restaurant resolved from
+the dialled number by <code>getRestaurantIdByDialedNumber</code>, exactly as today. Caller-supplied
+<code>restaurant_id</code> is still ignored.</li>
+<li><strong>Bella takes the booking</strong> via <code>create_booking</code>. Unchanged. An order still
+requires a reservation — <code>create_order</code> throws <code>ORDER_REQUIRES_BOOKING</code> without one.</li>
+<li><strong>Bella takes the order</strong> via <code>create_order</code>. Fish and chips is matched
+against <code>menu_items</code>, priced, and written to <code>orders</code> +
+<code>order_items</code> inside one transaction. Returns <code>order_id</code>,
+<code>order_number</code>, <code>confirmation_message</code>. <em>Unchanged.</em></li>
+<li><strong>Bella offers to text a payment link.</strong> New. She asks — she does not assume. "I can
+text you a link to pay now, or you can pay when you arrive."</li>
+<li><strong>Bella calls <code>send_payment_link</code></strong> with the <code>order_id</code> and,
+optionally, a phone number the caller reads out. Backend creates the Checkout Session, stores it in
+<code>order_payments</code>, and enqueues an SMS in <code>notifications_outbox</code> — all in one
+transaction.</li>
+<li><strong>Bella confirms out loud</strong> from the tool's <code>confirmation_message</code>: "Sent — it
+should arrive in a few seconds. The link's good for thirty minutes." She does not read the URL aloud.</li>
+<li><strong>The SMS lands</strong> within ~5 seconds. <code>notificationWorker</code> ticks every 5 s and
+sends via Twilio.</li>
+<li><strong>The caller taps and pays</strong> on Stripe's hosted page, branded as the venue.</li>
+<li><strong>Stripe fires <code>checkout.session.completed</code></strong> to
+<code>POST /stripe/webhook</code>. Signature verified, event deduped in
+<code>stripe_webhook_events</code>, advisory lock taken.</li>
+<li><strong>We flip the order to paid</strong> — but only if <code>session.payment_status === 'paid'</code>.
+Writes <code>orders.payment_status = 'paid'</code> plus a <code>payment_changed</code> row in
+<code>order_events</code>.</li>
+<li><strong>The kitchen sees it.</strong> KDS polls <code>/api/orders/active</code> every 2 seconds and
+already renders a PAID/UNPAID pill from <code>order.payment_status</code>. <strong>Zero KDS code
+changes.</strong> The pill flips within one poll.</li>
+</ol>
+
+<div class="callout">
+<strong>If the caller has a withheld number.</strong> <code>normalizePhone</code> returns null for
+<code>anonymous</code>, <code>unknown</code>, <code>private</code>, <code>blocked</code> and
+<code>restricted</code>. The tool must return a graceful, spoken refusal — "I can't text a private
+number, but you can pay when you arrive" — not an error. Bella must never dead-air on this.
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="arch">5. What changes, file by file</h2>
+
+<table>
+<thead><tr><th>File</th><th></th><th>What</th></tr></thead>
+<tbody>
+<tr><td><code>db/migrations/030_order_payments.sql</code></td><td><span class="pill new">new</span></td><td><code>order_payments</code> table, <code>restaurants.stripe_connect_account_id</code>, payment enum values</td></tr>
+<tr><td><code>src/services/orderPaymentService.ts</code></td><td><span class="pill new">new</span></td><td>Create session, persist, enqueue SMS — one transaction</td></tr>
+<tr><td><code>src/repositories/orderPayments.ts</code></td><td><span class="pill new">new</span></td><td>Raw SQL, accepts optional <code>DbClient</code></td></tr>
+<tr><td><code>src/services/stripeConnectService.ts</code></td><td><span class="pill new">new</span></td><td>Account creation, onboarding links, capability checks</td></tr>
+<tr><td><code>src/routes/retell.ts</code></td><td>edit</td><td>Register <code>POST /retell/tools/send-payment-link</code></td></tr>
+<tr><td><code>src/services/retellService.ts</code></td><td>edit</td><td><code>send_payment_link</code> branch in <code>handleRetellFunction</code></td></tr>
+<tr><td><code>src/http/schemas.ts</code></td><td>edit</td><td><code>sendPaymentLinkRetellSchema</code>, after <code>createOrderRetellSchema</code></td></tr>
+<tr><td><code>src/services/stripeService.ts</code></td><td>edit</td><td><strong>Branch <code>handleBillingWebhook</code> on <code>session.mode</code></strong> — see §10</td></tr>
+<tr><td><code>src/repositories/notifications.ts</code></td><td>edit</td><td><code>enqueueNotification</code> must accept <code>db: DbClient = pool</code></td></tr>
+<tr><td><code>src/services/notificationService.ts</code></td><td>edit</td><td>Split <code>isSmsEnabled()</code> out of <code>isNotificationsEnabled()</code> — see §9</td></tr>
+<tr><td><code>src/config/env.ts</code></td><td>edit</td><td><code>ORDER_PAYMENTS_ENABLED</code> + friends, <code>superRefine</code> block</td></tr>
+<tr><td><code>.env.example</code></td><td>edit</td><td><strong>Mandatory</strong> — <code>envExample.test.ts</code> fails otherwise</td></tr>
+<tr><td><code>src/routes/orders.ts</code></td><td>edit</td><td>Optional: <code>POST /api/orders/:id/payment-link</code> for staff resend</td></tr>
+<tr><td><code>scripts/smoke-payments.ts</code></td><td><span class="pill new">new</span></td><td><code>npm run smoke:payments</code></td></tr>
+<tr><td><code>apps/kds/*</code></td><td><span class="pill">none</span></td><td>PAID/UNPAID pill already reads <code>payment_status</code></td></tr>
+<tr><td><code>src/services/bookingService.ts</code></td><td><span class="pill">none</span></td><td>Booking path untouched. This is a hard constraint.</td></tr>
+</tbody>
+</table>
+
+<h4>What we are deliberately not doing</h4>
+<ul>
+<li><strong>No Stripe outbox worker.</strong> <code>stripeClient.ts</code> already documents a deliberate
+decision not to give Stripe the Cal.com circuit-breaker treatment — SDK retries, no outbox. Creating a
+session is synchronous inside a voice call; if Stripe is down, Bella says so and the caller pays at the
+venue. Adding a durable outbox would mean creating a payment link for a call that ended twenty minutes
+ago. Departing from the Cal.com pattern here is correct, and this paragraph is the justification.</li>
+<li><strong>No new SMS transport.</strong> Reuse <code>notifications_outbox</code>. It already has a lease,
+backoff and a Twilio sender.</li>
+<li><strong>No mid-call payment confirmation.</strong> Bella does not wait on the phone for the webhook.
+She says the link is sent and moves on.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="db">6. Database — migration 030</h2>
+
+<p>The chain is append-only and currently runs to <code>029_least_privilege.sql</code>. Next file is
+<code>030_order_payments.sql</code>. Two hard rules from the existing codebase carry over: <strong>no
+<code>GENERATED ALWAYS AS</code></strong> (node-pg <code>08P01</code>), and migrations run as
+<code>voxtable_owner</code>, never <code>postgres</code>, or 029's <code>ALTER DEFAULT PRIVILEGES</code>
+silently strips <code>voxtable_app</code> grants from the new table.</p>
+
+<pre><code><span class="tok-c">-- 030_order_payments.sql</span>
+<span class="tok-c">-- Voice-order payments via Stripe Checkout Sessions (Connect destination charges).</span>
+
+DO $$ BEGIN
+  CREATE TYPE order_payment_status AS ENUM (
+    <span class="tok-s">'created'</span>,    <span class="tok-c">-- session created, link not yet sent</span>
+    <span class="tok-s">'sent'</span>,       <span class="tok-c">-- SMS enqueued</span>
+    <span class="tok-s">'processing'</span>, <span class="tok-c">-- submitted, async method pending (BECS et al)</span>
+    <span class="tok-s">'paid'</span>,
+    <span class="tok-s">'expired'</span>,
+    <span class="tok-s">'failed'</span>,
+    <span class="tok-s">'cancelled'</span>
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS order_payments (
+  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id                  UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  restaurant_id             UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  provider                  TEXT NOT NULL DEFAULT <span class="tok-s">'stripe'</span>,
+  stripe_checkout_session_id TEXT,
+  stripe_payment_intent_id  TEXT,
+  stripe_connect_account_id TEXT,
+  status                    order_payment_status NOT NULL DEFAULT <span class="tok-s">'created'</span>,
+  currency                  TEXT NOT NULL DEFAULT <span class="tok-s">'aud'</span>,
+  amount_cents              INTEGER NOT NULL CHECK (amount_cents &gt; 0),
+  application_fee_cents     INTEGER NOT NULL DEFAULT 0 CHECK (application_fee_cents &gt;= 0),
+  checkout_url              TEXT,
+  recipient_phone           TEXT,               <span class="tok-c">-- E.164, or NULL if withheld</span>
+  notification_id           UUID REFERENCES notifications_outbox(id) ON DELETE SET NULL,
+  expires_at                TIMESTAMPTZ,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sent_at                   TIMESTAMPTZ,
+  paid_at                   TIMESTAMPTZ,
+  last_error                TEXT,
+  CHECK (application_fee_cents &lt;= amount_cents)
+);
+
+<span class="tok-c">-- One live attempt per order. Retries after expiry/failure are allowed.</span>
+CREATE UNIQUE INDEX IF NOT EXISTS idx_order_payments_active
+  ON order_payments (order_id)
+  WHERE status IN (<span class="tok-s">'created'</span>, <span class="tok-s">'sent'</span>, <span class="tok-s">'processing'</span>);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_order_payments_session
+  ON order_payments (stripe_checkout_session_id)
+  WHERE stripe_checkout_session_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_order_payments_order ON order_payments (order_id, created_at DESC);
+
+CREATE TRIGGER set_order_payments_updated_at
+  BEFORE UPDATE ON order_payments
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();   <span class="tok-c">-- helper from 001</span>
+
+<span class="tok-c">-- The venue's Stripe connected account.</span>
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS stripe_connect_account_id TEXT;
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS stripe_connect_charges_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS stripe_connect_payouts_enabled BOOLEAN NOT NULL DEFAULT false;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_restaurants_connect_account
+  ON restaurants (stripe_connect_account_id)
+  WHERE stripe_connect_account_id IS NOT NULL;</code></pre>
+
+<p><strong>The partial unique index on <code>order_id</code> is the concurrency guarantee.</strong> If
+Retell double-fires the tool — which it does — the second insert hits a constraint violation and we
+return the existing link instead of creating a second Checkout Session. This is the same belt-and-braces
+posture as <code>reservations_no_overlap</code>: an advisory lock for politeness, a database constraint
+for correctness.</p>
+
+<p><code>payment_changed</code> is already a valid <code>order_event_type</code> and
+<code>payment_status</code> already has <code>'unpaid' | 'paid' | 'refunded'</code>. Neither enum needs
+extending. Nice inheritance from the KDS work.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="service">7. The payment service</h2>
+
+<p><code>src/services/orderPaymentService.ts</code>. Shape follows <code>orderService.createOrder</code>:
+advisory lock, idempotency check, work, hydrate after commit.</p>
+
+<pre><code>export interface CreateOrderPaymentInput {
+  restaurantId: string;
+  orderId: string;
+  recipientPhone?: string;   <span class="tok-c">// caller-supplied override; else call.from_number</span>
+  actor: string;             <span class="tok-c">// "voice:retell" | firebase uid</span>
+}
+
+export async function createOrderPaymentLink(
+  input: CreateOrderPaymentInput
+): Promise&lt;{ paymentId: string; checkoutUrl: string; expiresAt: Date;
+             isReplay: boolean; confirmationMessage: string }&gt;</code></pre>
+
+<h4>Sequence</h4>
+<ol>
+<li>Load the order via <code>getOrderById(orderId, restaurantId)</code>. <strong>Tenant-scoped</strong> —
+a mismatch is a 404, never a cross-tenant read.</li>
+<li>Refuse politely if <code>status === 'cancelled'</code>, <code>payment_status === 'paid'</code>, or
+<code>total_cents &lt;= 0</code>. All three return spoken sentences, not stack traces.</li>
+<li>Resolve the venue's <code>stripe_connect_account_id</code>. If absent or
+<code>charges_enabled === false</code>, return <code>PAYMENTS_NOT_CONFIGURED</code> with a spoken
+fallback: "This venue isn't set up for phone payments yet — you can pay when you arrive."</li>
+<li>Normalise the phone through <code>utils/phone.ts</code>. Null → graceful refusal.</li>
+<li><strong>Call Stripe outside the transaction.</strong> A network call must never hold a Postgres
+connection open. Wrap in <code>withStripeErrors("create_order_checkout_session", …)</code> so rate limits
+and connection errors map to <code>503 BILLING_UPSTREAM_UNAVAILABLE</code> like the rest of our Stripe
+surface. Pass a Stripe <code>idempotencyKey</code> of <code>order-checkout:{orderId}:{version}</code>.</li>
+<li><strong>Then one <code>withTransaction</code>:</strong>
+  <ul>
+    <li><code>pg_advisory_xact_lock(hashtextextended('order_payment:' || orderId, 0))</code></li>
+    <li>Re-check for an existing active <code>order_payments</code> row → replay short-circuit</li>
+    <li><code>insertOrderPayment(...)</code></li>
+    <li><code>enqueueNotification({ channel: 'sms', kind: 'order_payment_link', … }, db)</code> — same txn</li>
+    <li><code>insertOrderEvent({ eventType: 'payment_changed', from: 'unpaid', to: 'link_sent', actor, metadata }, db)</code></li>
+  </ul>
+</li>
+<li>After commit, build the spoken confirmation. <strong>Never include the URL</strong> — Bella must not
+read a Stripe URL aloud.</li>
+</ol>
+
+<div class="callout warn">
+<strong>Ordering hazard.</strong> Stripe call before transaction means a crash between the two leaves an
+orphan Checkout Session in Stripe with no local row. That is acceptable — the session expires in 30
+minutes and was never sent to anyone. The reverse ordering (transaction first, Stripe call inside) would
+hold a DB connection across a network call under voice-path latency. Take the orphan.
+</div>
+
+<h4>Fee calculation</h4>
+<p>Keep it in one exported, unit-testable function so the commercial rate is never scattered:</p>
+<pre><code><span class="tok-c">// services/orderPaymentService.ts</span>
+export function platformFeeCents(totalCents: number): number {
+  const pct  = env.ORDER_PAYMENT_FEE_BPS / 10_000;   <span class="tok-c">// basis points</span>
+  const flat = env.ORDER_PAYMENT_FEE_FLAT_CENTS;
+  return Math.min(totalCents, Math.round(totalCents * pct) + flat);
+}</code></pre>
+<p>The <code>Math.min</code> is not decoration — Stripe caps <code>application_fee_amount</code> at the
+transaction total and errors above it. On a $6 side of chips a percentage-plus-flat fee can approach the
+total.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="tool">8. Bella's new tool</h2>
+
+<h4>Route — <code>src/routes/retell.ts</code>, alongside the existing tools</h4>
+<pre><code>retellRouter.post(
+  <span class="tok-s">"/retell/tools/send-payment-link"</span>,
+  asyncHandler(async (request, response) =&gt; {
+    const result = await handleRetellFunction(request.body, <span class="tok-s">"send_payment_link"</span>);
+    response.json(result);
+  })
+);</code></pre>
+<p>Signature verification is already applied by <code>retellRouter.use("/retell", …)</code>. <strong>Do
+not drop the path prefix</strong> — doing so applies the Retell signature check app-wide and breaks every
+other endpoint. The 1200 req/min webhook rate limit already covers <code>/retell/</code>.</p>
+
+<h4>Schema — <code>src/http/schemas.ts</code>, after <code>createOrderRetellSchema</code></h4>
+<pre><code>export const sendPaymentLinkRetellSchema = z.object({
+  call_id:  z.string().min(1).max(200).optional(),
+  callId:   z.string().min(1).max(200).optional(),
+  order_id: uuidSchema.optional(),
+  orderId:  uuidSchema.optional(),
+  phone:         z.string().max(32).optional(),
+  phone_number:  z.string().max(32).optional(),
+  phoneNumber:   z.string().max(32).optional()
+});</code></pre>
+<p>Both casings on every field, matching house convention — the LLM emits either.</p>
+
+<h4>Handler branch — <code>services/retellService.ts</code></h4>
+<pre><code>if (name === <span class="tok-s">"send_payment_link"</span> || name === <span class="tok-s">"sendpaymentlink"</span>) {
+  <span class="tok-c">// Kill switch is checked before this point by the existing VOICE_BOOKING_ENABLED gate.</span>
+  if (!env.ORDER_PAYMENTS_ENABLED) {
+    return { sent: <span class="tok-s">false</span>,
+      confirmation_message: <span class="tok-s">"I can't take payment over the phone just yet — you can pay when you arrive."</span> };
+  }
+  const parsed = sendPaymentLinkRetellSchema.safeParse(args);
+  if (!parsed.success) throw new AppError(400, <span class="tok-s">"SEND_PAYMENT_LINK_INVALID"</span>, …);
+
+  const orderId = parsed.data.order_id ?? parsed.data.orderId;
+  if (!orderId) throw new AppError(400, <span class="tok-s">"PAYMENT_REQUIRES_ORDER"</span>,
+    <span class="tok-s">"I'll need to take your order first — what would you like?"</span>);
+
+  const phone = parsed.data.phone ?? parsed.data.phone_number ?? parsed.data.phoneNumber
+             ?? call?.from_number;
+
+  const result = await createOrderPaymentLink({
+    restaurantId, orderId, recipientPhone: phone, actor: <span class="tok-s">"voice:retell"</span>
+  });
+
+  return {
+    sent: <span class="tok-s">true</span>,
+    payment_id: result.paymentId,
+    expires_in_minutes: 30,
+    is_replay: result.isReplay,
+    confirmation_message: result.confirmationMessage
+  };
+}</code></pre>
+<p>Flat snake_case, always a spoken <code>confirmation_message</code> — the same contract as every other
+tool. Note the response deliberately <strong>omits the URL</strong>. The LLM cannot leak what it never sees.</p>
+
+<h4>Retell agent prompt — the human half</h4>
+<p>The tool is useless without prompt work. Bella needs to:</p>
+<ul>
+<li>Offer, never assume: "Would you like me to text you a payment link, or would you rather pay when you arrive?"</li>
+<li>Confirm the number when the caller gives one: read it back digit by digit.</li>
+<li>Say the expiry out loud: "The link's good for thirty minutes."</li>
+<li>Never read a URL aloud. Never spell out a Stripe domain.</li>
+<li>Handle the refusal paths without dead air — withheld number, venue not set up, Stripe unavailable.</li>
+</ul>
+<p>Snapshot the LLM and agent config to
+<code>deploy/retell-snapshots/&lt;timestamp&gt;-add-payment-link/</code> before editing, per the existing
+rollback convention.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="sms">9. Getting the link to the phone</h2>
+
+<h3 style="color:var(--danger)">Two blockers, both real, both fixable</h3>
+
+<div class="card warn">
+<h4 style="color:var(--danger);margin-top:0">Blocker 1 — no Twilio number that can send SMS</h4>
+<p>Per <code>CLAUDE.md</code>, verified in the Twilio console on 10 Aug 2026: an Australian
+<strong>Local <code>02</code> number is voice-only and cannot send SMS at all</strong>. Only a
+<strong>Mobile <code>+61 4</code></strong> number does both voice and SMS, at A$8.25/mo versus A$3.00/mo.
+There is no single geographic number that answers calls <em>and</em> texts.</p>
+<p style="margin-bottom:0"><strong>Action:</strong> buy a Mobile <code>+61 4</code> number in
+<code>Biteperk-staging</code> and set it as <code>NOTIFICATIONS_SMS_FROM</code>. Voice stays on the
+existing number. Prove it in staging, then repeat in production — Twilio has no promote, and the two
+accounts look nearly identical in the console, so <strong>check the account picker before every change</strong>.</p>
+</div>
+
+<div class="card warn">
+<h4 style="color:var(--danger);margin-top:0">Blocker 2 — SMS is gated behind an email credential</h4>
+<p><code>services/notificationService.ts</code>:</p>
+<pre style="margin-bottom:12px"><code>export function isNotificationsEnabled(): boolean {
+  if (!env.NOTIFICATIONS_ENABLED) return <span class="tok-s">false</span>;
+  return env.EMAIL_PROVIDER === <span class="tok-s">"zeptomail"</span>
+    ? Boolean(env.ZEPTOMAIL_TOKEN)
+    : Boolean(env.SENDGRID_API_KEY);
+}</code></pre>
+<p><code>startNotificationWorker()</code> returns early unless this is true. So with
+<code>NOTIFICATIONS_ENABLED=true</code> and no SendGrid/Zepto key, <strong>the whole worker no-ops and
+the SMS is never sent</strong> — silently, with no error anywhere.</p>
+<p style="margin-bottom:0"><strong>Fix:</strong> split the predicate. <code>isEmailEnabled()</code> keeps
+the current logic; <code>isSmsEnabled()</code> checks <code>TWILIO_ACCOUNT_SID</code>,
+<code>TWILIO_AUTH_TOKEN</code> and <code>NOTIFICATIONS_SMS_FROM</code>. The worker starts if
+<strong>either</strong> is true and skips rows whose channel is disabled. Small change, and it must land
+before anything else in this plan is testable end to end.</p>
+</div>
+
+<h3>Third change: transactional enqueue</h3>
+<p><code>enqueueNotification</code> currently uses a bare <code>pool.query</code>, does not accept a
+<code>DbClient</code>, and returns <code>Promise&lt;void&gt;</code>. Two changes, matching
+<code>enqueueOutbox</code>:</p>
+<pre><code>export async function enqueueNotification(
+  input: EnqueueNotificationInput,
+  db: DbClient = pool                     <span class="tok-c">// ← add: lets it join our txn</span>
+): Promise&lt;string&gt;                        <span class="tok-c">// ← add: RETURNING id, for order_payments.notification_id</span></code></pre>
+<p>The <code>DbClient</code> parameter is what stops a crash between the <code>order_payments</code>
+insert and the SMS enqueue leaving a payment row nobody was told about. The return value is what
+populates <code>order_payments.notification_id</code>, so a failed SMS is traceable back to the payment
+it belonged to. Both are additive and backwards-compatible with the five existing call sites.</p>
+
+<h3>Message copy</h3>
+<p>Alphanumeric sender IDs are one-way, so no copy may invite a reply. Even on a mobile number, write as
+though replies are impossible — it keeps the copy portable when the ACMA <code>BitePerk</code> sender ID
+lands.</p>
+<pre><code>Natalia's Bistro — order #14, $28.50.
+Pay here: https://checkout.stripe.com/c/pay/cs_test_…
+Link expires in 30 minutes. Do not reply to this message.</code></pre>
+<p>Venue name first — the guest called the restaurant, not us. This is the venue-is-the-hero rule
+in a 160-character box.</p>
+
+<h3>Latency</h3>
+<p><code>notificationWorker</code> ticks every 5 s with a batch of 10. An SMS enqueued mid-call goes out
+within roughly 5 seconds — comfortably inside a call where Bella is still confirming details. There is
+<strong>no synchronous send path</strong> and we should not build one: a direct Twilio call from the
+Retell tool handler would put a third-party network call on the voice path's critical latency budget.
+Five seconds is fine. Bella says "it's on its way", not "it's arrived".</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="webhook">10. Webhooks and reconciliation</h2>
+
+<div class="card warn">
+<h4 style="margin-top:0;color:var(--danger)">The single most dangerous line in this plan</h4>
+<p><code>handleBillingWebhook</code> in <code>stripeService.ts</code> <strong>already handles
+<code>checkout.session.completed</code></strong> and maps it unconditionally to
+<code>subscription_active</code>. And its attribution helper reads metadata first:</p>
+<pre style="margin:12px 0"><code><span class="tok-c">// stripeService.ts:476 — restaurantIdForEvent</span>
+const metaId = (object.metadata as Record&lt;string, unknown&gt; | undefined)?.restaurant_id;
+if (typeof metaId === <span class="tok-s">"string"</span> &amp;&amp; metaId) return metaId;   <span class="tok-c">// ← first match wins</span>
+const ref = object.client_reference_id;
+if (typeof ref === <span class="tok-s">"string"</span> &amp;&amp; ref) return ref;</code></pre>
+<p style="margin-bottom:0">Our session carries <code>metadata.restaurant_id</code>. So without a branch
+this is not a hypothetical collision — it is <strong>guaranteed</strong>: a guest paying for fish and
+chips would attribute to the venue and flip its SaaS subscription to active, skipping the trial.
+Branch on <code>session.mode</code> as the very first statement in that handler, before
+<code>restaurantIdForEvent</code> is ever called.</p>
+</div>
+
+<pre><code>case <span class="tok-s">"checkout.session.completed"</span>:
+case <span class="tok-s">"checkout.session.async_payment_succeeded"</span>:
+case <span class="tok-s">"checkout.session.async_payment_failed"</span>: {
+  const session = event.data.object as Stripe.Checkout.Session;
+
+  <span class="tok-c">// Belt: mode. Braces: our own metadata marker.</span>
+  const isOrderPayment =
+    session.mode === <span class="tok-s">"payment"</span> &amp;&amp; session.metadata?.biteperk_kind === <span class="tok-s">"order_payment"</span>;
+
+  if (isOrderPayment) return handleOrderPaymentWebhook(event, session);
+  <span class="tok-c">// …existing subscription handling, unchanged…</span>
+}</code></pre>
+
+<h4>The order-payment handler</h4>
+<ol>
+<li>Look up <code>order_payments</code> by <code>stripe_checkout_session_id</code>. Unknown session →
+log and return 200. Never 500 on an event we don't recognise; Stripe would retry forever.</li>
+<li><strong>Check <code>session.payment_status === 'paid'</code></strong> before flipping anything. On
+<code>completed</code> with <code>payment_status: 'unpaid'</code> (async method pending), set our row to
+<code>processing</code> and leave the order <code>unpaid</code>. The kitchen does not cook on a promise.</li>
+<li>Reconcile <code>session.amount_total</code> against <code>order_payments.amount_cents</code>. A
+mismatch means the order changed after the link was sent — log loudly, do not auto-resolve.</li>
+<li>Flip <code>orders.payment_status = 'paid'</code>, write a <code>payment_changed</code> event, stamp
+<code>paid_at</code> and <code>stripe_payment_intent_id</code>. One transaction.</li>
+<li>Return 200. The existing route already handles dedupe via <code>stripe_webhook_events</code>, the
+advisory lock via <code>withAdvisoryLock</code>, and the status contract (400 bad signature, 500 to
+trigger Stripe retry, 200 on success or duplicate).</li>
+</ol>
+
+<h4>The version-conflict trap</h4>
+<p><code>updatePaymentStatus</code> in <code>orderService.ts</code> demands an <code>expectedVersion</code>
+and throws <code>VERSION_CONFLICT</code> — correct for the staff <code>If-Match</code> path, wrong for a
+webhook that has no version in hand. <strong>Do not reuse it.</strong> Add a sibling,
+<code>markOrderPaidFromWebhook(orderId, restaurantId, paymentIntentId, db)</code>, that reads the current
+version inside the transaction. A webhook must not fail because a waiter touched the order in the
+intervening two seconds.</p>
+
+<h4>Also handle</h4>
+<table>
+<thead><tr><th>Event</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><code>checkout.session.expired</code></td><td><code>order_payments.status = 'expired'</code>. Order stays unpaid. Frees the partial unique index for a resend.</td></tr>
+<tr><td><code>charge.dispute.created</code></td><td>Alert to <code>OPS_SLACK_WEBHOOK_URL</code>. Destination-charge disputes debit <em>our</em> account. Reversal is a manual decision, not automated.</td></tr>
+<tr><td><code>charge.refunded</code></td><td><code>orders.payment_status = 'refunded'</code>.</td></tr>
+<tr><td><code>charge.updated</code></td><td>If <code>transfer_data</code> is null on a charge we expected to transfer, the transfer was <em>skipped</em> — usually the venue lost its transfer capability. Alert; funds sit in our balance.</td></tr>
+<tr><td><code>account.updated</code></td><td>Sync <code>charges_enabled</code> / <code>payouts_enabled</code> onto the restaurant row. This is how we know a venue is ready.</td></tr>
+</tbody>
+</table>
+
+<h4>Refunds</h4>
+<p>Whenever we build the refund path, both flags are mandatory or the money ends up in the wrong place:</p>
+<pre><code>await stripe.refunds.create({
+  charge: chargeId,
+  reverse_transfer: <span class="tok-s">true</span>,        <span class="tok-c">// pull funds back from the venue</span>
+  refund_application_fee: <span class="tok-s">true</span>   <span class="tok-c">// or false, per commercial policy</span>
+});</code></pre>
+<p>Without <code>reverse_transfer</code>, the venue keeps the money and BitePerk eats the refund.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="env">11. Environment and kill switches</h2>
+
+<p>Feature flags use <code>boolFlag()</code> and default <code>false</code>. Security gates use
+<code>gateFlag()</code> and default <code>true</code>. This is a feature.</p>
+
+<pre><code><span class="tok-c">// config/env.ts</span>
+ORDER_PAYMENTS_ENABLED:           boolFlag(),
+ORDER_PAYMENT_EXPIRY_MINUTES:     z.coerce.number().int().min(30).max(1440).default(30),
+ORDER_PAYMENT_FEE_BPS:            z.coerce.number().int().min(0).max(2000).default(0),
+ORDER_PAYMENT_FEE_FLAT_CENTS:     z.coerce.number().int().min(0).default(0),
+STRIPE_CONNECT_ENABLED:           boolFlag(),
+PUBLIC_ORDER_RETURN_BASE_URL:     z.string().url().optional(),</code></pre>
+
+<p><code>min(30)</code> is not arbitrary — Stripe rejects an <code>expires_at</code> less than 30 minutes
+out. Encoding the API's constraint in the schema turns a runtime Stripe error into a boot-time refusal.</p>
+
+<pre><code><span class="tok-c">// superRefine, production block — mirrors the existing STRIPE_BILLING_ENABLED shape</span>
+if (value.ORDER_PAYMENTS_ENABLED) {
+  requireInProd(<span class="tok-s">"STRIPE_SECRET_KEY"</span>,     <span class="tok-s">"…required when ORDER_PAYMENTS_ENABLED=true."</span>);
+  requireInProd(<span class="tok-s">"STRIPE_WEBHOOK_SECRET"</span>, <span class="tok-s">"…required when ORDER_PAYMENTS_ENABLED=true."</span>);
+  requireInProd(<span class="tok-s">"NOTIFICATIONS_SMS_FROM"</span>,<span class="tok-s">"…required when ORDER_PAYMENTS_ENABLED=true (links go by SMS)."</span>);
+  if (!value.NOTIFICATIONS_ENABLED) ctx.addIssue({ code: z.ZodIssueCode.custom,
+    path: [<span class="tok-s">"NOTIFICATIONS_ENABLED"</span>],
+    message: <span class="tok-s">"NOTIFICATIONS_ENABLED must be true when ORDER_PAYMENTS_ENABLED=true."</span> });
+  if (!value.STRIPE_CONNECT_ENABLED) ctx.addIssue({ …
+    message: <span class="tok-s">"STRIPE_CONNECT_ENABLED must be true when ORDER_PAYMENTS_ENABLED=true."</span> });
+}</code></pre>
+
+<div class="callout warn">
+<strong>Two deployment gotchas that will bite otherwise.</strong><br>
+1. Every new key must be added to <code>/.env.example</code> at the <em>repo root</em>, or
+<code>src/config/envExample.test.ts</code> fails the CI gate.<br>
+2. Every new required var must be added to the Terraform env map in
+<code>biteperk/biteperk-cloud-platform</code> (<code>roots/products/voxtable/stg</code>) <em>before</em>
+the deploy, or staging boots die on the fail-closed gate with <code>Refusing to start</code>. Staging runs
+<code>APP_ENV=production</code> posture. Read the revision logs; don't guess.
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="sandbox">12. Sandbox setup, step by step</h2>
+
+<p>Everything below happens in a Stripe <strong>sandbox</strong> — an isolated test environment where
+payments aren't processed by card networks. No real money, no risk to the live billing integration.</p>
+
+<ol class="flow">
+<li><strong>Create a sandbox.</strong> Dashboard → account picker → <em>Sandboxes</em> → create. Name it
+<code>voxtable-order-payments</code>. Grab its secret key. Sandboxes are isolated from each other, so
+Abhishek can have his own without collisions.</li>
+<li><strong>Enable Connect</strong> in the sandbox and complete the platform profile. Choose
+<strong>Stripe responsible for negative balances</strong> — the recommended default for platforms new to
+embedding payments.</li>
+<li><strong>Create a test connected account</strong> for Natalia's Bistro. Request the
+<code>card_payments</code> and <code>transfers</code> capabilities (<code>on_behalf_of</code> requires a
+payments capability). Complete Stripe-hosted onboarding with test data — lowest integration effort, 46+
+countries, and Stripe owns the flow logic.</li>
+<li><strong>Store the <code>acct_…</code> id</strong> on the staging restaurants row's
+<code>stripe_connect_account_id</code>, and set <code>charges_enabled = true</code>.</li>
+<li><strong>Point the webhook</strong> at staging: <code>https://api.biteperk.com.au/stripe/webhook</code>
+(or the Cloud Run URL). Subscribe to the six events in §10. Copy the signing secret into
+<code>STRIPE_WEBHOOK_SECRET</code>. For local work, <code>stripe listen --forward-to
+localhost:3050/stripe/webhook</code> prints its own secret — use that one locally.</li>
+<li><strong>Buy a Mobile <code>+61 4</code> number</strong> in <code>Biteperk-staging</code>. Set
+<code>NOTIFICATIONS_SMS_FROM</code>. Send yourself one test SMS before wiring anything.</li>
+<li><strong>Set the flags</strong> in the staging Terraform env map:
+<code>ORDER_PAYMENTS_ENABLED=true</code>, <code>STRIPE_CONNECT_ENABLED=true</code>,
+<code>NOTIFICATIONS_ENABLED=true</code>. Apply, then confirm the revision actually booted.</li>
+<li><strong>Run the smoke script</strong> (§14), then place one real call to the staging Twilio number and
+pay with <code>4242 4242 4242 4242</code>.</li>
+</ol>
+
+<div class="callout">
+<strong>Sandbox limitation worth knowing.</strong> Stripe's docs state you can't create connections
+between a Connect platform's sandbox and <em>connected account sandboxes</em>. Creating test connected
+accounts inside your platform sandbox — what we're doing — works normally. This only matters if a venue
+wants to link their own existing sandbox.
+</div>
+
+<h4>Test cards</h4>
+<table>
+<thead><tr><th>Number</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td><code>4242 4242 4242 4242</code></td><td>Succeeds, no authentication</td></tr>
+<tr><td><code>4000 0025 0000 3155</code></td><td>Requires 3DS authentication — proves the SCA path</td></tr>
+<tr><td><code>4000 0000 0000 9995</code></td><td>Declined, <code>insufficient_funds</code></td></tr>
+<tr><td>BECS: acct <code>900123456</code>, BSB <code>000000</code></td><td>Goes <code>processing</code> → <code>succeeded</code> after 3 min. <strong>Use this to prove we don't cook food on <code>completed</code>.</strong></td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="phases">13. Phased delivery</h2>
+
+<p>Each phase is independently mergeable to <code>integration</code> and independently useless without
+the next — which is the point. Nothing reaches a guest until Phase 5.</p>
+
+<div class="phase">
+<div class="phase-n">0</div>
+<div class="phase-body">
+<h3>Unblock the plumbing <span class="pill">~half a day</span></h3>
+<p>Nothing Stripe-related. Just the three things that are quietly broken.</p>
+<ul>
+<li>Split <code>isSmsEnabled()</code> out of <code>isNotificationsEnabled()</code>; worker starts if either channel is live.</li>
+<li>Add <code>db: DbClient = pool</code> to <code>enqueueNotification</code>.</li>
+<li>Buy the Mobile <code>+61 4</code> number in <code>Biteperk-staging</code>; set <code>NOTIFICATIONS_SMS_FROM</code>.</li>
+</ul>
+<p><strong>Done when:</strong> an SMS enqueued by hand into <code>notifications_outbox</code> arrives on a real phone, with no SendGrid key present.</p>
+</div>
+</div>
+
+<div class="phase">
+<div class="phase-n">1</div>
+<div class="phase-body">
+<h3>Schema and config <span class="pill">~half a day</span></h3>
+<ul>
+<li><code>030_order_payments.sql</code>; verify it applies cleanly and as <code>voxtable_owner</code>.</li>
+<li><code>repositories/orderPayments.ts</code> with the full CRUD surface.</li>
+<li>Env keys + <code>superRefine</code> + <code>.env.example</code> + Terraform staging map.</li>
+</ul>
+<p><strong>Done when:</strong> <code>npm run check</code> passes, <code>npm run db:migrate</code> is clean on a fresh DB, and staging boots with the new vars.</p>
+</div>
+</div>
+
+<div class="phase">
+<div class="phase-n">2</div>
+<div class="phase-body">
+<h3>Connect onboarding <span class="pill">~2 days</span></h3>
+<ul>
+<li><code>stripeConnectService.ts</code>: create account, create onboarding link, refresh capabilities.</li>
+<li><code>account.updated</code> webhook → sync <code>charges_enabled</code> / <code>payouts_enabled</code>.</li>
+<li>Dashboard surface: a "Connect payouts" panel that shows status and links to Stripe-hosted onboarding.</li>
+</ul>
+<p><strong>Done when:</strong> a test venue completes hosted onboarding and the restaurants row shows <code>charges_enabled = true</code> without anyone touching SQL.</p>
+</div>
+</div>
+
+<div class="phase">
+<div class="phase-n">3</div>
+<div class="phase-body">
+<h3>Checkout Sessions <span class="pill">~2 days</span></h3>
+<ul>
+<li><code>orderPaymentService.createOrderPaymentLink</code>, with <code>platformFeeCents</code> unit-tested.</li>
+<li>Staff endpoint <code>POST /api/orders/:id/payment-link</code> (front-of-house roles) — lets us test the whole thing from the dashboard before Bella is involved.</li>
+<li>SMS enqueue in the same transaction.</li>
+</ul>
+<p><strong>Done when:</strong> a staff member clicks a button, an SMS arrives, the link opens a Stripe page branded as the venue, and the correct total shows.</p>
+</div>
+</div>
+
+<div class="phase">
+<div class="phase-n">4</div>
+<div class="phase-body">
+<h3>Webhook reconciliation <span class="pill">~1.5 days</span></h3>
+<ul>
+<li><strong>Branch <code>handleBillingWebhook</code> on <code>session.mode</code> first</strong>, with a regression test proving an order payment does not touch onboarding status.</li>
+<li><code>markOrderPaidFromWebhook</code> — no <code>expectedVersion</code>.</li>
+<li>Expired, refunded, disputed, skipped-transfer paths.</li>
+</ul>
+<p><strong>Done when:</strong> paying a sandbox link flips the KDS pill to PAID within one 2 s poll, with zero KDS code changed; and a BECS test payment leaves the order UNPAID until it settles.</p>
+</div>
+</div>
+
+<div class="phase">
+<div class="phase-n">5</div>
+<div class="phase-body">
+<h3>Bella <span class="pill">~1.5 days</span></h3>
+<ul>
+<li>Retell tool route, schema, handler branch.</li>
+<li>Agent prompt: the offer, the read-back, the expiry, the refusal paths.</li>
+<li>Snapshot the previous LLM/agent config first.</li>
+<li><code>smoke:payments</code> green.</li>
+</ul>
+<p><strong>Done when:</strong> a real call to the staging number ends with a paid order — and a second call where the caller declines the link ends with an unpaid order and no SMS.</p>
+</div>
+</div>
+
+<div class="phase">
+<div class="phase-n">6</div>
+<div class="phase-body">
+<h3>Production readiness <span class="pill">gated, not scheduled</span></h3>
+<p>Everything above can ship to staging on engineering judgement. This phase cannot:</p>
+<ul>
+<li>Australian legal advice on handling and remitting guest funds. <strong>Blocking.</strong></li>
+<li>Live-mode Connect platform profile and the negative-balance decision, confirmed in writing.</li>
+<li>Mobile number and webhook endpoint repeated in <code>Biteperk-production</code> — remembering the console gives almost no visual difference between accounts.</li>
+<li>Runbook: <code>deploy/runbooks/order-payments-rollout.md</code>, following the onboarding-rollout precedent.</li>
+<li>Resolve the open question in <code>CLAUDE.md</code> about which Twilio account actually carries production voice traffic. Still unanswered as of 10 Aug.</li>
+</ul>
+</div>
+</div>
+
+<p style="margin-top:24px"><strong>Roughly 7–8 engineering days to a working sandbox demo</strong>,
+assuming no Connect onboarding surprises. Phase 0 is the one people skip and then lose a day to a silent
+no-op worker.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="testing">14. Testing</h2>
+
+<p>House rule: product behaviour is smoke-tested, not unit-tested. DB-free <code>node:test</code> units
+are allowed for pure plumbing. No Jest.</p>
+
+<h4>Unit — DB-free, runs in <code>npm run check</code></h4>
+<ul>
+<li><code>platformFeeCents</code> — including the cap where fee ≥ total.</li>
+<li>Line-item mapping: our <code>order_items</code> → Stripe <code>price_data</code>, including a variant and a modifier, asserting the summed <code>unit_amount</code> matches <code>line_total_cents</code>.</li>
+<li>SMS body builder: length, no reply invitation, venue name present, URL present.</li>
+<li>Env schema: <code>ORDER_PAYMENTS_ENABLED=true</code> with missing credentials must fail to boot.</li>
+</ul>
+
+<h4><code>scripts/smoke-payments.ts</code> → <code>npm run smoke:payments</code></h4>
+<ol>
+<li>Seed a reservation and an order with a known total.</li>
+<li><code>POST /retell/tools/send-payment-link</code>; assert <code>sent: true</code>, a
+<code>confirmation_message</code>, and <strong>no URL in the response body</strong>.</li>
+<li>Assert exactly one <code>order_payments</code> row and one <code>notifications_outbox</code> row with
+<code>channel = 'sms'</code>.</li>
+<li><strong>Call the tool again</strong> — assert <code>is_replay: true</code> and still exactly one row
+each. This is the double-fire test and it is the one that matters.</li>
+<li>Replay a signed <code>checkout.session.completed</code> fixture; assert
+<code>orders.payment_status = 'paid'</code> and one new <code>payment_changed</code> event.</li>
+<li>Replay the <em>same</em> event; assert no duplicate event row (webhook dedupe).</li>
+<li>Replay a <code>completed</code> with <code>payment_status: 'unpaid'</code>; assert the order stays
+<strong>unpaid</strong> and <code>order_payments.status = 'processing'</code>.</li>
+<li>Replay a subscription-mode <code>checkout.session.completed</code>; assert onboarding status changes
+and <strong>no order is touched</strong>. The cross-contamination guard.</li>
+</ol>
+
+<h4>Manual, once per phase</h4>
+<ul>
+<li>Real call → real SMS → real sandbox payment → KDS pill flips. Nothing substitutes for this.</li>
+<li>Withheld caller ID: dial with <code>#31#</code> prefix and confirm Bella degrades gracefully.</li>
+<li>Let a link expire; confirm <code>checkout.session.expired</code> lands and a resend is possible.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="risks">15. Risks and hard edges</h2>
+
+<table>
+<thead><tr><th>Risk</th><th>Severity</th><th>Handling</th></tr></thead>
+<tbody>
+<tr><td>Order payment marks a SaaS subscription active</td><td style="color:var(--danger)"><strong>Critical</strong></td><td>Branch on <code>session.mode</code> + <code>metadata.biteperk_kind</code>. Regression test in Phase 4.</td></tr>
+<tr><td>Australian financial-services regulation on holding guest funds</td><td style="color:var(--danger)"><strong>Critical</strong></td><td>Legal advice before live mode. Does not block sandbox.</td></tr>
+<tr><td>SMS silently never sends</td><td>High</td><td>Phase 0. The email-credential gate is a real trap.</td></tr>
+<tr><td>Retell double-fires the tool → two links, two charges</td><td>High</td><td>Partial unique index on <code>order_id</code>; Stripe <code>idempotencyKey</code>; replay short-circuit. Tested explicitly.</td></tr>
+<tr><td>Kitchen cooks on an unsettled payment</td><td>High</td><td>Gate on <code>session.payment_status === 'paid'</code>. Cards/wallets only for v1.</td></tr>
+<tr><td>Refund leaves venue holding funds</td><td>High</td><td><code>reverse_transfer: true</code> on every refund. Encode it in the service, not the caller.</td></tr>
+<tr><td>Dispute debits the BitePerk account</td><td>Medium</td><td>Inherent to destination charges. Slack alert on <code>charge.dispute.created</code>; manual reversal decision.</td></tr>
+<tr><td>Caller pays, then modifies the order</td><td>Medium</td><td>Amount mismatch on webhook → log loudly, never auto-resolve. Staff handles it.</td></tr>
+<tr><td>Venue not onboarded to Connect</td><td>Medium</td><td>Fail closed with a spoken fallback. Never attempt a charge without <code>charges_enabled</code>.</td></tr>
+<tr><td>Stripe down mid-call</td><td>Low</td><td><code>withStripeErrors</code> → 503 → Bella says pay at the venue. No outbox, deliberately.</td></tr>
+<tr><td>New env var kills the staging boot</td><td>Low</td><td>Terraform map before deploy. Fail-closed gate is working as designed.</td></tr>
+</tbody>
+</table>
+
+<h4>GST — worth an accountant's five minutes</h4>
+<p>Australian menu prices include GST, so line items go out as
+<code>tax_behavior: "inclusive"</code>. With <code>on_behalf_of</code> the venue is the settlement
+merchant, which is the right posture for GST liability — the venue sold the meal, not BitePerk. Do not
+enable <code>automatic_tax</code> on this flow without confirming that reading. Our subscription
+Checkout path already uses <code>automatic_tax: { enabled: true }</code>; the two flows have different
+tax answers and should not share configuration.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="stripe">16. Questions for Stripe on 19 August</h2>
+
+<p>The Stripe Tour is in Sydney on 19 August, and Niza offered a free technical scoping session with
+Stripe Engineers. That is worth more in person than over email. Take these:</p>
+
+<div class="q"><strong>1. Is destination charges with <code>on_behalf_of</code> the right model for us?</strong>
+An AU platform, AU venues, guest pays for a meal the venue cooks. We want the venue as settlement
+merchant. Confirm this over separate charges and transfers, and tell us what we're not seeing.</div>
+
+<div class="q"><strong>2. What are the AU regulatory implications of the platform holding guest funds before remittance?</strong>
+Stripe won't give legal advice, but they know what other Australian marketplaces do and where those
+platforms hit trouble. Ask what they've seen.</div>
+
+<div class="q"><strong>3. The 1 October 2026 AU pricing — what is the actual rate?</strong>
+In writing. We're modelling on 1.70% + A$0.30 and support pages reference a revision.</div>
+
+<div class="q"><strong>4. Connect fees for our shape.</strong>
+Confirm the AU monthly-active-account fee and the per-payout fee, and whether a venue doing $2k/month in
+phone orders is economic at our intended platform fee.</div>
+
+<div class="q"><strong>5. Billing volume bands.</strong>
+The 0.7% pay-as-you-go rate is a direct tax on our own subscription revenue. What are the thresholds for
+the lower banded rate?</div>
+
+<div class="q"><strong>6. Negative-balance responsibility — Stripe or platform?</strong>
+We intend to choose Stripe-responsible. Confirm that's available for an AU platform with Express-dashboard
+connected accounts, and what it costs.</div>
+
+<div class="q"><strong>7. Dispute mechanics on destination charges.</strong>
+Docs say disputes debit the platform. Is there tooling for automatic transfer reversal on dispute, or is
+every one a manual decision?</div>
+
+<div class="q"><strong>8. Restaurant-specific Radar rules.</strong>
+Voice-ordered food is a distinctive fraud profile — small amounts, immediate fulfilment, no shipping
+address. Anything they'd tune.</div>
+
+<h4>Also worth correcting with Niza, by email, before the event</h4>
+<ul>
+<li>It's <strong>Sam</strong>, not Sameer; <strong>BitePerk</strong>, one word, capital P.</li>
+<li>We operate <code>biteperk.com.au</code> <em>and</em> <code>biteperk.com</code> with international locales.</li>
+<li>We're evaluating <strong>two</strong> Stripe use cases: SaaS subscriptions billed to venues
+(Billing), and guest payments for voice orders (Connect + Checkout). Her notes only capture the first.</li>
+<li>The "create products and prices for your menu items first" guidance doesn't hold for our menu —
+we'll use <code>price_data</code>.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2 id="next">Next actions</h2>
+
+<div class="card gold">
+<ol style="margin-bottom:0">
+<li><strong>Confirm the money-flow model</strong> is genuinely settled. Everything downstream assumes
+Connect. If direct-to-venue is still live, say so now — it's a materially smaller build.</li>
+<li><strong>Start the legal question this week.</strong> It has the longest lead time and it's the only
+true blocker on production.</li>
+<li><strong>Do Phase 0.</strong> Half a day, no Stripe involvement, unblocks everything.</li>
+<li><strong>Create the sandbox</strong> and get a test connected account onboarded — that's where the
+unknown unknowns are.</li>
+<li><strong>Reply to Niza</strong> and lock in the 19 August scoping session with the questions above.</li>
+</ol>
+</div>
+
+<footer>
+<p><span class="brand-name">bite<span class="perk">perk</span></span> · BITEPERK PTY LTD · ABN 36 700 831 303<br>
+Level 1, 457-459 Elizabeth Street, Surry Hills NSW 2010 · hello@biteperk.com.au</p>
+<p>Internal engineering document. Stripe API behaviour verified against the current reference on
+12 August 2026 — <a href="https://docs.stripe.com/api/checkout/sessions/create">Checkout Sessions</a>,
+<a href="https://docs.stripe.com/connect/destination-charges">destination charges</a>,
+<a href="https://docs.stripe.com/api/payment-link/create">Payment Links</a>,
+<a href="https://docs.stripe.com/sandboxes">sandboxes</a>. Fees and regulatory statements are not advice;
+confirm both with Stripe and with an Australian financial-services lawyer before live mode.</p>
+</footer>
+
+</div>
+</body>
+</html>
