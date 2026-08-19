@@ -79,8 +79,11 @@ bp-*.json
 voxtable-*.json
 vocotable-*.json
 
-# Claude Code local session config (per-developer launch.json etc.)
-.claude/
+# Claude Code local session config (per-developer launch.json etc.) stays
+# ignored, but skills are versioned knowledge — they are the SSOT for vendor
+# workflows and must survive any one laptop.
+.claude/*
+!.claude/skills/
 
 # Local ops references — account identifiers / PII (vendor logins, SIDs).
 # Never committed; secrets belong in the prod env / password manager, not git.

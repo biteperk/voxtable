@@ -16,6 +16,14 @@
 > **not interchangeable**: one is staging-only and one is production. This file only
 > narrates; when they disagree, NUMBERS.md wins.
 
+> 🎙️ **Touching a voice agent — building or cloning one, editing a prompt or greeting,
+> changing a voice, chasing latency or "sounds robotic", or reviewing/diagnosing a call?
+> Read the skill `.claude/skills/retell-agent-quality/` first.** It carries the golden
+> config with measured costs, the de-venued prompt contract, the change discipline
+> (snapshot → PATCH → read-back → test call), a triage tree of real incidents, and runnable
+> probe/assert/review scripts. Numbers, trunks and SIP stay with
+> `twilio-au-number-provisioning`.
+
 > 🚦 **About to change anything outside your own machine — merge, deploy, click a vendor
 > console, run SQL, buy a number? Read [Environments and promotion](#environments-and-promotion)
 > below.** It is the SSOT for what "staging first" actually means here, which things

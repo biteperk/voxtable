@@ -157,6 +157,12 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
 
   const callerPhoneRaw = inbound.from_number ?? null;
   const callerPhone = normalizePhone(callerPhoneRaw) ?? callerPhoneRaw;
+  // What the AGENT sees. A withheld caller ID arrives as "anonymous", and
+  // passing that through meant the agent fed the literal string to
+  // create_booking (400, live call 19 Aug 2026). "" tells the prompt to ask
+  // the caller for a number instead. The call log keeps the raw value — for
+  // forensics, "anonymous" is information.
+  const callerPhoneForAgent = normalizePhone(callerPhoneRaw) ?? "";
 
   // One cached query for the venue's identity + FAQ, and one uncached query for
   // the agent id (kept separate so a rebind lands on the very next call).
@@ -204,7 +210,7 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
         // "offer to take a message" — never invent an answer.
         venue_faq: formatVenueFaq(venue.faq, restaurantId),
         restaurant_timezone: tz,
-        caller_phone: callerPhone ?? "",
+        caller_phone: callerPhoneForAgent,
         today: todayInTz(tz, now),
         tomorrow: tomorrowInTz(tz, now),
         now_local: nowTimeInTz(tz, now),
