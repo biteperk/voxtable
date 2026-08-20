@@ -73,6 +73,28 @@ and at the observed ~35 % failure rate, 25 consecutive clean calls has probabili
 A purely time-based cause would have had to begin in the 48 hours between 11 and 13 Aug.
 Unlikely — but this is why the next step is an experiment, not an assumption.
 
+## 4b. Post-cutover: elimination is now complete (20 Aug 2026)
+
+After the production line was rebuilt end to end — new Retell **workspace** (Algorythmos →
+Biteperk), new agent `agent_b6b6488af08b82d80e8f4d270a`, new LLM, new backend credentials —
+the next call dropped at **7,602 ms**. Identical signature.
+
+Everything under our control has now been replaced at least once while the fault persisted:
+
+| Replaced / varied | Fault persists? |
+|---|---|
+| Retell agent, LLM, prompt, greeting (many versions) | yes |
+| Retell workspace | yes |
+| Backend credentials (`RETELL_API_KEY` / webhook secret) | yes |
+| Backend runtime (Cloud Run staging vs VM production) | yes |
+| Twilio account (`AC8116857da…` vs `ACd423bd09…`) | yes |
+| Venue row, database, menu | yes |
+| Caller ID presented vs withheld | yes |
+| Call content (drops mid-greeting AND mid-caller-sentence) | yes |
+
+**The Twilio SIP trunk configuration is the only thing never varied** — and it is identical
+on both failing numbers, and different on the one number that has never shown the fault.
+
 ## 5. Also ruled out (each verified, not assumed)
 
 - Retell agent/prompt/config — failures bracket every change made on 19 Aug, and predate
