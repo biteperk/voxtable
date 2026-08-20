@@ -17,6 +17,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { Retell } from "retell-sdk";
+import { resolveCredentials } from "./line-credentials.mjs";
 
 const args = process.argv.slice(2);
 const strict = args.includes("--strict");
@@ -30,16 +31,47 @@ if (!number) {
   process.exit(2);
 }
 
-const KEY = process.env.RETELL_API_KEY;
-if (!KEY) { console.error("RETELL_API_KEY not set"); process.exit(2); }
-const WEBHOOK_SECRET = process.env.RETELL_WEBHOOK_SECRET || KEY;
-const H = { Authorization: `Bearer ${KEY}` };
-
 const declared = JSON.parse(readFileSync(configPath, "utf8")).lines?.[number];
 if (!declared) {
   console.error(`${number} is not declared in ${configPath}.`);
   console.error("An undeclared line cannot be checked — add it there first (identifiers only, no secrets).");
   process.exit(2);
+}
+
+// Credentials come from the DECLARATION, not the shell. Inheriting an ambient RETELL_API_KEY
+// is what pointed this script at the legacy workspace on 20 Aug 2026 and turned a healthy
+// production line into a two-hour outage: the wrong key answers every question confidently.
+// --use-env exists for one-off debugging and says so loudly.
+let KEY, WEBHOOK_SECRET, CRED_SOURCE;
+if (args.includes("--use-env")) {
+  KEY = process.env.RETELL_API_KEY;
+  WEBHOOK_SECRET = process.env.RETELL_WEBHOOK_SECRET || KEY;
+  CRED_SOURCE = "the environment (--use-env)";
+  if (!KEY) { console.error("--use-env given but RETELL_API_KEY is not set"); process.exit(2); }
+  console.log("⚠️  Using credentials from the environment. Nothing here can tell you whether they");
+  console.log("   belong to this line's workspace — a wrong key reports a healthy line as broken.");
+} else {
+  try {
+    const c = resolveCredentials(declared);
+    KEY = c.apiKey; WEBHOOK_SECRET = c.webhookSecret; CRED_SOURCE = c.source;
+  } catch (error) {
+    console.error(`Could not load credentials for ${number}: ${error.message}`);
+    process.exit(2);
+  }
+}
+const H = { Authorization: `Bearer ${KEY}` };
+
+// Preflight when the key came from the environment: prove it belongs to THIS line's workspace
+// before drawing a single conclusion from it. A wrong key does not error — it returns clean
+// 404s, which read as "the line is broken" and invite a repair that breaks a working line.
+if (args.includes("--use-env")) {
+  const probe = await fetch(`https://api.retellai.com/get-agent/${declared.retell_agent_id}`, { headers: H });
+  if (probe.status === 404) {
+    console.error(`\n✗ WRONG WORKSPACE KEY — this key cannot see ${declared.retell_agent_id},`);
+    console.error(`  the agent ${number} is declared to use in the ${declared.retell_workspace} workspace.`);
+    console.error("  Stopping here. Every check below would report a healthy line as broken.");
+    process.exit(2);
+  }
 }
 
 const results = [];
@@ -65,7 +97,10 @@ const json = async (url, init) => {
   return { status: res.status, body };
 };
 
-if (!asJson) console.log(`\n${number} — declared ${declared.environment}, api ${declared.api_base}\n`);
+if (!asJson) {
+  console.log(`\n${number} — declared ${declared.environment}, api ${declared.api_base}`);
+  console.log(`workspace ${declared.retell_workspace} · credentials from ${CRED_SOURCE}\n`);
+}
 
 // ─── 1. The number exists in this Retell workspace ────────────────────────────
 // BREAK 1 (20 Aug 2026): absent. Twilio offered the call to sip.retellai.com, Retell did
@@ -203,7 +238,10 @@ if (agentExists) {
 if (agentExists) {
   const r = spawnSync(process.execPath,
     [new URL("./assert-agent.mjs", import.meta.url).pathname, agentIdToVerify, declared.retell_llm_id],
-    { env: { ...process.env, VOXTABLE_API: declared.api_base }, encoding: "utf8" });
+    // Pass the RESOLVED key down. assert-agent.mjs reads RETELL_API_KEY from its environment,
+    // and since we no longer inherit an ambient one, the child would otherwise run keyless —
+    // or worse, pick up a stale shell value for a different workspace.
+    { env: { ...process.env, RETELL_API_KEY: KEY, VOXTABLE_API: declared.api_base }, encoding: "utf8" });
   const ok = r.status === 0;
   check(14, ok, "golden agent config (assert-agent.mjs)",
     (r.stdout ?? "").split("\n").filter((l) => l.startsWith("✗")).join("\n     ") || r.stderr);
@@ -250,6 +288,20 @@ if (!tw) {
 // ─── Verdict ──────────────────────────────────────────────────────────────────
 const failed = results.filter((r) => r.state === "fail");
 const skipped = results.filter((r) => r.state === "skip");
+
+// If NEITHER the number nor the declared agent is visible, the likeliest explanation is not
+// that both vanished — it is that this key belongs to a different workspace. Saying so is the
+// difference between a five-minute fix and the 20 Aug outage, where the same reading was taken
+// at face value and "repaired".
+const numberMissing = results.some((r) => r.id === 1 && r.state === "fail");
+const agentMissing = results.some((r) => r.id === 8 && r.state === "fail");
+if (numberMissing && agentMissing && !asJson) {
+  console.log("");
+  console.log("⚠️  BOTH the number and the declared agent are invisible to this key.");
+  console.log(`   That usually means the key is not ${declared.retell_workspace}'s, rather than that the`);
+  console.log("   line is broken. Confirm the workspace in the Retell dashboard BEFORE changing");
+  console.log("   anything — importing or rebinding on this reading will break a working line.");
+}
 
 if (asJson) {
   console.log(JSON.stringify({ number, environment: declared.environment, results, failed: failed.length, skipped: skipped.length }, null, 2));

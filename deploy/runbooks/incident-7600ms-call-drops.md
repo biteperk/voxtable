@@ -20,8 +20,14 @@ existed on its side at all. Tell them apart before reading further:
 | Retell `list-calls` | the call is **there**, `user_hangup` | **no record at all** |
 | First check | `latency-report.mjs` | `npm run check:voice-lines` |
 
-If the call is absent from `list-calls`, stop reading and run the line check — the routing chain
-is broken, not the trunk.
+If the call is absent from `list-calls`, stop reading and run `npm run check:voice-lines`.
+
+⚠️ **But check you are reading the right workspace first.** On 20 Aug 2026 four calls to
+`+61 468 202 846` were invisible for exactly this reason: they were looked for with the repo's
+local `.env` Retell key, which belongs to the **legacy Algorythmos workspace**. The calls were
+there all along in the Biteperk workspace, at 7,602 / 8,215 / 8,359 / 4,937 ms — i.e. this
+incident, not a dead line. `check:voice-lines` now loads each line's credentials from
+`deploy/voice-lines.json`, so run it rather than reaching for a key by hand.
 
 ## 1. Symptom
 

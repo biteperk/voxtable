@@ -63,10 +63,9 @@ jobs:
       - name: Assert +61468203234
         run: |
           set -euo pipefail
-          KEY=$(gcloud secrets versions access latest --secret=voxtable-stg-retell-api-key --project=bp-voxtable-stg)
-          # The staging workspace's single API key is badged as its webhook key, so both take
-          # the same string. Production does NOT work this way.
-          export RETELL_API_KEY="$KEY" RETELL_WEBHOOK_SECRET="$KEY"
+          # The Retell credentials are resolved by the script from deploy/voice-lines.json,
+          # so there is no second place for them to drift out of step with the declaration.
+          # Only the Twilio pair is passed in, since assert-line takes those from the env.
           export TWILIO_AU1_KEY_SID=$(gcloud secrets versions access latest --secret=voxtable-stg-twilio-au1-key-sid --project=bp-voxtable-stg)
           export TWILIO_AU1_KEY_SECRET=$(gcloud secrets versions access latest --secret=voxtable-stg-twilio-au1-key-secret --project=bp-voxtable-stg)
           node .claude/skills/retell-agent-quality/scripts/assert-line.mjs +61468203234 --strict
@@ -105,4 +104,9 @@ jobs:
           # unverifiable. Deliberately not --strict here: the run would fail every hour on a
           # known, tracked gap and teach everyone to ignore it. assert-line still prints the
           # skip. Add --strict once voxtable-prod-twilio-au1-key-{sid,secret} exist.
-          node .claude/skills/retell-agent-quality/scripts/assert-line.mjs +61468202846
+          #
+          # --use-env because production's credentials live in the VM's .env and a GitHub
+          # runner cannot SSH there. The script preflights the key against the declared agent
+          # first, so a secret pointing at the wrong workspace fails as a credential error
+          # instead of reporting a healthy line as broken.
+          node .claude/skills/retell-agent-quality/scripts/assert-line.mjs +61468202846 --use-env

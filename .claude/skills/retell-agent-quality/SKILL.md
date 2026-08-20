@@ -38,7 +38,17 @@ experience of VoxTable is whether Bella sounds human, knows the venue, and never
    route (the one place that verifies an agent exists) does not exist there.
 7. **A number lives in exactly one Retell workspace, account-wide.** Importing it elsewhere
    silently evicts it from yours, and the symptom is a number that 404s locally while the
-   import API says it already exists. That is what "the import vanished" always was.
+   import API says it already exists.
+8. **Check WHICH WORKSPACE your key opens before believing anything it tells you.** The repo's
+   local `.env` holds the **legacy Algorythmos** key; production's lives only in the VM's
+   `/opt/vocotable/.env`. A wrong key never errors — it returns clean 404s, so a healthy line
+   reads as broken and the "repair" breaks it for real. That is exactly what happened on
+   20 Aug 2026: a two-hour production outage caused by a diagnosis, not a fault. Never pass a
+   key by hand; `assert-line.mjs`/`apply-line.mjs` load `retell_credentials` from
+   `deploy/voice-lines.json` and refuse a key that cannot see the declared agent.
+9. **If two things appear missing at once, suspect the credentials.** A number and its agent do
+   not usually vanish together. And a *false verification* is worse than no check: an unverified
+   claim invites doubt, while one "confirmed" against the wrong estate ends the conversation.
 
 ## Definition of done for an agent
 
