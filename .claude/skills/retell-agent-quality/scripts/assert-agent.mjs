@@ -53,9 +53,23 @@ if (process.env.VOXTABLE_API) {
 }
 check(!/vocotable\.algorythmos/.test(urls) || !!process.env.ALLOW_LEGACY_HOST, "no legacy Algorythmos hostname in URLs");
 
-// Prompt structural invariants.
-for (const marker of ["## Sound human", "Open or closed?", "be honest, never fake it", "{{venue_faq}}", "{{today_status}}", "end_call"]) {
+// Prompt structural invariants — these hold on every backend.
+for (const marker of ["## Sound human", "Open or closed?", "be honest, never fake it", "end_call", "{{restaurant_name}}"]) {
   check(llm.general_prompt.includes(marker), `prompt carries "${marker}"`);
+}
+
+// Venue facts and today's open/closed status: assert the CAPABILITY, not the mechanism.
+// A backend that serves venue_faq/today_status supplies them per call; an older one cannot,
+// and those agents carry a "This venue's details" section instead. Requiring the variables
+// outright failed the production agent for being correctly adapted — a false alarm that
+// would train people to ignore this script.
+const venueSection = llm.general_prompt.includes("This venue's details");
+check(llm.general_prompt.includes("{{venue_faq}}") || venueSection,
+  "can answer venue questions (via {{venue_faq}} or a venue-details section)");
+check(llm.general_prompt.includes("{{today_status}}") || venueSection,
+  "can answer opening hours (via {{today_status}} or a venue-details section)");
+if (venueSection && !llm.general_prompt.includes("{{venue_faq}}")) {
+  console.log("  note: venue facts are in the PROMPT, not per-call data — this agent must never be cloned for another venue; delete the section once the backend serves venue_faq.");
 }
 
 console.log(failures.length ? `\nFAILED: ${failures.length} violation(s)` : "\nALL CHECKS PASSED");

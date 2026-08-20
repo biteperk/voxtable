@@ -89,3 +89,33 @@ whole chain:
 
 Remaining before the line is customer-facing: Sam's real test call, clicking **Publish** in
 the dashboard (optional — webhook mode serves the draft), and restoring the disclosure.
+
+## Full venue name + pronunciation, 20 Aug 2026
+
+Sam heard "Mazcina" (not "Mazcina Resto-Bar"), pronounced "Mazina". Root cause was a data
+gap, not the prompt: PR #232 renamed the venue in the seed files and applied it to staging,
+but **production's database was never updated**. The prompt needed no edit — it is de-venued
+and speaks `{{restaurant_name}}`.
+
+Applied:
+- Production DB `restaurants.name` → `Mazcina Resto-Bar` (targeted UPDATE; the full seed was
+  deliberately not re-run, since its hours/FAQ/tables are already correct).
+- **Pronunciation dictionary** on BOTH Mazcina agents — the "ask Camilo" item open since the
+  conversion is now closed: `{"word":"Mazcina","alphabet":"ipa","phoneme":"mɑˈsinɑ"}`
+  ("mahs-SEE-nah", Spanish/Chilean, confirmed by Sam).
+- `boosted_keywords` gained the full name on both, so the STT is not biased against hearing
+  a caller say it.
+- **Agents renamed** to `Mazcina Resto-Bar (production)` / `(staging)`. This was not cosmetic:
+  the admin bind guard is `comparableName(agentName).includes(comparableName(venueName))`
+  (`retellProvisioning.ts:322`), so the rename had silently left **staging already broken** —
+  agent "Mazcina" vs venue "Mazcina Resto-Bar" → `409 RETELL_AGENT_VENUE_MISMATCH` on any
+  future rebind, discoverable only mid-incident. Both now satisfy the guard.
+
+⚠️ **The rename alone did not take effect** — the deployed image (`api:0.1.0`) predates the
+name-cache TTL, so its cache **never expires** (`expiresAt` is absent from the running
+build). The old name was pinned in memory until `docker restart vocotable-api-1
+vocotable-worker-1`. Any future venue rename on this image needs the same restart; the TTL
+fix arrives with the backend promotion.
+
+Verified: signed `/retell/inbound` returns `restaurant_name: "Mazcina Resto-Bar"`;
+`assert-agent.mjs` green on both agents.
