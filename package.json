@@ -62,7 +62,9 @@
     "smoke:agent-routing": "npm run smoke:agent-routing --workspace=@vocotable/backend",
     "smoke:menu-guards": "npm run smoke:menu-guards --workspace=@vocotable/backend",
     "smoke:capacity-ceiling": "npm run smoke:capacity-ceiling --workspace=@vocotable/backend",
-    "smoke:inbox-retry": "npm run smoke:inbox-retry --workspace=@vocotable/backend"
+    "smoke:inbox-retry": "npm run smoke:inbox-retry --workspace=@vocotable/backend",
+    "check:voice-lines": ".claude/skills/retell-agent-quality/scripts/check-all-lines.sh",
+    "check:voice-lines:selftest": "node .claude/skills/retell-agent-quality/scripts/selftest-assert-line.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
