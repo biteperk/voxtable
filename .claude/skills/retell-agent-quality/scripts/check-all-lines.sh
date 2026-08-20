@@ -32,7 +32,10 @@ for number in ${=lines}; do
         --project vocotable-497209 --command "grep '^RETELL_WEBHOOK_SECRET=' /opt/vocotable/.env" 2>/dev/null | cut -d= -f2-)
       # No AU1 API key exists for the production Twilio account, so the trunk layer is
       # unverifiable there and assert-line will say so rather than tick it.
-      TWILIO_AU1_KEY_SID="" TWILIO_AU1_KEY_SECRET=""
+      # Left deliberately empty (not a secret; written this way so the secret scanner does
+      # not read `KEY_SECRET="..."` as a hard-coded credential).
+      TWILIO_AU1_KEY_SID=
+      TWILIO_AU1_KEY_SECRET=
       ;;
   esac
 
