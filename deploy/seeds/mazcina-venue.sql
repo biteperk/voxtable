@@ -1,4 +1,6 @@
--- Mazcina Resto-Bar — the real venue details for the staging row.
+-- Mazcina Resto Bar — the real venue details for the staging row.
+-- (Name confirmed with Camilo 20 Aug 2026: "Mazcina Resto Bar", no hyphen. It is
+-- what Bella says — restaurants.name becomes the {{restaurant_name}} variable.)
 --
 -- Applied as UPDATEs, not INSERTs: the row already exists, and staging-venue.sql's
 -- INSERT is ON CONFLICT (id) DO NOTHING, so editing that file would change nothing here.
@@ -26,7 +28,7 @@
 BEGIN;
 
 UPDATE restaurants SET
-  name                  = 'Mazcina',
+  name                  = 'Mazcina Resto Bar',
   owner_name            = 'Camilo',
   timezone              = 'Australia/Sydney',
   address               = '248 Palmer St, Shop 6',
