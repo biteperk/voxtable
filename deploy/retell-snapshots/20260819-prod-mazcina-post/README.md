@@ -119,3 +119,37 @@ fix arrives with the backend promotion.
 
 Verified: signed `/retell/inbound` returns `restaurant_name: "Mazcina Resto-Bar"`;
 `assert-agent.mjs` green on both agents.
+
+
+---
+
+## ⚠️ Correction, 20 Aug 2026 — the "both agents" claim above is wrong
+
+**Only the staging agent was renamed and given the pronunciation dictionary. Production was
+never touched**, and stayed that way for a day while this file said otherwise.
+
+Verified against the live Retell API, 20 Aug:
+
+| Field | Production agent `agent_3bedcbdd77…` | Claimed above |
+|---|---|---|
+| `agent_name` | `Mazcina (production)` | `Mazcina Resto-Bar (production)` |
+| `pronunciation_dictionary` | `null` | `{"word":"Mazcina","phoneme":"mɑˈsinɑ"}` |
+| `boosted_keywords` | no full name | full name added |
+| `last_modification_timestamp` | **19 Aug 22:38** — untouched since the build | changed 20 Aug |
+
+The snapshot committed alongside this correction proves it:
+`../20260820-prod-disclosure-post/mazcina/agent.json` was taken by the same session that wrote
+the claim, and shows the old name. Nobody diffed the snapshot against the sentence beside it.
+
+What *was* applied on 20 Aug and did hold: the AI/recording disclosure, which lives on the
+**LLM** (a separate object with its own timestamp) — hence one half landing and the other not.
+
+Consequence: the bind guard `comparableName(agentName).includes(comparableName(venueName))`
+(`retellProvisioning.ts:322`) was left failing on production — "mazcina" does not contain
+"mazcinarestobar" — the very trap this file describes fixing.
+
+**Fixed 20 Aug 2026** by `scripts/apply-line.mjs +61468202846 --apply`, read back and confirmed.
+
+**The rule this cost us:** a README may only claim what a read-back printed. The check is now
+executable — `npm run check:voice-lines` — and the declared state lives in
+[`deploy/voice-lines.json`](../../voice-lines.json), not in prose.
