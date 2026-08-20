@@ -89,6 +89,11 @@ export function AgreementStep({ onSaved, onBack = null }) {
     setError(null);
     setFieldErrors({});
     const payload = {
+      document_set_version: config.document_set_version,
+      csa_url: config.csa_url,
+      schedule_url: config.schedule_url,
+      csa_sha256: config.csa_sha256,
+      schedule_sha256: config.schedule_sha256,
       client_legal_name: form.client_legal_name.trim(),
       client_abn: form.client_abn.trim(),
       services: form.services,
@@ -130,11 +135,6 @@ export function AgreementStep({ onSaved, onBack = null }) {
       <p className="onboarding-lead">
         A couple of decisions about your service and your callers' data — then Bella can get to work.
       </p>
-      {config.document_set_version === "DRAFT" && (
-        <p className="onboarding-field-help">
-          <Icon name="info" /> Preview environment — the agreement documents are not final yet.
-        </p>
-      )}
       <form onSubmit={submit} className="onboarding-form">
         <div className="onboarding-field-row">
           <label className="onboarding-field">

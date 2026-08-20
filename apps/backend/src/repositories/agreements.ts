@@ -23,6 +23,8 @@ export interface AcceptanceInsert {
   userId: string;
   channel: "online" | "offline";
   documentSetVersion: string;
+  csaUrl: string;
+  scheduleUrl: string;
   csaSha256: string;
   scheduleSha256: string;
   consentTerms: boolean;
@@ -91,10 +93,10 @@ export async function insertAcceptance(
     `
     INSERT INTO agreement_acceptances (
       restaurant_id, user_id, channel, document_set_version,
-      csa_sha256, schedule_sha256,
+      csa_url, schedule_url, csa_sha256, schedule_sha256,
       consent_terms, consent_overseas, consent_disclosure,
       ip_address, user_agent, order_form_json
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
     RETURNING id
     `,
     [
@@ -102,6 +104,8 @@ export async function insertAcceptance(
       input.userId,
       input.channel,
       input.documentSetVersion,
+      input.csaUrl,
+      input.scheduleUrl,
       input.csaSha256,
       input.scheduleSha256,
       input.consentTerms,

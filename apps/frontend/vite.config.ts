@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 
 // @ts-expect-error — plain JS module shared with the app and its unit tests.
 import { missingFirebaseKeys } from "./src/lib/firebaseConfig.js";
+// @ts-expect-error — plain JS module shared with the app and its unit tests.
+import { missingLegalDocumentKeys } from "./src/lib/legalDocuments.js";
 
 /**
  * Fail the BUILD when Firebase config is missing, rather than shipping.
@@ -16,20 +18,24 @@ import { missingFirebaseKeys } from "./src/lib/firebaseConfig.js";
  * legitimate thing to do while working on something unrelated, and the runtime
  * error in firebaseConfig.js is enough there.
  */
-function requireFirebaseConfigForBuild(mode: string): Plugin {
+function requireFrontendConfigForBuild(mode: string): Plugin {
   return {
-    name: "require-firebase-config",
+    name: "require-frontend-config",
     apply: "build",
     configResolved(config) {
       const env = loadEnv(mode, config.envDir ?? process.cwd(), "VITE_");
-      const missing = missingFirebaseKeys({ ...env, ...process.env });
+      const buildEnv = { ...env, ...process.env };
+      const missing = [
+        ...missingFirebaseKeys(buildEnv),
+        ...missingLegalDocumentKeys(buildEnv)
+      ];
       if (missing.length > 0) {
         throw new Error(
-          `\n\nRefusing to build: Firebase is not configured.\n` +
+          `\n\nRefusing to build: frontend config is incomplete.\n` +
             `Missing: ${missing.join(", ")}\n\n` +
-            `Building without these produces a bundle where sign-in is broken for\n` +
-            `everyone, with no error at build time. Set them as repo variables in\n` +
-            `GitHub and in the CI build job, or in apps/frontend/.env.local locally.\n` +
+            `Building without these produces a bundle where sign-in or legal-document\n` +
+            `acceptance is broken. Set them as GitHub Environment variables and in\n` +
+            `the CI build job, or in apps/frontend/.env.local locally.\n` +
             `See apps/frontend/.env.example.\n`
         );
       }
@@ -38,7 +44,7 @@ function requireFirebaseConfigForBuild(mode: string): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), requireFirebaseConfigForBuild(mode)],
+  plugins: [react(), requireFrontendConfigForBuild(mode)],
   root: ".",
   server: {
     host: "127.0.0.1",

@@ -1,18 +1,8 @@
 -- Mirror of migrations/030_order_payments.sql for the parked fresh-install
 -- baseline. Guest payments for voice orders: Stripe Checkout Sessions
 -- (Connect destination charges). Financial ledger — never cleaned up, FKs
--- RESTRICT. NOTE: enum lives in 002_types.sql territory in spirit, kept local
--- here because it is used by this table only.
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_payment_status') THEN
-    CREATE TYPE order_payment_status AS ENUM (
-      'created', 'sent', 'processing', 'paid', 'expired', 'failed',
-      'cancelled', 'refunded', 'disputed'
-    );
-  END IF;
-END $$;
+-- RESTRICT. The order_payment_status enum is declared with every other shared
+-- enum in 002_types.sql, per this tree's rule that types live in core.
 
 CREATE TABLE IF NOT EXISTS menu_orders.order_payments (
   id                         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -22,7 +12,7 @@ CREATE TABLE IF NOT EXISTS menu_orders.order_payments (
   stripe_checkout_session_id TEXT,
   stripe_payment_intent_id   TEXT,
   stripe_connect_account_id  TEXT,
-  status                     order_payment_status NOT NULL DEFAULT 'created',
+  status                     core.order_payment_status NOT NULL DEFAULT 'created',
   currency                   TEXT NOT NULL DEFAULT 'aud',
   amount_cents               INTEGER NOT NULL CHECK (amount_cents > 0),
   amount_received_cents      INTEGER,

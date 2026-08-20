@@ -75,11 +75,27 @@ const calcomAttendeeSchema = z
   })
   .passthrough();
 
+// `eventTypeId` is how an inbound booking finds its venue — the Cal.com
+// equivalent of the dialed number. It is deliberately OPTIONAL here even though
+// the handler cannot proceed without it.
+//
+// Required would be worse. A required field that Cal.com stops sending makes
+// parseCalcomWebhookPayload return "invalid", which throws, which routes/cal.ts
+// converts to a 200 — so Cal.com never retries and every web booking is lost
+// with nothing but a failed inbox row to show for it. Optional lets the payload
+// through to the resolution site, which fails closed loudly, names the event
+// type, and cancels the booking back so the guest is not left holding a
+// confirmation for a table nobody knows about.
+//
+// Cal.com has already changed this payload's shape once without a version bump
+// (calcom/cal.diy#28508 — the root `attendeeSeatId` was removed), so "the field
+// is documented" is not a reason to make parsing depend on it.
 const calcomBookingCreatedPayloadSchema = z
   .object({
     uid: z.string().min(1),
     startTime: z.string().min(1),
     endTime: z.string().optional(),
+    eventTypeId: z.number().int().positive().optional(),
     attendees: z.array(calcomAttendeeSchema).optional(),
     responses: z.record(z.unknown()).optional(),
     bookingFieldsResponses: z.record(z.unknown()).optional(),
@@ -93,6 +109,7 @@ const calcomBookingCancelledPayloadSchema = z
   .object({
     uid: z.string().min(1),
     startTime: z.string().optional(),
+    eventTypeId: z.number().int().positive().optional(),
     cancellationReason: z.string().optional()
   })
   .passthrough();
@@ -101,7 +118,8 @@ const calcomBookingRescheduledPayloadSchema = z
   .object({
     uid: z.string().min(1),
     rescheduleUid: z.string().optional(),
-    startTime: z.string().optional()
+    startTime: z.string().optional(),
+    eventTypeId: z.number().int().positive().optional()
   })
   .passthrough();
 
@@ -182,11 +200,17 @@ const CREATE_RESPONSE_FIXTURE: unknown = {
   }
 };
 
+// `eventTypeId` and `bookingId` mirror the field names and nesting in the real
+// Cal.com payload published in calcom/cal.diy#28508 — not invented shapes.
+// `eventTypeId` matters most: it is what resolves a booking to a venue, and a
+// fixture that omits it would let a schema regression through to production.
 const WEBHOOK_CREATED_FIXTURE: unknown = {
   triggerEvent: "BOOKING_CREATED",
   createdAt: "2026-05-26T08:06:19.740Z",
   payload: {
     uid: "i9VjQumMpdQfuvURCjtkot",
+    bookingId: 12345,
+    eventTypeId: 3414737,
     startTime: "2026-05-30T09:30:00.000Z",
     endTime: "2026-05-30T11:00:00.000Z",
     attendees: [
@@ -201,7 +225,23 @@ const WEBHOOK_CANCELLED_FIXTURE: unknown = {
   createdAt: "2026-05-26T09:00:00.000Z",
   payload: {
     uid: "i9VjQumMpdQfuvURCjtkot",
+    eventTypeId: 3414737,
     cancellationReason: "Guest requested"
+  }
+};
+
+// Deliberately no eventTypeId. Proves the schema still parses a payload without
+// it, which is the whole reason the field is optional: a Cal.com change that
+// drops it must degrade to a loud, handled fail-closed at the resolution site,
+// never to an "invalid payload" that routes/cal.ts turns into a silent 200.
+const WEBHOOK_CREATED_NO_EVENT_TYPE_FIXTURE: unknown = {
+  triggerEvent: "BOOKING_CREATED",
+  createdAt: "2026-05-26T08:06:19.740Z",
+  payload: {
+    uid: "i9VjQumMpdQfuvURCjtkot",
+    startTime: "2026-05-30T09:30:00.000Z",
+    attendees: [{ name: "Drew", email: "drew@example.com" }],
+    responses: { "party-size": "2" }
   }
 };
 
@@ -214,6 +254,16 @@ export function verifyCalcomSchemasAgainstFixtures(): void {
     [
       "calcomCreateBookingResponseSchema",
       () => calcomCreateBookingResponseSchema.parse(CREATE_RESPONSE_FIXTURE)
+    ],
+    [
+      "calcomWebhookEnvelopeSchema(BOOKING_CREATED without eventTypeId)",
+      () => {
+        const env = calcomWebhookEnvelopeSchema.parse(WEBHOOK_CREATED_NO_EVENT_TYPE_FIXTURE);
+        const inner = parseCalcomWebhookPayload(env.triggerEvent, env.payload);
+        if (inner.kind !== "created") {
+          throw new Error(`expected kind=created, got ${inner.kind}`);
+        }
+      }
     ],
     [
       "calcomWebhookEnvelopeSchema(BOOKING_CREATED)",

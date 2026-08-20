@@ -45,20 +45,36 @@ export async function findAvailableTable(params: {
         FROM reservations r
         WHERE r.restaurant_id = $1
           AND r.table_id = t.id
-          AND r.reservation_date = $3::date
+          -- The NEIGHBOURING days count, not just the requested one.
+          --
+          -- A booking that starts the day before can still be running: 23:00
+          -- plus 90 minutes ends at 00:30 the next day, so a 00:00 request saw
+          -- a free table that was not free. The caller was offered the slot,
+          -- accepted, and then createBooking tripped reservations_no_overlap —
+          -- which DOES span midnight — so they were told "that time just got
+          -- booked by another caller" about a table nobody had just booked.
+          -- The mirror case is a booking we are about to take running INTO the
+          -- next day and colliding with an early reservation there.
+          AND r.reservation_date BETWEEN ($3::date - 1) AND ($3::date + 1)
           AND r.status IN ('pending', 'confirmed')
           AND ($6::uuid IS NULL OR r.id <> $6::uuid)
           -- Overlap is computed on full timestamps, not bare TIME values.
           -- '23:00'::time + interval '90 minutes' wraps to 00:30 the SAME day,
           -- so a late booking looked like it ended before it started and every
-          -- overlap test returned false. Anchoring both intervals to the date
-          -- makes 23:00 + 90 minutes land on 00:30 the NEXT day, as it should.
+          -- overlap test returned false. Anchoring to a date makes 23:00 + 90
+          -- minutes land on 00:30 the NEXT day, as it should.
+          --
+          -- Each existing reservation anchors to ITS OWN date. It used to
+          -- anchor to the requested date, which was only ever correct because
+          -- the filter above forced them to be the same day — the assumption
+          -- that hid this bug.
+          --
           -- The existing reservation uses its own snapshotted duration rather
           -- than the restaurant's current setting, so changing that setting can
           -- no longer retroactively shorten bookings that were already sold.
           AND (
-            ($3::date + r.start_time,
-             $3::date + r.start_time + make_interval(mins => r.duration_minutes))
+            (r.reservation_date + r.start_time,
+             r.reservation_date + r.start_time + make_interval(mins => r.duration_minutes))
             OVERLAPS
             ($3::date + $4::time,
              $3::date + $4::time + make_interval(mins => $5::int))
@@ -139,20 +155,36 @@ export async function listAvailableTables(params: {
         FROM reservations r
         WHERE r.restaurant_id = $1
           AND r.table_id = t.id
-          AND r.reservation_date = $3::date
+          -- The NEIGHBOURING days count, not just the requested one.
+          --
+          -- A booking that starts the day before can still be running: 23:00
+          -- plus 90 minutes ends at 00:30 the next day, so a 00:00 request saw
+          -- a free table that was not free. The caller was offered the slot,
+          -- accepted, and then createBooking tripped reservations_no_overlap —
+          -- which DOES span midnight — so they were told "that time just got
+          -- booked by another caller" about a table nobody had just booked.
+          -- The mirror case is a booking we are about to take running INTO the
+          -- next day and colliding with an early reservation there.
+          AND r.reservation_date BETWEEN ($3::date - 1) AND ($3::date + 1)
           AND r.status IN ('pending', 'confirmed')
           AND ($6::uuid IS NULL OR r.id <> $6::uuid)
           -- Overlap is computed on full timestamps, not bare TIME values.
           -- '23:00'::time + interval '90 minutes' wraps to 00:30 the SAME day,
           -- so a late booking looked like it ended before it started and every
-          -- overlap test returned false. Anchoring both intervals to the date
-          -- makes 23:00 + 90 minutes land on 00:30 the NEXT day, as it should.
+          -- overlap test returned false. Anchoring to a date makes 23:00 + 90
+          -- minutes land on 00:30 the NEXT day, as it should.
+          --
+          -- Each existing reservation anchors to ITS OWN date. It used to
+          -- anchor to the requested date, which was only ever correct because
+          -- the filter above forced them to be the same day — the assumption
+          -- that hid this bug.
+          --
           -- The existing reservation uses its own snapshotted duration rather
           -- than the restaurant's current setting, so changing that setting can
           -- no longer retroactively shorten bookings that were already sold.
           AND (
-            ($3::date + r.start_time,
-             $3::date + r.start_time + make_interval(mins => r.duration_minutes))
+            (r.reservation_date + r.start_time,
+             r.reservation_date + r.start_time + make_interval(mins => r.duration_minutes))
             OVERLAPS
             ($3::date + $4::time,
              $3::date + $4::time + make_interval(mins => $5::int))

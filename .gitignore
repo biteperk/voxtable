@@ -60,9 +60,30 @@ Desktop.ini
 !.vscode/settings.json
 docker-compose.override.yml
 firebase-admin.json
+# Any downloaded GCP service-account key, not just the one we happen to name.
+# The line above only matches a file called exactly firebase-admin.json. A key
+# downloaded from the console is named <project-id>-<hex>.json — for us that is
+# bp-voxtable-stg-a1b2c3d4e5f6.json or similar, which nothing here used to catch.
+# gitleaks in CI scans the working tree, so it only fires AFTER the commit exists,
+# and a key that reached git is not removed by rewriting history — only by rolling
+# it at the vendor. Hence belt and braces.
+#
+# The project-prefix patterns are safe: no tracked file matches them (verified),
+# and every GCP project we own starts with one of these.
+*service-account*.json
+*serviceaccount*.json
+*-key.json
+*-credentials.json
+gcp-*.json
+bp-*.json
+voxtable-*.json
+vocotable-*.json
 
-# Claude Code local session config (per-developer launch.json etc.)
-.claude/
+# Claude Code local session config (per-developer launch.json etc.) stays
+# ignored, but skills are versioned knowledge — they are the SSOT for vendor
+# workflows and must survive any one laptop.
+.claude/*
+!.claude/skills/
 
 # Local ops references — account identifiers / PII (vendor logins, SIDs).
 # Never committed; secrets belong in the prod env / password manager, not git.
@@ -93,12 +114,23 @@ asic/
 # Customer collateral (menus, talk tracks, account plans) — belongs in the
 # private customers repo / Drive, never in the code repo. Per-venue folders:
 Cuban-Corner/
+# Mazcina's source menu PDF is ~433 MB of scanned page images. Committing it
+# would put it in history permanently (removal = a history rewrite), so the
+# folder is ignored as a whole. The derived import JSON is small, but it is
+# still the venue's menu data, so it stays here too — the runbook records how
+# to regenerate it.
+mazcina/
 
 # Vendor correspondence saved to the repo root (Twilio compliance notices,
 # bundle approvals, Stripe quotes). They carry account identifiers, ticket
 # numbers and contact details — the decisions belong in the runbooks, the
 # documents belong in Drive.
 /*.pdf
+# Same reasoning for docs/ — the ACMA sender-ID approvals landed here as email
+# attachments carrying the director's name and service-of-notice address. The
+# filed copies live in asic/04-correspondence/ (also ignored); nothing in docs/
+# is tracked as a PDF today.
+docs/*.pdf
 
 # Generated project dashboard (rebuild with: npm run dashboard)
 /voxtable-dashboard.html

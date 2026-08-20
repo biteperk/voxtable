@@ -42,6 +42,14 @@ interface OutboxRowLite {
   failed_at: string | null;
 }
 
+async function reservationCount(restaurantId: string): Promise<number> {
+  const r = await pool.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM reservations WHERE restaurant_id = $1",
+    [restaurantId]
+  );
+  return Number(r.rows[0]!.n);
+}
+
 async function outboxRows(reservationId: string): Promise<OutboxRowLite[]> {
   const result = await pool.query<OutboxRowLite>(
     `SELECT id, op, payload, attempts, succeeded_at, failed_at
@@ -96,6 +104,26 @@ async function main(): Promise<void> {
       { label: "T2", minCapacity: 1, maxCapacity: 4 },
       { label: "T3", minCapacity: 1, maxCapacity: 4 },
       { label: "T4", minCapacity: 1, maxCapacity: 4 }
+    ]
+  });
+
+  // Migration 035: a venue is mirrored to Cal.com only while it holds an event
+  // type. Derived from the pid so concurrent smoke runs can't collide on the
+  // partial unique index.
+  const eventTypeId = 900_000 + (process.pid % 90_000);
+  await pool.query("UPDATE restaurants SET calcom_event_type_id = $2 WHERE id = $1", [
+    restaurantId,
+    eventTypeId
+  ]);
+
+  // A second venue that is deliberately NOT bound to Cal.com — most venues are
+  // voice-only, and that must be free.
+  const { restaurantId: unboundId } = await createSmokeRestaurant({
+    name: `smoke-calcom-unbound-${SMOKE_SUFFIX}`,
+    phoneNumber: "+61255500098",
+    tables: [
+      { label: "U1", minCapacity: 1, maxCapacity: 4 },
+      { label: "U2", minCapacity: 1, maxCapacity: 4 }
     ]
   });
 
@@ -186,8 +214,71 @@ async function main(): Promise<void> {
       `uid-ours-${SMOKE_SUFFIX}`
     );
     assert("B15: replayed echo is claimed (idempotent), never a web booking", replay === true);
+
+    // ---- 035: a venue with no Cal.com event type is not mirrored ----------
+    //
+    // The gate has to be at ENQUEUE, not at push. An outbox row written for an
+    // unbound venue can only ever dead-letter, healthAlerter pages Slack at a
+    // dead-letter threshold of zero, and those failed rows are never swept — so
+    // "this venue is voice-only" would present as a permanent, growing incident.
+    const unbound = await book(unboundId, "18:00", "+61255511009");
+    assert(
+      "035: an unbound venue enqueues NO outbox row",
+      (await outboxRows(unbound.bookingId)).length === 0,
+      await outboxRows(unbound.bookingId)
+    );
+
+    // The asymmetry that keeps unbinding safe: cancelling a booking that is
+    // already live on Cal.com must still push, or the per-venue kill switch
+    // would strand it as an uncancellable ghost holding public availability.
+    // Bind, book, unbind, then cancel — the cancel gates on the reservation's
+    // uid, never on the venue's current binding.
+    await pool.query("UPDATE restaurants SET calcom_event_type_id = $2 WHERE id = $1", [
+      unboundId,
+      eventTypeId + 1
+    ]);
+    const stranded = await book(unboundId, "19:00", "+61255511010");
+    await pool.query("UPDATE reservations SET calcom_booking_uid = $2 WHERE id = $1", [
+      stranded.bookingId,
+      `uid-stranded-${SMOKE_SUFFIX}`
+    ]);
+    await pool.query("UPDATE restaurants SET calcom_event_type_id = NULL WHERE id = $1", [
+      unboundId
+    ]);
+    await cancelBooking({ bookingId: stranded.bookingId, restaurantId: unboundId });
+    assert(
+      "035: unbinding a venue still lets its live bookings be cancelled",
+      (await outboxRows(stranded.bookingId)).some((r) => r.op === "cancel"),
+      (await outboxRows(stranded.bookingId)).map((r) => r.op)
+    );
+
+    // ---- 035: a tenant mismatch must never create a booking ---------------
+    //
+    // An event type rebound from venue A to venue B while a push for an A
+    // booking was in flight. The echo carries A's reservation id; the event type
+    // now resolves to B. This used to `return false`, which fell through to the
+    // web-booking path and created a PHANTOM reservation at B — the voice
+    // caller's name and party size, occupying one of B's tables — while A's
+    // reservation never got its uid, so its cancel never mirrored.
+    const beforeMismatch = await reservationCount(unboundId);
+    let mismatchThrew = false;
+    try {
+      await reconcileMirroredBooking(
+        { vocotable_reservation_id: voice.bookingId },
+        `uid-mismatch-${SMOKE_SUFFIX}`,
+        unboundId // resolved venue differs from the reservation's venue
+      );
+    } catch {
+      mismatchThrew = true;
+    }
+    assert("035: a tenant mismatch is terminal, not a fall-through", mismatchThrew);
+    assert(
+      "035: a tenant mismatch creates NO reservation at the resolved venue",
+      (await reservationCount(unboundId)) === beforeMismatch
+    );
   } finally {
     await cleanupSmokeRestaurant(restaurantId);
+    await cleanupSmokeRestaurant(unboundId);
     await pool.end();
   }
 

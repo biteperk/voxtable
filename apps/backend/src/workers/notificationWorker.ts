@@ -9,6 +9,7 @@ import twilio from "twilio";
 
 import { env } from "../config/env";
 import { logger, withTickLogContext } from "../utils/logger";
+import { registerTickExpectation } from "../utils/tickPulse";
 import {
   claimReadyNotifications,
   markNotificationFailed,
@@ -16,7 +17,12 @@ import {
   markNotificationSent,
   type NotificationRow
 } from "../repositories/notifications";
-import { isEmailEnabled, isNotificationsEnabled, isSmsEnabled } from "../services/notificationService";
+import {
+  isEmailEnabled,
+  isNotificationsEnabled,
+  isSmsEnabled,
+  smsSenderParams
+} from "../services/notificationService";
 
 const TICK_INTERVAL_MS = 5_000;
 const BATCH_SIZE = 10;
@@ -89,7 +95,10 @@ async function sendEmail(row: NotificationRow): Promise<void> {
 }
 
 async function sendSms(row: NotificationRow): Promise<void> {
-  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.NOTIFICATIONS_SMS_FROM) {
+  // Exactly one sender parameter — see smsSenderParams for why passing both
+  // messagingServiceSid and from would silently disable the branded sender.
+  const sender = smsSenderParams();
+  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !sender) {
     const err = new Error("SMS not configured");
     (err as Error & { transient?: boolean }).transient = false;
     throw err;
@@ -102,8 +111,8 @@ async function sendSms(row: NotificationRow): Promise<void> {
   try {
     await client.messages.create({
       to: row.recipient,
-      from: env.NOTIFICATIONS_SMS_FROM,
-      body: row.body
+      body: row.body,
+      ...sender
     });
   } catch (error) {
     // Mirror sendEmail: only rate limits / 5xx are worth retrying. Twilio SDK
@@ -158,6 +167,9 @@ export function startNotificationWorker(): void {
   }
   if (intervalHandle !== null) return;
   logger.info({ evt: "notification_worker_started" });
+  // Only registered once the worker genuinely starts ticking, so a
+  // flag-disabled no-op is never reported as stalled.
+  registerTickExpectation("notifications", TICK_INTERVAL_MS);
   intervalHandle = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;

@@ -211,3 +211,22 @@ export async function countRecentPaymentAttempts(
   );
   return Number(result.rows[0]?.count ?? 0);
 }
+
+/**
+ * Every payment attempt ever made for this order, not just the recent ones.
+ *
+ * Used as the per-attempt discriminator in the Stripe idempotency key. It has
+ * to count ALL rows, unlike countRecentPaymentAttempts: that one resets every
+ * hour, so it would hand the same key back to a later attempt inside Stripe's
+ * 24-hour idempotency window — which is the bug this exists to prevent.
+ */
+export async function countPaymentAttempts(
+  orderId: string,
+  db: DbClient = pool
+): Promise<number> {
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM order_payments WHERE order_id = $1`,
+    [orderId]
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}

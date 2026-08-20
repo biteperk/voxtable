@@ -668,6 +668,39 @@ ${warnings.length ? `<div class="notice">Partial data: could not fetch ${esc([..
   ${content.decisions.map((d) => `<div class="dec"><span class="tld">${esc(d.date)}</span> <span class="tlt">${esc(d.title)}</span><div class="why">${esc(d.rationale)}</div></div>`).join("")}
 </section>
 
+<section class="sec" aria-label="Names and environments">
+  <h2>Names &amp; environments</h2>
+  <p class="sec-sub">What everything is called — new names vs the legacy ones still serving. The registry of record is <a href="${esc(content.links.repo)}/blob/integration/NAMES.md" target="_blank" rel="noopener">NAMES.md</a>; when this section and NAMES.md disagree, NAMES.md wins.</p>
+  <div class="panel" style="padding:6px 16px;overflow-x:auto;margin-bottom:14px">
+  <table>
+    <thead><tr><th>Surface</th><th>New name</th><th>Old name(s) — still serving</th><th>Status</th></tr></thead>
+    <tbody>
+    ${(content.naming?.hostnames ?? []).map((h) => `<tr>
+      <td>${esc(h.surface)}</td>
+      <td><code>${esc(h.new)}</code></td>
+      <td>${esc(h.old)}</td>
+      <td>${esc(h.status)}</td>
+    </tr>`).join("")}
+    </tbody>
+  </table>
+  </div>
+  <div class="panel" style="padding:6px 16px;overflow-x:auto;margin-bottom:14px">
+  <table>
+    <thead><tr><th>Infrastructure</th><th>Name</th></tr></thead>
+    <tbody>
+    ${(content.naming?.infrastructure ?? []).map((i) => `<tr>
+      <td>${esc(i.thing)}</td>
+      <td><code>${esc(i.name)}</code></td>
+    </tr>`).join("")}
+    </tbody>
+  </table>
+  </div>
+  <p class="sec-sub" style="margin-bottom:4px"><strong style="color:var(--text)">Deliberately NOT changing — do not "fix" these:</strong></p>
+  <ul class="list">
+    ${(content.naming?.never_rename ?? []).map((n) => `<li>${esc(n)}</li>`).join("")}
+  </ul>
+</section>
+
 <section class="sec" aria-label="Journey">
   <h2>The journey</h2>
   <ul class="tl">

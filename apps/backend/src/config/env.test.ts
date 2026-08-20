@@ -39,7 +39,10 @@ const productionEnv = {
   TWILIO_AUTH_TOKEN: "tok",
   TWILIO_VALIDATE_SIGNATURE: "true",
   DASHBOARD_VERIFY_AUTH: "true",
-  DASHBOARD_ALLOWED_EMAILS: "sam@example.com"
+  DASHBOARD_ALLOWED_EMAILS: "sam@example.com",
+  // Required in every production, not just self-serve ones: the acceptance
+  // ledger is only evidence if the server decides what was accepted.
+  LEGAL_DOCUMENTS_MANIFEST_URL: "https://storage.googleapis.com/bp-legal/current/manifest.json"
 };
 
 const issuePaths = (result: ReturnType<typeof validateEnv>): string[] =>
@@ -221,4 +224,115 @@ test("production with the full order-payments config boots", () => {
     PUBLIC_ORDER_RETURN_BASE_URL: "https://app.biteperk.com.au"
   });
   assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});
+
+test("production order-payments boots on the Messaging Service alone, with no NOTIFICATIONS_SMS_FROM", () => {
+  // The branded-SMS configuration: the Messaging Service owns the sender pool,
+  // so there is no bare `from` to set. Before the sender ID landed this gate
+  // demanded NOTIFICATIONS_SMS_FROM unconditionally, which would have made a
+  // correctly-configured branded deployment refuse to boot.
+  const result = validateEnv({
+    ...productionEnv,
+    ORDER_PAYMENTS_ENABLED: "true",
+    STRIPE_CONNECT_ENABLED: "true",
+    NOTIFICATIONS_ENABLED: "true",
+    EMAIL_PROVIDER: "zeptomail",
+    ZEPTOMAIL_TOKEN: "ztok",
+    STRIPE_SECRET_KEY: "sk_test_x",
+    STRIPE_WEBHOOK_SECRET: "whsec_x",
+    NOTIFICATIONS_MESSAGING_SERVICE_SID: "MG7ceaa2aaa3cea6195ea7979d57b78b14",
+    PUBLIC_ORDER_RETURN_BASE_URL: "https://app.biteperk.com.au"
+  });
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});
+
+test("a malformed Messaging Service SID is rejected at boot, not at send time", () => {
+  // A typo'd SID would otherwise surface as a Twilio 400 on the first payment
+  // link — mid phone call, with the caller waiting on a text that never comes.
+  const result = validateEnv({
+    ...productionEnv,
+    NOTIFICATIONS_MESSAGING_SERVICE_SID: "MG-nope"
+  });
+  assert.equal(result.success, false);
+  assert.ok(issuePaths(result).includes("NOTIFICATIONS_MESSAGING_SERVICE_SID"));
+});
+
+test("production refuses to boot without the legal-documents manifest, even invite-only", () => {
+  // This gate used to fire only when SELF_SERVE_SIGNUP_ENABLED=true, which
+  // defaults false. An invite-only production therefore booted with no manifest
+  // URL, and the agreement route fell back to writing the browser's own version
+  // string and document hashes into the append-only ledger with a log line.
+  // Self-serve is not what makes the evidence matter — a manually onboarded
+  // venue signs the same agreement.
+  const { LEGAL_DOCUMENTS_MANIFEST_URL, ...withoutManifest } = productionEnv;
+  void LEGAL_DOCUMENTS_MANIFEST_URL;
+
+  const inviteOnly = validateEnv({ ...withoutManifest, SELF_SERVE_SIGNUP_ENABLED: "false" });
+  assert.equal(inviteOnly.success, false, "invite-only production must not boot unverified");
+  assert.ok(issuePaths(inviteOnly).includes("LEGAL_DOCUMENTS_MANIFEST_URL"));
+
+  // And the case that was already covered, so the stricter rule keeps it.
+  const selfServe = validateEnv({ ...withoutManifest, SELF_SERVE_SIGNUP_ENABLED: "true" });
+  assert.equal(selfServe.success, false);
+  assert.ok(issuePaths(selfServe).includes("LEGAL_DOCUMENTS_MANIFEST_URL"));
+});
+
+test("development does not need the manifest — it is the local escape hatch", () => {
+  const result = validateEnv({
+    APP_ENV: "development",
+    DATABASE_URL: DB,
+    PUBLIC_API_BASE_URL: "http://localhost:3050"
+  });
+  assert.equal(result.success, true);
+});
+
+// --- Cal.com per-venue event types (migration 035) ---------------------------
+//
+// These three encode the PR #107 lesson in a second channel: a boot gate must
+// demand deployment config, never per-restaurant data. Cal.com event types moved
+// onto the restaurants row, so the production rule inverted — the value must be
+// ABSENT, not present.
+
+test("production with Cal.com sync on boots without a global event type", () => {
+  const result = validateEnv({
+    ...productionEnv,
+    CALCOM_SYNC_ENABLED: "true",
+    CALCOM_API_KEY: "cal_test_key",
+    CALCOM_WEBHOOK_SECRET: "whsec"
+  });
+  // The old gate demanded CALCOM_EVENT_TYPE_ID here, which is per-venue data —
+  // exactly the mistake that stopped staging booting until PR #107.
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});
+
+test("production refuses a GLOBAL Cal.com event type — it would cross tenants", () => {
+  const result = validateEnv({
+    ...productionEnv,
+    CALCOM_SYNC_ENABLED: "true",
+    CALCOM_API_KEY: "cal_test_key",
+    CALCOM_WEBHOOK_SECRET: "whsec",
+    CALCOM_EVENT_TYPE_ID: "3414737"
+  });
+  assert.equal(result.success, false);
+  assert.ok(issuePaths(result).includes("CALCOM_EVENT_TYPE_ID"));
+});
+
+test("the credentials that ARE deployment config are still demanded", () => {
+  const result = validateEnv({ ...productionEnv, CALCOM_SYNC_ENABLED: "true" });
+  assert.equal(result.success, false);
+  const paths = issuePaths(result);
+  assert.ok(paths.includes("CALCOM_API_KEY"));
+  assert.ok(paths.includes("CALCOM_WEBHOOK_SECRET"));
+});
+
+test("outside production the deprecated key parses but changes nothing", () => {
+  const result = validateEnv({
+    APP_ENV: "development",
+    DATABASE_URL: DB,
+    PUBLIC_API_BASE_URL: "http://localhost:3050",
+    CALCOM_SYNC_ENABLED: "true",
+    CALCOM_EVENT_TYPE_ID: "3414737"
+  });
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+  assert.equal(result.data!.CALCOM_EVENT_TYPE_ID, 3414737);
 });

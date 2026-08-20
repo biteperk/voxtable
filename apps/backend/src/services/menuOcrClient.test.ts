@@ -86,3 +86,33 @@ test("the rejection message never echoes the address back", () => {
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// Liveness pings must not fail the work they report on.
+//
+// heartbeatIngestionJob is a plain pool.query under a 15s query_timeout. When
+// it was awaited unguarded, a DB blip rejected, propagated out of parseMenu,
+// and runJob classified it PERMANENT (isTransient only accepts an AppError
+// with status 503; a pg error is neither). markFailed then threw away a parse
+// the venue had already paid for in vision calls.
+// ---------------------------------------------------------------------------
+
+test("a failing heartbeat does not abort the parse", async () => {
+  const { pingBatchDone } = await import("./menuOcrClient");
+  // The exact shape that used to kill the job: a rejected pg-style error,
+  // which is NOT an AppError and so was classified permanent.
+  const pgError = Object.assign(new Error("query timeout"), { code: "57014" });
+  await assert.doesNotReject(() => pingBatchDone(async () => { throw pgError; }));
+});
+
+test("a missing heartbeat callback is a no-op", async () => {
+  const { pingBatchDone } = await import("./menuOcrClient");
+  await assert.doesNotReject(() => pingBatchDone(undefined));
+});
+
+test("a working heartbeat is still awaited, so the reaper stays informed", async () => {
+  const { pingBatchDone } = await import("./menuOcrClient");
+  let pinged = false;
+  await pingBatchDone(async () => { pinged = true; });
+  assert.equal(pinged, true, "swallowing errors must not mean skipping the call");
+});

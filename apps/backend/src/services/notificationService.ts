@@ -13,7 +13,47 @@ export function isEmailEnabled(): boolean {
 
 export function isSmsEnabled(): boolean {
   if (!env.NOTIFICATIONS_ENABLED) return false;
-  return Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.NOTIFICATIONS_SMS_FROM);
+  return Boolean(
+    env.TWILIO_ACCOUNT_SID &&
+      env.TWILIO_AUTH_TOKEN &&
+      (env.NOTIFICATIONS_MESSAGING_SERVICE_SID || env.NOTIFICATIONS_SMS_FROM)
+  );
+}
+
+/**
+ * The sender half of a Twilio send — exactly one parameter, Messaging Service
+ * first. Returns null when neither is configured (the channel is then not
+ * claimed at all, so rows wait as pending rather than burning attempts).
+ *
+ * Never returns both. Twilio reads `{messagingServiceSid, from}` together as
+ * "keep the service's features but pin this From", which switches OFF automatic
+ * sender selection — so the alphanumeric `BitePerk` sender would be ignored even
+ * once it is in the pool, and the failure is silent. Production has
+ * NOTIFICATIONS_SMS_FROM set today, so that is the live configuration, not a
+ * corner case.
+ *
+ * With the service alone, Twilio picks the alphanumeric sender where the
+ * destination supports it and falls back to a number from the same pool where it
+ * does not. Rolling back to the plain number is unsetting the SID — an env
+ * change, no deploy.
+ */
+export function resolveSmsSender(config: {
+  messagingServiceSid?: string;
+  smsFrom?: string;
+}): { messagingServiceSid: string } | { from: string } | null {
+  if (config.messagingServiceSid) {
+    return { messagingServiceSid: config.messagingServiceSid };
+  }
+  if (config.smsFrom) return { from: config.smsFrom };
+  return null;
+}
+
+/** `resolveSmsSender` bound to the live environment. */
+export function smsSenderParams(): { messagingServiceSid: string } | { from: string } | null {
+  return resolveSmsSender({
+    messagingServiceSid: env.NOTIFICATIONS_MESSAGING_SERVICE_SID,
+    smsFrom: env.NOTIFICATIONS_SMS_FROM
+  });
 }
 
 // The channels are independent: an SMS-only deployment (no email key) must
@@ -48,11 +88,11 @@ const TEMPLATES: Record<NotificationKind, (v: Vars) => { subject: string; body: 
     subject: `🎉 ${v.restaurant ?? "Your restaurant"} is live on VoxTable`,
     body: `Bella is now answering your calls. Manage bookings, calls and your menu from your dashboard anytime.`
   }),
-  trial_ending: (v) => ({
+  trial_ending: (_v) => ({
     subject: `Your VoxTable trial ends soon`,
     body: `Your free trial is ending. No action needed to continue — your subscription will start automatically. Manage your plan anytime from Billing.`
   }),
-  payment_failed: (v) => ({
+  payment_failed: (_v) => ({
     subject: `Action needed: payment issue on your VoxTable account`,
     body: `We couldn't process your latest payment. Please update your card in Billing to keep Bella answering your calls.`
   })

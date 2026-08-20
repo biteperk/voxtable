@@ -62,15 +62,6 @@ export function getStripe(): Stripe {
 }
 
 /**
- * Legacy single-tenant customer (env). Transitional fallback only — per-tenant
- * code resolves restaurants.stripe_customer_id and should pass that explicitly.
- * Returns null when unset (no throw) so callers can decide.
- */
-export function legacyCustomerId(): string | null {
-  return env.STRIPE_CUSTOMER_ID ?? null;
-}
-
-/**
  * Wrap every Stripe call. Logs the full (redacted) error and converts it to a
  * generic AppError — a raw Stripe message can contain customer PII and must
  * never reach the client. Transient errors map to 503, everything else to 502.

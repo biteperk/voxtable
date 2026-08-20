@@ -1,4 +1,5 @@
 import { installCalcomExecutor } from "../services/calcomService";
+import { startInboxWorker, stopInboxWorker } from "../workers/calcomInboxWorker";
 import { startOutboxWorker, stopOutboxWorker } from "../workers/calcomOutboxWorker";
 import { startCleanupWorker, stopCleanupWorker } from "../workers/cleanupWorker";
 import { startHealthAlerter, stopHealthAlerter } from "../workers/healthAlerter";
@@ -19,6 +20,7 @@ export interface BackendWorker {
 
 export const backendWorkers: BackendWorker[] = [
   { name: "calcom-outbox", start: startOutboxWorker, stop: stopOutboxWorker },
+  { name: "calcom-inbox", start: startInboxWorker, stop: stopInboxWorker },
   { name: "health-alerter", start: startHealthAlerter, stop: stopHealthAlerter },
   { name: "cleanup", start: startCleanupWorker, stop: stopCleanupWorker },
   { name: "menu-ocr", start: startMenuOcrWorker, stop: stopMenuOcrWorker },

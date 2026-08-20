@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS operations.notifications_outbox (
   kind TEXT NOT NULL,
   subject TEXT,
   body TEXT NOT NULL,
+  -- Migration 022. Branded alternative; the worker sends text-only when null.
+  body_html TEXT,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
   attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
   next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),

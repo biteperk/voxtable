@@ -213,6 +213,16 @@ export interface CalcomRequestOptions {
    * Idempotency-Key header per RFC draft.
    */
   idempotencyKey?: string;
+  /**
+   * Override the `cal-api-version` header for a single call.
+   *
+   * Cal.com versions PER ENDPOINT, not per API: bookings are pinned below at
+   * 2024-08-13, but /event-types is documented at 2024-06-14 and sending the
+   * bookings version there is not guaranteed to resolve. A blanket bump of the
+   * default would break create and cancel, so the override is per-call and the
+   * default stays where every proven call path already is.
+   */
+  apiVersion?: string;
 }
 
 export interface CalcomResponse<T> {
@@ -252,8 +262,9 @@ export async function calcomRequest<T = unknown>(options: CalcomRequestOptions):
     "content-type": "application/json",
     accept: "application/json",
     // Cal.com v2 requires an explicit API version header to avoid silent
-    // breakage when they ship a new default.
-    "cal-api-version": "2024-08-13"
+    // breakage when they ship a new default. Versioned per endpoint — see
+    // CalcomRequestOptions.apiVersion before changing this default.
+    "cal-api-version": options.apiVersion ?? "2024-08-13"
   };
   if (options.idempotencyKey) {
     // Standard Idempotency-Key header — Cal.com returns the same booking on a
@@ -301,15 +312,40 @@ export async function calcomRequest<T = unknown>(options: CalcomRequestOptions):
         : `Cal.com network error (${options.method} ${options.path}): ${(error as Error).message}`;
     throw new CalcomTransientError(null, message);
   }
-  clearTimeout(timer);
   const durationMs = Date.now() - startedAt;
 
   // Quota counter — every reply (success or 4xx/5xx) counts against Cal.com's
   // rate limit. Recording AFTER the response confirms a real round-trip.
   recordCalcomRequest();
 
+  // The abort deadline stays ARMED until the body has been consumed.
+  //
+  // fetch() resolves as soon as the response HEADERS arrive. clearTimeout used
+  // to run here, before the read below — so a peer (or a proxy) that sent
+  // "200 OK" and then stalled the body left `await response.text()` hanging
+  // with no signal, no socket deadline and no statement_timeout to save it,
+  // because no query was in flight.
+  //
+  // That is not a slow request, it is a permanently wedged worker: the outbox
+  // executor runs INSIDE an open transaction, so the hang holds FOR UPDATE
+  // locks on the claimed rows and a write-pool connection for the life of the
+  // container, and tickInFlight never resets. Nothing detected it either —
+  // /workerz answered 200 regardless and the depth alert needs 100 queued rows.
+  //
   // Best-effort JSON parse — error responses sometimes ship text/plain.
-  const rawText = await response.text();
+  let rawText: string;
+  try {
+    rawText = await response.text();
+  } catch (error) {
+    recordTransientFailure();
+    const message =
+      error instanceof Error && error.name === "AbortError"
+        ? `Cal.com response body timed out after ${timeoutMs}ms (${options.method} ${options.path})`
+        : `Cal.com response body read failed (${options.method} ${options.path}): ${(error as Error).message}`;
+    throw new CalcomTransientError(null, message);
+  } finally {
+    clearTimeout(timer);
+  }
   let parsed: unknown = null;
   try {
     parsed = rawText ? JSON.parse(rawText) : null;

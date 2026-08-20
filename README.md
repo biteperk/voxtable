@@ -103,20 +103,23 @@ Two things that catch people out: **data never promotes** (a venue seeded in sta
 exist in production), and **production is still the VM** — a `main` merge does not deploy the
 backend.
 
-### Branded SMS (ACMA sender ID) — in flight
+### Branded SMS (ACMA sender ID) — registered, not yet switched on
 
 Australia's SMS Sender ID Register went live on 1 July 2026. Any *alphanumeric* sender ID (a brand name where the phone number would normally be) that isn't registered with ACMA gets replaced with the word **`Unverified`** on the recipient's handset, grouped in with scam messages.
 
-**We have no exposure right now** — VoxTable sends SMS from the Twilio number, not a sender ID. So this is pre-emptive work, and the order matters: **register first, change the config second.** You cannot switch on a branded sender and register afterwards.
+The order matters and we followed it: **register first, change the config second.** You cannot switch on a branded sender and register afterwards.
 
-Status as of 13 August 2026:
+Status as of 18 August 2026:
 
 - ✅ `Biteperk-production` upgraded off trial
 - ✅ Trust Hub Primary Customer Profile **approved** — Bundle SID `BU975db7eebfb0b5525d6762f3d77e2087`
-- ⏳ `BitePerk` sender ID **lodged 11 Aug and in review** — Twilio ticket `28926493`
-- ⏳ ABR authorised-contact email + myID identity — outstanding, and both are slow
+- ✅ **ACMA approved both decisions on 18 Aug** — participation by Biteperk Pty Ltd, and registration of the sender ID **`BitePerk`** (lodged 11 Aug via Twilio Inc., so seven days end to end; no fee requested)
+- ✅ **Code side shipped 18 Aug** — `notificationWorker` sends via the Messaging Service (`NOTIFICATIONS_MESSAGING_SERVICE_SID`); `npm run smoke:sms-sender` reads the config back from Twilio and proves delivery
+- ⏳ **Not yet in use.** Approval does not change what a handset shows, and neither did the deploy — the remaining steps are console-only: enable the account-wide *Alphanumeric Sender ID* toggle, confirm AU is on in Geo Permissions, and add `BitePerk` as a sender on `voxtable-prod-notifications` with the number kept as fallback — see [`deploy/runbooks/acma-sender-id-registration.md`](deploy/runbooks/acma-sender-id-registration.md) §6
 
-⚠️ A sender ID is bound **per Account SID**. It is registered against production only, so SMS sent from `Biteperk-staging` is stamped `Unverified` on the handset regardless of approval — a branded-SMS test on staging measures the wrong thing until staging's SID is added to that ticket.
+Two things to know. Alphanumeric SMS is **one-way** — recipients cannot reply and `STOP` does not work, so every message needs an alternative opt-out and none may invite a reply (the existing payment-link copy already complies, with a unit test guarding it). And the send uses `messagingServiceSid` rather than a bare `from`: `from` has **no fallback** and fails outright where alphanumeric senders are unsupported. ⚠️ The two are never sent together — Twilio reads that pair as "pin this sender", which would silently un-brand every message even after `BitePerk` is in the pool.
+
+⚠️ A sender ID is bound **per Account SID**. It is registered against production only, so a branded-SMS test on staging measures the wrong thing until staging's SID is added to that ticket — and **the failure is silent**: tested 18 Aug 2026, a staging send delivered from the phone number with no `Unverified` stamp and no error, which looks exactly like success.
 
 Full checklist, evidence pack and decisions: [`deploy/runbooks/acma-sender-id-registration.md`](deploy/runbooks/acma-sender-id-registration.md).
 

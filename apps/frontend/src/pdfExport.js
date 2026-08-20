@@ -234,12 +234,14 @@ function formatLongDate(iso) {
 }
 
 // Australian tax-invoice issuer identity, used in both the letterhead and the
-// footer (single source of truth). The ABN is a PLACEHOLDER and MUST be set to
-// VoxTable Pty Ltd's real ABN before any live invoice is issued — a tax invoice
-// with a wrong ABN is a compliance problem. Billing ships disabled and in test
-// mode first, so no real tax invoice leaves the system until this is filled in.
-const RECEIPT_ENTITY = "VoxTable Pty Ltd";
-const RECEIPT_ABN = "12 345 678 901"; // TODO(billing): replace with real ABN from Sam before go-live
+// footer (single source of truth). These name the LEGAL ENTITY that supplies
+// the service, which is BitePerk Pty Ltd — not VoxTable, which is a product
+// brand and not a legal person. A tax invoice has to identify the supplier and
+// carry that supplier's ABN, so neither value is a branding choice. The ABN is
+// the registered one for BITEPERK PTY LTD (see NUMBERS.md and the ACMA sender-ID
+// runbook, which both use it for regulatory filings).
+const RECEIPT_ENTITY = "BitePerk Pty Ltd";
+const RECEIPT_ABN = "36 700 831 303";
 
 export function exportReceiptPdf({ invoice, customer, plan }) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -269,9 +271,12 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   setText(doc, COLOR.muted);
-  doc.text("Voice-AI booking for restaurants", M, M + 20);
-  doc.text("biteperk.com.au", M, M + 32);
-  doc.text(`ABN ${RECEIPT_ABN}`, M, M + 44);
+  // The supplier's legal name sits with its own ABN. "VoxTable" above is the
+  // product wordmark; leaving the ABN under it alone read as though VoxTable
+  // were the entity holding it, which it is not.
+  doc.text(`${RECEIPT_ENTITY} · ABN ${RECEIPT_ABN}`, M, M + 20);
+  doc.text("Voice-AI booking for restaurants", M, M + 32);
+  doc.text("biteperk.com.au", M, M + 44);
 
   // Title (right aligned)
   doc.setFont("helvetica", "bold");

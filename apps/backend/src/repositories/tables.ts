@@ -259,3 +259,28 @@ export async function deleteTable(
   );
   return result.rows[0] ?? null;
 }
+
+/**
+ * The largest party any ACTIVE table at this venue can physically seat, or null
+ * when the venue has no active tables at all.
+ *
+ * Deliberately uncached. It is consulted only when availability has already
+ * failed — i.e. on the path where we are about to tell a caller "no" — so it
+ * costs nothing on a normal booking. Caching it would mean invalidating on
+ * create, update, activate, deactivate and delete; missing one of those would
+ * make the venue quote a stale ceiling ("our largest table seats 8") that no
+ * longer exists. That silent-stale-cache failure has already cost this codebase
+ * two incidents; not caching removes the surface rather than guarding it.
+ */
+export async function getMaxTableCapacity(
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<number | null> {
+  const result = await db.query<{ max_capacity: number | null }>(
+    `SELECT max(max_capacity) AS max_capacity
+       FROM tables
+      WHERE restaurant_id = $1 AND is_active = true`,
+    [restaurantId]
+  );
+  return result.rows[0]?.max_capacity ?? null;
+}

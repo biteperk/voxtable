@@ -8,7 +8,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildLineItems, buildPaymentSms, platformFeeCents } from "./orderPaymentService";
+import {
+  buildLineItems,
+  buildPaymentSms,
+  checkoutIdempotencyKey,
+  platformFeeCents
+} from "./orderPaymentService";
 import { isValidPaymentTransition } from "../repositories/orderPayments";
 
 // --- platformFeeCents -------------------------------------------------------
@@ -84,8 +89,16 @@ test("SMS copy: venue first, total, url, expiry, and no invitation to reply", ()
   assert.equal(new URL(link).pathname, "/c/pay/cs_test_abc");
   assert.ok(sms.includes("45 minutes"));
   assert.ok(sms.includes("Do not reply"));
-  // Alphanumeric sender IDs are one-way; nothing may invite a response.
-  assert.ok(!/reply (yes|now|to confirm)/i.test(sms));
+  // Alphanumeric sender IDs are one-way; nothing may invite a response. The
+  // `BitePerk` sender ID is ACMA-approved as of 18 Aug 2026, so this is now a
+  // live constraint rather than an anticipated one. Strip the one sanctioned
+  // mention of "reply" first, then assert nothing else asks for one — the
+  // earlier /reply (yes|now|to confirm)/ form would have waved through
+  // "reply STOP to opt out" or "text us back".
+  const withoutDisclaimer = sms.replace("Do not reply to this message.", "");
+  assert.ok(!/\b(reply|respond|text (us|back)|sms us)\b/i.test(withoutDisclaimer));
+  // STOP can never be processed on a one-way sender, so offering it is a lie.
+  assert.ok(!/\bSTOP\b/.test(sms));
 });
 
 // --- transition table -------------------------------------------------------
@@ -125,4 +138,38 @@ test("active statuses can expire, fail, cancel, or pay", () => {
     assert.equal(isValidPaymentTransition(from, "expired"), true);
     assert.equal(isValidPaymentTransition(from, "cancelled"), true);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Checkout idempotency key. The bug: the key omitted the attempt sequence, and
+// total_cents is never updated anywhere, so it was constant per order forever
+// — while Stripe caches keys for 24h and links expire after 45 minutes. Every
+// resend replayed the original, dead session.
+// ---------------------------------------------------------------------------
+
+test("a concurrent double-fire shares a key, so Stripe replays one session", () => {
+  // Both racers read attemptSeq before either writes its row.
+  const a = checkoutIdempotencyKey("order-1", 4200, 0);
+  const b = checkoutIdempotencyKey("order-1", 4200, 0);
+  assert.equal(a, b);
+});
+
+test("a resend after the previous attempt died mints a different key", () => {
+  const first = checkoutIdempotencyKey("order-1", 4200, 0);
+  const resend = checkoutIdempotencyKey("order-1", 4200, 1);
+  assert.notEqual(first, resend, "a resend that reuses the key replays a dead session URL");
+});
+
+test("the key still changes when the amount changes", () => {
+  assert.notEqual(
+    checkoutIdempotencyKey("order-1", 4200, 0),
+    checkoutIdempotencyKey("order-1", 5000, 0)
+  );
+});
+
+test("different orders never collide", () => {
+  assert.notEqual(
+    checkoutIdempotencyKey("order-1", 4200, 0),
+    checkoutIdempotencyKey("order-2", 4200, 0)
+  );
 });

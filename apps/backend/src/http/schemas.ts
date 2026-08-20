@@ -344,16 +344,75 @@ export const CUISINE_OPTIONS = [
   "Pizza",
   "Burgers",
   "Vegan",
+  // Added 18 Aug 2026: the first real venue to reach the profile step described
+  // itself as "a fusion of Mediterranean and South American" and could not say
+  // so — the closest options were "Seafood" and "Other". A cuisine list that
+  // cannot describe the restaurant makes the venue pick something untrue, and
+  // the value is read back to callers.
+  "Mediterranean",
+  "South American",
+  "Chilean",
   "Other"
 ] as const;
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/**
+ * A real IANA time zone, checked by asking Intl whether it can use it.
+ *
+ * This was z.string().min(3).max(64), which accepts "Sydney", "AEST" and
+ * "GMT+10". Every one of those makes Intl.DateTimeFormat throw a RangeError —
+ * and utils/time.ts passes restaurants.timezone straight to Intl. So saving a
+ * plausible-looking zone on the profile form made handleRetellInbound throw on
+ * EVERY subsequent inbound call: Retell could not start the call at all, the
+ * phone line was dead, and the value was memoised so it stayed dead.
+ *
+ * Intl is the right oracle rather than a hardcoded list: it is the exact thing
+ * that will consume the value at runtime, and it tracks tzdata updates.
+ */
+export const ianaTimeZoneSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(64)
+  .refine(
+    (value) => {
+      try {
+        new Intl.DateTimeFormat("en-AU", { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "timezone must be a valid IANA zone, e.g. Australia/Sydney" }
+  );
+
+/**
+ * The seven keys getOpeningWindowsForDate actually looks up, lowercase.
+ *
+ * This used to be z.record(z.string(), …), which accepted ANY key. Saving
+ * {"Monday": [...]} or {"mon": [...]} validated cleanly, then every day
+ * resolved to no windows via the `?? []` fallback in utils/time.ts — so
+ * check_availability answered "no suitable table is available near the
+ * requested time" for a completely empty restaurant, on every call, with no
+ * error and no log line. A venue could be silently closed all week by a
+ * capital letter.
+ */
+export const OPENING_HOURS_DAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday"
+] as const;
+
 // day -> intervals. Overnight (close < open) is allowed (e.g. 18:00–02:00), so
 // only the HH:MM format is validated, not ordering.
 const openingHoursSchema = z
   .record(
-    z.string(),
+    z.enum(OPENING_HOURS_DAYS),
     z
       .array(
         z.object({
@@ -371,7 +430,7 @@ export const createRestaurantSchema = z.object({
 
 export const restaurantProfileSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
-  timezone: z.string().trim().min(3).max(64).optional(),
+  timezone: ianaTimeZoneSchema.optional(),
   address: z.string().trim().max(200).optional(),
   suburb: z.string().trim().max(80).optional(),
   state: z.enum(AU_STATES).optional(),
@@ -416,6 +475,20 @@ export const AGREEMENT_SERVICES = ["voxtable", "voxorder", "voxconcierge"] as co
 export const AGREEMENT_LANGUAGES = ["en-AU"] as const;
 
 export const agreementSchema = z.object({
+  document_set_version: z.string().trim().min(1).max(120),
+  csa_url: z.string().url().refine((url) => url.startsWith("https://"), "CSA URL must be HTTPS"),
+  schedule_url: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), "Schedule URL must be HTTPS"),
+  csa_sha256: z
+    .string()
+    .trim()
+    .regex(/^[a-fA-F0-9]{64}$/, "CSA SHA-256 must be a 64-character hex digest"),
+  schedule_sha256: z
+    .string()
+    .trim()
+    .regex(/^[a-fA-F0-9]{64}$/, "Schedule SHA-256 must be a 64-character hex digest"),
   client_legal_name: z.string().trim().min(2).max(200),
   client_abn: z
     .string()
@@ -459,12 +532,78 @@ export const agreementSchema = z.object({
   })
 });
 
-// Admin provisioning bind (Phase 4a) — all optional so an admin can fill in
-// pieces as they're provisioned.
-export const adminProvisioningSchema = z.object({
-  twilio_phone_number: z.string().min(3).max(32).optional(),
-  retell_phone_number: z.string().min(3).max(32).optional(),
-  retell_agent_id: z.string().min(3).max(120).optional()
+// Admin provisioning bind (Phase 4a). Fields are individually optional so an
+// admin can fill in pieces as they're provisioned, BUT the dialed number and
+// the agent must move together.
+//
+// Why: the UPDATE is COALESCE-only, so an omitted field keeps its old value.
+// PATCHing a new number on its own therefore leaves the PREVIOUS venue's agent
+// bound — the new number resolves to the right restaurant and then answers in
+// another venue's voice. That is the 18 Aug staging failure, and it produces no
+// error anywhere: `number_ready` fires on both columns being non-null, and
+// go-live only checks the same. A half-bind is never what the operator meant.
+export const adminProvisioningSchema = z
+  .object({
+    twilio_phone_number: z.string().min(3).max(32).optional(),
+    retell_phone_number: z.string().min(3).max(32).optional(),
+    retell_agent_id: z.string().min(3).max(120).optional(),
+    // Cal.com event type for this venue's online booking page (migration 035).
+    // Deliberately NOT part of the paired-binding rule below: Cal.com is an
+    // optional channel and must be bindable on a venue that has no phone line
+    // yet, and vice versa. The rule's `hasNumber === hasAgent` early-return
+    // already lets a body carrying only this field through — that is intended,
+    // not an oversight.
+    calcom_event_type_id: z.coerce.number().int().positive().optional()
+  })
+  .superRefine((value, ctx) => {
+    const hasNumber = value.twilio_phone_number !== undefined;
+    const hasAgent = value.retell_agent_id !== undefined;
+    if (hasNumber === hasAgent) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [hasNumber ? "retell_agent_id" : "twilio_phone_number"],
+      message:
+        "Bind twilio_phone_number and retell_agent_id together. Sending one alone keeps " +
+        "the other's previous value, which routes calls to the wrong venue's agent. " +
+        "Use POST /api/admin/restaurants/:id/unbind to clear a binding."
+    });
+  });
+
+// Admin unbind — the destructive counterpart of the bind PATCH (which is
+// COALESCE-only and can never null a column). Requires the venue's name typed
+// back, and a separate acknowledgement when the venue is live.
+export const ADMIN_UNBINDABLE_FIELDS = [
+  "twilio_phone_number",
+  "retell_phone_number",
+  "retell_agent_id",
+  // Clearing this is the per-venue Cal.com kill switch: it stops new bookings
+  // mirroring out and stops inbound webhooks resolving to this venue, while
+  // leaving bookings already live on Cal.com cancellable (the cancel path gates
+  // on the reservation's uid, not on the venue's binding).
+  //
+  // Must be kept in step with the independent allowlist inside
+  // clearProvisioningBindings — a field missing there is a silent no-op.
+  "calcom_event_type_id"
+] as const;
+
+export const adminUnbindSchema = z.object({
+  fields: z
+    .array(z.enum(ADMIN_UNBINDABLE_FIELDS))
+    .nonempty("Pick at least one binding to clear.")
+    .max(ADMIN_UNBINDABLE_FIELDS.length),
+  confirm_name: z.string().trim().min(1).max(200),
+  acknowledge_live: z.boolean().default(false)
+});
+
+// Admin re-enqueue of a failed provisioning job. clear_buy_marker is the
+// explicit "I checked the Twilio console for an orphaned number" affordance —
+// without it a job that died inside the buy window re-fails immediately.
+export const adminReenqueueSchema = z.object({
+  clear_buy_marker: z.boolean().default(false)
+});
+
+export const adminSupportStatusSchema = z.object({
+  status: z.enum(["open", "in_progress", "resolved", "closed"])
 });
 
 // --- Menu OCR ingestion (Phase 2) ------------------------------------------
