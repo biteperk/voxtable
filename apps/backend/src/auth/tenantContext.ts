@@ -28,6 +28,19 @@ export function tenantId(request: Request): string {
 }
 
 /**
+ * The caller's role at the active restaurant, for routes that shape their
+ * RESPONSE by role rather than gating access by it. Same contract as tenantId:
+ * throws on a route that never ran resolveTenant, rather than guessing.
+ */
+export function tenantRole(request: Request): MemberRole {
+  const role = (request as AuthenticatedRequest).tenant?.role;
+  if (!role) {
+    throw new AppError(500, "TENANT_NOT_RESOLVED", "Restaurant context was not resolved.");
+  }
+  return role;
+}
+
+/**
  * Resolve the active restaurant for a dashboard request and attach it to
  * `req.tenant`. MUST run AFTER requireFirebaseAuth.
  *

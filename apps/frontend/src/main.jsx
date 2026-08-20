@@ -10,6 +10,7 @@ import { getOnboardingStatus } from "./api";
 import { LandingPage } from "./pages/landing/LandingPage";
 import { LiveFeedOverviewPage } from "./pages/dashboard/LiveFeedOverviewPage";
 import { LiveFeedDetailPage } from "./pages/dashboard/LiveFeedDetailPage";
+import { HomePage } from "./pages/home/HomePage";
 import { BookingLogPage } from "./pages/dashboard/BookingLogPage";
 import { LiveTablesPage } from "./pages/dashboard/LiveTablesPage";
 import { TableOrderPage } from "./pages/dashboard/TableOrderPage";
@@ -112,7 +113,8 @@ function App() {
     const titles = {
       "/": "VoxTable",
       "/live-feed": "Live Feed · VoxTable",
-      "/booking-log": "Booking Log · VoxTable",
+      "/home": "Home · VoxTable",
+    "/booking-log": "Booking Log · VoxTable",
       "/manage-menu": "Manage Menu · VoxTable",
       "/manage-tables": "Manage Tables · VoxTable",
       "/kitchen-overview": "Kitchen Overview · VoxTable",
@@ -137,6 +139,9 @@ function App() {
     } else {
       document.title = titles[path] || "VoxTable";
     }
+    // Remember where they were actually working, so signing in again returns
+    // them there rather than to an overview they have already read.
+    if (PRODUCT_ROUTES.has(path)) rememberProduct(path);
   }, [path]);
 
   // `replace` swaps the current history entry instead of pushing a new one. Use
@@ -154,6 +159,7 @@ function App() {
   };
 
   const isDashboard =
+    path === "/home" ||
     path === "/live-feed" ||
     path.startsWith("/live-feed/") ||
     path === "/live-tables" ||
@@ -257,14 +263,66 @@ function useOnboardingGate() {
 // house, manager+ sees everything. Returns the path to redirect to, or null if
 // the current path is allowed for the role. Pure — the caller navigates from an
 // effect, never during render.
-const KITCHEN_ROUTES = ["/kitchen-overview", "/profile"];
-const SERVER_ROUTES = ["/live-feed", "/booking-log", "/live-tables", "/profile"];
+/**
+ * Where a returning user lands.
+ *
+ * First-ever sign-in goes to /home for orientation; after that, straight back to
+ * whatever they were last working in. A product menu between login and work is
+ * friction for the manager who opens this at 6pm to check tonight's covers.
+ *
+ * Mirrors the vocotable.activeRestaurantId convention in api.js.
+ */
+const PRODUCT_ROUTES = new Set([
+  "/live-feed",
+  "/live-tables",
+  "/booking-log",
+  "/kitchen-overview"
+]);
+
+const LAST_PRODUCT_KEY = "vocotable.lastProduct";
+
+export function rememberProduct(route) {
+  try {
+    window.localStorage.setItem(LAST_PRODUCT_KEY, route);
+  } catch {
+    /* private browsing — landing falls back to /home, which is harmless */
+  }
+}
+
+function lastProductRoute() {
+  try {
+    return window.localStorage.getItem(LAST_PRODUCT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+const KITCHEN_ROUTES = ["/home", "/kitchen-overview", "/profile"];
+const SERVER_ROUTES = ["/home", "/live-feed", "/booking-log", "/live-tables", "/profile"];
 
 function roleRouteRedirect(path, role) {
   const allowed = role === "server" ? SERVER_ROUTES : KITCHEN_ROUTES;
   const isAllowed = allowed.some((r) => path === r || path.startsWith(r + "/"));
   if (isAllowed) return null;
   return role === "kitchen" ? "/kitchen-overview" : "/live-feed";
+}
+
+/**
+ * Signed-in `/` — go where they work. Renders nothing; it only redirects, so the
+ * user never sees a flash of the marketing page on the way through.
+ */
+function RootRedirect({ navigate }) {
+  const { hasMinRole } = useAuth();
+  useEffect(() => {
+    // Kitchen staff always go to the pass. A product overview is noise to
+    // someone standing at a rail.
+    if (!hasMinRole("server")) {
+      navigate("/kitchen-overview", { replace: true });
+      return;
+    }
+    navigate(lastProductRoute() ?? "/home", { replace: true });
+  }, [navigate, hasMinRole]);
+  return <div className="page-loading" aria-busy="true" />;
 }
 
 function AppRouter({ path, navigate, isDashboard }) {
@@ -311,7 +369,7 @@ function AppRouter({ path, navigate, isDashboard }) {
       // wizard no matter what the status endpoint claims — otherwise an
       // inconsistent backend state (e.g. the legacy-fallback leak) ping-pongs
       // this redirect against the !hasRestaurant one below, forever.
-      if (isLive && memberships.length > 0) navigate("/live-feed", { replace: true });
+      if (isLive && memberships.length > 0) navigate("/home", { replace: true });
       return;
     }
     // On a dashboard route, only send the user to onboarding when we're
@@ -448,6 +506,7 @@ function AppRouter({ path, navigate, isDashboard }) {
     );
   }
   if (path === "/live-tables") return <LiveTablesPage navigate={navigate} path={path} />;
+  if (path === "/home") return <HomePage navigate={navigate} path={path} />;
   if (path === "/booking-log") return <BookingLogPage navigate={navigate} path={path} />;
   if (path === "/manage-menu") return <ManageMenuPage navigate={navigate} path={path} />;
   if (path === "/manage-tables") return <ManageTablesPage navigate={navigate} path={path} />;
@@ -462,7 +521,13 @@ function AppRouter({ path, navigate, isDashboard }) {
   if (path === "/profile") return <ProfilePage navigate={navigate} path={path} />;
 
   // Public marketing home.
-  if (path === "/") return <LandingPage navigate={navigate} />;
+  // Signed-out visitors get the marketing page. Signed-in users used to get it
+  // too — `/` sat outside isDashboard so no gate ran — which meant clicking the
+  // brand mark inside the app dropped you onto the public site.
+  if (path === "/") {
+    if (user) return <RootRedirect navigate={navigate} />;
+    return <LandingPage navigate={navigate} />;
+  }
 
   // Unrecognised path. For a *signed-in* user this almost always means a stale or
   // mistyped in-app link (e.g. a dead "/settings" route) — and silently rendering
