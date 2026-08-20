@@ -12,6 +12,7 @@ import { bookingsRouter } from "./routes/bookings";
 import { calRouter } from "./routes/cal";
 import { dashboardRouter } from "./routes/dashboard";
 import { healthRouter } from "./routes/health";
+import { homeRouter } from "./routes/home";
 import { meRouter } from "./routes/me";
 import { menuRouter } from "./routes/menu";
 import { onboardingRouter } from "./routes/onboarding";
@@ -155,6 +156,7 @@ export function createApp() {
   app.use(ordersRouter);
   app.use(dashboardRouter);
   app.use(billingRouter);
+  app.use(homeRouter);
   app.use(meRouter);
   app.use(authVerificationRouter);
   app.use(onboardingRouter);

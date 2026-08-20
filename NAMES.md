@@ -23,7 +23,7 @@ Visual identity, tokens, wordmark and NAP facts live in the website repo's
 | **VoxTable** | Bookings (this repo's product) | CamelCase, "by BitePerk". |
 | **VoxOrder**, **VoxConcierge** | Takeaway · front-of-house | VoxConcierge sellable only behind `SERVICES_VOXCONCIERGE_ENABLED`. |
 | **VoxDrive** | Drive-thru concept | **Concept only — never sellable, never in a services enum.** Its absence from `AGREEMENT_SERVICES` is the enforcement. |
-| **VoxStay** | Hotel pitch material | **Pitch-only — never in site or app code.** |
+| **VoxStay** | Hotels — front desk | **Visible in the client app, not sellable** (amended 20 Aug 2026: hotels became a real segment). It appears in the venue home page's product list as `coming-soon`, and is deliberately **absent from `AGREEMENT_SERVICES`** — there is nothing to contract yet. Still **never in public site code or marketing material** until that changes. |
 | **Bella** | The voice persona | Never renames. |
 | ~~VocoTable~~, ~~PerkTable~~ | Retired product names | Historical narration only. Never introduce in new code, docs, or UI. |
 

@@ -229,7 +229,7 @@ export function buildPricingSchema() {
     "@type": "Product",
     name: "VoxTable",
     description: "AI phone host for restaurants. Bella answers every call 24/7, books the table, and never sleeps.",
-    brand: { "@type": "Brand", name: "VoxTable by Biteperk" },
+    brand: { "@type": "Brand", name: "VoxTable by BitePerk" },
     offers: {
       "@type": "AggregateOffer",
       priceCurrency: "AUD",

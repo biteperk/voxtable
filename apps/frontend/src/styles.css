@@ -630,6 +630,92 @@ button {
   --ob-ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ---- Base button styles ----------------------------------------------------
+   `.primary-button` and `.ghost-button` were used in fifteen files but styled
+   only inside `.onboarding-card` and `.plan-modal-actions` — the note below
+   records that no base existed. Everywhere else (the whole /admin console, the
+   billing pages) they rendered as unstyled text.
+
+   The scoped rules keep winning on specificity, so onboarding and the plan
+   modal are unchanged; this only clothes the buttons that had nothing. Values
+   match the onboarding treatment so the app stays one language.
+
+   Gold is a FILL here, with dark ink on top — never gold text on a light
+   surface, which is the brand rule broken most often. */
+.primary-button,
+.ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 22px;
+  border-radius: 8px;
+  font: 600 15px/1.2 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.primary-button {
+  border: 1px solid transparent;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.ghost-button {
+  border: 1px solid var(--outline);
+  background: transparent;
+  color: var(--on-surface);
+}
+
+.primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: var(--primary-dim);
+}
+
+.ghost-button:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  border-color: var(--on-surface);
+}
+
+.primary-button:disabled,
+.ghost-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.primary-button:focus-visible,
+.ghost-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* A button that reads as a link — used for inline retry actions. */
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Neutral placeholder while a redirect resolves, so no marketing page flashes. */
+.page-loading {
+  min-height: 60vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-button,
+  .ghost-button {
+    transition: none;
+  }
+  .primary-button:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
 /* ===================================================================
    VoxTable Onboarding — "Focused Spotlight"
    REPLACES the entire existing .onboarding-* + .menu-review-* + .trial-*
@@ -2418,6 +2504,8 @@ gmp-place-autocomplete {
   min-height: calc(100vh - 150px);
 }
 
+.product-tile,
+.service-line,
 .active-call-card,
 .live-card,
 .context-card,
@@ -13868,5 +13956,264 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 @media (max-width: 640px) {
   .admin-dl {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Venue home ------------------------------------------------------------
+   The service line is the one bold thing on this page; everything else stays
+   quiet. Mono for figures because every operational surface in a venue — the
+   POS, the docket printer, the kitchen rail — is monospaced. Language stays
+   Inter. That split is the type system.
+   Note: this app is dark-only (color-scheme: dark on :root), so --primary is
+   safe as text here. On a light surface it would not be — gold text is --gold
+   in the brand kit for exactly that reason. */
+
+.home-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-bottom: 40px;
+}
+
+.service-line {
+  padding: 22px 26px;
+}
+
+.service-line-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.service-line-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.service-line-venue {
+  color: var(--on-surface-variant);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.service-line-clock {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.service-line-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 34px;
+  padding-top: 18px;
+}
+
+.service-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 132px;
+}
+
+.service-figure-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 40px;
+  line-height: 1.05;
+  font-weight: 700;
+  color: var(--on-surface);
+  /* Tabular so a count-up doesn't shuffle the label sideways. */
+  font-variant-numeric: tabular-nums;
+}
+
+.service-figure-label {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.service-figure-hint {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--outline);
+  padding-top: 2px;
+}
+
+.service-line-empty {
+  padding-top: 18px;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+}
+
+.home-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  margin: 0 0 14px;
+}
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.product-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 22px;
+}
+
+/* Ownership is the hierarchy, not a badge. Products the venue does not have
+   recede rather than shouting a label at equal weight. */
+.product-grid-quiet .product-tile {
+  opacity: 0.72;
+  padding: 16px 18px;
+}
+
+.product-grid-quiet .product-tile:hover,
+.product-grid-quiet .product-tile:focus-within {
+  opacity: 1;
+}
+
+.product-tile-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.product-tile-icon {
+  color: var(--primary);
+  font-size: 20px;
+}
+
+.product-tile-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.product-tile-status {
+  margin-left: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--outline);
+  border: 1px solid var(--outline-variant);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.product-tile-tagline {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.product-tile-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0 0;
+}
+
+.product-tile-figure-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.product-tile-figure-label {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.product-tile-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+/* Inline, not full-width. Two full-bleed gold bars out-shouted the service
+   line, which is meant to be the only loud thing on this page. Gold stays on
+   the figures — the data — rather than on navigation. */
+.product-tile-actions .primary-button,
+.product-tile-actions .ghost-button {
+  min-height: 38px;
+  padding: 9px 16px;
+  font-size: 14px;
+}
+
+.product-grid-quiet .product-tile-actions .ghost-button {
+  border-color: var(--outline-variant);
+  color: var(--on-surface-variant);
+}
+
+.product-tile-secondary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.product-tile-secondary-note {
+  font-size: 11px;
+  color: var(--outline);
+}
+
+.home-setup {
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  padding: 24px 26px;
+  background: var(--surface-container);
+}
+
+.home-setup h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  color: var(--on-surface);
+}
+
+.home-setup p {
+  margin: 0 0 16px;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+}
+
+.home-error {
+  color: var(--error);
+  font-size: 14px;
+}
+
+@media (max-width: 767px) {
+  .service-line { padding: 18px; }
+  .service-figure-value { font-size: 32px; }
+  .service-line-figures { gap: 22px; }
+  .service-figure { min-width: 108px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-tile,
+  .product-grid-quiet .product-tile {
+    transition: none;
   }
 }

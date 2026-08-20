@@ -309,6 +309,11 @@ function analyticsQs({ days, from, to } = {}) {
   return qs.toString() ? `?${qs}` : "";
 }
 
+/** The venue's service state right now — one round trip, role-shaped. */
+export function getHomeSummary() {
+  return authedFetch("/api/home/summary");
+}
+
 export function getAnalytics(params = {}) {
   return authedFetch(`/api/analytics${analyticsQs(params)}`);
 }

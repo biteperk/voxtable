@@ -6,6 +6,8 @@ export interface Membership {
   restaurantId: string;
   restaurantName: string;
   role: MemberRole;
+  /** Contracted Vox products, e.g. ["voxtable"]. Empty until the agreement step. */
+  services: string[];
 }
 
 export interface RestaurantMember {
@@ -20,6 +22,7 @@ interface MembershipRow {
   restaurant_id: string;
   restaurant_name: string;
   role: MemberRole;
+  services: string[] | null;
 }
 
 interface RestaurantMemberRow {
@@ -42,7 +45,7 @@ export async function getUserMemberships(
 ): Promise<Membership[]> {
   const result = await db.query<MembershipRow>(
     `
-    SELECT rm.restaurant_id, r.name AS restaurant_name, rm.role
+    SELECT rm.restaurant_id, r.name AS restaurant_name, rm.role, r.services
     FROM restaurant_members rm
     JOIN restaurants r ON r.id = rm.restaurant_id
     WHERE rm.user_id = $1
@@ -53,7 +56,11 @@ export async function getUserMemberships(
   return result.rows.map((row) => ({
     restaurantId: row.restaurant_id,
     restaurantName: row.restaurant_name,
-    role: row.role
+    role: row.role,
+    // Which Vox products this venue contracted for (migration 018). Written once
+    // at the agreement step and, until now, read by exactly one admin endpoint no
+    // UI rendered — so the dashboard could not tell what a venue had bought.
+    services: row.services ?? []
   }));
 }
 
