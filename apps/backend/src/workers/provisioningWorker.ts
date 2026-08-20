@@ -149,7 +149,10 @@ async function runStep(job: ProvisioningJob): Promise<void> {
       const number = job.payload.twilio_number;
       const agentId = job.payload.retell_agent_id;
       if (!number || !agentId) throw new Error("Provisioning bind: missing number or agent in payload.");
-      await importNumberToRetell(number, agentId);
+      // The venue name is what proves the agent belongs to this restaurant before the
+      // number is pointed at it (verifyAgentForVenue, inside the import).
+      const bindProfile = await getRestaurantProfile(job.restaurant_id);
+      await importNumberToRetell(number, agentId, bindProfile?.name ?? "Restaurant");
       // Persist bindings on the restaurant so inbound calls route correctly, and
       // tell the owner their line is ready to forward + verify.
       await setProvisioningBindings(job.restaurant_id, {

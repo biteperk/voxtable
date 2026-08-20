@@ -1,0 +1,101 @@
+name: Voice line health
+
+# Asserts that every line declared in deploy/voice-lines.json still routes end to end:
+# number imported in the right Retell workspace -> webhook -> the backend resolves the
+# declared agent -> that agent exists -> its name passes the bind guard -> golden config.
+#
+# It exists because none of that was checked by anything. On 20 Aug 2026 three of those
+# layers were broken at once on production, had been for a day, and the detector was Sam
+# placing a call. This runs off anyone's laptop so a break is found while it is still cheap.
+on:
+  schedule:
+    # Hourly, off the :00 mark. The line is not customer-facing yet; tighten this when it is.
+    - cron: "23 * * * *"
+  workflow_dispatch:
+  push:
+    # A change to the declaration or the checker must prove itself immediately.
+    #
+    # integration/main ONLY, and not because feature branches do not matter: the workload
+    # identity provider's attribute condition authorises those two refs and nothing else, so a
+    # run from any other branch fails at auth before it reaches a single assertion. A workflow
+    # that is red on every feature branch for a reason unrelated to what it checks is a workflow
+    # people learn to scroll past.
+    branches: [integration, main]
+    paths:
+      - deploy/voice-lines.json
+      - .claude/skills/retell-agent-quality/scripts/assert-line.mjs
+      - .github/workflows/voice-line-health.yml
+
+concurrency:
+  group: voice-line-health
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  staging:
+    name: Staging line
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Assert +61468203234
+        run: |
+          set -euo pipefail
+          KEY=$(gcloud secrets versions access latest --secret=voxtable-stg-retell-api-key --project=bp-voxtable-stg)
+          # The staging workspace's single API key is badged as its webhook key, so both take
+          # the same string. Production does NOT work this way.
+          export RETELL_API_KEY="$KEY" RETELL_WEBHOOK_SECRET="$KEY"
+          export TWILIO_AU1_KEY_SID=$(gcloud secrets versions access latest --secret=voxtable-stg-twilio-au1-key-sid --project=bp-voxtable-stg)
+          export TWILIO_AU1_KEY_SECRET=$(gcloud secrets versions access latest --secret=voxtable-stg-twilio-au1-key-secret --project=bp-voxtable-stg)
+          node .claude/skills/retell-agent-quality/scripts/assert-line.mjs +61468203234 --strict
+
+  production:
+    name: Production line
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      # Production's credentials do NOT live in Secret Manager — the production backend is
+      # still the VM, and its .env is the only copy. Until they are mirrored into repo
+      # secrets this job cannot check the production line, and it FAILS rather than passing
+      # quietly: an unchecked line reported green is the exact failure this workflow exists
+      # to prevent.
+      - name: Assert +61468202846
+        env:
+          RETELL_API_KEY: ${{ secrets.RETELL_PROD_API_KEY }}
+          RETELL_WEBHOOK_SECRET: ${{ secrets.RETELL_PROD_WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RETELL_API_KEY:-}" ] || [ -z "${RETELL_WEBHOOK_SECRET:-}" ]; then
+            echo "::error::Cannot check the production voice line — RETELL_PROD_API_KEY and/or"
+            echo "::error::RETELL_PROD_WEBHOOK_SECRET are not set as repository secrets."
+            echo "Both live only in /opt/vocotable/.env on core-central-vm today. Copy them into"
+            echo "repository secrets (they are the same two values the VM already uses), or this"
+            echo "line stays unmonitored."
+            exit 1
+          fi
+          # No AU1 API key exists for the production Twilio account, so the trunk layer is
+          # unverifiable. Deliberately not --strict here: the run would fail every hour on a
+          # known, tracked gap and teach everyone to ignore it. assert-line still prints the
+          # skip. Add --strict once voxtable-prod-twilio-au1-key-{sid,secret} exist.
+          node .claude/skills/retell-agent-quality/scripts/assert-line.mjs +61468202846

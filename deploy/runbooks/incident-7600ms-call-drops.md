@@ -6,6 +6,23 @@
 that "calling from a different phone is the decider". That conclusion was WRONG** and is
 retracted below. The evidence that overturned it is in §2 and §3.
 
+## 0. What this incident is NOT
+
+⚠️ **A call that dies in ~2 seconds is a different fault.** On 20 Aug 2026 a call to
+`+61 468 202 846` hung up almost immediately and was nearly filed here. It was not this: the
+number had been evicted from our Retell workspace, so Retell rejected the INVITE and no call
+existed on its side at all. Tell them apart before reading further:
+
+| | This incident | A dead line |
+|---|---|---|
+| Duration | **7,593–7,653 ms**, machine-precise | ~1–3 s, variable |
+| Caller hears | the greeting, then silence | nothing — dead air, then release |
+| Retell `list-calls` | the call is **there**, `user_hangup` | **no record at all** |
+| First check | `latency-report.mjs` | `npm run check:voice-lines` |
+
+If the call is absent from `list-calls`, stop reading and run the line check — the routing chain
+is broken, not the trunk.
+
 ## 1. Symptom
 
 Calls die at a machine-precise **7,593–7,653 ms** (one outlier 8,532 ms), on both AU1 mobile
