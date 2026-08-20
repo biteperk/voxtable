@@ -334,6 +334,49 @@ function toLookupMatch(i: MenuItemPayload, categoryId: string): MenuLookupMatch 
 }
 
 /**
+ * One category as the overview sees it. Offerable items are kept apart from
+ * licensed ones so a section can be NAMED without being SOLD: a list made
+ * entirely of licensed drinks still exists, and dropping it outright made
+ * Bella deny the venue had a cocktail list at all.
+ */
+interface OverviewCategory {
+  id: string;
+  name: string;
+  /** Bella may name these and take the order. */
+  items: MenuItemPayload[];
+  /** Licensed: describable, refused by `create_order`. */
+  restricted: MenuItemPayload[];
+}
+
+/** "a, b and c" — the spoken list form used for section names. */
+function speakList(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
+}
+
+/**
+ * Callers ask for "drinks" as one thing, but venues name their sections
+ * "Cocktails", "Mocktails & Frappes", "Beer, Wine & Spirits" — not one of
+ * which contains the word. Matching the caller's word alone answers from
+ * whichever section happens to spell it out and hides the rest.
+ */
+const DRINK_UMBRELLA = /^(a |any |some )*(thing to )?(drinks?|beverages?|something to drink)\s*$/i;
+// Matched as substrings, so plurals and "&" joins fall out for free.
+// Deliberately no "tea" — "steak" contains it.
+const DRINK_SECTION_WORDS = [
+  "drink",
+  "juice",
+  "cocktail",
+  "mocktail",
+  "beer",
+  "wine",
+  "spirit",
+  "frappe",
+  "soda",
+  "smoothie",
+  "coffee"
+];
+
+/**
  * The real category overview, built from THIS venue's menu. The summary speaks
  * category NAMES only — an earlier version read 2 items from each of the first
  * 4 categories, which on a real 8-category menu produced a 17-second monologue
@@ -343,21 +386,22 @@ function toLookupMatch(i: MenuItemPayload, categoryId: string): MenuLookupMatch 
  */
 async function categoryOverview(restaurantId: string): Promise<{
   matches: MenuLookupMatch[];
-  categories: { id: string; name: string; items: MenuItemPayload[] }[];
+  categories: OverviewCategory[];
   names: string;
 }> {
-  // Skip restricted items — Bella must never offer what she has to refuse.
   const menu = await getMenu(restaurantId);
+  // Licensed items are split out rather than filtered away: the section keeps
+  // its place in the overview, but never supplies a sample Bella might offer.
   const categories = menu.categories
-    .map((c) => ({ id: c.id, name: c.name, items: c.items.filter((i) => !i.is_restricted) }))
-    .filter((c) => c.items.length > 0);
-  const nameList = categories.map((c) => c.name);
-  const names =
-    nameList.length > 1
-      ? `${nameList.slice(0, -1).join(", ")} and ${nameList.at(-1)}`
-      : (nameList[0] ?? "");
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      items: c.items.filter((i) => !i.is_restricted),
+      restricted: c.items.filter((i) => i.is_restricted)
+    }))
+    .filter((c) => c.items.length + c.restricted.length > 0);
   return {
-    names,
+    names: speakList(categories.map((c) => c.name)),
     categories,
     matches: categories.flatMap((c) => c.items.slice(0, 1).map((i) => toLookupMatch(i, c.id)))
   };
@@ -423,23 +467,51 @@ export async function lookupMenu(input: {
   // overview back and told the caller the drinks list was broken.
   if (input.category && input.category.trim().length > 0) {
     const wanted = input.category.trim().toLowerCase();
-    const hit = categories.find(
+    const named = categories.filter(
       (c) => c.name.toLowerCase().includes(wanted) || wanted.includes(c.name.toLowerCase())
     );
+    // An umbrella ask only fans out when the caller's own word didn't already
+    // land on a section, so a venue that really does have a "Drinks" category
+    // keeps answering from it.
+    const hits =
+      DRINK_UMBRELLA.test(wanted) && named.length <= 1
+        ? categories.filter((c) => DRINK_SECTION_WORDS.some((w) => c.name.toLowerCase().includes(w)))
+        : named;
+
+    // Several sections match — offer their names. Answering from whichever one
+    // sorted first is how "what drinks do you have?" used to return the juices
+    // and never mention the cocktails.
+    if (hits.length > 1) {
+      return {
+        matches: hits.flatMap((c) => c.items.slice(0, 1).map((i) => toLookupMatch(i, c.id))),
+        ambiguous: false,
+        speakable_summary: `For ${input.category} we have ${speakList(hits.map((c) => c.name))}. Which sounds good?`
+      };
+    }
+
+    const hit = hits[0];
     if (hit) {
-      const items = hit.items.slice(0, 6);
+      // Speak what she can sell; fall back to the licensed rows so an all-bar
+      // section gets described rather than denied.
+      const source = hit.items.length > 0 ? hit.items : hit.restricted;
+      const items = source.slice(0, 6);
       const spoken = items
         .slice(0, 4)
         .map((i) => `${i.name} (${speakablePrice(i.base_price_cents)})`)
         .join(", ");
+      const tail =
+        hit.items.length === 0
+          ? " That's our licensed list, so I can't take those orders over the phone — the team will sort you out when you arrive."
+          : hit.restricted.length > 0
+            ? " There's a licensed list too, which I can't take orders for over the phone. Want any of those?"
+            : " Want any of those?";
       return {
         matches: items.map((i) => toLookupMatch(i, hit.id)),
         ambiguous: false,
-        speakable_summary: `For ${hit.name} we have ${spoken}${hit.items.length > 4 ? ", and a few more" : ""}. Want any of those?`
+        speakable_summary: `For ${hit.name} we have ${spoken}${source.length > 4 ? ", and a few more" : ""}.${tail}`
       };
     }
-    // Honest miss: the section genuinely isn't on the menu (e.g. Mazcina's
-    // menu has no drinks yet — the bar list is still outstanding).
+    // Honest miss: the section genuinely isn't on the menu.
     return {
       matches: [],
       ambiguous: false,

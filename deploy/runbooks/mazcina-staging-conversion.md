@@ -171,14 +171,30 @@ GET /api/menu   →   must contain no fixture item
 ## 4. Import Mazcina's menu
 
 ```
-npm run menu:import --workspace=@vocotable/backend -- \
+APP_ENV=migration npm run menu:import --workspace=@vocotable/backend -- \
   --restaurant-id 33333333-3333-4333-8333-333333333333 \
-  --file mazcina/mazcina-menu-voxtable-import.json --dry-run
+  --file "$PWD/mazcina/mazcina-menu-voxtable-import.json" --dry-run
 ```
 
+⚠️ `--file` must be **absolute**. `--workspace` runs the script from `apps/backend`, so the
+repo-root-relative path this runbook carried until 20 Aug 2026 exits `ENOENT` before it reads
+a single item.
+
 Review the report, then re-run without `--dry-run`. Against a local database the dry run
-reports **8 categories, 31 items, 0 renames, 0 dropped modifiers, 0 clamped groups** — any
-other numbers mean the file changed and needs re-reading.
+reports **12 categories, 97 items (66 created, 31 updated), 42 restricted, 0 windowed, 0
+renames, 0 dropped modifiers, 0 clamped groups** — any other numbers mean the file changed and
+needs re-reading. The 31 updated rows are the food half, re-upserted unchanged; a *created*
+count above 66 means the drinks landed twice under different names.
+
+The four drink categories are `Mocktails & Frappes`, `Juices & Soft Drinks`, `Cocktails` (all
+licensed) and `Beer, Wine & Spirits` (licensed except the zero-alcohol beer). Four rather than
+the printed menu's eight sections: the overview speaks every category name in one breath, so
+sections are the thing to be sparing with.
+
+⚠️ **Import the drinks only into an environment already running the 20 Aug `menuService`
+change.** Before it, `categoryOverview` dropped any category left empty once licensed items
+were filtered out — so loading an all-licensed `Cocktails` section made Bella tell callers the
+venue *has no cocktails*, which is worse than the pre-import "no drinks yet".
 
 Staging's database is private-only, so use `--emit-sql <out.sql>` and apply the file through
 the throwaway Cloud Run job instead of connecting directly. Note the emitted SQL is
@@ -424,8 +440,9 @@ supplies them. Then `POST /api/admin/restaurants/:id/go-live`.
    requested time is always honoured, so this is a coarser *fallback*, not a wrong answer —
    it is why Bella offers 12:30 where OpenTable would offer 12:15.
 2. **They do serve alcohol** — reviews single out "the pisco sour and the fruity wine jugs".
-   The food-only PDF made the licensed-item path look academic; it is not. The bar list is a
-   real dependency for leg 4, not a nice-to-have.
+   The food-only PDF made the licensed-item path look academic; it is not. ✅ **Closed 20 Aug
+   2026**: the drinks list is transcribed into the same import file, 66 items across four
+   categories, 42 of them `restricted`. Leg 4 is unblocked.
 3. **Closed Tuesday and Wednesday.** Worth an explicit call-battery leg: ask for a Tuesday
    booking and confirm Bella declines and offers Thursday, rather than booking into a closed
    day. Nothing in the automated suite covers a fully-closed weekday.
@@ -439,4 +456,7 @@ supplies them. Then `POST /api/admin/restaurants/:id/go-live`.
 - **No surcharge modelling.** The menu prints a **10% Sunday** and **15% public-holiday**
   surcharge; every price is a flat `base_price_cents`, so Bella quotes base prices on a
   Sunday. Not a staging blocker; a real wrongness before Mazcina takes live weekend orders.
+- **Licensed drinks are describable but not orderable by phone**, which is deliberate
+  (responsible service) rather than a gap: `menu_lookup` names them and `create_order` refuses
+  with `RESTRICTED_ITEM`. The zero-alcohol beer is deliberately *not* flagged.
 - **The KDS reaches no environment through a pipeline.** Leg 2 of the battery needs it.
