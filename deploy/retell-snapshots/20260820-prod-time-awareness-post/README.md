@@ -71,6 +71,24 @@ battery, not a late-night default.** So per-turn latency is unchanged and should
 otherwise. What this change does buy is a much shorter call: the 22:12 call spent ~40 s in a loop
 because she could not answer "can I come now".
 
+## Verified on a real call — `call_ef45692b3a840360a13f38f7091`, 22:26
+
+Sam rang and asked the exact question that failed before:
+
+> **Caller:** "Hey Bella. Are you guys open now?"
+> **Bella:** *"Mm, just checking the clock — we've actually closed for tonight, sorry. We're
+> open again tomorrow, Friday, from 12 noon till 9:30pm. Would you like to book a table for
+> tomorrow?"*
+
+Right clock, right next open day, right Friday hours, and she offered the alternative rather
+than just refusing. The call ran 25 s instead of 103 s.
+
+Latency on this call: **e2e p50 1523 ms** (gate ≤1700), p90 1630, llm p50 921, tts 208 — down
+from 1789 / 3519 / 1038. ⚠️ **Do not read that as a latency fix.** `n=2` turns on a short,
+easy call; the earlier p90 of 3519 came from harder turns in a 103 s conversation. Nothing was
+changed that moves per-turn latency except ~200 characters of prompt. Treat the gap as
+unmeasured until a full ear battery runs, and keep lever 4 (model swap) unpulled.
+
 ## ⚠️ Found while doing this: Mazcina has NO AI/recording disclosure in production
 
 | Agent | Greeting discloses? |
