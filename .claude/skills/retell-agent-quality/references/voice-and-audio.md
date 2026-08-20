@@ -54,6 +54,9 @@ where wow beats snappiness. Custom voices can't use it at all.
 
 ## Pronunciation
 
-`pronunciation_dictionary` (agent field) for venue names the TTS mangles — e.g. "Mazcina"
+`pronunciation_dictionary` (agent field) for venue names the TTS mangles. **Mazcina is
+settled (20 Aug 2026):** `{"word":"Mazcina","alphabet":"ipa","phoneme":"mɑˈsinɑ"}` —
+"mahs-SEE-nah", Spanish/Chilean, confirmed by Sam. Schema is `word`/`alphabet`/`phoneme`
+with **no slashes** around the phoneme. Set it at build time, per venue — e.g. "Mazcina"
 (entry still pending Camilo's confirmation of the venue's own pronunciation). One entry per
 venue name at build time; menu dishes usually self-correct via boosted keywords + context.
