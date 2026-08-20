@@ -341,12 +341,26 @@ const envSchema = z
   // GCS). When set, POST /api/onboarding/agreement verifies the submitted
   // version/URLs/hashes against it before writing the acceptance ledger —
   // the ledger is only evidence if the server, not the browser, vouches for
-  // what was accepted. superRefine below requires it in production whenever
-  // self-serve signup is on.
+  // what was accepted. superRefine below requires it in EVERY production —
+  // deliberately not gated on SELF_SERVE_SIGNUP_ENABLED, because a
+  // hand-onboarded venue signs the same agreement.
   LEGAL_DOCUMENTS_MANIFEST_URL: blankAsUnset(z.string().url().optional()),
   // Allows acceptances against an unpublished (SAMPLE-*/DRAFT-*) document
   // set. Kill-switch pattern: ships OFF. Staging turns it on so the wizard
   // stays testable before the real CSA text publishes; production never does.
+  //
+  // ⚠️ That rule is documented in five places and enforced by NONE of them, and
+  // it cannot be enforced here as things stand: staging deliberately runs
+  // APP_ENV=production (so it exercises the production posture), and staging is
+  // exactly the environment that must set this flag. A superRefine keyed on
+  // APP_ENV would refuse to boot staging — verified against the running
+  // voxtable-stg-api, which carries APP_ENV=production AND this flag true.
+  //
+  // Enforcing it properly needs a signal that separates posture from target —
+  // a distinct DEPLOY_TARGET, or keying on PUBLIC_API_BASE_URL's host. Until
+  // then this control fails OPEN while every other one in this subsystem fails
+  // closed, and a production .env typo would let placeholder documents be
+  // accepted into an append-only ledger.
   TERMS_ALLOW_UNPUBLISHED_DOCS: boolFlag(),
   // VoxConcierge is contracted "when released" — the wizard only offers it
   // once this flag is on. VoxDrive is deliberately not a service value
