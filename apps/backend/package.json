@@ -45,7 +45,8 @@
     "smoke:staging": "tsx scripts/smoke-staging.ts",
     "smoke:agent-routing": "tsx scripts/smoke-agent-routing.ts",
     "smoke:menu-guards": "tsx scripts/smoke-menu-guards.ts",
-    "smoke:capacity-ceiling": "tsx scripts/smoke-capacity-ceiling.ts"
+    "smoke:capacity-ceiling": "tsx scripts/smoke-capacity-ceiling.ts",
+    "smoke:inbox-retry": "CALCOM_SYNC_ENABLED=true tsx scripts/smoke-inbox-retry.ts"
   },
   "dependencies": {
     "@opentelemetry/core": "^2.10.0",

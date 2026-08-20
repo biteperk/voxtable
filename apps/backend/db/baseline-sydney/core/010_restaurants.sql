@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS core.restaurants (
   existing_phone_number TEXT,
   stripe_customer_id TEXT,
   retell_agent_id TEXT,
+  calcom_event_type_id INTEGER,
   onboarding_status core.onboarding_status NOT NULL DEFAULT 'account_created',
   onboarding_completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -34,6 +35,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_restaurants_retell_phone
 CREATE UNIQUE INDEX IF NOT EXISTS idx_restaurants_stripe_customer
   ON core.restaurants (stripe_customer_id)
   WHERE stripe_customer_id IS NOT NULL;
+
+-- Migration 035. Two venues sharing one Cal.com event type means one venue's
+-- online diners book the other venue's tables.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_restaurants_calcom_event_type
+  ON core.restaurants (calcom_event_type_id)
+  WHERE calcom_event_type_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS set_restaurants_updated_at ON core.restaurants;
 CREATE TRIGGER set_restaurants_updated_at

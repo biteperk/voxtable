@@ -207,3 +207,60 @@ export async function getOutboxStats(db: DbClient = readPool): Promise<OutboxSta
     lastSuccessAt: row.last_success_at
   };
 }
+
+/**
+ * The same outbox picture, scoped to one restaurant.
+ *
+ * `getOutboxStats` above aggregates the whole table with no tenant predicate,
+ * which is correct for the platform admin console and a cross-tenant leak
+ * anywhere a venue can see it: pending depth, dead letters and oldest-pending
+ * are a direct read on another restaurant's booking volume and reliability.
+ * outbox_calcom carries no restaurant_id of its own, so the scope has to come
+ * through the reservation it mirrors.
+ */
+export async function getOutboxStatsForRestaurant(
+  restaurantId: string,
+  db: DbClient = readPool
+): Promise<OutboxStats> {
+  const result = await db.query<{
+    pending_depth: string;
+    oldest_pending_at: string | null;
+    failed_last_24h: string;
+    succeeded_last_1h: string;
+    last_success_at: string | null;
+  }>(
+    `
+    SELECT
+      COUNT(*) FILTER (WHERE o.succeeded_at IS NULL AND o.failed_at IS NULL)::text AS pending_depth,
+      -- created_at, matching the unscoped getOutboxStats above. next_attempt_at
+      -- answers "when will we next try", which for any backed-off row is in the
+      -- FUTURE — the dashboard would render an "oldest pending" timestamp later
+      -- than now.
+      MIN(o.created_at) FILTER (
+        WHERE o.succeeded_at IS NULL AND o.failed_at IS NULL
+      )::text AS oldest_pending_at,
+      COUNT(*) FILTER (
+        WHERE o.failed_at IS NOT NULL AND o.failed_at >= now() - INTERVAL '24 hours'
+      )::text AS failed_last_24h,
+      COUNT(*) FILTER (
+        WHERE o.succeeded_at IS NOT NULL AND o.succeeded_at >= now() - INTERVAL '1 hour'
+      )::text AS succeeded_last_1h,
+      MAX(o.succeeded_at)::text AS last_success_at
+    FROM outbox_calcom o
+    -- INNER JOIN is safe only because outbox_calcom.reservation_id is
+    -- ON DELETE CASCADE (migration 004), so an outbox row can never outlive its
+    -- reservation. If that ever changes, this silently under-counts.
+    JOIN reservations r ON r.id = o.reservation_id
+    WHERE r.restaurant_id = $1
+    `,
+    [restaurantId]
+  );
+  const row = result.rows[0]!;
+  return {
+    pendingDepth: Number(row.pending_depth),
+    oldestPendingAt: row.oldest_pending_at,
+    failedLast24h: Number(row.failed_last_24h),
+    succeededLast1h: Number(row.succeeded_last_1h),
+    lastSuccessAt: row.last_success_at
+  };
+}

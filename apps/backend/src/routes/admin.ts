@@ -29,6 +29,7 @@ import {
 import {
   clearProvisioningBindings,
   getProvisioning,
+  getRestaurantByCalcomEventTypeId,
   getRestaurantByRetellAgentId,
   getOnboardingFunnel,
   getOnboardingStatus,
@@ -41,6 +42,7 @@ import {
 } from "../repositories/restaurants";
 import { listSupportRequests, setSupportRequestStatus } from "../repositories/supportRequests";
 import { quotaSnapshotFromDb } from "../services/calcomQuotaTracker";
+import { verifyCalcomEventTypeForVenue } from "../services/calcomService";
 import {
   getPublishedLegalDocuments,
   legalDocumentsVerificationEnabled
@@ -354,6 +356,87 @@ adminRouter.patch(
       }
     }
 
+    // Prove the Cal.com event type before storing it, for the same reason the
+    // agent is proved above: `calcom_event_type_id` is a bare integer that
+    // decides which venue an inbound web booking belongs to, so a wrong one
+    // seats this restaurant's online diners at another restaurant's tables,
+    // with every name resolving correctly on the way through.
+    if (body.calcom_event_type_id !== undefined) {
+      const venue = await getProvisioning(id);
+      if (!venue) throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
+
+      const conflict = await getRestaurantByCalcomEventTypeId(body.calcom_event_type_id, id);
+      if (conflict) {
+        throw new AppError(
+          409,
+          "CALCOM_EVENT_TYPE_ALREADY_BOUND",
+          `Cal.com event type ${body.calcom_event_type_id} is already bound to ` +
+            `"${conflict.name}". Two venues sharing one event type means one venue's ` +
+            `online diners book the other venue's tables. Create this venue its own ` +
+            `event type — see deploy/runbooks/calcom-integration.md.`
+        );
+      }
+
+      if (env.CALCOM_API_KEY) {
+        const verdict = await verifyCalcomEventTypeForVenue(
+          body.calcom_event_type_id,
+          venue.name
+        );
+        // Refused, not warned. The mirror currently assumes one Cal.com booking
+        // is one reservation; a seated event type puts every party in a slot
+        // under one shared uid, which makes the inbound loop guard drop the
+        // second party and makes a cancel take out the whole slot. Seats is a
+        // deliberate, separate piece of work — until it lands, binding a seated
+        // event type would lose real bookings silently.
+        if (verdict.seatsPerTimeSlot !== null) {
+          throw new AppError(
+            409,
+            "CALCOM_EVENT_TYPE_SEATED",
+            `Cal.com event type ${body.calcom_event_type_id} has seats enabled ` +
+              `(${verdict.seatsPerTimeSlot} per slot). VoxTable cannot mirror seated ` +
+              `event types yet — every party in a slot would share one booking id, and ` +
+              `one guest cancelling would cancel the rest. Turn seats off, or wait for ` +
+              `seat support. See deploy/runbooks/calcom-integration.md.`
+          );
+        }
+        if (!verdict.matchesVenue && !allowNameMismatch) {
+          throw new AppError(
+            409,
+            "CALCOM_EVENT_TYPE_VENUE_MISMATCH",
+            `Cal.com event type ${body.calcom_event_type_id} is titled ` +
+              `"${verdict.title ?? "(untitled)"}", which does not look like "${venue.name}". ` +
+              `Re-send with ?allow_name_mismatch=true if this is deliberate.`
+          );
+        }
+        if (!verdict.matchesVenue) {
+          logger.warn({
+            evt: "admin_calcom_event_type_venue_mismatch_override",
+            restaurant_id: id,
+            event_type_id: body.calcom_event_type_id,
+            event_type_title: verdict.title,
+            venue_name: venue.name
+          });
+        }
+        // Not fatal: the inbound handler already flags party_size_missing and
+        // defaults to 2 rather than refusing a guest. But catching it here is
+        // the difference between a config fix and staff ringing guests back to
+        // ask how many are coming.
+        if (!verdict.hasPartySizeField) {
+          logger.warn({
+            evt: "admin_calcom_event_type_missing_party_size",
+            restaurant_id: id,
+            event_type_id: body.calcom_event_type_id
+          });
+        }
+      } else {
+        logger.warn({
+          evt: "admin_calcom_verify_skipped_no_api_key",
+          restaurant_id: id,
+          event_type_id: body.calcom_event_type_id
+        });
+      }
+    }
+
     const updated = await setProvisioningBindings(id, {
       twilioPhoneNumber: body.twilio_phone_number
         ? normalizePhone(body.twilio_phone_number) ?? body.twilio_phone_number
@@ -361,7 +444,8 @@ adminRouter.patch(
       retellPhoneNumber: body.retell_phone_number
         ? normalizePhone(body.retell_phone_number) ?? body.retell_phone_number
         : undefined,
-      retellAgentId: body.retell_agent_id
+      retellAgentId: body.retell_agent_id,
+      calcomEventTypeId: body.calcom_event_type_id
     });
     // Once both the number and agent are bound, tell the owner their line is
     // ready so they can forward + verify.

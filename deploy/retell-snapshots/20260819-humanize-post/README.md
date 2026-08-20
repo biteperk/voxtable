@@ -40,3 +40,17 @@ menu-mode fixes. Publishing it would erase them; discard the draft and treat the
 (and these snapshots) as the truth.
 
 Rollback: re-apply `20260819-humanize-pre/` (one PATCH each for LLM and agent).
+
+## Addendum — unresolved-date guard (20:45 web test)
+
+A dashboard web call asked to "book tonight". With no webhook, `{{today}}` was unfilled,
+and the agent **invented 2024-06-12 from training data** and sent it to
+`check_availability` (backend correctly 409'd on the past date; the honesty section then
+degraded gracefully to a callback offer — that half worked perfectly).
+
+The Time anchor now ends with an explicit guard: if `{{today}}` is visibly unresolved, the
+agent does NOT know the date, must never guess one, and should ask for the full date
+including the year or take a message. Applied to BOTH staging LLMs — on a real call the
+webhook always injects the date, but this is exactly the "confidently wrong" behaviour that
+would surface during a webhook failure, which is the scenario the whole honesty section
+exists for.

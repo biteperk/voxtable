@@ -222,6 +222,32 @@ Treat it as a BD track measured in weeks-to-months, not sprint work.
 They are read-only and unofficial, and without slot lock they cannot prevent a collision —
 which is the only thing that would matter.
 
+## 5c. Online bookings via Cal.com (optional, and independent of the phone line)
+
+A venue can take self-serve online bookings through Cal.com. It is opt-in per venue and
+entirely separate from provisioning the phone line — a voice-only venue simply never gets an
+event type, and a venue can have online bookings before it has a number.
+
+The short version: create **one Cal.com event type for this venue**, then bind its numeric id
+on the venue's admin page (**Online bookings**). That id is what an inbound Cal.com webhook is
+matched against, so binding another venue's event type would seat this restaurant's online
+diners at that venue's tables — the API refuses an event type another venue already holds.
+
+Two traps worth knowing before you open the Cal.com console:
+
+- **Leave "offer seats" OFF.** Without seats a Cal.com event type offers each time slot
+  exactly once, which is a real limitation for a busy service — but the mirror currently
+  assumes one Cal.com booking is one reservation, and a seated event type breaks that in ways
+  that lose bookings silently. The admin API refuses to bind one.
+- **Add a number booking field with slug exactly `party-size`.** Without it every online
+  booking arrives flagged for review and defaults to two covers.
+
+Clearing the event type is the per-venue kill switch: it stops new bookings mirroring while
+leaving bookings already on Cal.com cancellable.
+
+📖 Full setup, the seats limitation, environment isolation and rollback:
+[`calcom-integration.md`](calcom-integration.md).
+
 ## 6. After the install
 
 - Record the venue's vendor identifiers ONLY in the `restaurants` row (and

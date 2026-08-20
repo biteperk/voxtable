@@ -546,7 +546,14 @@ export const adminProvisioningSchema = z
   .object({
     twilio_phone_number: z.string().min(3).max(32).optional(),
     retell_phone_number: z.string().min(3).max(32).optional(),
-    retell_agent_id: z.string().min(3).max(120).optional()
+    retell_agent_id: z.string().min(3).max(120).optional(),
+    // Cal.com event type for this venue's online booking page (migration 035).
+    // Deliberately NOT part of the paired-binding rule below: Cal.com is an
+    // optional channel and must be bindable on a venue that has no phone line
+    // yet, and vice versa. The rule's `hasNumber === hasAgent` early-return
+    // already lets a body carrying only this field through — that is intended,
+    // not an oversight.
+    calcom_event_type_id: z.coerce.number().int().positive().optional()
   })
   .superRefine((value, ctx) => {
     const hasNumber = value.twilio_phone_number !== undefined;
@@ -568,14 +575,22 @@ export const adminProvisioningSchema = z
 export const ADMIN_UNBINDABLE_FIELDS = [
   "twilio_phone_number",
   "retell_phone_number",
-  "retell_agent_id"
+  "retell_agent_id",
+  // Clearing this is the per-venue Cal.com kill switch: it stops new bookings
+  // mirroring out and stops inbound webhooks resolving to this venue, while
+  // leaving bookings already live on Cal.com cancellable (the cancel path gates
+  // on the reservation's uid, not on the venue's binding).
+  //
+  // Must be kept in step with the independent allowlist inside
+  // clearProvisioningBindings — a field missing there is a silent no-op.
+  "calcom_event_type_id"
 ] as const;
 
 export const adminUnbindSchema = z.object({
   fields: z
     .array(z.enum(ADMIN_UNBINDABLE_FIELDS))
     .nonempty("Pick at least one binding to clear.")
-    .max(3),
+    .max(ADMIN_UNBINDABLE_FIELDS.length),
   confirm_name: z.string().trim().min(1).max(200),
   acknowledge_live: z.boolean().default(false)
 });

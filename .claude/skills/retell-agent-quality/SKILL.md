@@ -33,9 +33,15 @@ Machine-checkable half (`scripts/assert-agent.mjs` runs all of these):
       only from `{{restaurant_name}}` / `{{owner_name}}` (venue-onboarding.md §1 trap 3).
 - [ ] Every functional tool has `speak_during_execution: true` AND
       `speak_after_execution: true` (dead-air incident — see triage).
-- [ ] `default_dynamic_variables` is **empty** `{}` — anything set there is frozen forever
-      and surfaces exactly when the inbound webhook fails, greeting callers with a stale
-      venue and months-old dates (NUMBERS.md §6).
+- [ ] `default_dynamic_variables` carries **no volatile keys** — `today`, `tomorrow`,
+      `weekday_local`, `now_local`, `caller_phone`. These are the fallback when
+      `/retell/inbound` fails and nothing refreshes them, so the rule (NUMBERS.md §6) is
+      that a fallback may only ever be **vague, never wrong**: frozen dates and a
+      hardcoded caller number go confidently wrong. A single-venue agent's own *static*
+      identity (`restaurant_name`, `owner_name`, `restaurant_timezone`, and a weekday-free
+      `today_status` for a venue that trades every day) cannot go wrong and is permitted —
+      it is also the only way to test in the dashboard, where no webhook fires. Clear it if
+      the agent is ever re-pointed at another venue.
 - [ ] `webhook_url` and every tool URL point at THIS environment's API hostname and no other.
 - [ ] Golden knobs match the table below.
 - [ ] Number binding is **webhook mode** (`inbound_webhook_url`), never a static

@@ -146,6 +146,13 @@ jobs:
       - name: Prove the Cal.com mirror converges
         run: npm run smoke:calcom-mirror
 
+      # /cal/webhook answers 200 on failure (a 5xx makes Cal.com retry forever),
+      # so before this worker existed an inbound booking lost to a lock wait was
+      # lost for good — nothing on our side retried it, and nothing on theirs.
+      # The claim function had zero callers for six migrations.
+      - name: Prove a failed inbound booking is retried, not lost
+        run: npm run smoke:inbox-retry
+
       # The outbox retry policy's throw path: a throwing row must dead-letter
       # at the attempts ceiling, and a row whose executor aborts the batch
       # transaction must still get its retry recorded (per-row savepoints) —

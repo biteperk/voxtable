@@ -285,3 +285,54 @@ test("development does not need the manifest — it is the local escape hatch", 
   });
   assert.equal(result.success, true);
 });
+
+// --- Cal.com per-venue event types (migration 035) ---------------------------
+//
+// These three encode the PR #107 lesson in a second channel: a boot gate must
+// demand deployment config, never per-restaurant data. Cal.com event types moved
+// onto the restaurants row, so the production rule inverted — the value must be
+// ABSENT, not present.
+
+test("production with Cal.com sync on boots without a global event type", () => {
+  const result = validateEnv({
+    ...productionEnv,
+    CALCOM_SYNC_ENABLED: "true",
+    CALCOM_API_KEY: "cal_test_key",
+    CALCOM_WEBHOOK_SECRET: "whsec"
+  });
+  // The old gate demanded CALCOM_EVENT_TYPE_ID here, which is per-venue data —
+  // exactly the mistake that stopped staging booting until PR #107.
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});
+
+test("production refuses a GLOBAL Cal.com event type — it would cross tenants", () => {
+  const result = validateEnv({
+    ...productionEnv,
+    CALCOM_SYNC_ENABLED: "true",
+    CALCOM_API_KEY: "cal_test_key",
+    CALCOM_WEBHOOK_SECRET: "whsec",
+    CALCOM_EVENT_TYPE_ID: "3414737"
+  });
+  assert.equal(result.success, false);
+  assert.ok(issuePaths(result).includes("CALCOM_EVENT_TYPE_ID"));
+});
+
+test("the credentials that ARE deployment config are still demanded", () => {
+  const result = validateEnv({ ...productionEnv, CALCOM_SYNC_ENABLED: "true" });
+  assert.equal(result.success, false);
+  const paths = issuePaths(result);
+  assert.ok(paths.includes("CALCOM_API_KEY"));
+  assert.ok(paths.includes("CALCOM_WEBHOOK_SECRET"));
+});
+
+test("outside production the deprecated key parses but changes nothing", () => {
+  const result = validateEnv({
+    APP_ENV: "development",
+    DATABASE_URL: DB,
+    PUBLIC_API_BASE_URL: "http://localhost:3050",
+    CALCOM_SYNC_ENABLED: "true",
+    CALCOM_EVENT_TYPE_ID: "3414737"
+  });
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+  assert.equal(result.data!.CALCOM_EVENT_TYPE_ID, 3414737);
+});

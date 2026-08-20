@@ -26,11 +26,9 @@ import {
   updateTableMetadata
 } from "../repositories/tables";
 import { normalizePartySize, tableAvailabilityQuerySchema, tablePayloadSchema, updateTableMetadataSchema } from "../http/schemas";
-import { getInboxStats } from "../repositories/inbox";
-import { getOutboxStats } from "../repositories/outbox";
+import { getOutboxStatsForRestaurant } from "../repositories/outbox";
 import { isWithinOpeningHours, todayInTz } from "../utils/time";
 import { getOpsState } from "../repositories/opsState";
-import { quotaSnapshotFromDb } from "../services/calcomQuotaTracker";
 import { pool } from "../db/pool";
 
 export const dashboardRouter = Router();
@@ -324,10 +322,15 @@ dashboardRouter.get(
   "/api/ops/calcom-health",
   asyncHandler(async (request, response) => {
     const restaurantId = tenantId(request);
-    const [outbox, inbox, costRow] = await Promise.all([
-      // outbox/inbox/breaker/quota are platform-wide Cal.com integration state.
-      getOutboxStats(),
-      getInboxStats(),
+    const [outbox, costRow] = await Promise.all([
+      // Scoped to THIS restaurant. It used to call the platform-wide
+      // getOutboxStats/getInboxStats on a route any venue's manager can reach,
+      // so one venue read another's pending depth, dead-letter count and
+      // oldest-pending timestamp — a direct signal of someone else's booking
+      // volume and reliability. Dormant only because sync had never been on.
+      // The unscoped numbers still exist, behind requireAdminRole, at
+      // /api/admin/ops-summary.
+      getOutboxStatsForRestaurant(restaurantId),
       // voice_today is per-restaurant (the tenant's own call cost view).
       pool.query<{
         calls_today: string;
@@ -360,7 +363,6 @@ dashboardRouter.get(
       consecutiveFailures: Number(breakerRow?.consecutiveFailures ?? 0),
       openedAt: typeof breakerRow?.openedAt === "number" ? (breakerRow.openedAt as number) : null
     };
-    const quota = await quotaSnapshotFromDb();
     const callsToday = Number(costRow.rows[0]?.calls_today ?? "0");
     const bookingsToday = Number(costRow.rows[0]?.bookings_today ?? "0");
     const durationSecToday = Number(costRow.rows[0]?.duration_seconds_today ?? "0");
@@ -368,22 +370,41 @@ dashboardRouter.get(
     // varies. Surface duration and let ops do the math against whatever
     // rate card is current. ALSO surface a "minutes today" view because
     // that's the unit Retell's dashboard shows.
+    // Everything a venue actually needs from the platform-wide picture is
+    // "are my online bookings flowing right now". The breaker's consecutive
+    // failure count, the inbox depth and the quota are operator numbers with
+    // no per-tenant meaning, and inbox/quota cannot be scoped at all — the
+    // inbox is keyed by Cal.com event id and the quota is one shared account.
+    // So they collapse to a single word here rather than being exposed.
+    // Only inputs that are about THIS venue, plus the breaker.
+    //
+    // The inbox dead-letter count and the Cal.com quota are both platform-wide
+    // and cannot be scoped here — the inbox is keyed by Cal.com event id with no
+    // restaurant column, and the quota counts one shared account. Folding them in
+    // meant venue A read "degraded" because venue B lost a booking: a
+    // cross-tenant signal (small, but pollable) and an alarm the venue could do
+    // nothing about. They belong to the operator view, which already has them at
+    // /api/admin/ops-summary.
+    //
+    // The breaker stays: it is platform-wide as a cause but venue-specific as an
+    // effect — when it is open, THIS venue's bookings genuinely are not syncing.
+    const degraded = breaker.state !== "closed" || outbox.failedLast24h > 0;
+
     response.json({
       enabled: env.CALCOM_SYNC_ENABLED,
+      integration_status: degraded ? "degraded" : "ok",
       outbox,
-      inbox,
-      circuit_breaker: {
-        state: breaker.state,
-        consecutive_failures: breaker.consecutiveFailures,
-        opened_at: breaker.openedAt ? new Date(breaker.openedAt).toISOString() : null
-      },
       voice_today: {
         calls: callsToday,
         bookings_confirmed: bookingsToday,
         duration_seconds: durationSecToday,
         minutes_rounded_up: Math.ceil(durationSecToday / 60)
-      },
-      calcom_quota: quota
+      }
+      // calcom_quota is deliberately absent. It counts Cal.com API calls across
+      // the whole platform against one shared account allowance, so it has no
+      // per-tenant meaning and reading it tells a venue how busy every other
+      // venue is. It feeds integration_status above, and the raw number stays
+      // on /api/admin/ops-summary behind requireAdminRole.
     });
   })
 );
