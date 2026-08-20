@@ -14,6 +14,13 @@ on:
   workflow_dispatch:
   push:
     # A change to the declaration or the checker must prove itself immediately.
+    #
+    # integration/main ONLY, and not because feature branches do not matter: the workload
+    # identity provider's attribute condition authorises those two refs and nothing else, so a
+    # run from any other branch fails at auth before it reaches a single assertion. A workflow
+    # that is red on every feature branch for a reason unrelated to what it checks is a workflow
+    # people learn to scroll past.
+    branches: [integration, main]
     paths:
       - deploy/voice-lines.json
       - .claude/skills/retell-agent-quality/scripts/assert-line.mjs
