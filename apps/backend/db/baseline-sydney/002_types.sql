@@ -16,6 +16,8 @@ BEGIN
     CREATE TYPE core.onboarding_status AS ENUM (
       'account_created',
       'profile',
+      -- Migration 017. The unskippable legal step between profile and menu.
+      'agreement',
       'menu',
       'trial',
       'provisioning',

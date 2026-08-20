@@ -6,6 +6,10 @@ CREATE TABLE IF NOT EXISTS reservations.reservations (
   reservation_date DATE NOT NULL,
   start_time TIME NOT NULL,
   party_size INTEGER NOT NULL CHECK (party_size > 0),
+  -- Migration 025. Set from the restaurant's configured booking duration at
+  -- the moment of booking; the default is the value the code has always
+  -- fallen back to.
+  duration_minutes INTEGER NOT NULL DEFAULT 90 CHECK (duration_minutes > 0),
   status core.reservation_status NOT NULL DEFAULT 'confirmed',
   source core.booking_source NOT NULL,
   notes TEXT,
@@ -16,7 +20,23 @@ CREATE TABLE IF NOT EXISTS reservations.reservations (
   calcom_booking_uid TEXT,
   created_from_call_log_id UUID REFERENCES voice.call_logs(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  -- Migration 025. The real double-booking guard: no two live reservations may
+  -- hold the same table over overlapping wall-clock ranges, regardless of what
+  -- the application lock does. The partial unique index below only catches an
+  -- exact start-time collision and stays as a second belt.
+  CONSTRAINT reservations_no_overlap EXCLUDE USING gist (
+    table_id WITH =,
+    tsrange(
+      (reservation_date + start_time),
+      (reservation_date + start_time + make_interval(mins => duration_minutes)),
+      '[)'
+    ) WITH &&
+  ) WHERE (
+    status NOT IN ('cancelled', 'no_show', 'completed')
+    AND table_id IS NOT NULL
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_reservations_restaurant_date_time
