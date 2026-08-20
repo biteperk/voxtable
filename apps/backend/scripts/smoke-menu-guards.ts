@@ -21,6 +21,7 @@
  */
 import { pool } from "../src/db/pool";
 import { handleRetellFunction } from "../src/services/retellService";
+import { lookupMenu } from "../src/services/menuService";
 import { isAppError } from "../src/domain/errors";
 import { nowTimeInTz } from "../src/utils/time";
 import {
@@ -115,6 +116,30 @@ async function main(): Promise<void> {
       [restaurantId, category.id, hm(soon), hm(later)]
     );
 
+    // A section that is ENTIRELY licensed, plus a second drink section. Both
+    // exist for the browse assertions below: the first proves an all-bar list
+    // gets described rather than denied, the second proves an umbrella "drinks"
+    // ask fans out instead of answering from whichever section sorts first.
+    const bar = await one<{ id: string }>(
+      `INSERT INTO menu_categories (restaurant_id, name) VALUES ($1, 'Guard Cocktails') RETURNING id`,
+      [restaurantId]
+    );
+    await pool.query(
+      `INSERT INTO menu_items (restaurant_id, category_id, name, base_price_cents, is_available, is_restricted)
+       VALUES ($1, $2, 'Guard Negroni', 2300, true, true),
+              ($1, $2, 'Guard Mojito', 2500, true, true)`,
+      [restaurantId, bar.id]
+    );
+    const juices = await one<{ id: string }>(
+      `INSERT INTO menu_categories (restaurant_id, name) VALUES ($1, 'Guard Juices') RETURNING id`,
+      [restaurantId]
+    );
+    await pool.query(
+      `INSERT INTO menu_items (restaurant_id, category_id, name, base_price_cents, is_available)
+       VALUES ($1, $2, 'Guard Orange Juice', 700, true)`,
+      [restaurantId, juices.id]
+    );
+
     const control = await orderAndCatchCode(restaurantId, "Guard Control Burger", `guardCtl${SUFFIX}`);
     assert("an ordinary item is accepted (control)", control.code === null, control);
 
@@ -136,6 +161,56 @@ async function main(): Promise<void> {
       "...and the refusal names the window, so the caller can call back",
       /only served/i.test(outOfWindow.message),
       { message: outOfWindow.message }
+    );
+
+    // --- Browsing, the other half of the guard -----------------------------
+    // Refusing to SELL a licensed drink is only right if Bella can still TALK
+    // about it. The overview used to drop any category left empty once the
+    // licensed rows were filtered out, so a venue whose cocktails are all
+    // licensed had Bella deny the section existed at all.
+    const overview = await lookupMenu({ restaurantId });
+    assert(
+      "an all-licensed section is still named in the menu overview",
+      overview.speakable_summary.includes("Guard Cocktails"),
+      overview
+    );
+    assert(
+      "...but never supplies a sample item she would have to refuse",
+      overview.matches.every((m) => !m.is_restricted),
+      overview.matches
+    );
+
+    const cocktails = await lookupMenu({ restaurantId, category: "Guard Cocktails" });
+    assert(
+      "browsing an all-licensed section names its drinks",
+      /Guard Negroni/.test(cocktails.speakable_summary) && cocktails.matches.length === 2,
+      cocktails
+    );
+    assert(
+      "...and explains they can't be ordered by phone, rather than denying the section",
+      /licensed/i.test(cocktails.speakable_summary) && !/don't have a/i.test(cocktails.speakable_summary),
+      cocktails
+    );
+
+    const umbrella = await lookupMenu({ restaurantId, category: "drinks" });
+    assert(
+      "an umbrella 'drinks' ask offers every drink section, not just the first",
+      /Guard Cocktails/.test(umbrella.speakable_summary) && /Guard Juices/.test(umbrella.speakable_summary),
+      umbrella
+    );
+
+    const mixed = await lookupMenu({ restaurantId, category: "Guard Menu" });
+    assert(
+      "a part-licensed section offers what's orderable and never upsells the rest",
+      /Guard Control Burger/.test(mixed.speakable_summary) && !/Guard Pale Ale/.test(mixed.speakable_summary),
+      mixed
+    );
+
+    const absent = await lookupMenu({ restaurantId, category: "ramen" });
+    assert(
+      "a section that genuinely isn't on the menu is still an honest miss",
+      /don't have a ramen section/i.test(absent.speakable_summary),
+      absent
     );
   } finally {
     await pool.query(`DELETE FROM call_logs WHERE restaurant_id = $1`, [restaurantId]);

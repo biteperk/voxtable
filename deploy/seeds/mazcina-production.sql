@@ -1,4 +1,11 @@
--- Mazcina — PRODUCTION venue row for the BitePerk-owned line +61 468 202 846.
+-- Mazcina Resto-Bar — PRODUCTION venue row for the BitePerk-owned line +61 468 202 846.
+--
+-- The name is what Bella SAYS: /retell/inbound resolves the row from the dialled
+-- number and passes restaurants.name through as the {{restaurant_name}} dynamic
+-- variable, so editing it here (and in the live row) is the whole change — the
+-- Retell prompt is parameterised and needs no edit. The name is "Mazcina
+-- Resto-Bar", hyphenated — as this file's staging twin always said in its own
+-- header, before an unhyphenated version was briefly committed on 20 Aug 2026.
 --
 -- Mirrors deploy/seeds/mazcina-venue.sql + mazcina-tables.sql (staging), because data
 -- never promotes between environments — every venue is inserted twice, deliberately.
@@ -15,7 +22,7 @@ INSERT INTO restaurants
   (id, name, timezone, phone_number, transfer_phone_number,
    address, suburb, state, postcode, cuisine_type, owner_name, onboarding_status)
 VALUES
-  ('44444444-4444-4444-8444-444444444444', 'Mazcina', 'Australia/Sydney',
+  ('44444444-4444-4444-8444-444444444444', 'Mazcina Resto-Bar', 'Australia/Sydney',
    '+61433865661', '+61433865661',
    '248 Palmer St, Shop 6', 'Darlinghurst', 'NSW', '2010',
    ARRAY['Mediterranean','South American','Chilean'], 'Camilo', 'provisioning')
