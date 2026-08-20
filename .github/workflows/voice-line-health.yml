@@ -9,8 +9,15 @@ name: Voice line health
 # placing a call. This runs off anyone's laptop so a break is found while it is still cheap.
 on:
   schedule:
-    # Hourly, off the :00 mark. The line is not customer-facing yet; tighten this when it is.
-    - cron: "23 * * * *"
+    # Daily, TEMPORARILY. Hourly is the right cadence and the intent is to restore it, but
+    # neither job can run yet: staging needs a secretAccessor grant on three secrets
+    # (biteperk-cloud-platform#31, awaiting apply) and production needs RETELL_PROD_API_KEY
+    # and RETELL_PROD_WEBHOOK_SECRET as repository secrets. Twenty-four red runs a day for a
+    # reason unrelated to the phone line is how a check becomes something people scroll past,
+    # and this one exists precisely because nobody was watching.
+    #
+    # RESTORE TO "23 * * * *" once both are in place and a run comes back green.
+    - cron: "23 19 * * *"
   workflow_dispatch:
   push:
     # A change to the declaration or the checker must prove itself immediately.
