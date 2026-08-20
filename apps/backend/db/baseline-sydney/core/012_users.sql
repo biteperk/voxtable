@@ -3,6 +3,10 @@ CREATE TABLE IF NOT EXISTS core.users (
   email TEXT NOT NULL,
   name TEXT,
   email_verified BOOLEAN NOT NULL DEFAULT false,
+  -- Migration 021. The PERSON BitePerk follows up with (E.164), distinct from
+  -- the venue's advertised phone; signup_source segments future CRM syncs.
+  phone TEXT,
+  signup_source TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

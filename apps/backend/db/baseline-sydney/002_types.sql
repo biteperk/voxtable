@@ -16,6 +16,8 @@ BEGIN
     CREATE TYPE core.onboarding_status AS ENUM (
       'account_created',
       'profile',
+      -- Migration 017. The unskippable legal step between profile and menu.
+      'agreement',
       'menu',
       'trial',
       'provisioning',
@@ -35,6 +37,12 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = 'core'::regnamespace AND typname = 'payment_status') THEN
     CREATE TYPE core.payment_status AS ENUM ('unpaid', 'paid', 'refunded');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = 'core'::regnamespace AND typname = 'order_payment_status') THEN
+    CREATE TYPE core.order_payment_status AS ENUM (
+      'created', 'sent', 'processing', 'paid', 'expired', 'failed',
+      'cancelled', 'refunded', 'disputed'
+    );
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = 'core'::regnamespace AND typname = 'order_event_type') THEN
     CREATE TYPE core.order_event_type AS ENUM (
