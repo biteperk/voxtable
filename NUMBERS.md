@@ -1,14 +1,22 @@
 # NUMBERS.md — the telephony registry
 
-> 🟢 **UPDATE 19 Aug 2026 — +61 468 202 846 is now WIRED END TO END (production).**
-> Retell: number imported into the **Biteperk** workspace in webhook mode →
-> `https://api.biteperk.com.au/retell/inbound`; agent `agent_3bedcbdd77017136e5b4ade412`
-> ("Mazcina (production)"), LLM `llm_5774e05076475b2b0cdba5329ad5`. Database: venue row
-> `44444444-4444-4444-8444-444444444444` (Mazcina) with real hours, 10 tables and a
-> 31-item menu. Anything below saying this number "reaches nothing" is superseded.
-> ⚠️ Its greeting carries **no AI/recording disclosure** — Sam's explicit decision; restore
-> it before the number is publicised (see `legal-brief-call-recording.md`).
-> Snapshots: `deploy/retell-snapshots/20260819-prod-mazcina-{pre,post}/`.
+> 🔴 **UPDATE 20 Aug 2026 — `+61 468 202 846` is NOT wired. The 19 Aug "wired end to
+> end" claim below no longer holds and has been replaced.** Verified against the Retell API
+> (`list-phone-numbers`, Biteperk production workspace): the workspace holds **exactly one**
+> number — the pilot line `+61 2 7501 1140`, webhook mode, pointing at
+> `https://vocotable.algorythmos.com.au/retell/inbound`. `+61 468 202 846` is absent, so
+> nothing routes to the Mazcina agent.
+> What IS still true: Twilio's side is wired (AU1 trunk + messaging service); agent
+> `agent_3bedcbdd77017136e5b4ade412` ("Mazcina Resto-Bar") and LLM
+> `llm_5774e05076475b2b0cdba5329ad5` exist and pass every golden-config check; and venue row
+> `44444444-4444-4444-8444-444444444444` carries real hours, 10 tables and a 31-item menu.
+> The number **was** imported on 19 Aug — a call reached the agent and dropped at 7,595 ms —
+> so the import has been removed or lost since. Find out how before re-importing: a binding
+> that vanishes once can vanish again, and §7 makes importing one-way if it goes wrong.
+> ✅ The greeting now carries the AI + recording disclosure again — restored 20 Aug across all
+> three production agents. Snapshots:
+> `deploy/retell-snapshots/20260820-prod-disclosure-{pre,post}/`; the 19 Aug pair is
+> `deploy/retell-snapshots/20260819-prod-mazcina-{pre,post}/`.
 > 🔴 **Do NOT publicise this number yet.** Its first call dropped at 7,595 ms — the same
 > fixed-timer fault that affects the staging line, present on both AU1 trunks since their
 > first day and killing roughly a third of calls. Evidence and the isolating experiment:

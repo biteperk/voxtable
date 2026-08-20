@@ -68,7 +68,7 @@ artifact.
 | Database | Cloud SQL `voxtable-stg-postgres`, private VPC | Postgres on the VM |
 | Retell workspace | **Staging** | **Biteperk** (production) — see [`NAMES.md`](NAMES.md) §6 |
 | Twilio account | `Biteperk-staging` | `Biteperk-production` — see [`NUMBERS.md`](NUMBERS.md) |
-| Phone number | `+61 468 203 234` (bound and answering) | `+61 468 202 846` — 🟢 **wired end to end 19 Aug 2026**: Retell agent `agent_3bedcbdd77017136e5b4ade412` (Biteperk workspace, webhook mode) + Mazcina `restaurants` row `44444444-…`. ⚠️ Its greeting carries **no AI/recording disclosure** — restore before publicising the number. The pilot line `+61 2 7501 1140` remains on the suspended Algorythmos Twilio account. See [`NUMBERS.md`](NUMBERS.md) §2. |
+| Phone number | `+61 468 203 234` (bound and answering) | `+61 468 202 846` — 🔴 **not reachable: absent from the Retell workspace.** Verified 20 Aug 2026 (`list-phone-numbers`): the Biteperk workspace holds exactly one number, the pilot line `+61 2 7501 1140`, in webhook mode. Twilio's side is wired and the Mazcina agent `agent_3bedcbdd77017136e5b4ade412` passes every golden-config check — but nothing routes to it. It **was** imported on 19 Aug (a call reached it and dropped at 7,595 ms), so the import was removed or lost since; find out how before re-importing. The AI/recording disclosure was restored on all three production agents 20 Aug. The pilot line remains on the suspended Algorythmos Twilio account. See [`NUMBERS.md`](NUMBERS.md) §2. |
 | Stripe | test mode / sandbox | **live mode, same account** |
 
 Vendor state (SIDs, balances, approval statuses) lives in `NUMBERS.md` and is deliberately
