@@ -14,7 +14,8 @@
 //
 // Env: RETELL_API_KEY (required), RETELL_WEBHOOK_SECRET (for the post-check probe).
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync } from "node:fs";
+import { resolveCredentials } from "./line-credentials.mjs";
 
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");
@@ -23,12 +24,19 @@ const configPath = configIdx >= 0 ? args[configIdx + 1] : "deploy/voice-lines.js
 const number = args.find((a) => a.startsWith("+"));
 if (!number) { console.error("usage: RETELL_API_KEY=… node apply-line.mjs <+E164> [--apply]"); process.exit(2); }
 
-const KEY = process.env.RETELL_API_KEY;
-if (!KEY) { console.error("RETELL_API_KEY not set"); process.exit(2); }
-const H = { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" };
-
 const d = JSON.parse(readFileSync(configPath, "utf8")).lines?.[number];
 if (!d) { console.error(`${number} is not declared in ${configPath}.`); process.exit(2); }
+
+// Credentials from the declaration, never the shell. Writing to a workspace you did not
+// intend is how a healthy production line became a two-hour outage on 20 Aug 2026.
+let KEY;
+try {
+  KEY = resolveCredentials(d).apiKey;
+} catch (error) {
+  console.error(`Could not load credentials for ${number}: ${error.message}`);
+  process.exit(2);
+}
+const H = { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" };
 
 const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 const snapDir = `deploy/retell-snapshots/${stamp}-${d.environment}-apply-line`;
@@ -56,11 +64,18 @@ say(apply ? "MODE: apply (writes will happen)\n" : "MODE: dry run — nothing wi
 
 // ─── 0. Snapshot before touching anything ─────────────────────────────────────
 if (apply) {
+  // Never overwrite an existing pre-snapshot. A second run of this script would otherwise
+  // capture the state its own first run produced and label it "pre" — which is exactly what
+  // happened on 20 Aug, destroying the only record of what the agent looked like beforehand.
+  if (existsSync(`${snapDir}-pre`)) {
+    say(`pre-snapshot already exists at ${snapDir}-pre — keeping it (it is the real pre-state).`);
+  } else {
   mkdirSync(`${snapDir}-pre`, { recursive: true });
   const r = spawnSync(new URL("./snapshot.sh", import.meta.url).pathname,
     [d.retell_agent_id, d.retell_llm_id, `${snapDir}-pre`], { encoding: "utf8", env: process.env });
   if (r.status !== 0) { console.error("snapshot failed — refusing to write without a rollback point.\n", r.stderr); process.exit(1); }
   say(`snapshot: ${snapDir}-pre\n`);
+  }
 }
 
 // ─── 1. Agent: name, pronunciation, boosted keywords ──────────────────────────

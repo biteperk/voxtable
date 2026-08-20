@@ -21,13 +21,23 @@
       "environment": "production",
       "api_base": "https://api.biteperk.com.au",
       "retell_workspace": "Biteperk",
+      "retell_credentials": {
+        "via": "vm-ssh",
+        "instance": "core-central-vm",
+        "zone": "us-central1-a",
+        "gcp_project": "vocotable-497209",
+        "env_file": "/opt/vocotable/.env",
+        "api_key_var": "RETELL_API_KEY",
+        "webhook_secret_var": "RETELL_WEBHOOK_SECRET",
+        "note": "The repo's local .env holds a DIFFERENT workspace's key (the legacy Algorythmos one). Never use it for this line."
+      },
 
       "restaurant_id": "44444444-4444-4444-8444-444444444444",
       "venue_name": "Mazcina Resto-Bar",
 
-      "retell_agent_id": "agent_3bedcbdd77017136e5b4ade412",
+      "retell_agent_id": "agent_b6b6488af08b82d80e8f4d270a",
       "retell_agent_name": "Mazcina Resto-Bar (production)",
-      "retell_llm_id": "llm_5774e05076475b2b0cdba5329ad5",
+      "retell_llm_id": "llm_5f642f051bb83c28d02cea4e1cbc",
       "inbound_mode": "webhook-only",
       "pronunciation_dictionary": [
         { "word": "Mazcina", "alphabet": "ipa", "phoneme": "mɑˈsinɑ" }
@@ -56,6 +66,13 @@
       "environment": "staging",
       "api_base": "https://voxtable-stg-api-naed3dbhna-ts.a.run.app",
       "retell_workspace": "Staging",
+      "retell_credentials": {
+        "via": "secret-manager",
+        "gcp_project": "bp-voxtable-stg",
+        "api_key_secret": "voxtable-stg-retell-api-key",
+        "webhook_secret_is_api_key": true,
+        "note": "The Staging workspace's single API key is badged as its webhook key, so both take the same string. Production does NOT work this way."
+      },
 
       "restaurant_id": "33333333-3333-4333-8333-333333333333",
       "venue_name": "Mazcina Resto-Bar",

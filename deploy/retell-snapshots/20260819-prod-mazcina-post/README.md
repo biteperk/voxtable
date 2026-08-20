@@ -153,3 +153,34 @@ Consequence: the bind guard `comparableName(agentName).includes(comparableName(v
 **The rule this cost us:** a README may only claim what a read-back printed. The check is now
 executable — `npm run check:voice-lines` — and the declared state lives in
 [`deploy/voice-lines.json`](../../voice-lines.json), not in prose.
+
+
+---
+
+## ⚠️ The correction above is ITSELF wrong — retracted 20 Aug 2026
+
+**Ignore the table in the previous section.** It was produced by reading the Retell API with the
+repo's local `.env` key, which belongs to the **legacy Algorythmos workspace**, not production.
+In that workspace there is a different Mazcina agent (`agent_3bedcbdd77017136e5b4ade412`) which
+genuinely did still carry the old name — so the reading was real, it was just of the wrong estate.
+
+The production agent is **`agent_b6b6488af08b82d80e8f4d270a`**, and read with the VM's key it was
+already correct the whole time:
+
+| Field | Production agent, verified with the production key |
+|---|---|
+| `agent_name` | `Mazcina Resto-Bar (production)` ✅ |
+| `pronunciation_dictionary` | `Mazcina → mɑˈsinɑ` ✅ |
+| `voice_id` / retention | `retell-Cimo` / 30 days ✅ |
+
+**So the original claim in this file — that both agents were renamed and given the pronunciation
+— was TRUE.** It needed no correction. Apologies to whoever wrote it.
+
+What the false correction cost: acting on it, the production venue row was repointed at
+`agent_3bedcbdd…`, an agent that does not exist in the production workspace, and the line stopped
+answering for about two hours until the binding was restored.
+
+The lesson that survives is not "documents lie" but something sharper: **a wrong API key never
+errors.** It answers every question with a clean 404. Verifying a claim with the wrong credentials
+looks exactly like verifying it correctly, which is worse than not checking at all — a plain
+assertion invites doubt, while a false verification ends the conversation.

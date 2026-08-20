@@ -1,41 +1,34 @@
-# Pre-state of the production Mazcina agent, 20 Aug 2026
+# ⚠️ Do not trust this snapshot — wrong workspace, contaminated pre-state
 
-Taken automatically by `scripts/apply-line.mjs +61468202846 --apply` before it reconciled the
-production line to [`deploy/voice-lines.json`](../../voice-lines.json).
+Kept as evidence, not as a record of production.
 
-## What this snapshot shows
+`agent.json` here is `agent_3bedcbdd77017136e5b4ade412` in the **legacy Algorythmos workspace**,
+captured because the script that took it inherited the repo's local `.env` Retell key. It is
+**not** the production agent. Production's Mazcina agent is
+`agent_b6b6488af08b82d80e8f4d270a`, in the **Biteperk** workspace, reachable only with the key
+in the VM's `/opt/vocotable/.env`.
 
-`agent.json` here is the agent as it had stood since **19 Aug 22:38** — `agent_name` still
-`Mazcina (production)`, `pronunciation_dictionary` `null`, `boosted_keywords` without the full
-venue name. That is the state the 19 Aug README claimed had been fixed on 20 Aug; see the
-correction appended to `../20260819-prod-mazcina-post/README.md`.
+Two things make this directory actively misleading, which is why it says so at the top:
 
-## What was applied
+1. **Wrong estate.** Every value in `agent.json`/`llm.json` describes an agent nothing routes to.
+2. **Contaminated "pre".** The first apply run had already PATCHed the agent before the second
+   run took this snapshot, so it records a post-change state under a `-pre` name. `apply-line.mjs`
+   now refuses to overwrite an existing pre-snapshot for exactly this reason.
 
-| Layer | Change | Read back? |
-|---|---|---|
-| Retell agent `agent_3bedcbdd77017136e5b4ade412` | `agent_name` → `Mazcina Resto-Bar (production)`; pronunciation `Mazcina` → `mɑˈsinɑ`; `boosted_keywords` += `Mazcina Resto-Bar` | ✅ confirmed |
-| Production DB row `44444444-…` | `retell_agent_id` `agent_b6b6488af08b82d80e8f4d270a` (**did not exist**) → `agent_3bedcbdd77017136e5b4ade412` | ✅ `UPDATE 1`, row re-read |
-| Retell number import | ❌ **BLOCKED** — see below | — |
+## What actually happened
 
-No post-snapshot exists because the run halted at the import step. The agent state after the
-change is recorded in the read-back inside `assert-line.mjs` output, not here.
+The database was repointed from `agent_b6b6488af08b82d80e8f4d270a` (correct) to
+`agent_3bedcbdd77017136e5b4ade412` (a different workspace's agent), on the strength of a
+wrong-key reading that made the correct agent look non-existent. **The production line stopped
+answering for roughly two hours** and was restored by putting the original binding back.
 
-## Why there is no import
+Also changed in the legacy workspace and not ours to change: that agent was renamed to
+`Mazcina Resto-Bar (production)` and given a pronunciation dictionary. Reverting it was attempted
+and is still outstanding.
 
-`POST /import-phone-number` returned **400 `Phone number already exists.`** while
-`GET /get-phone-number/+61468202846` returns **404 in this workspace** — and also 404 in the
-Staging workspace. Both are true at once: Retell scopes a number to exactly one workspace
-account-wide, so `+61 468 202 846` is registered in a workspace neither BitePerk key can see.
-Whoever imported it there evicted it from here, which is why the 19 Aug import "vanished".
+## What was true all along
 
-Until it is released there, nothing on our side can make this number answer. Resolving it needs
-a human at the Retell dashboard — check every workspace on the account, and the legacy
-Algorythmos workspace (a different login, `NUMBERS.md` §4). Deleting is one-way and a failed
-re-import means a 24–48h support ticket (`CLAUDE.md` §D rule 7).
-
-## Rollback
-
-- Agent: `PATCH /update-agent/agent_3bedcbdd77017136e5b4ade412` with the values in `agent.json`.
-- DB: set `retell_agent_id` back to `agent_b6b6488af08b82d80e8f4d270a` — **don't**. That id does
-  not exist; the pre-state was broken, which is the whole point of this change.
+`+61 468 202 846` was imported correctly in the Biteperk workspace the entire time, webhook-only,
+pointing at `https://api.biteperk.com.au/retell/inbound`. Four real calls reached the agent on
+20 Aug. The only genuine fault on this line is the ~7.6 s fixed-timer drop
+(`deploy/runbooks/incident-7600ms-call-drops.md`).
