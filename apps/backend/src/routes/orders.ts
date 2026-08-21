@@ -30,13 +30,14 @@ import {
 export const ordersRouter = Router();
 const FRONT_OF_HOUSE_ROLES = ["staff", "server", "manager", "owner"] as const;
 const KITCHEN_ROLES = ["kitchen", "manager", "owner"] as const;
+const ORDER_READ_ROLES = ["staff", "server", "kitchen", "manager", "owner"] as const;
 
-// Read endpoints — authed, but kitchen kiosk account is in the allowlist.
+// Read endpoints — live tables and kitchen views both need current orders.
 ordersRouter.get(
   "/api/orders/active",
   requireFirebaseAuth,
   resolveTenant,
-  requireAnyMemberRole(KITCHEN_ROLES),
+  requireAnyMemberRole(ORDER_READ_ROLES),
   asyncHandler(async (request, response) => {
     const orders = await getActiveOrders(tenantId(request));
     // Provide server-now so clients can compute "time since ordered" without
@@ -52,7 +53,7 @@ ordersRouter.get(
   "/api/orders/:id",
   requireFirebaseAuth,
   resolveTenant,
-  requireAnyMemberRole(KITCHEN_ROLES),
+  requireAnyMemberRole(ORDER_READ_ROLES),
   asyncHandler(async (request, response) => {
     const order = await getOrderDetail(request.params.id!, tenantId(request));
     response.json(order);

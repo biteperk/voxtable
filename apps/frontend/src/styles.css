@@ -10622,6 +10622,18 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   color: var(--secondary);
 }
 
+.to-status-chip.status-preparing {
+  background: color-mix(in srgb, var(--secondary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--secondary-container) 55%, transparent);
+  color: var(--secondary);
+}
+
+.to-status-chip.status-ready {
+  background: color-mix(in srgb, var(--primary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--primary-container) 55%, transparent);
+  color: var(--primary);
+}
+
 .to-status-chip.status-served {
   background: var(--surface-container-high);
   border-color: var(--outline-variant);
@@ -10629,6 +10641,12 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 }
 
 .to-status-chip.status-pending {
+  background: color-mix(in srgb, var(--tertiary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--tertiary-container) 50%, transparent);
+  color: var(--tertiary);
+}
+
+.to-status-chip.status-queued {
   background: color-mix(in srgb, var(--tertiary-container) 18%, transparent);
   border-color: color-mix(in srgb, var(--tertiary-container) 50%, transparent);
   color: var(--tertiary);
