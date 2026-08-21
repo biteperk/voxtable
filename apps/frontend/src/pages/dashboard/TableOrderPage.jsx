@@ -1,38 +1,111 @@
 import { useEffect, useState } from "react";
-import { listTables } from "../../api";
+import { listActiveOrders, listTables } from "../../api";
 import { formatVoiceTime12h, zoneIcon } from "../../lib/format";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
-import { MOCK_TABLE_ORDERS, MOCK_TABLE_TIMELINE } from "../../lib/mockData";
 
 const ORDER_STATUS_LABEL = {
+  queued: "Queued",
+  preparing: "Preparing",
+  ready: "Ready",
   served: "Served",
-  fired: "In Kitchen",
   pending: "Pending",
+  cancelled: "Cancelled",
 };
 
-const TAX_RATE = 0.085;
-const SERVICE_RATE = 0.18;
+const PAYMENT_STATUS_LABEL = {
+  unpaid: "Unpaid",
+  pending: "Pending",
+  paid: "Paid",
+  refunded: "Refunded",
+  failed: "Failed",
+};
+
+function centsToDollars(cents) {
+  return (Number(cents ?? 0) / 100).toFixed(2);
+}
+
+function formatTimelineTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function orderLabel(order) {
+  return order.order_number ? `Order #${order.order_number}` : "Order";
+}
+
+function buildOrderTimeline(orders) {
+  return orders
+    .flatMap((order) => [
+      {
+        at: order.ordered_at,
+        source: order.source === "voice" ? "AI VOICE" : "STAFF",
+        text: `${orderLabel(order)} created`,
+      },
+      {
+        at: order.confirmed_at,
+        source: "KITCHEN",
+        text: `${orderLabel(order)} moved to kitchen`,
+      },
+      {
+        at: order.ready_at,
+        source: "KITCHEN",
+        text: `${orderLabel(order)} marked ready`,
+      },
+      {
+        at: order.served_at,
+        source: "STAFF",
+        text: `${orderLabel(order)} served`,
+      },
+      {
+        at: order.cancelled_at,
+        source: "STAFF",
+        text: `${orderLabel(order)} cancelled`,
+      },
+    ])
+    .filter((event) => event.at && formatTimelineTime(event.at))
+    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+    .map((event) => ({ ...event, time: formatTimelineTime(event.at) }));
+}
+
+function itemNotes(item) {
+  const modifiers = (item.modifiers ?? [])
+    .map((modifier) => modifier.name_snapshot)
+    .filter(Boolean)
+    .join(", ");
+  return [item.variant_name_snapshot, modifiers, item.special_requests]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export function TableOrderPage({ navigate, tableLabel }) {
   const [table, setTable] = useState(null);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    listTables()
-      .then((data) => {
+    setError(null);
+    Promise.all([listTables(), listActiveOrders()])
+      .then(([tablesData, ordersData]) => {
         if (cancelled) return;
-        const rows = data.tables ?? [];
+        const rows = tablesData.tables ?? [];
         const t = rows.find((row) => row.label === tableLabel);
         if (!t) {
           setError(`Table "${tableLabel}" not found.`);
           setTable(null);
+          setOrders([]);
         } else {
           const hasReservation = Boolean(t.reservation_id);
-          setTable({
+          const nextTable = {
             id: t.id,
             label: t.label,
             zone: t.zone || null,
@@ -53,7 +126,17 @@ export function TableOrderPage({ navigate, tableLabel }) {
                   guestName: t.customer_name,
                 }
               : null,
+          };
+          const activeReservationId = nextTable.reservation?.id ?? null;
+          const activeOrders = ordersData.orders ?? [];
+          const tableOrders = activeOrders.filter((order) => {
+            if (activeReservationId && order.reservation_id === activeReservationId) {
+              return true;
+            }
+            return !order.reservation_id && order.table_id === nextTable.id;
           });
+          setTable(nextTable);
+          setOrders(tableOrders);
         }
       })
       .catch((e) => !cancelled && setError(e.message ?? String(e)))
@@ -101,13 +184,19 @@ export function TableOrderPage({ navigate, tableLabel }) {
 
   const r = table.reservation;
   const hasReservation = Boolean(r);
-  const orders = MOCK_TABLE_ORDERS[table.label] ?? [];
-  const timeline = MOCK_TABLE_TIMELINE[table.label] ?? [];
+  const items = orders.flatMap((order) =>
+    (order.items ?? []).map((item) => ({ ...item, order }))
+  );
+  const timeline = buildOrderTimeline(orders);
 
-  const subtotal = orders.reduce((acc, it) => acc + it.qty * it.price, 0);
-  const tax = subtotal * TAX_RATE;
-  const service = subtotal * SERVICE_RATE;
-  const total = subtotal + tax + service;
+  const subtotalCents = orders.reduce(
+    (acc, order) => acc + Number(order.subtotal_cents ?? 0),
+    0
+  );
+  const totalCents = orders.reduce(
+    (acc, order) => acc + Number(order.total_cents ?? 0),
+    0
+  );
 
   const seatedAt = r?.seatedAt ? new Date(r.seatedAt) : null;
   const seatedMinutesAgo = seatedAt
@@ -191,14 +280,14 @@ export function TableOrderPage({ navigate, tableLabel }) {
                 Active Orders
               </h2>
               <span className="to-card-count">
-                {orders.length} {orders.length === 1 ? "item" : "items"}
+                {items.length} {items.length === 1 ? "item" : "items"}
               </span>
             </header>
 
-            {orders.length === 0 ? (
+            {items.length === 0 ? (
               <div className="to-empty">
-                <p>No items ordered yet</p>
-                <span>Orders from the POS will appear here in real time.</span>
+                <p>No active orders for this table</p>
+                <span>New POS or voice orders will appear here in real time.</span>
               </div>
             ) : (
               <table className="to-items-table">
@@ -212,24 +301,27 @@ export function TableOrderPage({ navigate, tableLabel }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((it, idx) => (
-                    <tr key={`${it.name}-${idx}`}>
-                      <td>
-                        <p className="to-item-name">{it.name}</p>
-                        {it.notes && <span className="to-item-notes">{it.notes}</span>}
-                      </td>
-                      <td>
-                        <span className={`to-status-chip status-${it.status}`}>
-                          {ORDER_STATUS_LABEL[it.status] ?? it.status}
-                        </span>
-                      </td>
-                      <td className="to-num">{it.qty}</td>
-                      <td className="to-num">${it.price.toFixed(2)}</td>
-                      <td className="to-num to-num-strong">
-                        ${(it.qty * it.price).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((it) => {
+                    const notes = itemNotes(it);
+                    return (
+                      <tr key={it.id}>
+                        <td>
+                          <p className="to-item-name">{it.name_snapshot}</p>
+                          {notes && <span className="to-item-notes">{notes}</span>}
+                        </td>
+                        <td>
+                          <span className={`to-status-chip status-${it.status}`}>
+                            {ORDER_STATUS_LABEL[it.status] ?? it.status}
+                          </span>
+                        </td>
+                        <td className="to-num">{it.quantity}</td>
+                        <td className="to-num">${centsToDollars(it.unit_price_cents)}</td>
+                        <td className="to-num to-num-strong">
+                          ${centsToDollars(it.line_total_cents)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -245,20 +337,33 @@ export function TableOrderPage({ navigate, tableLabel }) {
             <dl className="to-invoice-lines">
               <div>
                 <dt>Subtotal</dt>
-                <dd>${subtotal.toFixed(2)}</dd>
+                <dd>${centsToDollars(subtotalCents)}</dd>
               </div>
               <div>
-                <dt>Tax (8.5%)</dt>
-                <dd>${tax.toFixed(2)}</dd>
+                <dt>Active orders</dt>
+                <dd>{orders.length}</dd>
               </div>
               <div>
-                <dt>Service Charge (18%)</dt>
-                <dd>${service.toFixed(2)}</dd>
+                <dt>Payment status</dt>
+                <dd>
+                  {orders.length === 0
+                    ? "None"
+                    : [
+                        ...new Set(
+                          orders.map(
+                            (order) =>
+                              PAYMENT_STATUS_LABEL[order.payment_status] ??
+                              order.payment_status ??
+                              "Unknown"
+                          )
+                        ),
+                      ].join(", ")}
+                </dd>
               </div>
             </dl>
             <div className="to-invoice-total">
               <span>Total</span>
-              <strong>${total.toFixed(2)}</strong>
+              <strong>${centsToDollars(totalCents)}</strong>
             </div>
             <div className="to-invoice-actions">
               <button type="button" className="to-btn to-btn-ghost">
