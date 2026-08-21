@@ -8,6 +8,7 @@ export interface ReservationRow {
   table_id: string | null;
   reservation_date: string;
   start_time: string;
+  duration_minutes: number;
   party_size: number;
   status: ReservationStatus;
   source: BookingSource;

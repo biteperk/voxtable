@@ -56,6 +56,12 @@ const listReservationsQuery = z.object({
     .optional(),
   limit: z.coerce.number().int().min(1).max(200).optional()
 });
+const listTablesQuery = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD")
+    .optional()
+});
 
 dashboardRouter.get(
   "/api/reservations",
@@ -73,11 +79,12 @@ dashboardRouter.get(
 dashboardRouter.get(
   "/api/tables",
   asyncHandler(async (request, response) => {
+    const query = listTablesQuery.parse(request.query);
     const restaurantId = tenantId(request);
     const tz = await getRestaurantTimezone(restaurantId);
-    const today = todayInTz(tz);
-    const rows = await listTables(restaurantId, today);
-    response.json({ tables: rows });
+    const date = query.date ?? todayInTz(tz);
+    const rows = await listTables(restaurantId, date);
+    response.json({ date, tables: rows });
   })
 );
 

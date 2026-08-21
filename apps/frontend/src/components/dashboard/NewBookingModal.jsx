@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listAvailableTables } from "../../api";
 import { Icon } from "../Icon";
 
-export function NewBookingModal({ onClose, onCreate }) {
+export function NewBookingModal({ onClose, onCreate, initialForm = null }) {
   const now = new Date();
   const todayYmd = now.toISOString().slice(0, 10);
   const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
@@ -17,6 +17,7 @@ export function NewBookingModal({ onClose, onCreate }) {
     time: defaultTime,
     tableId: "",
     notes: "",
+    ...(initialForm ?? {}),
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
