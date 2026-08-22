@@ -10,6 +10,7 @@ export interface TableRow {
   max_capacity: number;
   reservation_id: string | null;
   reservation_start_time: string | null;
+  reservation_duration_minutes: number | null;
   reservation_party_size: number | null;
   reservation_seated_at: string | null;
   customer_name: string | null;
@@ -37,12 +38,13 @@ export async function listTables(
       t.max_capacity,
       r.id          AS reservation_id,
       r.start_time  AS reservation_start_time,
+      r.duration_minutes AS reservation_duration_minutes,
       r.party_size  AS reservation_party_size,
       r.seated_at   AS reservation_seated_at,
       c.name        AS customer_name
     FROM tables t
     LEFT JOIN LATERAL (
-      SELECT r2.id, r2.customer_id, r2.start_time, r2.party_size, r2.seated_at
+      SELECT r2.id, r2.customer_id, r2.start_time, r2.duration_minutes, r2.party_size, r2.seated_at
       FROM reservations r2
       WHERE r2.table_id = t.id
         AND r2.reservation_date = $2::date

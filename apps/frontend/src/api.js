@@ -233,8 +233,11 @@ export function listReservations({ date, limit } = {}) {
   return authedFetch(`/api/reservations${tail}`);
 }
 
-export function listTables() {
-  return authedFetch(`/api/tables`);
+export function listTables({ date } = {}) {
+  const qs = new URLSearchParams();
+  if (date) qs.set("date", date);
+  const tail = qs.toString() ? `?${qs}` : "";
+  return authedFetch(`/api/tables${tail}`);
 }
 
 export function listAvailableTables({ date, time, partySize, excludeReservationId } = {}) {
