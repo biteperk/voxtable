@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 
 import {
   actorFor,
@@ -31,6 +32,9 @@ export const ordersRouter = Router();
 const FRONT_OF_HOUSE_ROLES = ["staff", "server", "manager", "owner"] as const;
 const KITCHEN_ROLES = ["kitchen", "manager", "owner"] as const;
 const ORDER_READ_ROLES = ["staff", "server", "kitchen", "manager", "owner"] as const;
+const activeOrdersQuerySchema = z.object({
+  table_id: z.string().uuid().optional()
+});
 
 // Read endpoints — live tables and kitchen views both need current orders.
 ordersRouter.get(
@@ -39,7 +43,8 @@ ordersRouter.get(
   resolveTenant,
   requireAnyMemberRole(ORDER_READ_ROLES),
   asyncHandler(async (request, response) => {
-    const orders = await getActiveOrders(tenantId(request));
+    const query = activeOrdersQuerySchema.parse(request.query);
+    const orders = await getActiveOrders(tenantId(request), { tableId: query.table_id });
     // Provide server-now so clients can compute "time since ordered" without
     // trusting their local clock (kitchen tablet drift mitigation).
     response.json({

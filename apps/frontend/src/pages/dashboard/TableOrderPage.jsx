@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { listActiveOrders, listTables } from "../../api";
 import { formatVoiceTime12h, zoneIcon } from "../../lib/format";
 import { Icon } from "../../components/Icon";
@@ -9,23 +9,24 @@ const ORDER_STATUS_LABEL = {
   preparing: "Preparing",
   ready: "Ready",
   served: "Served",
-  pending: "Pending",
-  cancelled: "Cancelled",
 };
 
 const PAYMENT_STATUS_LABEL = {
   unpaid: "Unpaid",
-  pending: "Pending",
   paid: "Paid",
   refunded: "Refunded",
-  failed: "Failed",
 };
+
+const REFRESH_INTERVAL_MS = 30_000;
 
 function centsToDollars(cents) {
   return (Number(cents ?? 0) / 100).toFixed(2);
 }
 
-function formatTimelineTime(value) {
+// Order timestamps are absolute instants; the floor reads them on the VENUE's
+// wall clock. `en-AU` only fixes the format — without `timeZone` a manager
+// viewing from another timezone sees every order hours out.
+function formatTimelineTime(value, timeZone) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -33,6 +34,7 @@ function formatTimelineTime(value) {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
+    ...(timeZone ? { timeZone } : {}),
   });
 }
 
@@ -40,7 +42,7 @@ function orderLabel(order) {
   return order.order_number ? `Order #${order.order_number}` : "Order";
 }
 
-function buildOrderTimeline(orders) {
+function buildOrderTimeline(orders, timeZone) {
   return orders
     .flatMap((order) => [
       {
@@ -58,20 +60,22 @@ function buildOrderTimeline(orders) {
         source: "KITCHEN",
         text: `${orderLabel(order)} marked ready`,
       },
-      {
-        at: order.served_at,
-        source: "STAFF",
-        text: `${orderLabel(order)} served`,
-      },
-      {
-        at: order.cancelled_at,
-        source: "STAFF",
-        text: `${orderLabel(order)} cancelled`,
-      },
     ])
-    .filter((event) => event.at && formatTimelineTime(event.at))
+    .filter((event) => event.at && formatTimelineTime(event.at, timeZone))
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
-    .map((event) => ({ ...event, time: formatTimelineTime(event.at) }));
+    .map((event) => ({ ...event, time: formatTimelineTime(event.at, timeZone) }));
+}
+
+// One status for the table, not a comma list: a table with one paid and
+// two unpaid orders is still an unpaid table until the last order settles.
+function paymentSummary(orders) {
+  const unpaid = orders.filter((order) => order.payment_status === "unpaid").length;
+  if (unpaid === 0) {
+    const first = orders[0]?.payment_status;
+    return PAYMENT_STATUS_LABEL[first] ?? first ?? "Unknown";
+  }
+  if (unpaid === orders.length) return "Unpaid";
+  return `${unpaid} of ${orders.length} unpaid`;
 }
 
 function itemNotes(item) {
@@ -87,64 +91,88 @@ function itemNotes(item) {
 export function TableOrderPage({ navigate, tableLabel }) {
   const [table, setTable] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [timeZone, setTimeZone] = useState(null);
+  const [serverNow, setServerNow] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    const tablesData = await listTables();
+    const rows = tablesData.tables ?? [];
+    const t = rows.find((row) => row.label === tableLabel);
+    if (!t) {
+      throw new Error(`Table "${tableLabel}" not found.`);
+    }
+    // Ask for THIS table's orders in SQL. Filtering the venue-wide list
+    // client-side hid a table's orders once the venue passed the list's
+    // LIMIT, and matching on the single joined reservation hid the second
+    // sitting's orders whenever the first was never marked done.
+    const ordersData = await listActiveOrders({ tableId: t.id });
+    const hasReservation = Boolean(t.reservation_id);
+    return {
+      timeZone: tablesData.timezone ?? null,
+      serverNow: ordersData.server_now ?? null,
+      table: {
+        id: t.id,
+        label: t.label,
+        zone: t.zone || null,
+        description: t.description || null,
+        minCapacity: t.min_capacity,
+        maxCapacity: t.max_capacity,
+        status: !hasReservation
+          ? "available"
+          : t.reservation_seated_at
+            ? "seated"
+            : "reserved",
+        reservation: hasReservation
+          ? {
+              id: t.reservation_id,
+              startTime: t.reservation_start_time,
+              partySize: t.reservation_party_size,
+              seatedAt: t.reservation_seated_at,
+              guestName: t.customer_name,
+            }
+          : null,
+      },
+      orders: ordersData.orders ?? [],
+    };
+  }, [tableLabel]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([listTables(), listActiveOrders()])
-      .then(([tablesData, ordersData]) => {
+
+    const run = async (initial) => {
+      try {
+        const next = await load();
         if (cancelled) return;
-        const rows = tablesData.tables ?? [];
-        const t = rows.find((row) => row.label === tableLabel);
-        if (!t) {
-          setError(`Table "${tableLabel}" not found.`);
+        setTable(next.table);
+        setOrders(next.orders);
+        setTimeZone(next.timeZone);
+        setServerNow(next.serverNow);
+        setError(null);
+      } catch (e) {
+        if (cancelled) return;
+        // A failed background refresh keeps the last good view on screen; only
+        // the first load has nothing better to show than the error.
+        if (initial) {
           setTable(null);
           setOrders([]);
-        } else {
-          const hasReservation = Boolean(t.reservation_id);
-          const nextTable = {
-            id: t.id,
-            label: t.label,
-            zone: t.zone || null,
-            description: t.description || null,
-            minCapacity: t.min_capacity,
-            maxCapacity: t.max_capacity,
-            status: !hasReservation
-              ? "available"
-              : t.reservation_seated_at
-                ? "seated"
-                : "reserved",
-            reservation: hasReservation
-              ? {
-                  id: t.reservation_id,
-                  startTime: t.reservation_start_time,
-                  partySize: t.reservation_party_size,
-                  seatedAt: t.reservation_seated_at,
-                  guestName: t.customer_name,
-                }
-              : null,
-          };
-          const activeReservationId = nextTable.reservation?.id ?? null;
-          const activeOrders = ordersData.orders ?? [];
-          const tableOrders = activeOrders.filter((order) => {
-            if (activeReservationId && order.reservation_id === activeReservationId) {
-              return true;
-            }
-            return !order.reservation_id && order.table_id === nextTable.id;
-          });
-          setTable(nextTable);
-          setOrders(tableOrders);
         }
-      })
-      .catch((e) => !cancelled && setError(e.message ?? String(e)))
-      .finally(() => !cancelled && setLoading(false));
+        setError(e.message ?? String(e));
+      } finally {
+        if (!cancelled && initial) setLoading(false);
+      }
+    };
+
+    run(true);
+    const timer = window.setInterval(() => run(false), REFRESH_INTERVAL_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [tableLabel]);
+  }, [load]);
 
   if (loading) {
     return (
@@ -164,7 +192,7 @@ export function TableOrderPage({ navigate, tableLabel }) {
     );
   }
 
-  if (error || !table) {
+  if (!table) {
     return (
       <DashboardShell active="Live Tables" navigate={navigate}>
         <div className="to-page">
@@ -187,7 +215,7 @@ export function TableOrderPage({ navigate, tableLabel }) {
   const items = orders.flatMap((order) =>
     (order.items ?? []).map((item) => ({ ...item, order }))
   );
-  const timeline = buildOrderTimeline(orders);
+  const timeline = buildOrderTimeline(orders, timeZone);
 
   const subtotalCents = orders.reduce(
     (acc, order) => acc + Number(order.subtotal_cents ?? 0),
@@ -199,16 +227,13 @@ export function TableOrderPage({ navigate, tableLabel }) {
   );
 
   const seatedAt = r?.seatedAt ? new Date(r.seatedAt) : null;
+  // server_now comes back with the orders precisely so "seated N min ago"
+  // does not depend on a drifting or mis-set device clock.
+  const nowMs = serverNow ? new Date(serverNow).getTime() : Date.now();
   const seatedMinutesAgo = seatedAt
-    ? Math.max(0, Math.floor((Date.now() - seatedAt.getTime()) / 60000))
+    ? Math.max(0, Math.floor((nowMs - seatedAt.getTime()) / 60000))
     : null;
-  const seatedTimeLabel = seatedAt
-    ? seatedAt.toLocaleTimeString("en-AU", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      })
-    : null;
+  const seatedTimeLabel = seatedAt ? formatTimelineTime(seatedAt.toISOString(), timeZone) : null;
   const bookedTimeLabel = r?.startTime ? formatVoiceTime12h(r.startTime) : null;
 
   return (
@@ -222,6 +247,7 @@ export function TableOrderPage({ navigate, tableLabel }) {
           <Icon name="arrow_back" />
           Back to Floor Plan
         </button>
+        {error && <p className="to-error">Last refresh failed: {error}</p>}
 
         <header className="to-hero">
           <div className="to-hero-title">
@@ -287,7 +313,7 @@ export function TableOrderPage({ navigate, tableLabel }) {
             {items.length === 0 ? (
               <div className="to-empty">
                 <p>No active orders for this table</p>
-                <span>New POS or voice orders will appear here in real time.</span>
+                <span>New POS or voice orders appear here within 30 seconds.</span>
               </div>
             ) : (
               <table className="to-items-table">
@@ -348,16 +374,7 @@ export function TableOrderPage({ navigate, tableLabel }) {
                 <dd>
                   {orders.length === 0
                     ? "None"
-                    : [
-                        ...new Set(
-                          orders.map(
-                            (order) =>
-                              PAYMENT_STATUS_LABEL[order.payment_status] ??
-                              order.payment_status ??
-                              "Unknown"
-                          )
-                        ),
-                      ].join(", ")}
+                    : paymentSummary(orders)}
                 </dd>
               </div>
             </dl>
