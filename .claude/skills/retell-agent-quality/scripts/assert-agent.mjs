@@ -1,7 +1,8 @@
 // assert-agent.mjs <agent_id> <llm_id>
 // The definition-of-done machine checks. Exits non-zero on any violation.
 // Requires RETELL_API_KEY; optional VOXTABLE_API to assert environment hostnames,
-// optional VENUE_NAMES (comma-separated) to extend the de-venue grep.
+// optional VENUE_NAMES (comma-separated) to extend the de-venue grep, and
+// ALLOW_NO_DISCLOSURE=1 to skip the greeting-disclosure check (staging only).
 const KEY = process.env.RETELL_API_KEY;
 const [agentId, llmId] = process.argv.slice(2);
 if (!KEY || !agentId || !llmId) {
@@ -42,6 +43,20 @@ check(agent.interruption_sensitivity === 0.6, "interruption_sensitivity = 0.6");
 check(agent.ambient_sound == null, "no ambient_sound");
 check(agent.enable_backchannel === true, "backchannel on");
 check(agent.begin_message_delay_ms === 500, "begin_message_delay_ms = 500");
+
+// The AI + recording disclosure lives in the GREETING, and it is a legal gate: the owner
+// warrants in the agreement ledger that Bella announces both on every call. This script
+// reported ALL CHECKS PASSED on the production Mazcina agent while its greeting carried
+// neither — because nothing here looked. A missing greeting is the same failure.
+// Staging deliberately runs the short greeting (SKILL.md) — it opts out with
+// ALLOW_NO_DISCLOSURE=1, which assert-line.mjs sets from the line's declared environment.
+const greeting = String(llm.begin_message ?? "");
+if (process.env.ALLOW_NO_DISCLOSURE === "1") {
+  console.log("  note: disclosure check skipped (ALLOW_NO_DISCLOSURE=1 — staging only, never production)");
+} else {
+  check(/\bAI\b/i.test(greeting), "greeting discloses AI (\"an AI assistant\")");
+  check(/record/i.test(greeting), "greeting discloses recording (\"this call's recorded\")");
+}
 check(agent.data_storage_retention_days === 30, "30-day retention");
 check(llm.model === "gpt-4.1", "model = gpt-4.1");
 
