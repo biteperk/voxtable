@@ -1,5 +1,12 @@
 # Production greeting: restore the AI + recording disclosure
 
+> ⚠️ **Retracted 23 Aug 2026.** This change was applied with the repo's local `.env` key —
+> the **legacy Algorythmos workspace** — so the three agents it edited are not the
+> production estate. The agent that answers `+61 468 202 846` lives in the **Biteperk**
+> workspace and was untouched; its greeting still had no disclosure until
+> `../20260823-prod-mazcina-disclosure-post/`. The "NOT in this workspace" paragraph below
+> was the symptom of the wrong key, not a wiring fault.
+
 **20 Aug 2026.** All three production agents, one field each: `begin_message`.
 
 ## Why
