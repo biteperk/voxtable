@@ -437,15 +437,21 @@ export async function getOrderById(
 
 export async function listActiveOrders(
   restaurantId: string,
-  limit = 50
+  options: { tableId?: string; limit?: number } = {}
 ): Promise<OrderWithItems[]> {
+  // The venue-wide LIMIT is a kitchen-screen guard. A single table's view
+  // must never be subject to it — a busy night would silently hide that
+  // table's orders once the venue passed the cap — so the table filter is
+  // applied in SQL, not client-side after truncation.
+  const limit = options.limit ?? 50;
   const orderResult = await readPool.query<OrderRow>(
     `SELECT * FROM orders
       WHERE restaurant_id = $1
         AND status NOT IN ('served', 'cancelled')
+        AND ($3::uuid IS NULL OR table_id = $3::uuid)
       ORDER BY created_at ASC
       LIMIT $2`,
-    [restaurantId, limit]
+    [restaurantId, limit, options.tableId ?? null]
   );
   const orders = orderResult.rows;
   if (orders.length === 0) return [];

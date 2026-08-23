@@ -407,8 +407,11 @@ export function deleteMenuItem(id) {
   return authedFetch(`/api/menu/items/${id}`, { method: "DELETE" });
 }
 
-export function listActiveOrders() {
-  return authedFetch("/api/orders/active");
+export function listActiveOrders({ tableId } = {}) {
+  const qs = new URLSearchParams();
+  if (tableId) qs.set("table_id", tableId);
+  const tail = qs.toString() ? `?${qs}` : "";
+  return authedFetch(`/api/orders/active${tail}`);
 }
 
 export function updateOrderStatus(id, status, version, cancellationReason) {

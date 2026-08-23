@@ -7079,10 +7079,6 @@ button {
   outline-offset: -2px;
 }
 
-.lt-slot-line {
-  display: none;
-}
-
 .lt-now-line {
   position: absolute;
   inset: 0 auto 0 var(--lt-now-left);
@@ -7136,8 +7132,8 @@ button {
 }
 
 .lt-booking.status-reserved {
-  border-color: color-mix(in srgb, #7ee8b6 66%, var(--outline-variant));
-  background: color-mix(in srgb, #c9fbe0 32%, var(--surface-container-high));
+  border-color: color-mix(in srgb, var(--tertiary) 66%, var(--outline-variant));
+  background: color-mix(in srgb, var(--tertiary-container) 32%, var(--surface-container-high));
 }
 
 .lt-booking.status-seated {
@@ -7182,40 +7178,6 @@ button {
   flex: 0 0 auto;
 }
 
-.live-tables-list {
-  display: flex;
-  flex-direction: column;
-  margin-top: 16px;
-  border: 1px solid var(--outline-variant);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.live-tables-row {
-  display: grid;
-  grid-template-columns: 120px 92px minmax(0, 0.9fr) minmax(0, 1.4fr) 220px;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 20px;
-  border-bottom: 1px solid rgba(65, 71, 85, 0.5);
-  font-size: 14px;
-  color: var(--on-surface);
-}
-.live-tables-row:last-child { border-bottom: 0; }
-.live-tables-row-head {
-  background: var(--surface-container-low);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--on-surface-variant);
-  padding-top: 10px;
-  padding-bottom: 10px;
-}
-.live-tables-row:not(.live-tables-row-head):hover {
-  background: color-mix(in srgb, var(--primary) 4%, transparent);
-}
-
 .table-label {
   display: flex;
   align-items: center;
@@ -7230,19 +7192,6 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-/* Description is its own grid column (next to Status), not a sub-line under the
-   label. min-width:0 lets it ellipsis within its track instead of overflowing. */
-.table-desc {
-  min-width: 0;
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--on-surface-variant);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .table-capacity {
   display: inline-flex;
@@ -7358,24 +7307,6 @@ button {
   }
   .lt-booking-actions .row-action {
     padding: 5px 8px;
-  }
-  .live-tables-row,
-  .live-tables-row-head {
-    grid-template-columns: 100px 90px 1fr;
-    gap: 10px;
-    padding: 12px 14px;
-  }
-  /* Description column is supplementary; the zone badge carries the gist on the
-     narrow mobile floor view. Drop the column (header + cell) on mobile. */
-  .table-desc,
-  .table-desc-head {
-    display: none;
-  }
-  .live-tables-row .live-tables-action-col,
-  .live-tables-row-head .live-tables-action-col {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-    padding-top: 4px;
   }
 }
 

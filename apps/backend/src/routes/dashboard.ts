@@ -27,7 +27,7 @@ import {
 } from "../repositories/tables";
 import { normalizePartySize, tableAvailabilityQuerySchema, tablePayloadSchema, updateTableMetadataSchema } from "../http/schemas";
 import { getOutboxStatsForRestaurant } from "../repositories/outbox";
-import { isWithinOpeningHours, todayInTz } from "../utils/time";
+import { isWithinOpeningHours, nowTimeInTz, todayInTz } from "../utils/time";
 import { getOpsState } from "../repositories/opsState";
 import { pool } from "../db/pool";
 
@@ -82,9 +82,24 @@ dashboardRouter.get(
     const query = listTablesQuery.parse(request.query);
     const restaurantId = tenantId(request);
     const tz = await getRestaurantTimezone(restaurantId);
-    const date = query.date ?? todayInTz(tz);
-    const rows = await listTables(restaurantId, date);
-    response.json({ date, tables: rows });
+    // The floor view must run on the VENUE's clock, not the browser's: a
+    // manager checking from another timezone would otherwise see the "Now"
+    // marker hours out and the date picker default to the wrong day.
+    const today = todayInTz(tz);
+    const date = query.date ?? today;
+    const [rows, settings] = await Promise.all([
+      listTables(restaurantId, date),
+      getRestaurantSettings(restaurantId).catch(() => null)
+    ]);
+    response.json({
+      date,
+      today,
+      timezone: tz,
+      now: nowTimeInTz(tz),
+      booking_duration_minutes: settings?.bookingDurationMinutes ?? null,
+      opening_hours: settings?.openingHours ?? null,
+      tables: rows
+    });
   })
 );
 

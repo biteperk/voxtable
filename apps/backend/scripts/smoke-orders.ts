@@ -128,6 +128,23 @@ async function main(): Promise<void> {
     `✓ menu — Barros Luco ${sandwich.id} side=${provenzal.id} extra=${meltedCheese.id}`
   );
 
+  // 2b) Pick two real tables so the per-table active-orders filter can be
+  // proven both ways (included for its own table, excluded for another).
+  // GET /api/tables must also carry the venue clock the floor view runs on.
+  const tablesRes = await request<{
+    date: string;
+    today: string;
+    timezone: string;
+    now: string;
+    tables: Array<{ id: string; label: string }>;
+  }>("/api/tables");
+  assert(Array.isArray(tablesRes.tables) && tablesRes.tables.length >= 2, "Need at least two tables for the table filter check");
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(tablesRes.today), "/api/tables should return today (YYYY-MM-DD) in the venue tz");
+  assert(/^\d{2}:\d{2}$/.test(tablesRes.now), "/api/tables should return now (HH:MM) in the venue tz");
+  assert(typeof tablesRes.timezone === "string" && tablesRes.timezone.includes("/"), "/api/tables should return the venue IANA timezone");
+  const [tableA, tableB] = tablesRes.tables;
+  console.log(`✓ tables — ${tablesRes.tables.length} tables, venue clock ${tablesRes.today} ${tablesRes.now} ${tablesRes.timezone}`);
+
   // 3) Create order with idempotency key
   const idempotencyKey = `smoke-orders-${Date.now()}`;
   const created = (await request<{ order: OrderResponse; is_replay: boolean }>("/api/orders", {
@@ -135,6 +152,7 @@ async function main(): Promise<void> {
     headers: { "idempotency-key": idempotencyKey },
     body: JSON.stringify({
       source: "dashboard",
+      table_id: tableA!.id,
       items: [
         {
           menu_item_id: sandwich.id,
@@ -155,6 +173,16 @@ async function main(): Promise<void> {
   assert(created.order.total_cents === 3000, `Expected total=3000, got ${created.order.total_cents}`);
   assert(created.order.items.length === 1, `Expected 1 line, got ${created.order.items.length}`);
   console.log(`✓ create order — #${created.order.order_number} ${created.order.id} total=$${created.order.total_cents / 100}`);
+
+  // 3b) Per-table active orders — the Live Tables order page asks for ONE
+  // table's orders in SQL. It must include this order for its own table and
+  // exclude it for another, regardless of the venue-wide list limit.
+  const forA = await request<{ orders: Array<{ id: string }> }>(`/api/orders/active?table_id=${tableA!.id}`);
+  assert(forA.orders.some((o) => o.id === created.order.id), `Order should be active for table ${tableA!.label}`);
+  const forB = await request<{ orders: Array<{ id: string }> }>(`/api/orders/active?table_id=${tableB!.id}`);
+  assert(!forB.orders.some((o) => o.id === created.order.id), `Order must NOT appear for table ${tableB!.label}`);
+  await request("/api/orders/active?table_id=not-a-uuid", { expectStatus: 400 });
+  console.log(`✓ active orders filtered by table (${tableA!.label} yes, ${tableB!.label} no, bad id 400)`);
 
   // 4) Replay with same Idempotency-Key → same order
   const replay = (await request<{ order: OrderResponse; is_replay: boolean }>("/api/orders", {

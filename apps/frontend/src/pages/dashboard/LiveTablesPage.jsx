@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   completeReservation,
   createReservation,
-  getRestaurantProfile,
   listReservations,
   listTables,
   seatReservation,
@@ -18,6 +17,7 @@ const DEFAULT_BOOKING_DURATION_MINUTES = 90;
 const DEFAULT_CALENDAR_START_MINUTES = 17 * 60;
 const DEFAULT_CALENDAR_END_MINUTES = 23 * 60;
 const SLOT_MINUTES = 30;
+const REFRESH_INTERVAL_MS = 30_000;
 
 // ----------------------------------------------------------------------------
 // Live Tables — GET /api/tables joins today's active reservation per table.
@@ -36,22 +36,30 @@ export function LiveTablesPage({ navigate }) {
   const [actionBusyId, setActionBusyId] = useState(null);
   const [editingTable, setEditingTable] = useState(null);
   const [bookingDraft, setBookingDraft] = useState(null);
-  const [now, setNow] = useState(new Date());
+  // The venue's clock, as reported by the API — never the browser's. A
+  // manager checking from another timezone would otherwise see the "Now"
+  // marker hours out and the date picker default to the wrong day.
+  const [venueClock, setVenueClock] = useState({ today: "", now: "", timezone: null });
   const [calendarWindow, setCalendarWindow] = useState(null);
+  // "" means "the venue's today" — the API resolves it on every poll, so the
+  // view rolls over at the venue's midnight without a reload.
   const [selectedDate, setSelectedDate] = useState("");
+  const [hoursWarning, setHoursWarning] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (options = {}) => {
+    const background = Boolean(options.background);
+    if (!background) setLoading(true);
     try {
       const data = await listTables({ date: selectedDate || undefined });
-      const [reservationsData, profileData] = await Promise.all([
-        listReservations({ date: data.date, limit: 200 }),
-        getRestaurantProfile().catch(() => ({ profile: null })),
-      ]);
-      if (!selectedDate) setSelectedDate(data.date);
-      setCalendarWindow(
-        openingWindowForDate(data.date, profileData.profile?.opening_hours)
+      const reservationsData = await listReservations({ date: data.date, limit: 200 });
+      setVenueClock({ today: data.today, now: data.now, timezone: data.timezone });
+      const defaultDuration =
+        Number(data.booking_duration_minutes) || DEFAULT_BOOKING_DURATION_MINUTES;
+      setCalendarWindow(openingWindowForDate(data.date, data.opening_hours));
+      setHoursWarning(
+        data.opening_hours
+          ? null
+          : "Opening hours are not set for this venue — showing a default evening window."
       );
       const reservationsByTable = new Map();
       for (const reservation of reservationsData.reservations ?? []) {
@@ -65,8 +73,7 @@ export function LiveTablesPage({ navigate }) {
         rows.push({
           id: reservation.id,
           startTime: reservation.start_time,
-          durationMinutes:
-            Number(reservation.duration_minutes) || DEFAULT_BOOKING_DURATION_MINUTES,
+          durationMinutes: Number(reservation.duration_minutes) || defaultDuration,
           partySize: reservation.party_size,
           seatedAt: reservation.seated_at,
           guestName: reservation.customer_name,
@@ -101,9 +108,7 @@ export function LiveTablesPage({ navigate }) {
             ? {
                 id: t.reservation_id,
                 startTime: t.reservation_start_time,
-                durationMinutes:
-                  Number(t.reservation_duration_minutes) ||
-                  DEFAULT_BOOKING_DURATION_MINUTES,
+                durationMinutes: Number(t.reservation_duration_minutes) || defaultDuration,
                 partySize: t.reservation_party_size,
                 seatedAt: t.reservation_seated_at,
                 guestName: t.customer_name
@@ -114,21 +119,22 @@ export function LiveTablesPage({ navigate }) {
       });
       setTables(mapped);
       setRefreshedAt(new Date());
+      setError(null);
     } catch (err) {
       setError(err.message ?? String(err));
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [selectedDate]);
 
+  // One fetch per date change, then a background poll so bookings Bella takes
+  // mid-service appear without anyone pressing Refresh. The poll also moves
+  // the "Now" marker, since `now` comes from the API.
   useEffect(() => {
     load();
-  }, [load]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    const timer = window.setInterval(() => load({ background: true }), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [load]);
 
   const refresh = () => {
     load();
@@ -191,7 +197,8 @@ export function LiveTablesPage({ navigate }) {
     return { total, seated, reserved };
   }, [tables]);
 
-  const selectedDateValue = selectedDate || dateInputValue(now);
+  const selectedDateValue = selectedDate || venueClock.today;
+  const isViewingToday = Boolean(selectedDateValue) && selectedDateValue === venueClock.today;
   const refreshedAgo = formatRefreshedAgo(refreshedAt);
   const activeRestaurant = memberships.find((m) => m.restaurant_id === activeRestaurantId);
   const restaurantName = activeRestaurant?.name || "Your restaurant";
@@ -269,13 +276,16 @@ export function LiveTablesPage({ navigate }) {
         {error && (
           <div className="live-tables-state">Failed to load tables: {error}</div>
         )}
+        {hoursWarning && !error && (
+          <div className="live-tables-state">{hoursWarning}</div>
+        )}
         {!loading && !error && tables.length === 0 && (
           <div className="live-tables-state">No tables configured.</div>
         )}
         {tables.length > 0 && (
           <LiveTablesCalendar
             tables={tables}
-            now={now}
+            nowMinutes={isViewingToday ? minutesFromTime(venueClock.now) : null}
             calendarWindow={calendarWindow}
             selectedDate={selectedDateValue}
             onSeat={handleSeat}
@@ -301,6 +311,7 @@ export function LiveTablesPage({ navigate }) {
       {bookingDraft && (
         <NewBookingModal
           initialForm={bookingDraft}
+          today={venueClock.today || undefined}
           onClose={() => setBookingDraft(null)}
           onCreate={handleCreateBooking}
         />
@@ -311,7 +322,7 @@ export function LiveTablesPage({ navigate }) {
 
 function LiveTablesCalendar({
   tables,
-  now,
+  nowMinutes,
   calendarWindow,
   selectedDate,
   onSeat,
@@ -336,7 +347,6 @@ function LiveTablesCalendar({
     })
   );
 
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const windowStart = calendarWindow?.start ?? DEFAULT_CALENDAR_START_MINUTES;
   const windowEnd = calendarWindow?.end ?? DEFAULT_CALENDAR_END_MINUTES;
   const rawStart = Math.min(
@@ -354,8 +364,11 @@ function LiveTablesCalendar({
   const timeSlots = Array.from({ length: slotCount + 1 }, (_, idx) =>
     startMinutes + idx * SLOT_MINUTES
   );
-  const showNow = nowMinutes >= startMinutes && nowMinutes <= endMinutes;
-  const nowLeft = `${((nowMinutes - startMinutes) / totalMinutes) * 100}%`;
+  // Only draw the marker on the venue's current day and inside the window —
+  // paging to next Saturday must not show a "Now" line.
+  const showNow =
+    nowMinutes != null && nowMinutes >= startMinutes && nowMinutes <= endMinutes;
+  const nowLeft = showNow ? `${((nowMinutes - startMinutes) / totalMinutes) * 100}%` : "0%";
 
   return (
     <div className="lt-calendar-shell">
@@ -394,7 +407,7 @@ function LiveTablesCalendar({
               onOpenDetails={onOpenDetails}
               onEdit={onEdit}
               onCreateBooking={onCreateBooking}
-              busy={table.reservation && actionBusyId === table.reservation.id}
+              actionBusyId={actionBusyId}
             />
           ))}
         </div>
@@ -415,7 +428,7 @@ function CalendarTableLane({
   onOpenDetails,
   onEdit,
   onCreateBooking,
-  busy,
+  actionBusyId,
 }) {
   const bookings = table.bookings ?? [];
 
@@ -451,11 +464,13 @@ function CalendarTableLane({
             date: selectedDate,
             time: timeFromTrackClick(event, startMinutes, totalMinutes),
             tableId: table.id,
+            tableLabel: table.label,
             notes: "",
           });
         }}
         onKeyDown={(event) => {
-          if (event.key !== "Enter") return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
           onCreateBooking?.({
             name: "",
             phone: "",
@@ -463,13 +478,11 @@ function CalendarTableLane({
             date: selectedDate,
             time: formatTimeForInput(startMinutes),
             tableId: table.id,
+            tableLabel: table.label,
             notes: "",
           });
         }}
       >
-        {Array.from({ length: slotCount }).map((_, idx) => (
-          <span key={idx} className="lt-slot-line" />
-        ))}
         {showNow && <span className="lt-now-line" />}
         {bookings.length === 0 && (
           <span className="lt-empty-lane">
@@ -498,7 +511,7 @@ function CalendarTableLane({
             onComplete={onComplete}
             onOpenDetails={onOpenDetails}
             onEdit={onEdit}
-            busy={busy && table.reservation?.id === booking.id}
+            busy={actionBusyId === booking.id}
           />
         ))}
       </div>
@@ -642,13 +655,6 @@ function dayKeyForDate(date) {
   return parsed
     .toLocaleDateString("en-AU", { weekday: "long" })
     .toLowerCase();
-}
-
-function dateInputValue(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function formatMinutes(minutes) {
