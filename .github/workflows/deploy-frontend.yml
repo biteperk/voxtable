@@ -39,7 +39,14 @@ permissions:
 jobs:
   deploy:
     name: Deploy Hosting
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # workflow_run fires for fork PRs too, and `head_branch` is then the FORK's branch
+    # name — a fork branch called `main` would otherwise satisfy the branch filter,
+    # the step-level branch check, and be checked out by head_sha. Only runs that
+    # originate from this repository may deploy.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
 

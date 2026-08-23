@@ -241,7 +241,14 @@ if (agentExists) {
     // Pass the RESOLVED key down. assert-agent.mjs reads RETELL_API_KEY from its environment,
     // and since we no longer inherit an ambient one, the child would otherwise run keyless —
     // or worse, pick up a stale shell value for a different workspace.
-    { env: { ...process.env, RETELL_API_KEY: KEY, VOXTABLE_API: declared.api_base }, encoding: "utf8" });
+    { env: {
+        ...process.env,
+        RETELL_API_KEY: KEY,
+        VOXTABLE_API: declared.api_base,
+        // The AI/recording disclosure is required on every production greeting. Staging
+        // runs the short greeting by design; only a line DECLARED staging may skip it.
+        ALLOW_NO_DISCLOSURE: declared.environment === "staging" ? "1" : "0"
+      }, encoding: "utf8" });
   const ok = r.status === 0;
   check(14, ok, "golden agent config (assert-agent.mjs)",
     (r.stdout ?? "").split("\n").filter((l) => l.startsWith("✗")).join("\n     ") || r.stderr);

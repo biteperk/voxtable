@@ -98,6 +98,7 @@ pre/post snapshots committed.
 | `reminder_trigger_ms` | 18000, max 1 | Restored after a rebuild dropped it. |
 | `denoising_mode` | `noise-and-background-speech-cancellation` | Part of the ambient/echo fix set. |
 | `data_storage_retention_days` | 30 | Legal posture — a rebuild once silently dropped it. |
+| `begin_message` (production) | names Bella as **an AI assistant** and says the call **is recorded** | The owner warrants this in the agreement ledger. `assert-agent.mjs` checks the greeting; it passed the Mazcina production agent on 20 Aug with neither phrase present because nothing looked. Staging skips via `ALLOW_NO_DISCLOSURE=1`. |
 | LLM `model` / `model_temperature` | `gpt-4.1` / 0.2 | Quality pick; see latency ladder before touching. |
 | KB | deliberately unused | Venue facts travel per call as `{{venue_faq}}` (≤16 entries/1200 chars) — injection beats retrieval for a dozen facts and costs no lookup latency. |
 
