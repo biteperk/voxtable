@@ -6,6 +6,29 @@
 that "calling from a different phone is the decider". That conclusion was WRONG** and is
 retracted below. The evidence that overturned it is in §2 and §3.
 
+## 0. What this incident is NOT
+
+⚠️ **A call that dies in ~2 seconds is a different fault.** On 20 Aug 2026 a call to
+`+61 468 202 846` hung up almost immediately and was nearly filed here. It was not this: the
+number had been evicted from our Retell workspace, so Retell rejected the INVITE and no call
+existed on its side at all. Tell them apart before reading further:
+
+| | This incident | A dead line |
+|---|---|---|
+| Duration | **7,593–7,653 ms**, machine-precise | ~1–3 s, variable |
+| Caller hears | the greeting, then silence | nothing — dead air, then release |
+| Retell `list-calls` | the call is **there**, `user_hangup` | **no record at all** |
+| First check | `latency-report.mjs` | `npm run check:voice-lines` |
+
+If the call is absent from `list-calls`, stop reading and run `npm run check:voice-lines`.
+
+⚠️ **But check you are reading the right workspace first.** On 20 Aug 2026 four calls to
+`+61 468 202 846` were invisible for exactly this reason: they were looked for with the repo's
+local `.env` Retell key, which belongs to the **legacy Algorythmos workspace**. The calls were
+there all along in the Biteperk workspace, at 7,602 / 8,215 / 8,359 / 4,937 ms — i.e. this
+incident, not a dead line. `check:voice-lines` now loads each line's credentials from
+`deploy/voice-lines.json`, so run it rather than reaching for a key by hand.
+
 ## 1. Symptom
 
 Calls die at a machine-precise **7,593–7,653 ms** (one outlier 8,532 ms), on both AU1 mobile
@@ -72,6 +95,28 @@ confounded with "different time period". What survives: its clean record spans t
 and at the observed ~35 % failure rate, 25 consecutive clean calls has probability ~0.003 %.
 A purely time-based cause would have had to begin in the 48 hours between 11 and 13 Aug.
 Unlikely — but this is why the next step is an experiment, not an assumption.
+
+## 4b. Post-cutover: elimination is now complete (20 Aug 2026)
+
+After the production line was rebuilt end to end — new Retell **workspace** (Algorythmos →
+Biteperk), new agent `agent_b6b6488af08b82d80e8f4d270a`, new LLM, new backend credentials —
+the next call dropped at **7,602 ms**. Identical signature.
+
+Everything under our control has now been replaced at least once while the fault persisted:
+
+| Replaced / varied | Fault persists? |
+|---|---|
+| Retell agent, LLM, prompt, greeting (many versions) | yes |
+| Retell workspace | yes |
+| Backend credentials (`RETELL_API_KEY` / webhook secret) | yes |
+| Backend runtime (Cloud Run staging vs VM production) | yes |
+| Twilio account (`AC8116857da…` vs `ACd423bd09…`) | yes |
+| Venue row, database, menu | yes |
+| Caller ID presented vs withheld | yes |
+| Call content (drops mid-greeting AND mid-caller-sentence) | yes |
+
+**The Twilio SIP trunk configuration is the only thing never varied** — and it is identical
+on both failing numbers, and different on the one number that has never shown the fault.
 
 ## 5. Also ruled out (each verified, not assumed)
 

@@ -1,67 +1,178 @@
-import { useEffect, useState } from "react";
-import { listTables } from "../../api";
+import { useCallback, useEffect, useState } from "react";
+import { listActiveOrders, listTables } from "../../api";
 import { formatVoiceTime12h, zoneIcon } from "../../lib/format";
 import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
-import { MOCK_TABLE_ORDERS, MOCK_TABLE_TIMELINE } from "../../lib/mockData";
 
 const ORDER_STATUS_LABEL = {
+  queued: "Queued",
+  preparing: "Preparing",
+  ready: "Ready",
   served: "Served",
-  fired: "In Kitchen",
-  pending: "Pending",
 };
 
-const TAX_RATE = 0.085;
-const SERVICE_RATE = 0.18;
+const PAYMENT_STATUS_LABEL = {
+  unpaid: "Unpaid",
+  paid: "Paid",
+  refunded: "Refunded",
+};
+
+const REFRESH_INTERVAL_MS = 30_000;
+
+function centsToDollars(cents) {
+  return (Number(cents ?? 0) / 100).toFixed(2);
+}
+
+// Order timestamps are absolute instants; the floor reads them on the VENUE's
+// wall clock. `en-AU` only fixes the format — without `timeZone` a manager
+// viewing from another timezone sees every order hours out.
+function formatTimelineTime(value, timeZone) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    ...(timeZone ? { timeZone } : {}),
+  });
+}
+
+function orderLabel(order) {
+  return order.order_number ? `Order #${order.order_number}` : "Order";
+}
+
+function buildOrderTimeline(orders, timeZone) {
+  return orders
+    .flatMap((order) => [
+      {
+        at: order.ordered_at,
+        source: order.source === "voice" ? "AI VOICE" : "STAFF",
+        text: `${orderLabel(order)} created`,
+      },
+      {
+        at: order.confirmed_at,
+        source: "KITCHEN",
+        text: `${orderLabel(order)} moved to kitchen`,
+      },
+      {
+        at: order.ready_at,
+        source: "KITCHEN",
+        text: `${orderLabel(order)} marked ready`,
+      },
+    ])
+    .filter((event) => event.at && formatTimelineTime(event.at, timeZone))
+    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+    .map((event) => ({ ...event, time: formatTimelineTime(event.at, timeZone) }));
+}
+
+// One status for the table, not a comma list: a table with one paid and
+// two unpaid orders is still an unpaid table until the last order settles.
+function paymentSummary(orders) {
+  const unpaid = orders.filter((order) => order.payment_status === "unpaid").length;
+  if (unpaid === 0) {
+    const first = orders[0]?.payment_status;
+    return PAYMENT_STATUS_LABEL[first] ?? first ?? "Unknown";
+  }
+  if (unpaid === orders.length) return "Unpaid";
+  return `${unpaid} of ${orders.length} unpaid`;
+}
+
+function itemNotes(item) {
+  const modifiers = (item.modifiers ?? [])
+    .map((modifier) => modifier.name_snapshot)
+    .filter(Boolean)
+    .join(", ");
+  return [item.variant_name_snapshot, modifiers, item.special_requests]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export function TableOrderPage({ navigate, tableLabel }) {
   const [table, setTable] = useState(null);
+  const [orders, setOrders] = useState([]);
+  const [timeZone, setTimeZone] = useState(null);
+  const [serverNow, setServerNow] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    const tablesData = await listTables();
+    const rows = tablesData.tables ?? [];
+    const t = rows.find((row) => row.label === tableLabel);
+    if (!t) {
+      throw new Error(`Table "${tableLabel}" not found.`);
+    }
+    // Ask for THIS table's orders in SQL. Filtering the venue-wide list
+    // client-side hid a table's orders once the venue passed the list's
+    // LIMIT, and matching on the single joined reservation hid the second
+    // sitting's orders whenever the first was never marked done.
+    const ordersData = await listActiveOrders({ tableId: t.id });
+    const hasReservation = Boolean(t.reservation_id);
+    return {
+      timeZone: tablesData.timezone ?? null,
+      serverNow: ordersData.server_now ?? null,
+      table: {
+        id: t.id,
+        label: t.label,
+        zone: t.zone || null,
+        description: t.description || null,
+        minCapacity: t.min_capacity,
+        maxCapacity: t.max_capacity,
+        status: !hasReservation
+          ? "available"
+          : t.reservation_seated_at
+            ? "seated"
+            : "reserved",
+        reservation: hasReservation
+          ? {
+              id: t.reservation_id,
+              startTime: t.reservation_start_time,
+              partySize: t.reservation_party_size,
+              seatedAt: t.reservation_seated_at,
+              guestName: t.customer_name,
+            }
+          : null,
+      },
+      orders: ordersData.orders ?? [],
+    };
+  }, [tableLabel]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    listTables()
-      .then((data) => {
+    setError(null);
+
+    const run = async (initial) => {
+      try {
+        const next = await load();
         if (cancelled) return;
-        const rows = data.tables ?? [];
-        const t = rows.find((row) => row.label === tableLabel);
-        if (!t) {
-          setError(`Table "${tableLabel}" not found.`);
+        setTable(next.table);
+        setOrders(next.orders);
+        setTimeZone(next.timeZone);
+        setServerNow(next.serverNow);
+        setError(null);
+      } catch (e) {
+        if (cancelled) return;
+        // A failed background refresh keeps the last good view on screen; only
+        // the first load has nothing better to show than the error.
+        if (initial) {
           setTable(null);
-        } else {
-          const hasReservation = Boolean(t.reservation_id);
-          setTable({
-            id: t.id,
-            label: t.label,
-            zone: t.zone || null,
-            description: t.description || null,
-            minCapacity: t.min_capacity,
-            maxCapacity: t.max_capacity,
-            status: !hasReservation
-              ? "available"
-              : t.reservation_seated_at
-                ? "seated"
-                : "reserved",
-            reservation: hasReservation
-              ? {
-                  id: t.reservation_id,
-                  startTime: t.reservation_start_time,
-                  partySize: t.reservation_party_size,
-                  seatedAt: t.reservation_seated_at,
-                  guestName: t.customer_name,
-                }
-              : null,
-          });
+          setOrders([]);
         }
-      })
-      .catch((e) => !cancelled && setError(e.message ?? String(e)))
-      .finally(() => !cancelled && setLoading(false));
+        setError(e.message ?? String(e));
+      } finally {
+        if (!cancelled && initial) setLoading(false);
+      }
+    };
+
+    run(true);
+    const timer = window.setInterval(() => run(false), REFRESH_INTERVAL_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [tableLabel]);
+  }, [load]);
 
   if (loading) {
     return (
@@ -81,7 +192,7 @@ export function TableOrderPage({ navigate, tableLabel }) {
     );
   }
 
-  if (error || !table) {
+  if (!table) {
     return (
       <DashboardShell active="Live Tables" navigate={navigate}>
         <div className="to-page">
@@ -101,25 +212,28 @@ export function TableOrderPage({ navigate, tableLabel }) {
 
   const r = table.reservation;
   const hasReservation = Boolean(r);
-  const orders = MOCK_TABLE_ORDERS[table.label] ?? [];
-  const timeline = MOCK_TABLE_TIMELINE[table.label] ?? [];
+  const items = orders.flatMap((order) =>
+    (order.items ?? []).map((item) => ({ ...item, order }))
+  );
+  const timeline = buildOrderTimeline(orders, timeZone);
 
-  const subtotal = orders.reduce((acc, it) => acc + it.qty * it.price, 0);
-  const tax = subtotal * TAX_RATE;
-  const service = subtotal * SERVICE_RATE;
-  const total = subtotal + tax + service;
+  const subtotalCents = orders.reduce(
+    (acc, order) => acc + Number(order.subtotal_cents ?? 0),
+    0
+  );
+  const totalCents = orders.reduce(
+    (acc, order) => acc + Number(order.total_cents ?? 0),
+    0
+  );
 
   const seatedAt = r?.seatedAt ? new Date(r.seatedAt) : null;
+  // server_now comes back with the orders precisely so "seated N min ago"
+  // does not depend on a drifting or mis-set device clock.
+  const nowMs = serverNow ? new Date(serverNow).getTime() : Date.now();
   const seatedMinutesAgo = seatedAt
-    ? Math.max(0, Math.floor((Date.now() - seatedAt.getTime()) / 60000))
+    ? Math.max(0, Math.floor((nowMs - seatedAt.getTime()) / 60000))
     : null;
-  const seatedTimeLabel = seatedAt
-    ? seatedAt.toLocaleTimeString("en-AU", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      })
-    : null;
+  const seatedTimeLabel = seatedAt ? formatTimelineTime(seatedAt.toISOString(), timeZone) : null;
   const bookedTimeLabel = r?.startTime ? formatVoiceTime12h(r.startTime) : null;
 
   return (
@@ -133,6 +247,7 @@ export function TableOrderPage({ navigate, tableLabel }) {
           <Icon name="arrow_back" />
           Back to Floor Plan
         </button>
+        {error && <p className="to-error">Last refresh failed: {error}</p>}
 
         <header className="to-hero">
           <div className="to-hero-title">
@@ -191,14 +306,14 @@ export function TableOrderPage({ navigate, tableLabel }) {
                 Active Orders
               </h2>
               <span className="to-card-count">
-                {orders.length} {orders.length === 1 ? "item" : "items"}
+                {items.length} {items.length === 1 ? "item" : "items"}
               </span>
             </header>
 
-            {orders.length === 0 ? (
+            {items.length === 0 ? (
               <div className="to-empty">
-                <p>No items ordered yet</p>
-                <span>Orders from the POS will appear here in real time.</span>
+                <p>No active orders for this table</p>
+                <span>New POS or voice orders appear here within 30 seconds.</span>
               </div>
             ) : (
               <table className="to-items-table">
@@ -212,24 +327,27 @@ export function TableOrderPage({ navigate, tableLabel }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((it, idx) => (
-                    <tr key={`${it.name}-${idx}`}>
-                      <td>
-                        <p className="to-item-name">{it.name}</p>
-                        {it.notes && <span className="to-item-notes">{it.notes}</span>}
-                      </td>
-                      <td>
-                        <span className={`to-status-chip status-${it.status}`}>
-                          {ORDER_STATUS_LABEL[it.status] ?? it.status}
-                        </span>
-                      </td>
-                      <td className="to-num">{it.qty}</td>
-                      <td className="to-num">${it.price.toFixed(2)}</td>
-                      <td className="to-num to-num-strong">
-                        ${(it.qty * it.price).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((it) => {
+                    const notes = itemNotes(it);
+                    return (
+                      <tr key={it.id}>
+                        <td>
+                          <p className="to-item-name">{it.name_snapshot}</p>
+                          {notes && <span className="to-item-notes">{notes}</span>}
+                        </td>
+                        <td>
+                          <span className={`to-status-chip status-${it.status}`}>
+                            {ORDER_STATUS_LABEL[it.status] ?? it.status}
+                          </span>
+                        </td>
+                        <td className="to-num">{it.quantity}</td>
+                        <td className="to-num">${centsToDollars(it.unit_price_cents)}</td>
+                        <td className="to-num to-num-strong">
+                          ${centsToDollars(it.line_total_cents)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -245,20 +363,24 @@ export function TableOrderPage({ navigate, tableLabel }) {
             <dl className="to-invoice-lines">
               <div>
                 <dt>Subtotal</dt>
-                <dd>${subtotal.toFixed(2)}</dd>
+                <dd>${centsToDollars(subtotalCents)}</dd>
               </div>
               <div>
-                <dt>Tax (8.5%)</dt>
-                <dd>${tax.toFixed(2)}</dd>
+                <dt>Active orders</dt>
+                <dd>{orders.length}</dd>
               </div>
               <div>
-                <dt>Service Charge (18%)</dt>
-                <dd>${service.toFixed(2)}</dd>
+                <dt>Payment status</dt>
+                <dd>
+                  {orders.length === 0
+                    ? "None"
+                    : paymentSummary(orders)}
+                </dd>
               </div>
             </dl>
             <div className="to-invoice-total">
               <span>Total</span>
-              <strong>${total.toFixed(2)}</strong>
+              <strong>${centsToDollars(totalCents)}</strong>
             </div>
             <div className="to-invoice-actions">
               <button type="button" className="to-btn to-btn-ghost">

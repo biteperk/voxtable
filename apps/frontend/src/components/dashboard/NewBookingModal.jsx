@@ -2,9 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { listAvailableTables } from "../../api";
 import { Icon } from "../Icon";
 
-export function NewBookingModal({ onClose, onCreate }) {
+// `today` is the VENUE's calendar day (YYYY-MM-DD) as reported by the API.
+// The previous default, `new Date().toISOString().slice(0, 10)`, was the UTC
+// date — before 10am in Sydney it opened the modal on yesterday.
+function localYmd(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function NewBookingModal({ onClose, onCreate, initialForm = null, today = null }) {
   const now = new Date();
-  const todayYmd = now.toISOString().slice(0, 10);
+  const todayYmd = today || localYmd(now);
   const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
   nextHour.setMinutes(0, 0, 0);
   const defaultTime = `${String(nextHour.getHours()).padStart(2, "0")}:${String(nextHour.getMinutes()).padStart(2, "0")}`;
@@ -17,7 +27,12 @@ export function NewBookingModal({ onClose, onCreate }) {
     time: defaultTime,
     tableId: "",
     notes: "",
+    ...(initialForm ?? {}),
   });
+  // The table the host clicked on the floor plan. If it turns out not to be
+  // free at this time we say so rather than silently booking a different one.
+  const requestedTableId = initialForm?.tableId || null;
+  const [requestedTableUnavailable, setRequestedTableUnavailable] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [suggestedTimes, setSuggestedTimes] = useState([]);
@@ -65,7 +80,16 @@ export function NewBookingModal({ onClose, onCreate }) {
           const tables = data.tables ?? [];
           setAvailableTables(tables);
           setForm((prev) => {
-            if (tables.some((table) => table.id === prev.tableId)) return prev;
+            if (tables.some((table) => table.id === prev.tableId)) {
+              setRequestedTableUnavailable(false);
+              return prev;
+            }
+            if (requestedTableId && prev.tableId === requestedTableId) {
+              // Keep the host's choice visible but unselectable; they decide
+              // whether to move the guest or change the time.
+              setRequestedTableUnavailable(true);
+              return { ...prev, tableId: "" };
+            }
             return { ...prev, tableId: tables[0]?.id ?? "" };
           });
         })
@@ -81,7 +105,7 @@ export function NewBookingModal({ onClose, onCreate }) {
     }, 180);
 
     return () => window.clearTimeout(timer);
-  }, [form.date, form.time, form.partySize]);
+  }, [form.date, form.time, form.partySize, requestedTableId]);
 
   const update = (field) => (event) => {
     if (typeof event.target.setCustomValidity === "function") {
@@ -282,6 +306,10 @@ export function NewBookingModal({ onClose, onCreate }) {
             </select>
             {tableError ? (
               <em className="nb-table-hint error">{tableError}</em>
+            ) : requestedTableUnavailable && !selectedTable ? (
+              <em className="nb-table-hint error">
+                {initialForm?.tableLabel ? `Table ${initialForm.tableLabel}` : "The table you clicked"} isn&apos;t free at {form.time} for {form.partySize} — pick another table or change the time.
+              </em>
             ) : selectedTable ? (
               <em className="nb-table-hint">
                 {(selectedTable.attributes ?? []).length > 0

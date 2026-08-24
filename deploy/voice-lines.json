@@ -1,0 +1,104 @@
+{
+  "$comment": [
+    "Declared state of every VoxTable voice line — the machine-readable SSOT for the routing",
+    "chain. NUMBERS.md narrates this file; where they disagree, THIS file is what the checker",
+    "enforces and NUMBERS.md is the one that is stale.",
+    "",
+    "Why it exists: the line is four bindings in four systems (Twilio trunk, Retell number",
+    "import, Retell agent, the restaurants row). Nothing referenced the others, so a binding",
+    "could vanish and only a human placing a call would find out. On 20 Aug 2026 three of the",
+    "four were broken at once on production and had been for a day.",
+    "",
+    "Identifiers only. NEVER put an auth token, API key or webhook secret in here (NUMBERS.md §7).",
+    "",
+    "Check it:  node .claude/skills/retell-agent-quality/scripts/assert-line.mjs <number>",
+    "Repair it: node .claude/skills/retell-agent-quality/scripts/apply-line.mjs  <number>",
+    "Update this file in the SAME change as the vendor mutation, never afterwards."
+  ],
+
+  "lines": {
+    "+61468202846": {
+      "environment": "production",
+      "api_base": "https://api.biteperk.com.au",
+      "retell_workspace": "Biteperk",
+      "retell_credentials": {
+        "via": "vm-ssh",
+        "instance": "core-central-vm",
+        "zone": "us-central1-a",
+        "gcp_project": "vocotable-497209",
+        "env_file": "/opt/vocotable/.env",
+        "api_key_var": "RETELL_API_KEY",
+        "webhook_secret_var": "RETELL_WEBHOOK_SECRET",
+        "note": "The repo's local .env holds a DIFFERENT workspace's key (the legacy Algorythmos one). Never use it for this line."
+      },
+
+      "restaurant_id": "44444444-4444-4444-8444-444444444444",
+      "venue_name": "Mazcina Resto-Bar",
+
+      "retell_agent_id": "agent_b6b6488af08b82d80e8f4d270a",
+      "retell_agent_name": "Mazcina Resto-Bar (production)",
+      "retell_llm_id": "llm_5f642f051bb83c28d02cea4e1cbc",
+      "inbound_mode": "webhook-only",
+      "pronunciation_dictionary": [
+        { "word": "Mazcina", "alphabet": "ipa", "phoneme": "mɑˈsinɑ" }
+      ],
+      "required_boosted_keywords": ["Mazcina", "Mazcina Resto-Bar"],
+
+      "twilio_account_sid": "ACd423bd09e9649e552a0b6d19a9eed338",
+      "twilio_trunk_sid": "TK6fcd3c96ea8317181d4049ce6f938f10",
+      "twilio_region": "au1",
+      "termination_uri": "voxtable-prod-au1.pstn.twilio.com",
+      "twilio_au1_key_secret": null,
+
+      "db": {
+        "via": "vm-ssh",
+        "instance": "core-central-vm",
+        "zone": "us-central1-a",
+        "gcp_project": "vocotable-497209",
+        "container": "vocotable-postgres-1"
+      },
+
+      "customer_facing": false,
+      "notes": "Not customer-facing: the ~7.6s fixed-timer drop is unresolved on voxtable-prod-au1 (deploy/runbooks/incident-7600ms-call-drops.md)."
+    },
+
+    "+61468203234": {
+      "environment": "staging",
+      "api_base": "https://voxtable-stg-api-naed3dbhna-ts.a.run.app",
+      "retell_workspace": "Staging",
+      "retell_credentials": {
+        "via": "secret-manager",
+        "gcp_project": "bp-voxtable-stg",
+        "api_key_secret": "voxtable-stg-retell-api-key",
+        "webhook_secret_is_api_key": true,
+        "note": "The Staging workspace's single API key is badged as its webhook key, so both take the same string. Production does NOT work this way."
+      },
+
+      "restaurant_id": "33333333-3333-4333-8333-333333333333",
+      "venue_name": "Mazcina Resto-Bar",
+
+      "retell_agent_id": "agent_7b67073710604d306443cc569c",
+      "retell_agent_name": "Mazcina Resto-Bar (staging)",
+      "retell_llm_id": "llm_c1d40dbe180e737dd2ce1309ed3f",
+      "inbound_mode": "webhook-only",
+      "pronunciation_dictionary": [
+        { "word": "Mazcina", "alphabet": "ipa", "phoneme": "mɑˈsinɑ" }
+      ],
+      "required_boosted_keywords": ["Mazcina", "Mazcina Resto-Bar"],
+
+      "twilio_account_sid": "AC8116857da2064ef3251533f3ade56f32",
+      "twilio_trunk_sid": "TKdebe2aa1a4287ca4b2f22da0e9d10ed7",
+      "twilio_region": "au1",
+      "termination_uri": "voxtable-staging-au1.pstn.twilio.com",
+      "twilio_au1_key_secret": "voxtable-stg-twilio-au1-key",
+
+      "db": {
+        "via": "unreachable",
+        "note": "Cloud SQL on a private VPC — not reachable from a laptop. Change the row through the admin API, which verifies the agent before storing it, then re-run assert-line."
+      },
+
+      "customer_facing": false,
+      "notes": "Internal testing only — never customer-facing, never in a production restaurants row."
+    }
+  }
+}

@@ -1,7 +1,8 @@
 // assert-agent.mjs <agent_id> <llm_id>
 // The definition-of-done machine checks. Exits non-zero on any violation.
 // Requires RETELL_API_KEY; optional VOXTABLE_API to assert environment hostnames,
-// optional VENUE_NAMES (comma-separated) to extend the de-venue grep.
+// optional VENUE_NAMES (comma-separated) to extend the de-venue grep, and
+// ALLOW_NO_DISCLOSURE=1 to skip the greeting-disclosure check (staging only).
 const KEY = process.env.RETELL_API_KEY;
 const [agentId, llmId] = process.argv.slice(2);
 if (!KEY || !agentId || !llmId) {
@@ -42,6 +43,20 @@ check(agent.interruption_sensitivity === 0.6, "interruption_sensitivity = 0.6");
 check(agent.ambient_sound == null, "no ambient_sound");
 check(agent.enable_backchannel === true, "backchannel on");
 check(agent.begin_message_delay_ms === 500, "begin_message_delay_ms = 500");
+
+// The AI + recording disclosure lives in the GREETING, and it is a legal gate: the owner
+// warrants in the agreement ledger that Bella announces both on every call. This script
+// reported ALL CHECKS PASSED on the production Mazcina agent while its greeting carried
+// neither — because nothing here looked. A missing greeting is the same failure.
+// Staging deliberately runs the short greeting (SKILL.md) — it opts out with
+// ALLOW_NO_DISCLOSURE=1, which assert-line.mjs sets from the line's declared environment.
+const greeting = String(llm.begin_message ?? "");
+if (process.env.ALLOW_NO_DISCLOSURE === "1") {
+  console.log("  note: disclosure check skipped (ALLOW_NO_DISCLOSURE=1 — staging only, never production)");
+} else {
+  check(/\bAI\b/i.test(greeting), "greeting discloses AI (\"an AI assistant\")");
+  check(/record/i.test(greeting), "greeting discloses recording (\"this call's recorded\")");
+}
 check(agent.data_storage_retention_days === 30, "30-day retention");
 check(llm.model === "gpt-4.1", "model = gpt-4.1");
 
@@ -53,9 +68,23 @@ if (process.env.VOXTABLE_API) {
 }
 check(!/vocotable\.algorythmos/.test(urls) || !!process.env.ALLOW_LEGACY_HOST, "no legacy Algorythmos hostname in URLs");
 
-// Prompt structural invariants.
-for (const marker of ["## Sound human", "Open or closed?", "be honest, never fake it", "{{venue_faq}}", "{{today_status}}", "end_call"]) {
+// Prompt structural invariants — these hold on every backend.
+for (const marker of ["## Sound human", "Open or closed?", "be honest, never fake it", "end_call", "{{restaurant_name}}"]) {
   check(llm.general_prompt.includes(marker), `prompt carries "${marker}"`);
+}
+
+// Venue facts and today's open/closed status: assert the CAPABILITY, not the mechanism.
+// A backend that serves venue_faq/today_status supplies them per call; an older one cannot,
+// and those agents carry a "This venue's details" section instead. Requiring the variables
+// outright failed the production agent for being correctly adapted — a false alarm that
+// would train people to ignore this script.
+const venueSection = llm.general_prompt.includes("This venue's details");
+check(llm.general_prompt.includes("{{venue_faq}}") || venueSection,
+  "can answer venue questions (via {{venue_faq}} or a venue-details section)");
+check(llm.general_prompt.includes("{{today_status}}") || venueSection,
+  "can answer opening hours (via {{today_status}} or a venue-details section)");
+if (venueSection && !llm.general_prompt.includes("{{venue_faq}}")) {
+  console.log("  note: venue facts are in the PROMPT, not per-call data — this agent must never be cloned for another venue; delete the section once the backend serves venue_faq.");
 }
 
 console.log(failures.length ? `\nFAILED: ${failures.length} violation(s)` : "\nALL CHECKS PASSED");

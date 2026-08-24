@@ -47,7 +47,8 @@ meRouter.get(
         memberships: memberships.map((m) => ({
           restaurant_id: m.restaurantId,
           name: m.restaurantName,
-          role: m.role
+          role: m.role,
+        services: m.services
         })),
         active_restaurant_id: memberships.length === 1 ? memberships[0]!.restaurantId : null,
         // Dev bypass: requireAdminRole lets everyone through when verify-auth
@@ -76,7 +77,8 @@ meRouter.get(
       memberships: memberships.map((m) => ({
         restaurant_id: m.restaurantId,
         name: m.restaurantName,
-        role: m.role
+        role: m.role,
+        services: m.services
       })),
       // Auto-select when there's exactly one; the frontend persists the choice
       // and sends X-Restaurant-Id thereafter. null → frontend must pick.

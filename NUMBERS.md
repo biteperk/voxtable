@@ -1,19 +1,33 @@
 # NUMBERS.md — the telephony registry
 
-> 🟢 **UPDATE 19 Aug 2026 — +61 468 202 846 is now WIRED END TO END (production).**
-> Retell: number imported into the **Biteperk** workspace in webhook mode →
-> `https://api.biteperk.com.au/retell/inbound`; agent `agent_3bedcbdd77017136e5b4ade412`
-> ("Mazcina (production)"), LLM `llm_5774e05076475b2b0cdba5329ad5`. Database: venue row
-> `44444444-4444-4444-8444-444444444444` (Mazcina) with real hours, 10 tables and a
-> 31-item menu. Anything below saying this number "reaches nothing" is superseded.
-> ⚠️ Its greeting carries **no AI/recording disclosure** — Sam's explicit decision; restore
-> it before the number is publicised (see `legal-brief-call-recording.md`).
-> Snapshots: `deploy/retell-snapshots/20260819-prod-mazcina-{pre,post}/`.
-> 🔴 **Do NOT publicise this number yet.** Its first call dropped at 7,595 ms — the same
-> fixed-timer fault that affects the staging line, present on both AU1 trunks since their
-> first day and killing roughly a third of calls. Evidence and the isolating experiment:
-> [`deploy/runbooks/incident-7600ms-call-drops.md`](deploy/runbooks/incident-7600ms-call-drops.md).
-
+> 🟢 **UPDATE 20 Aug 2026 (third revision, and the two above were WRONG) — the production
+> line is wired and answering.** `+61 468 202 846` is imported in the **Biteperk** workspace as
+> `voxtable-prod-mazcina`, webhook-only → `https://api.biteperk.com.au/retell/inbound`, bound to
+> agent **`agent_b6b6488af08b82d80e8f4d270a`** ("Mazcina Resto-Bar (production)", LLM
+> `llm_5f642f051bb83c28d02cea4e1cbc`) and venue row `44444444-…`. Four real calls reached that
+> agent on 20 Aug (12:26, 12:41, 16:50, 17:24). `npm run check:voice-lines` passes every check.
+>
+> 🔴 **Why the two revisions above said the opposite: they were read with the wrong API key.**
+> The repo's local `.env` holds a Retell key for the **legacy Algorythmos workspace**, not
+> production. That workspace contains the pilot line `+61 2 7501 1140` and a *different* Mazcina
+> agent (`agent_3bedcbdd77017136e5b4ade412`). Read with it, the production number 404s and the
+> correct agent id "does not exist" — clean, confident, and completely wrong. Acting on that
+> reading repointed the live venue row at an agent from the other workspace and **took the
+> production line down for about two hours** before it was restored.
+>
+> **The production key lives on the VM (`/opt/vocotable/.env`) and nowhere else.** Never check or
+> change this line with the repo's local `.env`. `assert-line.mjs` and `apply-line.mjs` now load
+> credentials from `retell_credentials` in [`deploy/voice-lines.json`](deploy/voice-lines.json)
+> rather than the shell, and refuse to proceed when a key cannot see the line's declared agent.
+>
+> **Two useful rules came out of it.** A wrong key never errors — it answers every question with
+> a tidy 404, so "the binding vanished" and "I am looking at the wrong estate" are
+> indistinguishable without an independent check. And if BOTH a number and its agent appear
+> missing, suspect the credentials before the line; things do not usually vanish in pairs.
+>
+> 🔴 **Do NOT publicise this number yet.** The real remaining fault is the fixed-timer drop:
+> those four calls ran 4,937 / 7,602 / 8,215 / 8,359 ms. That is the AU1 trunk incident, still
+> open — [`deploy/runbooks/incident-7600ms-call-drops.md`](deploy/runbooks/incident-7600ms-call-drops.md).
 
 > ☎️ **Every phone number BitePerk owns, what it can actually do, and what is still
 > unwired.** Read this before you quote a number, wire a number, send an SMS, test a call,
@@ -50,7 +64,7 @@ Anything on an **Algorythmos** account is a different company's infrastructure a
 
 | Number | Environment | Account | Takes a call today? | SMS? |
 |---|---|---|---|---|
-| `+61 468 202 846` | **Production** | Biteperk-production | ❌ No Retell agent bound yet | ✅ Enabled (never actually sent) |
+| `+61 468 202 846` | **Production** | Biteperk-production | ✅ **Answers** — Biteperk workspace, agent `agent_b6b6488af08b82d80e8f4d270a`, venue row resolves. Drops ~1 call in 3 at ~7.6 s (trunk incident) | ✅ Enabled (never actually sent) |
 | `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ✅ Bound — imported to the Staging workspace (webhook mode) 13 Aug; `VoxTable Staging Venue` resolves | ✅ Enabled and **proven 18 Aug 2026** — delivers from the number. Cannot send branded: `BitePerk` is production-only, and the fallback is silent (no `Unverified` stamp) |
 
 That is the whole platform estate. If a number is not in this table, **it is not ours to wire** —
@@ -100,8 +114,8 @@ the only shape available, not a misconfiguration. Never "fix" it by moving the n
 | Forwards to Retell over TLS | ✅ Origination `sip:sip.retellai.com;transport=tls` · pri 10 · wt 10 · enabled |
 | Compliance registration | ✅ *Australia: Mobile – BitePerk Pty Ltd* — **Approved** |
 | Bound to the Messaging Service | ✅ Selected messaging service `voxtable-prod-notifications` |
-| **Answers with a Bella agent** | ❌ **No Retell agent bound** |
-| **Resolves to a restaurant** | ❌ **No `restaurants` row** — `getRestaurantIdByDialedNumber` returns nothing and the backend fails closed |
+| **Answers with a Bella agent** | ✅ `agent_b6b6488af08b82d80e8f4d270a` in the **Biteperk** workspace — verified by four real calls on 20 Aug. ⚠️ `agent_3bedcbdd77017136e5b4ade412` is a **different agent in the legacy workspace**; binding it here takes the line down |
+| **Resolves to a restaurant** | ✅ Row `44444444-…` (`Mazcina Resto-Bar`) resolves it, verified by a signed `/retell/inbound` probe |
 | Sends SMS from the number | ✅ Traffic Status **Messaging enabled** — but **never actually sent**; treat as unproven until one test SMS lands |
 | Receives SMS | ❌ No inbound webhook — number-level Messaging configuration reads "Set up", webhook URL blank. Intentional; nothing consumes inbound SMS |
 | Sends SMS as `BitePerk` | ⚠️ **ACMA-approved, not wired.** Needs the account-wide alphanumeric toggle on, `BitePerk` added as a sender on `voxtable-prod-notifications`, and `notificationWorker` repointed. One-way only — no copy may invite a reply. Runbook §6 |
@@ -392,7 +406,9 @@ it does.
 
 | # | Action | Blocks | Owner |
 |---|---|---|---|
-| 5 | Import `+61 468 202 846` into the Biteperk workspace (`inbound_webhook_url` only) and prove it against a **temporary** `restaurants` row | Everything below; doing it this way risks nothing live | — |
+| 5 | 🔴 **BLOCKED — release `+61 468 202 846` from whatever Retell workspace currently holds it.** The import is refused with `Phone number already exists` while the number 404s in both BitePerk workspaces; a number lives in exactly one workspace account-wide. Sign in to the Retell dashboard, find it (check the legacy Algorythmos workspace too — §4), delete it there, then run `node .claude/skills/retell-agent-quality/scripts/apply-line.mjs +61468202846 --apply`, which imports webhook-only and reads back | Everything below. **This is the whole remaining blocker** — the agent, the venue row and the prompt are all verified correct | Sam |
+| 5a | Create an **AU1 API key on the production Twilio account** (Console → Account → API keys, Region = AU1) and store it as `voxtable-prod-twilio-au1-key-{sid,secret}` | The trunk layer of `assert-line.mjs` is unverifiable on production without it — the asymmetry that let production drift unseen while staging stayed checkable | Sam |
+| ~~5b~~ | ~~Mirror the production `RETELL_API_KEY` / `RETELL_WEBHOOK_SECRET` into repository secrets~~ **Done 23 Aug 2026** — `RETELL_PROD_API_KEY` / `RETELL_PROD_WEBHOOK_SECRET` set from the VM's `.env`; run `32631947070` is the first off-laptop green on the production line (layers 1–14; 15 still skipped pending 5a). The staging job still fails on `secretmanager.versions.access` for `voxtable-stg-deployer` — platform #31 was closed unmerged, the grant needs a clean Terraform PR | Sam |
 | 6 | Bind Natalia's: env → health check → SQL rebind (`twilio_phone_number`, `retell_agent_id`) | Her service | — |
 | 7 | Venue re-points call forwarding to `+61 468 202 846` | Her service — **needs the restaurant, so give them notice** | Sam + venue |
 | 8 | **Send one real test SMS from each number** | Outbound SMS is enabled but has never been sent | — |

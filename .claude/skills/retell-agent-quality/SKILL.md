@@ -24,6 +24,31 @@ experience of VoxTable is whether Bella sounds human, knows the venue, and never
 4. **One lever per change**, so the next test call attributes cleanly. **Never claim a win
    without a measured call** — config that "should" be faster or more natural counts for
    nothing until `latency-report.mjs` and an ear say so.
+5. **A document may only claim what a read-back printed.** On 20 Aug 2026 a snapshot README
+   recorded a rename + pronunciation fix as applied to *both* Mazcina agents. It had reached
+   staging only; production sat untouched for a day while the file said otherwise — and the
+   snapshot committed in the same session proved it, unread. Paste the assertion output; do
+   not summarise it from intent.
+6. **The line is four bindings, not one.** Twilio trunk → Retell number import → Retell agent
+   → the `restaurants` row. A perfect agent answers nothing if any other link is wrong, and
+   three of the four were broken at once on production on 20 Aug. Declared state lives in
+   [`deploy/voice-lines.json`](../../../deploy/voice-lines.json); **run
+   `npm run check:voice-lines` before and after any routing change**, including raw SQL —
+   which is the only path on production, since it sits at migration 024 and the admin bind
+   route (the one place that verifies an agent exists) does not exist there.
+7. **A number lives in exactly one Retell workspace, account-wide.** Importing it elsewhere
+   silently evicts it from yours, and the symptom is a number that 404s locally while the
+   import API says it already exists.
+8. **Check WHICH WORKSPACE your key opens before believing anything it tells you.** The repo's
+   local `.env` holds the **legacy Algorythmos** key; production's lives only in the VM's
+   `/opt/vocotable/.env`. A wrong key never errors — it returns clean 404s, so a healthy line
+   reads as broken and the "repair" breaks it for real. That is exactly what happened on
+   20 Aug 2026: a two-hour production outage caused by a diagnosis, not a fault. Never pass a
+   key by hand; `assert-line.mjs`/`apply-line.mjs` load `retell_credentials` from
+   `deploy/voice-lines.json` and refuse a key that cannot see the declared agent.
+9. **If two things appear missing at once, suspect the credentials.** A number and its agent do
+   not usually vanish together. And a *false verification* is worse than no check: an unverified
+   claim invites doubt, while one "confirmed" against the wrong estate ends the conversation.
 
 ## Definition of done for an agent
 
@@ -73,6 +98,7 @@ pre/post snapshots committed.
 | `reminder_trigger_ms` | 18000, max 1 | Restored after a rebuild dropped it. |
 | `denoising_mode` | `noise-and-background-speech-cancellation` | Part of the ambient/echo fix set. |
 | `data_storage_retention_days` | 30 | Legal posture — a rebuild once silently dropped it. |
+| `begin_message` (production) | names Bella as **an AI assistant** and says the call **is recorded** | The owner warrants this in the agreement ledger. `assert-agent.mjs` checks the greeting; it passed the Mazcina production agent on 20 Aug with neither phrase present because nothing looked. Staging skips via `ALLOW_NO_DISCLOSURE=1`. |
 | LLM `model` / `model_temperature` | `gpt-4.1` / 0.2 | Quality pick; see latency ladder before touching. |
 | KB | deliberately unused | Venue facts travel per call as `{{venue_faq}}` (≤16 entries/1200 chars) — injection beats retrieval for a dozen facts and costs no lookup latency. |
 
@@ -133,3 +159,8 @@ Every line below is a real incident, not a hypothetical.
 - [references/api-operations.md](references/api-operations.md) — keys, endpoints, snapshot discipline, signed probes, Retell gotchas
 - [references/call-forensics.md](references/call-forensics.md) — reviewing calls, the US1/AU1 trap, two-sided verdicts, audit events
 - `scripts/` — `snapshot.sh`, `probe-inbound.mjs`, `review-call.mjs`, `latency-report.mjs`, `assert-agent.mjs` (usage in api-operations.md)
+- **Whole-line tooling** (added 20 Aug 2026, after three simultaneous undetected breaks):
+  - `assert-line.mjs <+E164> [--strict]` — asserts the entire chain against `deploy/voice-lines.json` and names the layer that broke. `npm run check:voice-lines` runs it over every declared line.
+  - `apply-line.mjs <+E164> [--apply]` — idempotent reconcile of live → declared. Dry-run by default; snapshots before writing and reads back after.
+  - `selftest-assert-line.mjs` — corrupts the declaration one field at a time and requires the checker to fail. A checker nobody has seen fail is a green light, not a check.
+  - `.github/workflows/voice-line-health.yml` — hourly off-laptop run, so a break is found by a machine rather than by a customer.

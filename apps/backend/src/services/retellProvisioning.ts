@@ -324,16 +324,38 @@ export async function verifyAgentForVenue(
   return { agentId, agentName, matchesVenue };
 }
 
-/** Import the Twilio number into Retell, bound to the agent + inbound webhook. */
-export async function importNumberToRetell(phoneNumber: string, agentId: string): Promise<void> {
+/**
+ * Import the Twilio number into Retell, routed by our inbound webhook.
+ *
+ * Deliberately webhook-ONLY: no `inbound_agents`. The two can coexist, and when they do the
+ * static agent is a FALLBACK that answers when /retell/inbound fails. On a venue number that
+ * is the worst outcome available — Bella greets the caller using the LLM's stored
+ * `default_dynamic_variables`, which nothing refreshes, so she names the wrong venue with
+ * months-old dates while every tool call fails. A confidently wrong agent is worse than a
+ * dead line. Webhook mode is also what lets us resolve the venue from the dialled number at
+ * call time; a static binding silently reverts that venue to single-tenant defaults.
+ * See NUMBERS.md §6.
+ *
+ * `agentId` is still required: it is verified to exist before we register routing to it, so
+ * a venue is never provisioned against an agent id that has gone.
+ */
+export async function importNumberToRetell(
+  phoneNumber: string,
+  agentId: string,
+  venueName: string
+): Promise<void> {
   if (!env.TWILIO_TERMINATION_URI) {
     throw new AppError(503, "NO_TERMINATION_URI", "TWILIO_TERMINATION_URI is not configured.");
   }
+  // Prove the agent exists before the number points anywhere. Skipping this is how production
+  // came to route a number at an agent id that had been deleted (20 Aug 2026): the import
+  // succeeded, every call failed, and nothing said why.
+  await verifyAgentForVenue(agentId, venueName);
+
   const c = client();
   await c.phoneNumber.import({
     phone_number: phoneNumber,
     termination_uri: env.TWILIO_TERMINATION_URI,
-    inbound_agents: [{ agent_id: agentId, weight: 1 }],
     inbound_webhook_url: `${apiBase()}/retell/inbound`
   });
 }

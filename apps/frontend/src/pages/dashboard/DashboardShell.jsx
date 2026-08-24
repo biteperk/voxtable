@@ -20,6 +20,9 @@ export function DashboardShell({ active, children, navigate, path }) {
   // bounces them on click), so Kitchen shows only for the kitchen role itself or
   // manager+. Mirrors the route guard in main.jsx.
   const allItems = [
+    // Home is reachable by every role, including kitchen — they just never LAND
+    // there (main.jsx sends them to the pass).
+    ["Home", "home", "/home", () => true],
     ["Live Tables", "table_restaurant", "/live-tables", () => hasMinRole("server")],
     ["Live Feed", "graphic_eq", "/live-feed", () => hasMinRole("server")],
     ["Booking Log", "menu_book", "/booking-log", () => hasMinRole("server")],
@@ -44,7 +47,7 @@ export function DashboardShell({ active, children, navigate, path }) {
         </h2>
         <button
           className="dashboard-brand"
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/home")}
           aria-label="VoxTable home"
         >
           <img
@@ -150,7 +153,7 @@ export function DashboardShell({ active, children, navigate, path }) {
         <button
           type="button"
           className="mobile-topbar-brand"
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/home")}
           aria-label="VoxTable home"
         >
           <img

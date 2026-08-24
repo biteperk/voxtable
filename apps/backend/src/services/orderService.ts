@@ -526,8 +526,11 @@ export async function updatePaymentStatus(input: {
   return hydrateAfterCommit(input.id, input.restaurantId);
 }
 
-export async function getActiveOrders(restaurantId: string): Promise<OrderWithItems[]> {
-  return listActiveOrders(restaurantId);
+export async function getActiveOrders(
+  restaurantId: string,
+  options: { tableId?: string } = {}
+): Promise<OrderWithItems[]> {
+  return listActiveOrders(restaurantId, options);
 }
 
 export async function getOrderDetail(id: string, restaurantId: string): Promise<OrderWithItems> {

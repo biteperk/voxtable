@@ -630,6 +630,92 @@ button {
   --ob-ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ---- Base button styles ----------------------------------------------------
+   `.primary-button` and `.ghost-button` were used in fifteen files but styled
+   only inside `.onboarding-card` and `.plan-modal-actions` — the note below
+   records that no base existed. Everywhere else (the whole /admin console, the
+   billing pages) they rendered as unstyled text.
+
+   The scoped rules keep winning on specificity, so onboarding and the plan
+   modal are unchanged; this only clothes the buttons that had nothing. Values
+   match the onboarding treatment so the app stays one language.
+
+   Gold is a FILL here, with dark ink on top — never gold text on a light
+   surface, which is the brand rule broken most often. */
+.primary-button,
+.ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 22px;
+  border-radius: 8px;
+  font: 600 15px/1.2 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.primary-button {
+  border: 1px solid transparent;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.ghost-button {
+  border: 1px solid var(--outline);
+  background: transparent;
+  color: var(--on-surface);
+}
+
+.primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: var(--primary-dim);
+}
+
+.ghost-button:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  border-color: var(--on-surface);
+}
+
+.primary-button:disabled,
+.ghost-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.primary-button:focus-visible,
+.ghost-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* A button that reads as a link — used for inline retry actions. */
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Neutral placeholder while a redirect resolves, so no marketing page flashes. */
+.page-loading {
+  min-height: 60vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-button,
+  .ghost-button {
+    transition: none;
+  }
+  .primary-button:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
 /* ===================================================================
    VoxTable Onboarding — "Focused Spotlight"
    REPLACES the entire existing .onboarding-* + .menu-review-* + .trial-*
@@ -2418,6 +2504,8 @@ gmp-place-autocomplete {
   min-height: calc(100vh - 150px);
 }
 
+.product-tile,
+.service-line,
 .active-call-card,
 .live-card,
 .context-card,
@@ -6787,6 +6875,30 @@ button {
 }
 .today-pill .material-symbols-outlined { font-size: 14px; }
 
+.live-date-picker {
+  gap: 10px;
+}
+
+.live-date-picker input {
+  width: 132px;
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+  color-scheme: dark;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.live-date-picker input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(1);
+  opacity: 0.72;
+}
+
 .mock-badge {
   padding: 4px 10px;
   border-radius: 999px;
@@ -6818,38 +6930,252 @@ button {
   margin-left: 6px;
 }
 
-.live-tables-list {
-  display: flex;
-  flex-direction: column;
+.live-tables-state {
+  margin-top: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  color: var(--on-surface-variant);
+  background: var(--surface-container-low);
+}
+
+.lt-calendar-shell {
   margin-top: 16px;
   border: 1px solid var(--outline-variant);
   border-radius: 8px;
   overflow: hidden;
+  background: color-mix(in srgb, var(--surface-container-low) 78%, transparent);
 }
-.live-tables-row {
+
+.lt-calendar-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.lt-calendar-header,
+.lt-calendar-row {
+  min-width: max(820px, calc(148px + var(--lt-slots) * 80px));
   display: grid;
-  grid-template-columns: 120px 92px minmax(0, 0.9fr) minmax(0, 1.4fr) 220px;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 20px;
-  border-bottom: 1px solid rgba(65, 71, 85, 0.5);
-  font-size: 14px;
-  color: var(--on-surface);
+  grid-template-columns: 148px 1fr;
 }
-.live-tables-row:last-child { border-bottom: 0; }
-.live-tables-row-head {
+
+.lt-calendar-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  border-bottom: 1px solid rgba(65, 71, 85, 0.62);
   background: var(--surface-container-low);
+}
+
+.lt-table-axis,
+.lt-table-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--surface-container-low) 94%, black);
+}
+
+.lt-table-axis {
+  padding: 12px 18px;
+  border-right: 1px solid rgba(65, 71, 85, 0.62);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.lt-time-axis {
+  position: relative;
+  height: 44px;
+  min-width: calc(var(--lt-slots) * 80px);
+  background:
+    repeating-linear-gradient(
+      to right,
+      rgba(65, 71, 85, 0.42) 0,
+      rgba(65, 71, 85, 0.42) 1px,
+      transparent 1px,
+      transparent calc(100% / var(--lt-slots))
+    );
+}
+
+.lt-time-axis > span {
+  position: absolute;
+  top: 12px;
+  transform: translateX(-50%);
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--on-surface-variant);
-  padding-top: 10px;
-  padding-bottom: 10px;
+  white-space: nowrap;
 }
-.live-tables-row:not(.live-tables-row-head):hover {
-  background: color-mix(in srgb, var(--primary) 4%, transparent);
+
+.lt-time-axis .lt-now-label {
+  top: 5px;
+  z-index: 4;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--error);
+  color: var(--on-error);
+  box-shadow: 0 0 14px rgba(255, 180, 171, 0.34);
+}
+
+.lt-calendar-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.lt-calendar-row {
+  min-height: 92px;
+  border-bottom: 1px solid rgba(65, 71, 85, 0.5);
+}
+
+.lt-calendar-row:last-child {
+  border-bottom: 0;
+}
+
+.lt-table-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-right: 1px solid rgba(65, 71, 85, 0.62);
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.lt-table-capacity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.lt-table-capacity .material-symbols-outlined {
+  font-size: 15px;
+}
+
+.lt-calendar-track {
+  position: relative;
+  min-width: calc(var(--lt-slots) * 80px);
+  padding: 10px 0;
+  cursor: crosshair;
+  background:
+    repeating-linear-gradient(
+      to right,
+      rgba(65, 71, 85, 0.34) 0,
+      rgba(65, 71, 85, 0.34) 1px,
+      transparent 1px,
+      transparent calc(100% / var(--lt-slots))
+    );
+}
+
+.lt-calendar-track:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.lt-now-line {
+  position: absolute;
+  inset: 0 auto 0 var(--lt-now-left);
+  z-index: 3;
+  width: 2px;
+  background: var(--error);
+  box-shadow: 0 0 16px rgba(255, 180, 171, 0.45);
+  pointer-events: none;
+}
+
+.lt-now-line::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--error);
+  transform: translateX(-50%);
+}
+
+.lt-empty-lane {
+  position: absolute;
+  inset: 18px 16px auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: var(--on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+.lt-booking {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  z-index: 2;
+  min-width: 172px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--outline-variant);
+  background: color-mix(in srgb, var(--surface-container-high) 88%, transparent);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.lt-booking.status-reserved {
+  border-color: color-mix(in srgb, var(--tertiary) 66%, var(--outline-variant));
+  background: color-mix(in srgb, var(--tertiary-container) 32%, var(--surface-container-high));
+}
+
+.lt-booking.status-seated {
+  border-color: color-mix(in srgb, var(--error) 52%, var(--outline-variant));
+  background: color-mix(in srgb, var(--error-container) 18%, var(--surface-container-high));
+}
+
+.lt-booking-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lt-booking-time {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.lt-booking-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 19px;
+  color: var(--on-surface);
+}
+
+.lt-booking-main span:last-child {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--on-surface-variant);
+}
+
+.lt-booking-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .table-label {
@@ -6866,19 +7192,6 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-/* Description is its own grid column (next to Status), not a sub-line under the
-   label. min-width:0 lets it ellipsis within its track instead of overflowing. */
-.table-desc {
-  min-width: 0;
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--on-surface-variant);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .table-capacity {
   display: inline-flex;
@@ -6968,23 +7281,32 @@ button {
 .row-action.icon-only { padding: 6px 8px; }
 
 @media (max-width: 720px) {
-  .live-tables-row,
-  .live-tables-row-head {
-    grid-template-columns: 100px 90px 1fr;
-    gap: 10px;
-    padding: 12px 14px;
+  .lt-calendar-header,
+  .lt-calendar-row {
+    grid-template-columns: 118px 1fr;
+    min-width: max(760px, calc(118px + var(--lt-slots) * 74px));
   }
-  /* Description column is supplementary; the zone badge carries the gist on the
-     narrow mobile floor view. Drop the column (header + cell) on mobile. */
-  .table-desc,
-  .table-desc-head {
-    display: none;
+  .lt-time-axis,
+  .lt-calendar-track {
+    min-width: calc(var(--lt-slots) * 74px);
   }
-  .live-tables-row .live-tables-action-col,
-  .live-tables-row-head .live-tables-action-col {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-    padding-top: 4px;
+  .lt-table-axis,
+  .lt-table-label {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .lt-booking {
+    min-width: 150px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
+  }
+  .lt-booking-actions {
+    flex-wrap: wrap;
+  }
+  .lt-booking-actions .row-action {
+    padding: 5px 8px;
   }
 }
 
@@ -10534,6 +10856,18 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   color: var(--secondary);
 }
 
+.to-status-chip.status-preparing {
+  background: color-mix(in srgb, var(--secondary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--secondary-container) 55%, transparent);
+  color: var(--secondary);
+}
+
+.to-status-chip.status-ready {
+  background: color-mix(in srgb, var(--primary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--primary-container) 55%, transparent);
+  color: var(--primary);
+}
+
 .to-status-chip.status-served {
   background: var(--surface-container-high);
   border-color: var(--outline-variant);
@@ -10541,6 +10875,12 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 }
 
 .to-status-chip.status-pending {
+  background: color-mix(in srgb, var(--tertiary-container) 18%, transparent);
+  border-color: color-mix(in srgb, var(--tertiary-container) 50%, transparent);
+  color: var(--tertiary);
+}
+
+.to-status-chip.status-queued {
   background: color-mix(in srgb, var(--tertiary-container) 18%, transparent);
   border-color: color-mix(in srgb, var(--tertiary-container) 50%, transparent);
   color: var(--tertiary);
@@ -13868,5 +14208,264 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 @media (max-width: 640px) {
   .admin-dl {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Venue home ------------------------------------------------------------
+   The service line is the one bold thing on this page; everything else stays
+   quiet. Mono for figures because every operational surface in a venue — the
+   POS, the docket printer, the kitchen rail — is monospaced. Language stays
+   Inter. That split is the type system.
+   Note: this app is dark-only (color-scheme: dark on :root), so --primary is
+   safe as text here. On a light surface it would not be — gold text is --gold
+   in the brand kit for exactly that reason. */
+
+.home-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-bottom: 40px;
+}
+
+.service-line {
+  padding: 22px 26px;
+}
+
+.service-line-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.service-line-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.service-line-venue {
+  color: var(--on-surface-variant);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.service-line-clock {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.service-line-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 34px;
+  padding-top: 18px;
+}
+
+.service-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 132px;
+}
+
+.service-figure-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 40px;
+  line-height: 1.05;
+  font-weight: 700;
+  color: var(--on-surface);
+  /* Tabular so a count-up doesn't shuffle the label sideways. */
+  font-variant-numeric: tabular-nums;
+}
+
+.service-figure-label {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.service-figure-hint {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--outline);
+  padding-top: 2px;
+}
+
+.service-line-empty {
+  padding-top: 18px;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+}
+
+.home-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  margin: 0 0 14px;
+}
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.product-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 22px;
+}
+
+/* Ownership is the hierarchy, not a badge. Products the venue does not have
+   recede rather than shouting a label at equal weight. */
+.product-grid-quiet .product-tile {
+  opacity: 0.72;
+  padding: 16px 18px;
+}
+
+.product-grid-quiet .product-tile:hover,
+.product-grid-quiet .product-tile:focus-within {
+  opacity: 1;
+}
+
+.product-tile-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.product-tile-icon {
+  color: var(--primary);
+  font-size: 20px;
+}
+
+.product-tile-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.product-tile-status {
+  margin-left: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--outline);
+  border: 1px solid var(--outline-variant);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.product-tile-tagline {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.product-tile-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0 0;
+}
+
+.product-tile-figure-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.product-tile-figure-label {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.product-tile-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+/* Inline, not full-width. Two full-bleed gold bars out-shouted the service
+   line, which is meant to be the only loud thing on this page. Gold stays on
+   the figures — the data — rather than on navigation. */
+.product-tile-actions .primary-button,
+.product-tile-actions .ghost-button {
+  min-height: 38px;
+  padding: 9px 16px;
+  font-size: 14px;
+}
+
+.product-grid-quiet .product-tile-actions .ghost-button {
+  border-color: var(--outline-variant);
+  color: var(--on-surface-variant);
+}
+
+.product-tile-secondary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.product-tile-secondary-note {
+  font-size: 11px;
+  color: var(--outline);
+}
+
+.home-setup {
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  padding: 24px 26px;
+  background: var(--surface-container);
+}
+
+.home-setup h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  color: var(--on-surface);
+}
+
+.home-setup p {
+  margin: 0 0 16px;
+  color: var(--on-surface-variant);
+  font-size: 14px;
+}
+
+.home-error {
+  color: var(--error);
+  font-size: 14px;
+}
+
+@media (max-width: 767px) {
+  .service-line { padding: 18px; }
+  .service-figure-value { font-size: 32px; }
+  .service-line-figures { gap: 22px; }
+  .service-figure { min-width: 108px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-tile,
+  .product-grid-quiet .product-tile {
+    transition: none;
   }
 }

@@ -233,8 +233,11 @@ export function listReservations({ date, limit } = {}) {
   return authedFetch(`/api/reservations${tail}`);
 }
 
-export function listTables() {
-  return authedFetch(`/api/tables`);
+export function listTables({ date } = {}) {
+  const qs = new URLSearchParams();
+  if (date) qs.set("date", date);
+  const tail = qs.toString() ? `?${qs}` : "";
+  return authedFetch(`/api/tables${tail}`);
 }
 
 export function listAvailableTables({ date, time, partySize, excludeReservationId } = {}) {
@@ -307,6 +310,11 @@ function analyticsQs({ days, from, to } = {}) {
     qs.set("days", String(days));
   }
   return qs.toString() ? `?${qs}` : "";
+}
+
+/** The venue's service state right now — one round trip, role-shaped. */
+export function getHomeSummary() {
+  return authedFetch("/api/home/summary");
 }
 
 export function getAnalytics(params = {}) {
@@ -399,8 +407,11 @@ export function deleteMenuItem(id) {
   return authedFetch(`/api/menu/items/${id}`, { method: "DELETE" });
 }
 
-export function listActiveOrders() {
-  return authedFetch("/api/orders/active");
+export function listActiveOrders({ tableId } = {}) {
+  const qs = new URLSearchParams();
+  if (tableId) qs.set("table_id", tableId);
+  const tail = qs.toString() ? `?${qs}` : "";
+  return authedFetch(`/api/orders/active${tail}`);
 }
 
 export function updateOrderStatus(id, status, version, cancellationReason) {

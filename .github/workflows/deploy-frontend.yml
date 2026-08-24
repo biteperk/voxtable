@@ -39,11 +39,35 @@ permissions:
 jobs:
   deploy:
     name: Deploy Hosting
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # workflow_run fires for fork PRs too, and `head_branch` is then the FORK's branch
+    # name — a fork branch called `main` would otherwise satisfy the branch filter,
+    # the step-level branch check, and be checked out by head_sha. Only runs that
+    # originate from this repository may deploy.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
 
     steps:
+      - name: Enforce branch to environment
+        env:
+          DEPLOY_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
+          REF_NAME: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          expected_branch="integration"
+          if [ "$DEPLOY_ENV" = "production" ]; then
+            expected_branch="main"
+          fi
+
+          if [ "$REF_NAME" != "$expected_branch" ]; then
+            echo "::error::${DEPLOY_ENV} frontend deploys must run from ${expected_branch}; this run is from ${REF_NAME}." >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}

@@ -89,3 +89,98 @@ whole chain:
 
 Remaining before the line is customer-facing: Sam's real test call, clicking **Publish** in
 the dashboard (optional — webhook mode serves the draft), and restoring the disclosure.
+
+## Full venue name + pronunciation, 20 Aug 2026
+
+Sam heard "Mazcina" (not "Mazcina Resto-Bar"), pronounced "Mazina". Root cause was a data
+gap, not the prompt: PR #232 renamed the venue in the seed files and applied it to staging,
+but **production's database was never updated**. The prompt needed no edit — it is de-venued
+and speaks `{{restaurant_name}}`.
+
+Applied:
+- Production DB `restaurants.name` → `Mazcina Resto-Bar` (targeted UPDATE; the full seed was
+  deliberately not re-run, since its hours/FAQ/tables are already correct).
+- **Pronunciation dictionary** on BOTH Mazcina agents — the "ask Camilo" item open since the
+  conversion is now closed: `{"word":"Mazcina","alphabet":"ipa","phoneme":"mɑˈsinɑ"}`
+  ("mahs-SEE-nah", Spanish/Chilean, confirmed by Sam).
+- `boosted_keywords` gained the full name on both, so the STT is not biased against hearing
+  a caller say it.
+- **Agents renamed** to `Mazcina Resto-Bar (production)` / `(staging)`. This was not cosmetic:
+  the admin bind guard is `comparableName(agentName).includes(comparableName(venueName))`
+  (`retellProvisioning.ts:322`), so the rename had silently left **staging already broken** —
+  agent "Mazcina" vs venue "Mazcina Resto-Bar" → `409 RETELL_AGENT_VENUE_MISMATCH` on any
+  future rebind, discoverable only mid-incident. Both now satisfy the guard.
+
+⚠️ **The rename alone did not take effect** — the deployed image (`api:0.1.0`) predates the
+name-cache TTL, so its cache **never expires** (`expiresAt` is absent from the running
+build). The old name was pinned in memory until `docker restart vocotable-api-1
+vocotable-worker-1`. Any future venue rename on this image needs the same restart; the TTL
+fix arrives with the backend promotion.
+
+Verified: signed `/retell/inbound` returns `restaurant_name: "Mazcina Resto-Bar"`;
+`assert-agent.mjs` green on both agents.
+
+
+---
+
+## ⚠️ Correction, 20 Aug 2026 — the "both agents" claim above is wrong
+
+**Only the staging agent was renamed and given the pronunciation dictionary. Production was
+never touched**, and stayed that way for a day while this file said otherwise.
+
+Verified against the live Retell API, 20 Aug:
+
+| Field | Production agent `agent_3bedcbdd77…` | Claimed above |
+|---|---|---|
+| `agent_name` | `Mazcina (production)` | `Mazcina Resto-Bar (production)` |
+| `pronunciation_dictionary` | `null` | `{"word":"Mazcina","phoneme":"mɑˈsinɑ"}` |
+| `boosted_keywords` | no full name | full name added |
+| `last_modification_timestamp` | **19 Aug 22:38** — untouched since the build | changed 20 Aug |
+
+The snapshot committed alongside this correction proves it:
+`../20260820-prod-disclosure-post/mazcina/agent.json` was taken by the same session that wrote
+the claim, and shows the old name. Nobody diffed the snapshot against the sentence beside it.
+
+What *was* applied on 20 Aug and did hold: the AI/recording disclosure, which lives on the
+**LLM** (a separate object with its own timestamp) — hence one half landing and the other not.
+
+Consequence: the bind guard `comparableName(agentName).includes(comparableName(venueName))`
+(`retellProvisioning.ts:322`) was left failing on production — "mazcina" does not contain
+"mazcinarestobar" — the very trap this file describes fixing.
+
+**Fixed 20 Aug 2026** by `scripts/apply-line.mjs +61468202846 --apply`, read back and confirmed.
+
+**The rule this cost us:** a README may only claim what a read-back printed. The check is now
+executable — `npm run check:voice-lines` — and the declared state lives in
+[`deploy/voice-lines.json`](../../voice-lines.json), not in prose.
+
+
+---
+
+## ⚠️ The correction above is ITSELF wrong — retracted 20 Aug 2026
+
+**Ignore the table in the previous section.** It was produced by reading the Retell API with the
+repo's local `.env` key, which belongs to the **legacy Algorythmos workspace**, not production.
+In that workspace there is a different Mazcina agent (`agent_3bedcbdd77017136e5b4ade412`) which
+genuinely did still carry the old name — so the reading was real, it was just of the wrong estate.
+
+The production agent is **`agent_b6b6488af08b82d80e8f4d270a`**, and read with the VM's key it was
+already correct the whole time:
+
+| Field | Production agent, verified with the production key |
+|---|---|
+| `agent_name` | `Mazcina Resto-Bar (production)` ✅ |
+| `pronunciation_dictionary` | `Mazcina → mɑˈsinɑ` ✅ |
+| `voice_id` / retention | `retell-Cimo` / 30 days ✅ |
+
+**So the original claim in this file — that both agents were renamed and given the pronunciation
+— was TRUE.** It needed no correction. Apologies to whoever wrote it.
+
+What the false correction cost: acting on it, the production venue row was repointed at
+`agent_3bedcbdd…`, an agent that does not exist in the production workspace, and the line stopped
+answering for about two hours until the binding was restored.
+
+The lesson that survives is not "documents lie" but something sharper: **a wrong API key never
+errors.** It answers every question with a clean 404. Verifying a claim with the wrong credentials
+looks exactly like verifying it correctly, which is worse than not checking at all — a plain
+assertion invites doubt, while a false verification ends the conversation.
