@@ -67,7 +67,7 @@
     "check:voice-lines:selftest": "node .claude/skills/retell-agent-quality/scripts/selftest-assert-line.mjs"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
+    "@eslint/js": "^10.0.1",
     "eslint": "^9.39.5",
     "eslint-plugin-import-x": "^4.17.1",
     "eslint-plugin-react": "^7.37.5",
