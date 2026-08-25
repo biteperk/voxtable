@@ -24,6 +24,8 @@ const MESSAGES = {
     "privacy extension blocking identitytoolkit.googleapis.com. Try disabling " +
     "extensions for this site, or use an incognito window.",
   "auth/popup-blocked": "Your browser blocked the sign-in popup — allow popups and try again.",
+  "auth/popup-closed-by-user": "Sign-in cancelled.",
+  "auth/cancelled-popup-request": "Sign-in cancelled.",
   "auth/unauthorized-continue-uri":
     "Sign-up is misconfigured for this domain — contact hello@biteperk.com.au."
 };
@@ -31,5 +33,9 @@ const MESSAGES = {
 export function authErrorMessage(err) {
   const code = err && err.code;
   if (code && MESSAGES[code]) return MESSAGES[code];
+  // Firebase's persistence layer can throw bare Errors with no auth/* code
+  // (e.g. "Database is closing/hidden" from IndexedDB mid-popup). Those are
+  // SDK internals, not something a venue owner can act on — never show them.
+  if (!code) return "Sign-in didn't finish — please try again.";
   return (err && err.message) || String(err);
 }
