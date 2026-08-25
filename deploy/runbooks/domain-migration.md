@@ -214,21 +214,52 @@ the vendor URL back at `vocotable.algorythmos.com.au`, which is still serving.
 
 ## Phase 5 — Frontend
 
-1. **Firebase Hosting** → add custom domain `app.biteperk.com.au` to target
-   `app`, and `kds.biteperk.com.au` to target `kds`. Follow the TXT/A records
-   Firebase issues (these are the `app.`/`kds.` DNS records).
-2. **Firebase Auth → Settings → Authorized domains**: add `app.biteperk.com.au`.
-   **Miss this and Google sign-in breaks on the new hostname.**
-3. **GitHub repo variable** `VITE_API_BASE_URL` → `https://api.biteperk.com.au`.
-4. **`/opt/vocotable/.env`**: `STRIPE_CHECKOUT_SUCCESS_URL`,
-   `STRIPE_CHECKOUT_CANCEL_URL`, `STRIPE_PORTAL_RETURN_URL` → `app.biteperk.com.au`
-   paths (they currently default to `vocotable.web.app`). Force-recreate again.
-5. **Google Maps key** → add `app.biteperk.com.au/*` to the HTTP-referrer
-   restrictions, or address autocomplete 403s on the new host.
-6. Re-run the frontend deploy so the bundle points at the new API.
+> **Renamed 25 Aug 2026:** the dashboard's new hostname is
+> **`voxtable.biteperk.com.au`** (product-named subdomains, NAMES.md §2/§5) —
+> the earlier `app.biteperk.com.au` plan was superseded before any DNS, cert or
+> traffic existed. **Do not create `app.biteperk.com.au`.** Two pre-flight
+> facts that post-date the original text: `VITE_API_BASE_URL` is a
+> **per-GitHub-Environment** variable (not a repo variable — no repo-level
+> fallback exists by design), and the KDS is pipeline-deployed in both
+> environments (`FIREBASE_ONLY=hosting:app,hosting:kds`).
 
-Verify: sign in at `https://app.biteperk.com.au`, load the dashboard and the
-onboarding wizard, and confirm the browser console shows no CORS or auth errors.
+1. **Firebase Hosting** (production Firebase project `vocotable`) → add custom
+   domain `voxtable.biteperk.com.au` to the site behind target `app`, and
+   `kds.biteperk.com.au` to the site behind target `kds`. Follow the TXT/A
+   records Firebase issues; add them in the `biteperk.com.au` Cloudflare zone
+   **DNS-only (gray cloud)**. Wait until the console shows **Connected** (cert
+   issued) before any step below.
+2. **Firebase Auth → Settings → Authorized domains**: add
+   `voxtable.biteperk.com.au`. **Miss this and Google sign-in breaks on the new
+   hostname.** Also add the OAuth web client entries (GCP → Credentials,
+   console-only — no API exists): JS origin `https://voxtable.biteperk.com.au`
+   and redirect URI `https://voxtable.biteperk.com.au/__/auth/handler`, or
+   sign-in fails with `redirect_uri_mismatch` (exactly what happened on
+   `vocotable.biteperk.com.au`, 25 Aug 2026).
+3. **Production GitHub environment variables**: `VITE_API_BASE_URL` →
+   `https://api.biteperk.com.au`, `VITE_KDS_URL` → `https://kds.biteperk.com.au`,
+   and the manual legacy-site build's `VITE_FIREBASE_AUTH_DOMAIN` →
+   `voxtable.biteperk.com.au` (first-party auth — see `resolveAuthDomain()` in
+   `apps/frontend/src/lib/firebaseConfig.js`).
+4. **`/opt/vocotable/.env`**: add `https://voxtable.biteperk.com.au` to
+   `CORS_ALLOWED_ORIGINS` (**the VM list is the live one — Terraform's copy
+   only feeds the future Cloud Run stack**), and set
+   `STRIPE_CHECKOUT_SUCCESS_URL`, `STRIPE_CHECKOUT_CANCEL_URL`,
+   `STRIPE_PORTAL_RETURN_URL` (and `PUBLIC_ORDER_RETURN_BASE_URL` if set) to
+   `voxtable.biteperk.com.au` paths. Force-recreate api+worker.
+5. **Google Maps key** → add `voxtable.biteperk.com.au/*` to the HTTP-referrer
+   restrictions, or address autocomplete 403s on the new host.
+6. Re-deploy both frontends so the bundles carry the new API base and auth
+   domain (the legacy `vocotable` site deploys by hand; CI covers the
+   `bp-voxtable-*` sites).
+7. **Reserved product hosts** (NAMES.md §2): `voxorder.` / `voxconcierge.` /
+   `voxstay.biteperk.com.au` are Cloudflare **proxied** records with 301
+   redirect rules to their biteperk.com.au pages — verify each target returns
+   200 before creating its rule.
+
+Verify: sign in at `https://voxtable.biteperk.com.au`, load the dashboard and
+the onboarding wizard, confirm the console shows no CORS or auth errors, and
+confirm the legacy hostnames now redirect path-preserving.
 
 ## Phase 6 — Grace period
 
@@ -236,8 +267,13 @@ Keep the legacy hostnames serving for **at least 90 days** (301 redirect for the
 dashboard; the API keeps answering on both `server_name`s). Only then consider
 trimming the legacy entries from `app.ts` CORS and the nginx `server_name`.
 
-`vocotable.web.app` already 301s to the branded dashboard hostname preserving the
-path, so Stripe return URLs survive even before Phase 5 step 4.
+`vocotable.web.app` already redirects to the branded dashboard hostname
+preserving the path (a head-of-document client-side redirect in
+`apps/frontend/index.html` — host-conditional server-side redirects are not
+possible while all hostnames share one Firebase Hosting site), so Stripe
+return URLs survive even before Phase 5 step 4. After the rename ships,
+`vocotable.biteperk.com.au` joins the redirecting set and
+`voxtable.biteperk.com.au` is the destination.
 
 ## Not covered here
 

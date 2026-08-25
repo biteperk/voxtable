@@ -221,7 +221,7 @@
     "hostnames": [
       {
         "surface": "Client dashboard",
-        "new": "app.biteperk.com.au",
+        "new": "voxtable.biteperk.com.au",
         "old": "vocotable.biteperk.com.au · vocotable.web.app",
         "status": "Firebase Hosting target app; custom domain pending (Phase 5)"
       },
