@@ -263,6 +263,34 @@ benefit. This runbook only moves the hostnames customers and vendors touch.
   `/root/nginx-backups/vocotable.pre-fullconf.*`,
   `/root/vocotable-backups/env.pre-domain.*`.
 
-**Phase 4 has not started.** No vendor has been repointed; Stripe, Cal.com,
-Retell and Twilio all still call `vocotable.algorythmos.com.au`, which serves
-normally.
+## Record — Phase 4 status, verified 25 Aug 2026
+
+This section previously said "Phase 4 has not started. No vendor has been
+repointed", which contradicted §Stripe's "Done 3 Aug 2026" above. Both were
+resolved by reading each vendor's live config (read-only, from the VM so keys
+never left it):
+
+- **Stripe — DONE.** `GET /v1/webhook_endpoints` (live key): exactly one
+  destination, `https://api.biteperk.com.au/stripe/webhook`, `enabled`,
+  livemode, 6 enabled events. The "not started" line was the stale one.
+  End-to-end delivery still gets proven by the next real event (no synthetic
+  events in live mode — see above).
+- **Retell — DONE** (during the 24 Aug Mazcina production work).
+  `assert-line.mjs +61468202846` (25 Aug): `inbound_webhook_url` is
+  `https://api.biteperk.com.au/retell/inbound`, and the golden-config check
+  asserts every tool URL sits on the same host. Verified by real calls on the
+  line since 20 Aug.
+- **Cal.com — NOT DONE.** `GET /v2/webhooks`: the active subscriber URL is
+  still `https://vocotable.algorythmos.com.au/cal/webhook`. This is the one
+  remaining repoint: change the subscriber URL to
+  `https://api.biteperk.com.au/cal/webhook` (step 2 above), then watch
+  `GET /api/ops/calcom-health` — inbox failures must stay flat, and the next
+  web booking must land.
+- **Twilio — LIKELY MOOT for the live line; confirm before closing.** The
+  production number `+61 468 202 846` routes via the Elastic SIP trunk
+  straight to Retell — no `/twilio/voice` TwiML webhook in the path. The
+  `/twilio/voice`+`/twilio/status` step above belongs to the legacy pilot
+  architecture. Before declaring Phase 4 complete: check in the
+  `Biteperk-production` console that no number-level voice/status webhook
+  still points at the legacy hostname, and set the number's Disaster
+  Recovery URL (an open NUMBERS.md action) on the NEW hostname while there.
