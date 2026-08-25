@@ -393,6 +393,11 @@ jobs:
       - name: Build frontend + KDS
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          # Optional: absent → the dashboard renders no kitchen-display link.
+          # Deliberately NOT in the required-config check above; a hardcoded
+          # fallback in source is what shipped the production KDS link into
+          # staging bundles (issue #260).
+          VITE_KDS_URL: ${{ vars.VITE_KDS_URL }}
           VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -431,8 +436,11 @@ jobs:
           expect_host="$(printf '%s' "$EXPECT_API" | sed -E 's#^https?://##; s#/.*$##')"
 
           # Markers belonging to the OTHER environment. Extend deliberately.
+          # The two *.web.app hosts were added after a hardcoded production
+          # KDS link shipped in staging bundles through this very list's gap
+          # (issue #260) — the legacy Firebase Hosting names are production's.
           if [ "$DEPLOY_ENV" = "staging" ]; then
-            forbidden="vocotable.algorythmos.com.au api.biteperk.com.au vocotable.firebaseapp.com"
+            forbidden="vocotable.algorythmos.com.au api.biteperk.com.au vocotable.firebaseapp.com vocotable.web.app vocotable-kds.web.app"
           else
             forbidden="voxtable-stg-api bp-voxtable-stg"
           fi
