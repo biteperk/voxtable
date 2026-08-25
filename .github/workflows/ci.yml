@@ -401,6 +401,10 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
+          # Optional: activates Plausible in the build when the environment
+          # defines it (production only). Deliberately NOT in the required-vars
+          # check above — an environment without it builds with analytics off.
+          VITE_PLAUSIBLE_DOMAIN: ${{ vars.VITE_PLAUSIBLE_DOMAIN }}
         run: |
           npm run build:frontend
           npm run build:kds
