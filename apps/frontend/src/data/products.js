@@ -41,7 +41,15 @@ export const PRODUCTS = [
     metricKeys: ["orders_waiting"],
     // The kitchen display is a separate app on its own origin, so it asks for
     // its own sign-in. Labelled in the UI so that is not a surprise.
-    secondary: { label: "Open kitchen display", href: "https://vocotable-kds.web.app", external: true }
+    // The origin comes from the build environment: a hardcoded host here ships
+    // the PRODUCTION KDS link into every bundle, staging included, and the
+    // per-environment bundle check in ci.yml exists to forbid exactly that.
+    // No VITE_KDS_URL → no link (ProductTile skips a missing `secondary`).
+    // Optional chaining because this module is also imported by node:test,
+    // where import.meta.env does not exist.
+    secondary: import.meta.env?.VITE_KDS_URL
+      ? { label: "Open kitchen display", href: import.meta.env.VITE_KDS_URL, external: true }
+      : undefined
   },
   {
     id: "voxconcierge",

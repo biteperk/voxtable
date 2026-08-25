@@ -40,6 +40,9 @@ const productionEnv = {
   TWILIO_VALIDATE_SIGNATURE: "true",
   DASHBOARD_VERIFY_AUTH: "true",
   DASHBOARD_ALLOWED_EMAILS: "sam@example.com",
+  // Dashboard auth is enforced on reachable hosts, and Firebase Admin cannot
+  // verify a token without a project id — so a reachable host must carry it.
+  FIREBASE_PROJECT_ID: "vocotable",
   // Required in every production, not just self-serve ones: the acceptance
   // ledger is only evidence if the server decides what was accepted.
   LEGAL_DOCUMENTS_MANIFEST_URL: "https://storage.googleapis.com/bp-legal/current/manifest.json"
@@ -129,7 +132,57 @@ test("a public host with every gate on and a real allowlist boots", () => {
     CORS_ALLOWED_ORIGINS: CORS_ORIGINS,
     DATABASE_URL: DB,
     PUBLIC_API_BASE_URL: PUBLIC_URL,
+    DASHBOARD_ALLOWED_EMAILS: "sam@example.com",
+    FIREBASE_PROJECT_ID: "vocotable"
+  });
+  assert.equal(result.success, true);
+});
+
+test("a public host without FIREBASE_PROJECT_ID refuses to boot — auth is on but cannot work", () => {
+  const result = validateEnv({
+    APP_ENV: "development",
+    CORS_ALLOWED_ORIGINS: CORS_ORIGINS,
+    DATABASE_URL: DB,
+    PUBLIC_API_BASE_URL: PUBLIC_URL,
     DASHBOARD_ALLOWED_EMAILS: "sam@example.com"
+  });
+  assert.equal(result.success, false);
+  assert.ok(issuePaths(result).includes("FIREBASE_PROJECT_ID"));
+});
+
+// --- TERMS_ALLOW_UNPUBLISHED_DOCS is keyed on the host, not APP_ENV ---------
+
+for (const host of ["https://api.biteperk.com.au", "https://vocotable.algorythmos.com.au"]) {
+  test(`unpublished-docs flag on ${new URL(host).hostname} refuses to boot, whatever APP_ENV says`, () => {
+    const result = validateEnv({
+      ...productionEnv,
+      PUBLIC_API_BASE_URL: host,
+      TERMS_ALLOW_UNPUBLISHED_DOCS: "true"
+    });
+    assert.equal(result.success, false);
+    assert.ok(issuePaths(result).includes("TERMS_ALLOW_UNPUBLISHED_DOCS"));
+  });
+}
+
+test("staging keeps its unpublished-docs carve-out: APP_ENV=production on a non-production host boots with the flag on", () => {
+  // Staging runs the production posture (APP_ENV=production) on its own
+  // Cloud Run hostname and legitimately sets this flag so the wizard stays
+  // testable before the real CSA text publishes. Refusing this combination
+  // would take staging down, which is why the gate keys on the host.
+  const result = validateEnv({
+    ...productionEnv,
+    PUBLIC_API_BASE_URL: "https://voxtable-stg-api-naed3dbhna-ts.a.run.app",
+    TERMS_ALLOW_UNPUBLISHED_DOCS: "true"
+  });
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});
+
+test("unpublished-docs flag on localhost boots — the dev escape hatch holds", () => {
+  const result = validateEnv({
+    APP_ENV: "development",
+    DATABASE_URL: DB,
+    PUBLIC_API_BASE_URL: "http://localhost:3050",
+    TERMS_ALLOW_UNPUBLISHED_DOCS: "true"
   });
   assert.equal(result.success, true);
 });
