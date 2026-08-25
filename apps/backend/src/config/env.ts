@@ -224,7 +224,7 @@ const envSchema = z
   STRIPE_PORTAL_RETURN_URL: z
     .string()
     .url()
-    .default("https://vocotable.web.app/billing"),
+    .default("https://voxtable.biteperk.com.au/billing"),
   STRIPE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   // Self-serve subscription (Phase 3): the $80/mo recurring Price, the free
   // trial length, the webhook signing secret, and Checkout return URLs.
@@ -243,11 +243,11 @@ const envSchema = z
   STRIPE_CHECKOUT_SUCCESS_URL: z
     .string()
     .url()
-    .default("https://vocotable.web.app/onboarding"),
+    .default("https://voxtable.biteperk.com.au/onboarding"),
   STRIPE_CHECKOUT_CANCEL_URL: z
     .string()
     .url()
-    .default("https://vocotable.web.app/onboarding"),
+    .default("https://voxtable.biteperk.com.au/onboarding"),
 
   // ─── Menu OCR ingestion ────────────────────────────────────────────────
   // Menu OCR ingestion (Phase 2). Vision-LLM parses a menu photo/PDF into

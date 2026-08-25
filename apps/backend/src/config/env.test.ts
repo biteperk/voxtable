@@ -19,7 +19,7 @@ import { validateEnv } from "./env";
 
 const DB = "postgres://test:test@localhost:5432/test";
 const PUBLIC_URL = "https://vocotable.algorythmos.com.au";
-const CORS_ORIGINS = "https://vocotable.web.app,https://vocotable.algorythmos.com.au";
+const CORS_ORIGINS = "https://voxtable.biteperk.com.au,https://vocotable.algorythmos.com.au";
 
 /**
  * The shape of a minimal production .env, minus the secrets. Deliberately
@@ -274,7 +274,7 @@ test("production with the full order-payments config boots", () => {
     STRIPE_SECRET_KEY: "sk_test_x",
     STRIPE_WEBHOOK_SECRET: "whsec_x",
     NOTIFICATIONS_SMS_FROM: "+61400000000",
-    PUBLIC_ORDER_RETURN_BASE_URL: "https://app.biteperk.com.au"
+    PUBLIC_ORDER_RETURN_BASE_URL: "https://voxtable.biteperk.com.au"
   });
   assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
 });
@@ -294,7 +294,7 @@ test("production order-payments boots on the Messaging Service alone, with no NO
     STRIPE_SECRET_KEY: "sk_test_x",
     STRIPE_WEBHOOK_SECRET: "whsec_x",
     NOTIFICATIONS_MESSAGING_SERVICE_SID: "MG7ceaa2aaa3cea6195ea7979d57b78b14",
-    PUBLIC_ORDER_RETURN_BASE_URL: "https://app.biteperk.com.au"
+    PUBLIC_ORDER_RETURN_BASE_URL: "https://voxtable.biteperk.com.au"
   });
   assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
 });
