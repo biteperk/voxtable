@@ -33,15 +33,20 @@ Procedure SSOT: [`deploy/runbooks/domain-migration.md`](deploy/runbooks/domain-m
 **Every "old" hostname is still serving and must not be removed** until Phase 6's
 90-day grace period completes.
 
-| Surface | New name | Old name(s) — still serving | Status (7 Aug 2026) |
+| Surface | New name | Old name(s) — still serving | Status (25 Aug 2026) |
 |---|---|---|---|
-| Client dashboard | `app.biteperk.com.au` | `vocotable.biteperk.com.au`, `vocotable.web.app` | Firebase Hosting target `app`; custom domain pending (Phase 5) |
+| Client dashboard | `voxtable.biteperk.com.au` | `vocotable.biteperk.com.au`, `vocotable.web.app` | Firebase Hosting target `app`; custom domain pending (Phase 5). Decision 25 Aug 2026: product-named subdomain **supersedes the never-shipped `app.biteperk.com.au`** — `app.` was planned, never had DNS/cert/traffic, and must not be created |
 | Backend API | `api.biteperk.com.au` | `vocotable.algorythmos.com.au` | **Live on both names** since 3 Aug (one cert covers both); Stripe repointed 3 Aug; Cal.com → Retell → Twilio cut over one at a time (Phase 4) |
 | Kitchen display | `kds.biteperk.com.au` | `kitchen.vocotable.biteperk.com.au`, `vocotable-kds.web.app` | Firebase Hosting target `kds`; custom domain pending (Phase 5) |
 | Public brand site | `biteperk.com.au` | — | Live (Vox rename shipped 22 Jul 2026) |
+| VoxOrder (reserved) | `voxorder.biteperk.com.au` | — | 301 → `biteperk.com.au/au-en/products/voxorder` (Cloudflare redirect rule); becomes the product's app host when one exists |
+| VoxConcierge (reserved) | `voxconcierge.biteperk.com.au` | — | 301 → `biteperk.com.au/au-en/products/voxconcierge`; same rule |
+| VoxStay (reserved) | `voxstay.biteperk.com.au` | — | 301 → `biteperk.com.au/au-en/` (VoxStay has no public page — the pitch-only rule holds); same rule |
+
+VoxDrive deliberately has **no** subdomain — §1 marks it concept-only, never sellable.
 
 Note: the prod Terraform `CORS_ALLOWED_ORIGINS` currently lists the legacy set +
-`bp-voxtable-prod.web.app` — the `app.`/`kds.` names get added there at Phase 5,
+`bp-voxtable-prod.web.app` — the `voxtable.`/`kds.` names get added there at Phase 5,
 not before.
 
 ## 3. GCP / infrastructure names (the Terraform world)
@@ -84,7 +89,12 @@ These look like leftovers. They are not. Each has a hard reason:
 
 - GCP projects: `bp-<product>-<env>`, env ∈ `stg` \| `prod` (three letters vs four — see §3).
 - Cloud Run services: `<product>-<env>-<service>`.
-- Customer-facing surfaces: `<surface>.biteperk.com.au`, DNS-only (gray cloud) in Cloudflare.
+- Customer-facing **product apps**: `<product>.biteperk.com.au` (`voxtable.`, `voxorder.`, …) —
+  decision 25 Aug 2026, superseding the earlier `<surface>.` convention that produced the
+  never-shipped `app.biteperk.com.au`. Shared infrastructure surfaces stay function-named
+  (`api.`, `kds.`). Hosts backed by Firebase Hosting are DNS-only (gray cloud) in Cloudflare;
+  reserved product hosts serving only a Cloudflare redirect rule are proxied (orange) —
+  there is no origin behind them, so the gray-cloud rule does not apply.
 - Kebab-case everywhere a platform allows it.
 - The string `vocotable` **never appears in a new name** — it exists only in §4.
 - If the tables above don't cover your case: pick the name following these rules,
