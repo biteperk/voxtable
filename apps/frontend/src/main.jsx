@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { AuthProvider, useAuth } from "./auth";
+import { initAnalytics } from "./lib/analytics";
 import { PHONE_DISPLAY, PHONE_HREF } from "./lib/brand";
 import { getOnboardingStatus } from "./api";
 import { LandingPage } from "./pages/landing/LandingPage";
@@ -39,9 +40,9 @@ import { AdminPage } from "./pages/admin/AdminPage";
  * non-coalesced field would take down the staff's only tool during dinner
  * service. This is the floor.
  *
- * On error: log structured to console (Sweep D logger upgrade is backend-only
- * for now; frontend still uses console), show a friendly recovery card with
- * the restaurant phone number, and offer a "reload" action.
+ * On error: forward to Sentry (no-op without VITE_SENTRY_DSN), echo to the
+ * console in dev only, show a friendly recovery card with the restaurant
+ * phone number, and offer a "reload" action.
  */
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -580,6 +581,8 @@ function NotFoundPage({ navigate }) {
     </div>
   );
 }
+
+initAnalytics();
 
 createRoot(document.getElementById("root")).render(
   <ErrorBoundary>
