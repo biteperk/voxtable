@@ -18,17 +18,17 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
-    <link rel="canonical" href="https://vocotable.biteperk.com.au" />
+    <link rel="canonical" href="https://voxtable.biteperk.com.au" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="VoxTable — Start your free week · AI phone host by BitePerk" />
     <meta property="og:description" content="Start a free week of VoxTable, BitePerk's AI phone host. Bella answers every restaurant call, books the table and never sleeps. Made in Sydney." />
-    <meta property="og:image" content="https://vocotable.biteperk.com.au/og-image.png" />
+    <meta property="og:image" content="https://voxtable.biteperk.com.au/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:url" content="https://vocotable.biteperk.com.au" />
+    <meta property="og:url" content="https://voxtable.biteperk.com.au" />
     <meta property="og:site_name" content="VoxTable by Biteperk" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://vocotable.biteperk.com.au/og-image.png" />
+    <meta name="twitter:image" content="https://voxtable.biteperk.com.au/og-image.png" />
     <meta name="twitter:site" content="@biteperk" />
 
     <!--
@@ -43,16 +43,16 @@
       "@graph": [
         {
           "@type": "WebSite",
-          "@id": "https://vocotable.biteperk.com.au/#website",
-          "url": "https://vocotable.biteperk.com.au/",
+          "@id": "https://voxtable.biteperk.com.au/#website",
+          "url": "https://voxtable.biteperk.com.au/",
           "name": "VoxTable",
           "publisher": { "@id": "https://biteperk.com.au/#organization" }
         },
         {
           "@type": "SoftwareApplication",
-          "@id": "https://vocotable.biteperk.com.au/#app",
+          "@id": "https://voxtable.biteperk.com.au/#app",
           "name": "VoxTable",
-          "url": "https://vocotable.biteperk.com.au/",
+          "url": "https://voxtable.biteperk.com.au/",
           "applicationCategory": "BusinessApplication",
           "operatingSystem": "Web, Phone",
           "description": "VoxTable is BitePerk's AI phone host for restaurants — Bella answers every call in a natural Australian voice and books the table, 24/7.",
@@ -110,14 +110,22 @@
   <body>
     <div id="root"></div>
     <script>
-      // Canonical-URL redirect: send anyone arriving at the .web.app or
-      // .firebaseapp.com fallback domains to the branded subdomain. Runs
-      // before React mounts so customers always see the right URL bar.
+      // Canonical-URL redirect: send anyone arriving on a legacy hostname to
+      // voxtable.biteperk.com.au (the canonical dashboard host, NAMES.md §2).
+      // Runs before React mounts so customers always see the right URL bar,
+      // and before the login flow so the legacy hosts never attempt Google
+      // sign-in with a mismatched auth domain. Client-side because every
+      // hostname shares one Firebase Hosting site — host-conditional
+      // server-side redirects are not possible there.
       (function () {
         var h = window.location.hostname;
-        if (h === "vocotable.web.app" || h === "vocotable.firebaseapp.com") {
+        if (
+          h === "vocotable.web.app" ||
+          h === "vocotable.firebaseapp.com" ||
+          h === "vocotable.biteperk.com.au"
+        ) {
           window.location.replace(
-            "https://vocotable.biteperk.com.au" +
+            "https://voxtable.biteperk.com.au" +
               window.location.pathname +
               window.location.search +
               window.location.hash

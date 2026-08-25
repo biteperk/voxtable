@@ -1,4 +1,4 @@
-# VoxTable — vocotable.biteperk.com.au
+# VoxTable — voxtable.biteperk.com.au
 # The public landing (/) is indexable. The dashboard is an auth-gated SPA;
 # its routes render the app shell to crawlers, so disallow them to avoid
 # indexing login-walled states and wasting crawl budget.
@@ -28,4 +28,4 @@ Allow: /$
 User-agent: Google-Extended
 Allow: /$
 
-Sitemap: https://vocotable.biteperk.com.au/sitemap.xml
+Sitemap: https://voxtable.biteperk.com.au/sitemap.xml
