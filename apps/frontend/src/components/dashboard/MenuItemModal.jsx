@@ -11,6 +11,11 @@ export function MenuItemModal({ mode, item, presetCategoryId, categories, onClos
     name: v.name,
     delta: (v.price_delta_cents / 100).toFixed(2)
   })) ?? []);
+  // TIME columns come back as "HH:MM:SS"; the inputs (and the API's
+  // timeSchema) speak "HH:MM".
+  const [availableFrom, setAvailableFrom] = useState(item?.available_from?.slice(0, 5) ?? "");
+  const [availableUntil, setAvailableUntil] = useState(item?.available_until?.slice(0, 5) ?? "");
+  const [isRestricted, setIsRestricted] = useState(item?.is_restricted ?? false);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -31,6 +36,11 @@ export function MenuItemModal({ mode, item, presetCategoryId, categories, onClos
         name: name.trim(),
         description: description.trim() || null,
         base_price_cents: toCents(priceDollars),
+        // Empty input = explicit null = clear back to all-day. The PATCH
+        // route treats an absent key as "keep", so always send both.
+        available_from: availableFrom || null,
+        available_until: availableUntil || null,
+        is_restricted: isRestricted,
         variants: variants
           .filter((v) => v.name.trim())
           .map((v, idx) => ({
@@ -100,6 +110,55 @@ export function MenuItemModal({ mode, item, presetCategoryId, categories, onClos
               onChange={(e) => setPriceDollars(e.target.value)}
               required
             />
+          </label>
+          <div className="menu-field-row">
+            <label className="menu-field">
+              <span>Available from</span>
+              <input
+                type="time"
+                value={availableFrom}
+                onChange={(e) => setAvailableFrom(e.target.value)}
+              />
+            </label>
+            <label className="menu-field">
+              <span>Available until</span>
+              <input
+                type="time"
+                value={availableUntil}
+                onChange={(e) => setAvailableUntil(e.target.value)}
+              />
+            </label>
+          </div>
+          <p className="menu-variants-hint">
+            {availableFrom || availableUntil ? (
+              <>
+                Voice orders only inside this daily window
+                {availableFrom && availableUntil && availableFrom > availableUntil
+                  ? " (overnight — spans midnight)"
+                  : ""}
+                .{" "}
+                <button
+                  type="button"
+                  className="menu-link-btn"
+                  onClick={() => {
+                    setAvailableFrom("");
+                    setAvailableUntil("");
+                  }}
+                >
+                  Clear — available all day
+                </button>
+              </>
+            ) : (
+              "No window — available all day."
+            )}
+          </p>
+          <label className="menu-field checkbox">
+            <input
+              type="checkbox"
+              checked={isRestricted}
+              onChange={(e) => setIsRestricted(e.target.checked)}
+            />
+            <span>Licensed item (18+) — staff can order it, the voice agent refuses it</span>
           </label>
           <div className="menu-variants-edit">
             <div className="menu-variants-head">

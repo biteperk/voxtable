@@ -238,9 +238,11 @@ export async function updateMenuItem(input: {
   availableUntil?: string | null;
   isRestricted?: boolean;
 }, db: DbClient = pool): Promise<MenuItemRow | null> {
-  // Known COALESCE limitation (same as description): a window can be set or
-  // changed via PATCH but not cleared back to NULL. Clearing means a direct
-  // repo call or re-import; called out in the PR as an accepted launch trade.
+  // The window columns distinguish "field omitted" (keep the current value)
+  // from "explicit null" (clear back to all-day): a provided flag drives a
+  // CASE instead of COALESCE, because COALESCE cannot express clearing.
+  // description keeps the COALESCE limitation (set-or-change but not clear) —
+  // an accepted launch trade, unchanged here.
   const result = await db.query<MenuItemRow>(
     `
     UPDATE menu_items
@@ -252,8 +254,8 @@ export async function updateMenuItem(input: {
            image_blurhash   = COALESCE($8, image_blurhash),
            display_order    = COALESCE($9, display_order),
            is_available     = COALESCE($10, is_available),
-           available_from   = COALESCE($11, available_from),
-           available_until  = COALESCE($12, available_until),
+           available_from   = CASE WHEN $14::boolean THEN $11::time ELSE available_from END,
+           available_until  = CASE WHEN $15::boolean THEN $12::time ELSE available_until END,
            is_restricted    = COALESCE($13, is_restricted)
      WHERE id = $1 AND restaurant_id = $2
      RETURNING *
@@ -271,7 +273,9 @@ export async function updateMenuItem(input: {
       input.isAvailable ?? null,
       input.availableFrom ?? null,
       input.availableUntil ?? null,
-      input.isRestricted ?? null
+      input.isRestricted ?? null,
+      input.availableFrom !== undefined,
+      input.availableUntil !== undefined
     ]
   );
   return result.rows[0] ?? null;

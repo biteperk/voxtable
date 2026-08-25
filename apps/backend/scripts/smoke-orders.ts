@@ -3,7 +3,8 @@
 //
 // Asserts:
 //   1. GET /api/menu returns Fish & Chips with Large + drink modifier group
-//   2. POST /api/orders creates the order
+//   2. PATCH availability window: set → clear via explicit null → omitted key keeps
+//   3. POST /api/orders creates the order
 //   3. Same Idempotency-Key returns the SAME order (replay)
 //   4. Different Idempotency-Key creates a NEW order (no dedup)
 //   5. PATCH status flow: pending → preparing → ready → served
@@ -21,6 +22,9 @@ interface MenuItem {
   id: string;
   name: string;
   base_price_cents: number;
+  available_from: string | null;
+  available_until: string | null;
+  is_restricted: boolean;
   variants: Array<{ id: string; name: string }>;
   modifier_groups: Array<{
     group_name: string;
@@ -127,6 +131,44 @@ async function main(): Promise<void> {
   console.log(
     `✓ menu — Barros Luco ${sandwich.id} side=${provenzal.id} extra=${meltedCheese.id}`
   );
+
+  // 2a) Availability-window round trip: set a window, clear it with explicit
+  // nulls, and prove the clear actually lands as NULL — the PATCH used to
+  // swallow nulls via COALESCE, so a window could be set but never removed.
+  // Ends by restoring whatever the item carried, so the venue is left as found.
+  const original = {
+    available_from: sandwich.available_from,
+    available_until: sandwich.available_until
+  };
+  const windowed = await request<MenuItem>(`/api/menu/items/${sandwich.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ available_from: "15:00", available_until: "17:00" })
+  });
+  assert(windowed.available_from === "15:00:00", `window set: expected 15:00:00, got ${windowed.available_from}`);
+  assert(windowed.available_until === "17:00:00", `window set: expected 17:00:00, got ${windowed.available_until}`);
+  const cleared = await request<MenuItem>(`/api/menu/items/${sandwich.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ available_from: null, available_until: null })
+  });
+  assert(cleared.available_from === null, `window clear: expected null, got ${cleared.available_from}`);
+  assert(cleared.available_until === null, `window clear: expected null, got ${cleared.available_until}`);
+  // An omitted key must still mean "keep": PATCH something unrelated and make
+  // sure the (now null) window stays untouched.
+  const untouched = await request<MenuItem>(`/api/menu/items/${sandwich.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ display_order: 0 })
+  });
+  assert(untouched.available_from === null, "omitted key must not touch the window");
+  if (original.available_from !== null || original.available_until !== null) {
+    await request<MenuItem>(`/api/menu/items/${sandwich.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        available_from: original.available_from?.slice(0, 5) ?? null,
+        available_until: original.available_until?.slice(0, 5) ?? null
+      })
+    });
+  }
+  console.log("✓ availability window — set, cleared to NULL, omitted key untouched, original restored");
 
   // 2b) Pick two real tables so the per-table active-orders filter can be
   // proven both ways (included for its own table, excluded for another).

@@ -204,8 +204,17 @@ menuRouter.patch(
       imageBlurhash: body.image_blurhash ?? body.imageBlurhash,
       displayOrder: body.display_order ?? body.displayOrder,
       isAvailable: body.is_available ?? body.isAvailable,
-      availableFrom: body.available_from ?? body.availableFrom ?? undefined,
-      availableUntil: body.available_until ?? body.availableUntil ?? undefined,
+      // Key-presence, not ??: an explicit null means "clear the window back
+      // to all-day" and must reach the repository as null, while an absent
+      // key means "leave it alone" (undefined).
+      availableFrom:
+        "available_from" in body ? body.available_from
+        : "availableFrom" in body ? body.availableFrom
+        : undefined,
+      availableUntil:
+        "available_until" in body ? body.available_until
+        : "availableUntil" in body ? body.availableUntil
+        : undefined,
       isRestricted: body.is_restricted ?? body.isRestricted,
       variants,
       modifierGroups
