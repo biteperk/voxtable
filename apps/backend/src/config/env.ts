@@ -40,6 +40,7 @@ const blankAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
 
 const envSchema = z
   .object({
+  // ─── App identity & HTTP server ────────────────────────────────────────
   // No default. Which environment this is decides how the whole file behaves,
   // so it has to be stated, not assumed — the old default meant a .env that
   // never mentioned APP_ENV silently got the development ruleset.
@@ -59,6 +60,7 @@ const envSchema = z
   WORKER_HEALTH_PORT: z.coerce.number().int().positive().optional(),
   PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:3050"),
   CORS_ALLOWED_ORIGINS: z.string().trim().optional(),
+  // ─── Database ──────────────────────────────────────────────────────────
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   DATABASE_SSL: boolFlag(),
   // Per-process pool ceilings. Both containers import db/pool at boot, so the
@@ -75,6 +77,7 @@ const envSchema = z
     .string()
     .uuid()
     .default(LOCAL_DEFAULT_RESTAURANT_ID),
+  // ─── Retell (voice agent) & the voice kill switch ──────────────────────
   RETELL_API_KEY: z.string().optional(),
   // Retell signs webhooks (x-retell-signature) with the dedicated "Secret Key
   // (Webhook)" from the dashboard, NOT the REST API key. Keep them separate:
@@ -101,13 +104,20 @@ const envSchema = z
   // call returns a spoken refusal and writes nothing; webhooks and call
   // logging stay live.
   VOICE_BOOKING_ENABLED: gateFlag(),
+  // ─── Twilio (telephony) ────────────────────────────────────────────────
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
   TWILIO_TERMINATION_URI: z.string().optional(),
   TWILIO_RETELL_SIP_URI: z.string().default("sip:sip.retellai.com"),
   TWILIO_VALIDATE_SIGNATURE: gateFlag(),
+  // ─── Firebase (dashboard auth) ─────────────────────────────────────────
   FIREBASE_PROJECT_ID: z.string().optional(),
+  // Declared for documentation and .env.example parity only: this file never
+  // reads it as env.X. The Google/Firebase Admin SDK picks it up from
+  // process.env itself (auth/firebaseAuth.ts relies on that), so removing the
+  // key here would not disable anything — it would just hide the variable
+  // from the schema and the drift test.
   GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
   // Deadline on verifyIdToken — the ONLY external call in the request path
   // with no timeout of its own. If Google's cert endpoint hangs, every
@@ -115,6 +125,7 @@ const envSchema = z
   // Google outage can't mass-sign-out the dashboard.
   FIREBASE_AUTH_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
 
+  // ─── Dashboard access & role allowlists ────────────────────────────────
   // Dashboard auth gate. Defaults ON. Turning it off is a local-development
   // convenience — it lets smoke scripts and curl probes skip minting a Firebase
   // ID token — and superRefine below refuses to boot with it off on any host
@@ -150,6 +161,7 @@ const envSchema = z
   // membership table and nothing else. Setting it in a .env is harmless; it is
   // simply ignored.
 
+  // ─── Cal.com (booking mirror) ──────────────────────────────────────────
   // Cal.com hybrid integration — all optional in dev, conditionally required
   // in production when CALCOM_SYNC_ENABLED=true.
   CALCOM_SYNC_ENABLED: boolFlag(),
@@ -178,6 +190,7 @@ const envSchema = z
   // tier (100k/mo ÷ 30 days × 0.8 ≈ 2666/day). Override when on a paid plan.
   CALCOM_DAILY_QUOTA_THRESHOLD: blankAsUnset(z.coerce.number().int().positive().optional()),
 
+  // ─── Ops alerting & error tracking ─────────────────────────────────────
   // Operations alerting — Slack webhook for outbox depth + circuit breaker events.
   OPS_SLACK_WEBHOOK_URL: blankAsUnset(z.string().url().optional()),
   // Dead-man's switch: the health alerter GETs this URL (healthchecks.io
@@ -193,6 +206,7 @@ const envSchema = z
   SENTRY_DSN: blankAsUnset(z.string().url().optional()),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 
+  // ─── Stripe (platform billing & self-serve subscription) ───────────────
   // Stripe billing — read-only mirror of the restaurant's real invoices,
   // saved cards, and subscription, plus a Customer Portal redirect for card
   // management. Mirrors the CALCOM_SYNC_ENABLED kill-switch pattern: deploy
@@ -235,6 +249,7 @@ const envSchema = z
     .url()
     .default("https://vocotable.web.app/onboarding"),
 
+  // ─── Menu OCR ingestion ────────────────────────────────────────────────
   // Menu OCR ingestion (Phase 2). Vision-LLM parses a menu photo/PDF into
   // structured categories/items/prices. Kill-switch pattern: ships OFF; the
   // worker is a no-op and /api/menu/ingest returns 503 until enabled. Prices
@@ -282,6 +297,7 @@ const envSchema = z
   // anyone with an account could point it at cloud metadata or our own VPC.
   MENU_OCR_ALLOWED_HOSTS: z.string().default("firebasestorage.googleapis.com"),
 
+  // ─── Notifications (email + SMS) ───────────────────────────────────────
   // Notifications (Phase 5). Email via SendGrid REST (no SDK dep — fetch), SMS
   // via the installed Twilio SDK. Kill-switch: ships OFF; the worker is a no-op
   // and notifications silently queue without sending until enabled.
@@ -324,6 +340,7 @@ const envSchema = z
   // Firebase link flow until enabled.
   EMAIL_VERIFICATION_CODE_ENABLED: boolFlag(),
 
+  // ─── Automated provisioning ────────────────────────────────────────────
   // Automated provisioning (Phase 4b). Kill-switch: ships OFF; the worker is a
   // no-op and provisioning stays admin-assisted (Phase 4a) until enabled.
   PROVISIONING_AUTO_ENABLED: boolFlag(),
@@ -332,6 +349,7 @@ const envSchema = z
   // Area code to prefer when buying AU numbers (e.g. "2" for Sydney).
   PROVISIONING_TWILIO_AREA_CODE: z.string().optional(),
 
+  // ─── Self-serve signup & legal documents ───────────────────────────────
   // Self-serve signup: lets a verified account that is NOT in
   // DASHBOARD_ALLOWED_EMAILS create a restaurant and enter the wizard (the
   // allowlist remains the gate while this is off, and stays authoritative for
@@ -363,6 +381,7 @@ const envSchema = z
   // anywhere: it is a concept and must never be sold.
   SERVICES_VOXCONCIERGE_ENABLED: boolFlag(),
 
+  // ─── Voice-order payments (Stripe Connect) ─────────────────────────────
   // Voice-order payments: Bella texts the caller a Stripe Checkout link for
   // their food order. Kill-switch pattern: ships OFF. IMPORTANT: this flag
   // gates link CREATION only (Retell tool + staff resend) — webhook
