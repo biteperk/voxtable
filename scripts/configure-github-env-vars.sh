@@ -47,12 +47,18 @@ STG_VITE_FIREBASE_PROJECT_ID="$STG_FIREBASE_PROJECT"
 STG_FIREBASE_KDS_SITE=""
 STG_VITE_GOOGLE_MAPS_KEY=""
 STG_VITE_FIREBASE_MEASUREMENT_ID=""
+# Empty until staging has its own KDS site (issue #183) — no value, no link.
+STG_VITE_KDS_URL=""
 
 # Production: required values to review/update.
 PROD_PROJECT_ID="bp-voxtable-prod"
 PROD_DEPLOY_SERVICE_ACCOUNT="" # REQUIRED: set to production Cloud Run deployer service account.
 PROD_FRONTEND_DEPLOY_SERVICE_ACCOUNT="github-frontend-artifacts@bp-shared-artifacts.iam.gserviceaccount.com"
-PROD_VITE_API_BASE_URL="https://vocotable.biteperk.com.au"
+# The API, not the dashboard: api.biteperk.com.au (NAMES.md §2). This once
+# said vocotable.biteperk.com.au — the dashboard's legacy name — and running
+# the script would have pushed it into the production build config, where the
+# CI bundle check would then have enforced the wrong host.
+PROD_VITE_API_BASE_URL="https://api.biteperk.com.au"
 PROD_VITE_FIREBASE_API_KEY="" # REQUIRED: Firebase web app config.
 PROD_VITE_FIREBASE_AUTH_DOMAIN="" # REQUIRED: Firebase web app config.
 PROD_VITE_FIREBASE_STORAGE_BUCKET="" # REQUIRED: Firebase web app config.
@@ -72,6 +78,9 @@ PROD_VITE_FIREBASE_PROJECT_ID="$PROD_FIREBASE_PROJECT"
 PROD_FIREBASE_KDS_SITE=""
 PROD_VITE_GOOGLE_MAPS_KEY=""
 PROD_VITE_FIREBASE_MEASUREMENT_ID=""
+# The dashboard's "Open kitchen display" link. Set here because the source no
+# longer hardcodes it (that shipped the production KDS into staging bundles).
+PROD_VITE_KDS_URL="https://vocotable-kds.web.app"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -135,6 +144,7 @@ configure_environment() {
   local vite_firebase_messaging_sender_id="${18}"
   local vite_firebase_app_id="${19}"
   local vite_firebase_measurement_id="${20}"
+  local vite_kds_url="${21}"
 
   ensure_environment "$environment"
 
@@ -165,6 +175,7 @@ configure_environment() {
   set_env_var "$environment" "VITE_FIREBASE_MESSAGING_SENDER_ID" "$vite_firebase_messaging_sender_id"
   set_env_var "$environment" "VITE_FIREBASE_APP_ID" "$vite_firebase_app_id"
   set_env_var "$environment" "VITE_FIREBASE_MEASUREMENT_ID" "$vite_firebase_measurement_id"
+  set_env_var "$environment" "VITE_KDS_URL" "$vite_kds_url"
 }
 
 require_command gh
@@ -205,7 +216,8 @@ configure_environment \
   "$STG_VITE_FIREBASE_STORAGE_BUCKET" \
   "$STG_VITE_FIREBASE_MESSAGING_SENDER_ID" \
   "$STG_VITE_FIREBASE_APP_ID" \
-  "$STG_VITE_FIREBASE_MEASUREMENT_ID"
+  "$STG_VITE_FIREBASE_MEASUREMENT_ID" \
+  "$STG_VITE_KDS_URL"
 
 configure_environment \
   "production" \
@@ -227,7 +239,8 @@ configure_environment \
   "$PROD_VITE_FIREBASE_STORAGE_BUCKET" \
   "$PROD_VITE_FIREBASE_MESSAGING_SENDER_ID" \
   "$PROD_VITE_FIREBASE_APP_ID" \
-  "$PROD_VITE_FIREBASE_MEASUREMENT_ID"
+  "$PROD_VITE_FIREBASE_MEASUREMENT_ID" \
+  "$PROD_VITE_KDS_URL"
 
 cat <<EOF
 

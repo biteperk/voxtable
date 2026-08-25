@@ -167,11 +167,40 @@ jobs:
             exit 1
           fi
 
+          # The overrides and the project id come from GitHub Environment
+          # variables, and nothing about a variable's *value* says which
+          # environment it was pasted into — a `voxtable-stg-api` override in
+          # the production environment would deploy the production image onto
+          # staging with no error anywhere. So: every resolved name must carry
+          # this environment's prefix, and the project id must be this
+          # environment's project, or the deploy stops here.
+          EXPECTED_PROJECT="bp-${NAME_PREFIX}"   # bp-voxtable-prod / bp-voxtable-stg
+          if [ "$VOXTABLE_PROJECT_ID" != "$EXPECTED_PROJECT" ]; then
+            echo "::error::VOXTABLE_PROJECT_ID is '$VOXTABLE_PROJECT_ID' but the" \
+                 "'$DEPLOY_ENV' environment must deploy to '$EXPECTED_PROJECT'." >&2
+            exit 1
+          fi
+
+          API_SERVICE="${API_SERVICE_OVERRIDE:-${NAME_PREFIX}-api}"
+          WORKER_SERVICE="${WORKER_SERVICE_OVERRIDE:-${NAME_PREFIX}-worker}"
+          MIGRATION_JOB="${JOB_OVERRIDE:-${NAME_PREFIX}-migrate}"
+          for resolved in "$API_SERVICE" "$WORKER_SERVICE" "$MIGRATION_JOB"; do
+            case "$resolved" in
+              "$NAME_PREFIX"-*) ;;
+              *)
+                echo "::error::Resolved service/job name '$resolved' does not start" \
+                     "with '${NAME_PREFIX}-' — a cross-environment override. Fix the" \
+                     "CLOUD_RUN_* variable in the '$DEPLOY_ENV' GitHub environment." >&2
+                exit 1
+                ;;
+            esac
+          done
+
           echo "project_id=$VOXTABLE_PROJECT_ID" >> "$GITHUB_OUTPUT"
           echo "region=$REGION" >> "$GITHUB_OUTPUT"
-          echo "api_service=${API_SERVICE_OVERRIDE:-${NAME_PREFIX}-api}" >> "$GITHUB_OUTPUT"
-          echo "worker_service=${WORKER_SERVICE_OVERRIDE:-${NAME_PREFIX}-worker}" >> "$GITHUB_OUTPUT"
-          echo "migration_job=${JOB_OVERRIDE:-${NAME_PREFIX}-migrate}" >> "$GITHUB_OUTPUT"
+          echo "api_service=$API_SERVICE" >> "$GITHUB_OUTPUT"
+          echo "worker_service=$WORKER_SERVICE" >> "$GITHUB_OUTPUT"
+          echo "migration_job=$MIGRATION_JOB" >> "$GITHUB_OUTPUT"
 
       - name: Run database migrations
         env:
