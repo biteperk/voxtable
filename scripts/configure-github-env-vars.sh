@@ -60,7 +60,17 @@ PROD_FRONTEND_DEPLOY_SERVICE_ACCOUNT="github-frontend-artifacts@bp-shared-artifa
 # CI bundle check would then have enforced the wrong host.
 PROD_VITE_API_BASE_URL="https://api.biteperk.com.au"
 PROD_VITE_FIREBASE_API_KEY="" # REQUIRED: Firebase web app config.
-PROD_VITE_FIREBASE_AUTH_DOMAIN="" # REQUIRED: Firebase web app config.
+# Mirrors what the GitHub `production` environment has held since 20 Aug 2026:
+# the NEW bp-voxtable-prod Firebase project — the future Cloud Run stack, not
+# the estate serving customers today (legacy project `vocotable`, VM API). The
+# legacy vocotable Hosting site is deployed by hand with the legacy config.
+# authDomain being a different origin from the serving page broke Google
+# sign-in under Chrome's storage partitioning ("Database is closing/hidden",
+# 25 Aug 2026); resolveAuthDomain() in apps/frontend/src/lib/firebaseConfig.js
+# now swaps in the serving host on any Firebase Hosting domain, so this value
+# is the fallback for hosts it doesn't recognise, not what the browser uses on
+# bp-voxtable-prod.web.app.
+PROD_VITE_FIREBASE_AUTH_DOMAIN="bp-voxtable-prod.firebaseapp.com"
 PROD_VITE_FIREBASE_STORAGE_BUCKET="" # REQUIRED: Firebase web app config.
 PROD_VITE_FIREBASE_MESSAGING_SENDER_ID="" # REQUIRED: Firebase web app config.
 PROD_VITE_FIREBASE_APP_ID="" # REQUIRED: Firebase web app config.

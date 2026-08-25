@@ -5,7 +5,8 @@ import {
   buildFirebaseConfig,
   missingFirebaseKeys,
   OPTIONAL_FIREBASE_KEYS,
-  REQUIRED_FIREBASE_KEYS
+  REQUIRED_FIREBASE_KEYS,
+  resolveAuthDomain
 } from "./firebaseConfig.js";
 
 /**
@@ -84,6 +85,57 @@ test("analytics is optional — its absence must not break a build", () => {
     VITE_FIREBASE_MEASUREMENT_ID: "G-TEST"
   });
   assert.equal(withAnalytics.measurementId, "G-TEST");
+});
+
+/**
+ * resolveAuthDomain: sign-in must be first-party wherever Firebase Hosting
+ * serves the page, or Chrome's storage partitioning breaks the popup flow
+ * ("Database is closing/hidden" on the login screen). See the function's
+ * comment for the full story.
+ */
+test("a Firebase Hosting host becomes its own auth domain", () => {
+  assert.equal(resolveAuthDomain("configured.firebaseapp.com", "example.web.app"), "example.web.app");
+  assert.equal(
+    resolveAuthDomain("configured.firebaseapp.com", "other.firebaseapp.com"),
+    "other.firebaseapp.com"
+  );
+});
+
+test("the configured custom domain is first-party for itself", () => {
+  assert.equal(
+    resolveAuthDomain("dashboard.example.com.au", "dashboard.example.com.au"),
+    "dashboard.example.com.au"
+  );
+});
+
+test("unknown hosts and dev keep the configured auth domain", () => {
+  assert.equal(
+    resolveAuthDomain("configured.firebaseapp.com", "localhost:3051"),
+    "configured.firebaseapp.com"
+  );
+  assert.equal(
+    resolveAuthDomain("configured.firebaseapp.com", "future-host.example.com"),
+    "configured.firebaseapp.com"
+  );
+});
+
+test("a missing host never clobbers the configured auth domain", () => {
+  // The node-test / SSR case: no window at all.
+  assert.equal(resolveAuthDomain("configured.firebaseapp.com", ""), "configured.firebaseapp.com");
+  assert.equal(
+    resolveAuthDomain("configured.firebaseapp.com", undefined),
+    "configured.firebaseapp.com"
+  );
+  assert.equal(resolveAuthDomain("configured.firebaseapp.com", "   "), "configured.firebaseapp.com");
+});
+
+test("a suffix look-alike domain does not qualify", () => {
+  // evil-web.app (no dot before the suffix) must not be treated as Hosting.
+  assert.equal(resolveAuthDomain("configured.firebaseapp.com", "evilweb.app"), "configured.firebaseapp.com");
+  assert.equal(
+    resolveAuthDomain("configured.firebaseapp.com", "evilfirebaseapp.com"),
+    "configured.firebaseapp.com"
+  );
 });
 
 test("no real project values are baked into the source any more", async () => {
