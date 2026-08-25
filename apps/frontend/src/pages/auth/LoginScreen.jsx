@@ -6,6 +6,7 @@ import {
   signInWithGoogle
 } from "../../firebase";
 import { authErrorMessage } from "../../lib/authErrors";
+import { PRIVACY_URL, TERMS_URL } from "../../lib/brand";
 import { Icon } from "../../components/Icon";
 import { BrandMark } from "../../components/brand/BrandMark";
 
@@ -360,13 +361,16 @@ export function LoginScreen({ navigate, notice = null }) {
             <Icon name="arrow_back" />
             Back to home
           </button>
+          {/* Deliberately a plain pointer, not an agreement claim: nothing on
+              this screen records consent — the venue-side agreement_acceptances
+              ledger is the legal instrument. */}
           <p className="login-legal">
-            By continuing, you agree to our{" "}
-            <a href="https://biteperk.com.au/legal/terms/" target="_blank" rel="noreferrer">
+            Read our{" "}
+            <a href={TERMS_URL} target="_blank" rel="noreferrer">
               Terms
             </a>{" "}
             &amp;{" "}
-            <a href="https://biteperk.com.au/legal/privacy/" target="_blank" rel="noreferrer">
+            <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
               Privacy Policy
             </a>
             .
