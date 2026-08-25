@@ -90,7 +90,7 @@ PROD_VITE_GOOGLE_MAPS_KEY=""
 PROD_VITE_FIREBASE_MEASUREMENT_ID=""
 # The dashboard's "Open kitchen display" link. Set here because the source no
 # longer hardcodes it (that shipped the production KDS into staging bundles).
-PROD_VITE_KDS_URL="https://vocotable-kds.web.app"
+PROD_VITE_KDS_URL="https://kds.biteperk.com.au" # Custom domain on the KDS Hosting site; push this variable only after its cert shows Connected (domain-migration.md Phase 5).
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then

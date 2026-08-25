@@ -59,7 +59,7 @@ export function missingFirebaseKeys(env = {}) {
  * Pick the auth domain for the host the app is actually being served from.
  *
  * Why: sign-in runs through an iframe and popup on `authDomain`. When that is
- * a different origin from the page (app on vocotable.biteperk.com.au, auth on
+ * a different origin from the page (app on voxtable.biteperk.com.au, auth on
  * vocotable.firebaseapp.com), Chrome's third-party storage partitioning breaks
  * the flow — the visible symptom is a raw "Database is closing/hidden" banner
  * on the login screen. Firebase's documented fix is a first-party authDomain.
