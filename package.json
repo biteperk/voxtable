@@ -49,6 +49,7 @@
     "smoke:business-alerts": "npm run smoke:business-alerts --workspace=@vocotable/backend",
     "smoke:voice-kill-switch": "npm run smoke:voice-kill-switch --workspace=@vocotable/backend",
     "smoke:notification-lease": "npm run smoke:notification-lease --workspace=@vocotable/backend",
+    "smoke:booking-sms": "npm run smoke:booking-sms --workspace=@vocotable/backend",
     "smoke:sms-sender": "npm run smoke:sms-sender --workspace=@vocotable/backend",
     "smoke:payments": "npm run smoke:payments --workspace=@vocotable/backend",
     "audit:backend": "npm audit --workspace=@vocotable/backend --omit=dev --omit=optional",

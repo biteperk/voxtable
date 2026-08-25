@@ -74,6 +74,21 @@ export function getOpeningWindowsForDate(date: string, openingHours: OpeningHour
   return openingHours[day] ?? [];
 }
 
+// SMS-friendly date: "Fri 28 Aug". Kept strictly GSM-7 (no punctuation beyond
+// spaces) so confirmation texts stay a single 160-char segment.
+const monthAbbrevs = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export function formatSmsDate(date: string): string {
+  const parts = date.split("-").map(Number);
+  const year = parts[0];
+  const month = parts[1];
+  const day = parts[2];
+  if (!year || !month || !day) return date;
+  const dayName = getDayName(date);
+  const dayAbbrev = dayName.charAt(0).toUpperCase() + dayName.slice(1, 3);
+  return `${dayAbbrev} ${day} ${monthAbbrevs[month - 1] ?? ""}`.trim();
+}
+
 export function formatVoiceTime(time: string): string {
   const [hourPart, minutePart] = time.split(":");
   const hour = Number(hourPart);

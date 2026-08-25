@@ -654,7 +654,11 @@ export async function handleRetellFunction(
           .join("; ")}`
       );
     }
-    const result = await modifyBooking({ ...normalizeModifyBookingArgs(parsed.data), restaurantId });
+    const result = await modifyBooking({
+      ...normalizeModifyBookingArgs(parsed.data),
+      restaurantId,
+      source: "voice"
+    });
     return {
       booking_id: result.bookingId,
       status: result.status,

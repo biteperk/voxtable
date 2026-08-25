@@ -92,7 +92,10 @@ bookingsRouter.patch(
       partySize: body.party_size ?? body.partySize,
       notes: body.notes,
       status: body.status,
-      restaurantId: tenantId(request)
+      restaurantId: tenantId(request),
+      // Fixed, not read from the body: this route is only ever staff acting
+      // from the dashboard, and source decides whether the guest gets an SMS.
+      source: "dashboard"
     });
 
     response.json({
@@ -114,7 +117,9 @@ bookingsRouter.post(
     const result = await cancelBooking({
       bookingId,
       reason: body.reason,
-      restaurantId: tenantId(request)
+      restaurantId: tenantId(request),
+      // Fixed, not read from the body — see the PATCH handler above.
+      source: "dashboard"
     });
 
     response.json({
