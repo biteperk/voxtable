@@ -11985,6 +11985,45 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   min-height: 60px;
 }
 
+.menu-field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.menu-field-row .menu-field {
+  flex: 1;
+}
+
+.menu-field.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.menu-field.checkbox input {
+  width: auto;
+  accent-color: var(--primary);
+}
+
+.menu-field.checkbox > span {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--on-surface);
+}
+
+.menu-link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .menu-variants-edit {
   display: flex;
   flex-direction: column;

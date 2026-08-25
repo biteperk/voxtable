@@ -10,6 +10,16 @@ import { Icon } from "../../components/Icon";
 import { DashboardShell } from "./DashboardShell";
 import { MenuItemModal } from "../../components/dashboard/MenuItemModal";
 
+// TIME columns arrive as "HH:MM:SS"; show "HH:MM". NULL on either side means
+// unbounded, and from > until is a legal overnight window.
+function formatWindow(from, until) {
+  const f = from?.slice(0, 5);
+  const u = until?.slice(0, 5);
+  if (f && u) return `${f} – ${u}`;
+  if (f) return `from ${f}`;
+  return `until ${u}`;
+}
+
 export function ManageMenuPage({ navigate, path }) {
   const [menu, setMenu] = useState(null);
   const [error, setError] = useState(null);
@@ -211,6 +221,22 @@ export function ManageMenuPage({ navigate, path }) {
                               </header>
                               {item.description ? (
                                 <p className="menu-item-desc">{item.description}</p>
+                              ) : null}
+                              {item.available_from || item.available_until || item.is_restricted ? (
+                                <div className="menu-item-variants">
+                                  {item.available_from || item.available_until ? (
+                                    <span className="menu-item-variant">
+                                      <Icon name="schedule" />
+                                      {formatWindow(item.available_from, item.available_until)}
+                                    </span>
+                                  ) : null}
+                                  {item.is_restricted ? (
+                                    <span className="menu-item-variant">
+                                      <Icon name="no_drinks" />
+                                      Licensed 18+
+                                    </span>
+                                  ) : null}
+                                </div>
                               ) : null}
                               {item.variants.length > 0 ? (
                                 <div className="menu-item-variants">
