@@ -280,17 +280,33 @@ never left it):
   `https://api.biteperk.com.au/retell/inbound`, and the golden-config check
   asserts every tool URL sits on the same host. Verified by real calls on the
   line since 20 Aug.
-- **Cal.com — NOT DONE.** `GET /v2/webhooks`: the active subscriber URL is
-  still `https://vocotable.algorythmos.com.au/cal/webhook`. This is the one
-  remaining repoint: change the subscriber URL to
-  `https://api.biteperk.com.au/cal/webhook` (step 2 above), then watch
-  `GET /api/ops/calcom-health` — inbox failures must stay flat, and the next
-  web booking must land.
-- **Twilio — LIKELY MOOT for the live line; confirm before closing.** The
-  production number `+61 468 202 846` routes via the Elastic SIP trunk
-  straight to Retell — no `/twilio/voice` TwiML webhook in the path. The
-  `/twilio/voice`+`/twilio/status` step above belongs to the legacy pilot
-  architecture. Before declaring Phase 4 complete: check in the
-  `Biteperk-production` console that no number-level voice/status webhook
-  still points at the legacy hostname, and set the number's Disaster
-  Recovery URL (an open NUMBERS.md action) on the NEW hostname while there.
+- **Cal.com — DONE 25 Aug 2026.** The single webhook (`657ef7dc-…`) was
+  PATCHed from the VM: subscriber URL now
+  `https://api.biteperk.com.au/cal/webhook`, read back with triggers
+  (`BOOKING_CREATED/RESCHEDULED/CANCELLED`), `active: true` and the signing
+  secret all unchanged. Pre-change snapshot on the VM at
+  `/tmp/calcom-webhooks-pre-repoint.json`; rollback is pointing the URL back.
+  Note discovered while verifying: **`/cal/webhook` returns 410 on BOTH
+  hostnames** — production runs without `CALCOM_SYNC_ENABLED`, so the flag
+  defaults false and the mirror is off. The repoint is correct and identical
+  either side of it; whether production *should* run the mirror is a separate
+  decision (the Mazcina venue has no `calcom_event_type_id` bound).
+- **Twilio — MOOT for the live line, verified 25 Aug 2026.** The production
+  number `+61 468 202 846` routes via the Elastic SIP trunk straight to
+  Retell — no `/twilio/voice` TwiML webhook in the path — and it lives on the
+  `Biteperk-production` account created 13 Aug, which never carried a legacy
+  hostname anywhere. The `/twilio/voice`+`/twilio/status` step above belongs
+  to the legacy pilot architecture on the Algorythmos account, whose numbers
+  were listed via the API the same day: none reference either of our API
+  hostnames (they point at `demo.twilio.com` / a Twilio handler). Nothing to
+  cut over. Two residuals, both NUMBERS.md actions rather than Phase 4 work:
+  the Disaster Recovery URL is still unset on both BitePerk numbers, and
+  **the VM `.env`'s `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` are still the
+  legacy Algorythmos account's** — swap them for Biteperk-production before
+  any production SMS goes live.
+
+**Phase 4 is complete.** All four vendors verified against their live config,
+each on `api.biteperk.com.au` or confirmed to have no legacy-hostname
+dependency. End-to-end proof continues to accrue from real traffic: Retell
+via live calls since 20 Aug, Stripe on the next billing event, Cal.com on the
+next web booking once the mirror is enabled.
