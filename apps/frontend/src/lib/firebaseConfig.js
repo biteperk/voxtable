@@ -55,6 +55,36 @@ export function missingFirebaseKeys(env = {}) {
  * complaint, so the alternative is a build that succeeds and a deployed app
  * where sign-in is silently broken for everyone. Loud beats subtle.
  */
+/**
+ * Pick the auth domain for the host the app is actually being served from.
+ *
+ * Why: sign-in runs through an iframe and popup on `authDomain`. When that is
+ * a different origin from the page (app on vocotable.biteperk.com.au, auth on
+ * vocotable.firebaseapp.com), Chrome's third-party storage partitioning breaks
+ * the flow — the visible symptom is a raw "Database is closing/hidden" banner
+ * on the login screen. Firebase's documented fix is a first-party authDomain.
+ *
+ * Every Firebase Hosting host serves its own copy of the auth helper at
+ * /__/auth/*, so whenever the page is on a *.web.app / *.firebaseapp.com host,
+ * or on the exact host the build was configured with (our Hosting custom
+ * domain), the page's own host is a valid — and same-origin — auth domain.
+ * Anything else (localhost dev, a host not yet cut over) keeps the configured
+ * value. No environment-specific hostname appears here; the suffixes are
+ * generic to Firebase Hosting, so the CI bundle-bleed guards are unaffected.
+ */
+export function resolveAuthDomain(configuredAuthDomain, locationHost) {
+  const host = typeof locationHost === "string" ? locationHost.trim() : "";
+  if (!host) return configuredAuthDomain;
+  if (
+    host === configuredAuthDomain ||
+    host.endsWith(".web.app") ||
+    host.endsWith(".firebaseapp.com")
+  ) {
+    return host;
+  }
+  return configuredAuthDomain;
+}
+
 export function buildFirebaseConfig(env = {}) {
   const missing = missingFirebaseKeys(env);
   if (missing.length > 0) {

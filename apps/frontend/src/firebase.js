@@ -14,7 +14,7 @@ import {
 } from "firebase/auth";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
-import { buildFirebaseConfig } from "./lib/firebaseConfig";
+import { buildFirebaseConfig, resolveAuthDomain } from "./lib/firebaseConfig";
 
 // Which Firebase project this build talks to. Comes from build-time env vars so
 // staging can point at its own project — separate auth users and storage, so a
@@ -22,6 +22,14 @@ import { buildFirebaseConfig } from "./lib/firebaseConfig";
 // naming the missing variable rather than initialising with `undefined`, which
 // is what Vite would otherwise inline. See lib/firebaseConfig.js.
 const firebaseConfig = buildFirebaseConfig(import.meta.env);
+
+// Sign-in must be first-party or Chrome's storage partitioning breaks it —
+// see resolveAuthDomain. Window is guarded so the module stays importable in
+// node-based unit tests.
+firebaseConfig.authDomain = resolveAuthDomain(
+  firebaseConfig.authDomain,
+  typeof window !== "undefined" ? window.location.host : ""
+);
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -144,20 +152,36 @@ export function uploadMenuPage(restaurantId, blob, { fileName = "page.jpg", onPr
 
 const provider = new GoogleAuthProvider();
 
+// The SDK's IndexedDB persistence layer can throw a bare
+// Error("Database is closing/hidden") mid-popup: opening the popup fires a
+// visibilitychange, the persistence manager marks itself hiding, and any
+// write in flight rejects. It carries no `auth/*` code, the flag resets as
+// soon as the page is visible again, and a single retry succeeds.
+const isTransientPersistenceError = (err) =>
+  err && !err.code && /closing|hidden/i.test(err.message || "");
+
 /**
  * Try popup first (faster UX), fall back to full-page redirect if popup
  * is blocked or the network request fails (typical with ad-blockers /
  * privacy extensions that filter identitytoolkit.googleapis.com).
+ *
+ * A deliberately closed popup is NOT a fallback case: forcing a full-page
+ * redirect at someone who just cancelled is hostile, so
+ * auth/popup-closed-by-user is rethrown and mapped to a quiet message in
+ * lib/authErrors.js.
  */
 export async function signInWithGoogle() {
   try {
     return await signInWithPopup(auth, provider);
   } catch (err) {
+    if (isTransientPersistenceError(err)) {
+      await new Promise((r) => setTimeout(r, 300));
+      return await signInWithPopup(auth, provider);
+    }
     const code = err && err.code;
     const networkBlocked =
       code === "auth/network-request-failed" ||
       code === "auth/popup-blocked" ||
-      code === "auth/popup-closed-by-user" ||
       code === "auth/internal-error";
     if (networkBlocked) {
       // signInWithRedirect navigates the page; resolution happens via
@@ -175,6 +199,10 @@ export async function completeRedirectSignIn() {
   try {
     return await getRedirectResult(auth);
   } catch (err) {
+    // A failed redirect return would otherwise be invisible — the user just
+    // lands back on the login screen. Keep the flow non-fatal but leave a
+    // trace for support. No PII: the auth error carries a code, not the email.
+    console.warn("Redirect sign-in did not complete:", err && (err.code || err.message));
     return null;
   }
 }
