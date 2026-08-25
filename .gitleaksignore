@@ -2,7 +2,10 @@
 #
 # Firebase WEB API keys are public by design: they ship inside every frontend
 # bundle and are restricted by Firebase Auth authorized domains, not secrecy.
-apps/frontend/.env.example:gcp-api-key:19
+# ⚠️ The trailing number is the LINE of the match — editing above one of these
+# keys shifts it and the entry silently stops matching (that failed a PR's
+# secret scan on 25 Aug 2026). Re-run `gitleaks dir .` after touching them.
+apps/frontend/.env.example:gcp-api-key:26
 scripts/configure-github-env-vars.sh:gcp-api-key:31
 deploy/runbooks/staging-call-battery.md:gcp-api-key:11
 #
