@@ -319,6 +319,12 @@ const envSchema = z
       .optional()
   ),
 
+  // Guest-facing booking lifecycle SMS (confirmation on create, update/cancel
+  // notices) — rides the notifications outbox. Separate kill switch from
+  // NOTIFICATIONS_ENABLED so booking texts can be turned off without also
+  // killing order-payment links, which share the SMS channel.
+  BOOKING_CONFIRMATION_SMS_ENABLED: boolFlag(),
+
   // Which transactional-email API the notification worker speaks. "zeptomail"
   // is Zoho's transactional service (AU data centre by default) — used for the
   // branded verification-code emails; "sendgrid" is the original path.
@@ -676,6 +682,27 @@ const envSchema = z
         "ZEPTOMAIL_TOKEN",
         "ZEPTOMAIL_TOKEN is required when NOTIFICATIONS_ENABLED=true and EMAIL_PROVIDER=zeptomail."
       );
+    }
+
+    // Booking lifecycle SMS rides the same outbox and the same SMS senders as
+    // payment links. Flag on with no drainable SMS channel would boot green and
+    // silently send nothing — the enqueue gate checks isSmsEnabled(), so the
+    // rows would never even be written and there would be no error anywhere.
+    if (value.BOOKING_CONFIRMATION_SMS_ENABLED) {
+      requireInProd(
+        "NOTIFICATIONS_ENABLED",
+        "NOTIFICATIONS_ENABLED must be true when BOOKING_CONFIRMATION_SMS_ENABLED=true " +
+          "(booking texts are delivered via the notifications outbox)."
+      );
+      if (!value.NOTIFICATIONS_MESSAGING_SERVICE_SID && !value.NOTIFICATIONS_SMS_FROM) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["NOTIFICATIONS_MESSAGING_SERVICE_SID"],
+          message:
+            "One of NOTIFICATIONS_MESSAGING_SERVICE_SID or NOTIFICATIONS_SMS_FROM is required " +
+            "when BOOKING_CONFIRMATION_SMS_ENABLED=true (booking texts go out by SMS)."
+        });
+      }
     }
 
     // Verification codes ride the notifications outbox — without the worker

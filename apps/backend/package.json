@@ -39,6 +39,7 @@
     "smoke:business-alerts": "tsx scripts/smoke-business-alerts.ts",
     "smoke:voice-kill-switch": "tsx scripts/smoke-voice-kill-switch.ts",
     "smoke:notification-lease": "tsx scripts/smoke-notification-lease.ts",
+    "smoke:booking-sms": "BOOKING_CONFIRMATION_SMS_ENABLED=true NOTIFICATIONS_ENABLED=true TWILIO_ACCOUNT_SID=ACsmokefake TWILIO_AUTH_TOKEN=smokefake NOTIFICATIONS_SMS_FROM=+61400000000 tsx scripts/smoke-booking-sms.ts",
     "smoke:sms-sender": "tsx scripts/smoke-sms-sender.ts",
     "smoke:payments": "tsx scripts/smoke-payments.ts",
     "menu:import": "tsx scripts/import-menu.ts",

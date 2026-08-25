@@ -194,6 +194,15 @@ jobs:
       - name: Prove a claimed notification cannot be claimed again
         run: npm run smoke:notification-lease
 
+      # Booking-lifecycle SMS: a voice booking enqueues exactly one guest
+      # confirmation (a Retell retry never a second), web/Cal.com bookings and
+      # notes-only edits stay silent, dashboard changes and cancels text the
+      # guest, and every body stays single-segment GSM-7. The script injects
+      # fake Twilio creds to open the enqueue gate; no worker runs, nothing
+      # sends.
+      - name: Prove booking SMS fire once, and only for the right changes
+        run: npm run smoke:booking-sms
+
       # Voice-order payment links: double-fire returns the SAME link (never a
       # second charge path), a paid webhook flips the order exactly once, a
       # refunded order can't be resurrected by a late replay, an order-payment
