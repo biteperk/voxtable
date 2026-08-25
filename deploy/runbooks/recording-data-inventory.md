@@ -7,10 +7,17 @@ It changes no behaviour. Prepared 3 Aug 2026 from the codebase (`integration` br
 migration history, and the Retell configuration snapshots in `deploy/retell-snapshots/`.
 
 **Question for the lawyer, stated plainly:** every call Bella answers is recorded and
-transcribed. She does not announce that she is an AI, and does not announce recording.
-The signed customer agreement has the *restaurant* certify that she announces both.
-The marketing site sells the opposite ("your regulars won't know she's AI"). Australian
-law context: NSW (Surveillance Devices Act 2007) — all venues are currently in NSW.
+transcribed. **Since 24 Aug 2026 the production greeting announces both** — that she is an
+AI assistant and that the call is recorded — on the line that actually rings
+(`+61 468 202 846`, agent `agent_b6b6488af08b82d80e8f4d270a`; verified by API read-back
+25 Aug 2026 via `assert-line.mjs`, whose golden-config check fails a production agent
+whose greeting lacks either phrase). The **historical corpus predates the disclosure**:
+calls recorded before 24 Aug were made with no announcement, while the signed customer
+agreement has the *restaurant* certify that she announces both. The marketing site sells
+the opposite ("your regulars won't know she's AI"). Staging (`+61 468 203 234`,
+internal-only test calls, never customer-facing) deliberately runs a short greeting with
+no disclosure. Australian law context: NSW (Surveillance Devices Act 2007) — all venues
+are currently in NSW.
 
 ---
 
@@ -65,8 +72,8 @@ for a further 30 days.
 
 | Promise (agreement / onboarding wizard) | Reality in code / config |
 |---|---|
-| Restaurant certifies the agent **announces it is an AI** | No such announcement in the live prompt (see `deploy/retell-snapshots/*/llm-*.json`) |
-| Restaurant certifies the agent **announces recording** | No such announcement |
+| Restaurant certifies the agent **announces it is an AI** | ✅ Present in the production greeting since 24 Aug 2026 (verified by read-back 25 Aug; enforced by `assert-agent.mjs`, which fails a production agent without it). Calls before that date carry no announcement. Staging deliberately runs none (internal test calls only). |
+| Restaurant certifies the agent **announces recording** | ✅ Present in the production greeting since 24 Aug 2026 (same verification and enforcement). Same historical gap for earlier calls. |
 | `retention_days` election (30 or 90 — Schedule B §8); migration comment: "Provisioning fails closed on NULL — 'keep forever' must be impossible" (`db/migrations/018_legal_layer.sql:24-26`) | **Enforced by no code.** The value is written to `restaurants.retention_days` (`src/repositories/agreements.ts:63`) and read by nothing. No Retell API call sets a retention/data-storage setting; no cleanup job deletes `call_logs` rows, transcripts, or recordings. The cleanup worker's 30-day retention applies only to internal queue tables (`src/workers/cleanupWorker.ts:27,40-66`) |
 | `pii_redaction` election (`storage_tier: everything_except_pii`) | Stored (`agreements.ts:65`), applied nowhere; the live Retell agent runs with no redaction |
 | Marketing site: "your regulars won't know she's AI" | Direct tension with the certification above — flagging for the lawyer, not for us to resolve |
@@ -112,13 +119,15 @@ list.
 - A deletion capability inventory: Retell exposes delete-call APIs; Postgres rows are ours;
   Twilio call records have their own retention. **Not built** — listed so the lawyer knows
   a retention fix is implementable if advised.
-- The disclosure line itself is a one-line prompt change + snapshot, deployable within an
-  hour of legal sign-off (`deploy/retell-snapshots/README.md` documents the process).
+- The disclosure line **shipped 24 Aug 2026** on the production greeting (snapshot pair in
+  `deploy/retell-snapshots/`, checked continuously by `assert-agent.mjs`). What remains for
+  legal is reviewing the wording/placement, not deploying it.
 
 ## 6. Open questions for the lawyer
 
-1. Disclosure wording and placement (greeting vs IVR-style preamble) for NSW SDA 2007
-   compliance, given all current venues are NSW.
+1. Whether the disclosure wording now live in the production greeting satisfies NSW SDA
+   2007 (and whether greeting placement suffices vs an IVR-style preamble), given all
+   current venues are NSW.
 2. Whether the existing corpus of undisclosed recordings must be deleted, and on what
    timeline. Corpus is **22 recorded calls** (§4). Note that deletion must reach Retell's
    storage, Postgres, and up to 30 days of rolling backups (§1a) to be complete.
