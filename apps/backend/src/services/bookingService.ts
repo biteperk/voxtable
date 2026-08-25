@@ -1,5 +1,5 @@
 import { AppError } from "../domain/errors";
-import { BookingResult, CreateBookingInput, ReservationStatus } from "../domain/types";
+import { BookingResult, BookingSource, CreateBookingInput, ReservationStatus } from "../domain/types";
 import type { PoolClient } from "pg";
 import { DbClient, pool, withTransaction } from "../db/pool";
 import {
@@ -17,7 +17,11 @@ import {
   updateReservation,
   upsertCustomer
 } from "../repositories/reservations";
-import { getRestaurantSettings, getRestaurantTimezone } from "../repositories/restaurants";
+import { getRestaurantName, getRestaurantSettings, getRestaurantTimezone } from "../repositories/restaurants";
+import { enqueueNotification } from "../repositories/notifications";
+import { isSmsEnabled } from "./notificationService";
+import { env } from "../config/env";
+import { logger } from "../utils/logger";
 import { listAvailableTables } from "../repositories/availability";
 import { checkAvailability, requireAvailableTable } from "./availabilityService";
 import {
@@ -25,7 +29,7 @@ import {
   enqueueCreateForReservation,
   enqueueRescheduleForReservation
 } from "./calcomService";
-import { formatVoiceTime, isWithinOpeningHours, todayInTz } from "../utils/time";
+import { formatSmsDate, formatVoiceTime, isWithinOpeningHours, todayInTz } from "../utils/time";
 import { normalizePhone } from "../utils/phone";
 
 // The DB-level safety net catches double-booking races that bypass application
@@ -57,6 +61,82 @@ function replayResult(existing: ReservationRow, customerName: string): BookingRe
     status: existing.status,
     confirmationMessage: `Confirmed. ${customerName} has a table for ${existing.party_size} on ${existing.reservation_date} at ${formatVoiceTime(existing.start_time.slice(0, 5))}.`
   };
+}
+
+// Guest-facing booking SMS. Copy is deliberately GSM-7 only (no em-dash, no
+// smart quotes) so each message stays a single 160-char segment — buildPaymentSms
+// pays the UCS-2/70-char price for its "—" and these must not repeat that.
+// Alphanumeric senders can't receive replies, hence "Do not reply".
+export function buildBookingConfirmationSms(input: {
+  venueName: string;
+  customerName: string;
+  partySize: number;
+  date: string;
+  time: string;
+}): string {
+  return `${input.venueName}: booking confirmed. ${input.customerName}, party of ${input.partySize}, ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)}. To change or cancel, call the venue. Do not reply to this SMS.`;
+}
+
+export function buildBookingModifiedSms(input: {
+  venueName: string;
+  customerName: string;
+  partySize: number;
+  date: string;
+  time: string;
+}): string {
+  return `${input.venueName}: booking updated. ${input.customerName}, party of ${input.partySize}, ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)}. Questions? Call the venue. Do not reply to this SMS.`;
+}
+
+export function buildBookingCancelledSms(input: {
+  venueName: string;
+  date: string;
+  time: string;
+}): string {
+  return `${input.venueName}: your booking for ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)} has been cancelled. Questions? Call the venue. Do not reply to this SMS.`;
+}
+
+/**
+ * Enqueue one guest-facing booking SMS inside the caller's open transaction, or
+ * do nothing. Gated on the feature flag AND isSmsEnabled() so rows are only
+ * written when the worker can actually drain the SMS channel — a row enqueued
+ * with no sender configured would sit pending forever.
+ *
+ * The recipient must be E.164. Voice bookings always are (createBooking rejects
+ * anything normalizePhone can't parse), but web-created bookings can store a
+ * "web:<uid>" sentinel via allowUnparseablePhone — Twilio would reject that
+ * with a permanent 4xx, so the "+" check makes enqueueing one structurally
+ * impossible rather than relying on every caller remembering.
+ */
+async function enqueueBookingSms(
+  input: {
+    restaurantId: string;
+    recipient: string;
+    kind: "booking_confirmation" | "booking_modified" | "booking_cancelled";
+    // Lazy so the venue-name lookup only happens once the gates have passed.
+    body: () => Promise<string>;
+    reservationId: string;
+  },
+  db: DbClient
+): Promise<void> {
+  if (!env.BOOKING_CONFIRMATION_SMS_ENABLED || !isSmsEnabled()) return;
+  if (!input.recipient.startsWith("+")) return;
+  const notificationId = await enqueueNotification(
+    {
+      restaurantId: input.restaurantId,
+      channel: "sms",
+      recipient: input.recipient,
+      kind: input.kind,
+      body: await input.body()
+    },
+    db
+  );
+  // Never the body or recipient — the guest's phone number is PII.
+  logger.info({
+    evt: "booking_sms_enqueued",
+    kind: input.kind,
+    reservation_id: input.reservationId,
+    notification_id: notificationId
+  });
 }
 
 /**
@@ -286,6 +366,32 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     // which is the per-venue opt-in.
     await enqueueCreateForReservation(reservation.id, input.restaurantId, lockClient);
 
+    // Guest confirmation SMS — voice bookings only. Web bookings already carry a
+    // Cal.com confirmation email, and dashboard creates are staff acting for a
+    // guest they're already talking to. Same transaction as the reservation, so
+    // there is exactly one SMS row per committed reservation: a Retell tool
+    // retry takes the replay paths above and never reaches this line, which is
+    // why no dedupe column or migration is needed.
+    if (input.source === "voice") {
+      await enqueueBookingSms(
+        {
+          restaurantId: input.restaurantId,
+          recipient: normalizedPhone,
+          kind: "booking_confirmation",
+          body: async () =>
+            buildBookingConfirmationSms({
+              venueName: await getRestaurantName(input.restaurantId),
+              customerName: input.customerName,
+              partySize: input.partySize,
+              date: input.date,
+              time: input.time
+            }),
+          reservationId: reservation.id
+        },
+        lockClient
+      );
+    }
+
     await lockClient.query("COMMIT");
 
     return {
@@ -319,6 +425,11 @@ export async function modifyBooking(input: {
   // restaurant, so a cross-tenant booking id resolves to 404. Dashboard and
   // voice callers pass it; omitted only by trusted internal callers.
   restaurantId?: string;
+  // Who initiated the change. "voice" and "dashboard" notify the guest by SMS
+  // (when the feature is on); unset or anything else stays silent. Cal.com
+  // inbound never calls this function, so web-origin changes are excluded
+  // structurally — the guest already gets Cal.com's own email there.
+  source?: BookingSource;
 }): Promise<BookingResult> {
   // Audit Sweep B fix: the previous implementation ran updateReservation and
   // the customers UPDATE on TWO separate pool connections — a race window
@@ -433,6 +544,47 @@ export async function modifyBooking(input: {
         }
       }
 
+      // Guest SMS on a real change from a caller- or staff-initiated action.
+      // Notes-only edits are internal and stay silent. The updated ReservationRow
+      // carries the final date/time/party, so the text always states the booking
+      // as it now stands, not the delta.
+      const partySizeChanged =
+        input.partySize !== undefined && input.partySize !== current.party_size;
+      const guestVisibleChange =
+        becameCancelled || dateOrTimeChanged || partySizeChanged || nameChanged;
+      if ((input.source === "voice" || input.source === "dashboard") && guestVisibleChange) {
+        const customerResult = await db.query<{ name: string; phone: string }>(
+          "SELECT name, phone FROM customers WHERE id = $1",
+          [current.customer_id]
+        );
+        const customer = customerResult.rows[0];
+        if (customer) {
+          await enqueueBookingSms(
+            {
+              restaurantId: current.restaurant_id,
+              recipient: customer.phone,
+              kind: becameCancelled ? "booking_cancelled" : "booking_modified",
+              body: async () => {
+                const venueName = await getRestaurantName(current.restaurant_id);
+                const date = reservation.reservation_date;
+                const time = reservation.start_time.slice(0, 5);
+                return becameCancelled
+                  ? buildBookingCancelledSms({ venueName, date, time })
+                  : buildBookingModifiedSms({
+                      venueName,
+                      customerName: nameChanged ? input.customerName!.trim() : customer.name,
+                      partySize: reservation.party_size,
+                      date,
+                      time
+                    });
+              },
+              reservationId: reservation.id
+            },
+            db
+          );
+        }
+      }
+
       return {
         bookingId: reservation.id,
         status: reservation.status,
@@ -451,6 +603,9 @@ export async function cancelBooking(input: {
   reason?: string;
   // Tenant guard — see modifyBooking. A cross-tenant id becomes a 404.
   restaurantId?: string;
+  // Who initiated the cancel — see modifyBooking. Guest SMS fires only for
+  // "voice" and "dashboard".
+  source?: BookingSource;
 }): Promise<BookingResult> {
   // Cancel and Cal.com-outbox-enqueue in one transaction so a row is never
   // marked cancelled in our DB while the calendar mirror remains "confirmed".
@@ -491,6 +646,34 @@ export async function cancelBooking(input: {
 
     if (reservation) {
       await enqueueCancelForReservation(reservation.id, calcomUid, input.reason, client);
+
+      // Guest cancellation SMS — only when this call actually flipped the row
+      // (the loser of a concurrent-cancel race gets reservation=null above and
+      // must not text the guest a second time).
+      if (input.source === "voice" || input.source === "dashboard") {
+        const customerResult = await client.query<{ phone: string }>(
+          "SELECT phone FROM customers WHERE id = $1",
+          [reservation.customer_id]
+        );
+        const phone = customerResult.rows[0]?.phone;
+        if (phone) {
+          await enqueueBookingSms(
+            {
+              restaurantId: reservation.restaurant_id,
+              recipient: phone,
+              kind: "booking_cancelled",
+              body: async () =>
+                buildBookingCancelledSms({
+                  venueName: await getRestaurantName(reservation.restaurant_id),
+                  date: reservation.reservation_date,
+                  time: reservation.start_time.slice(0, 5)
+                }),
+              reservationId: reservation.id
+            },
+            client
+          );
+        }
+      }
     }
 
     await client.query("COMMIT");
