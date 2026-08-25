@@ -349,18 +349,14 @@ const envSchema = z
   // set. Kill-switch pattern: ships OFF. Staging turns it on so the wizard
   // stays testable before the real CSA text publishes; production never does.
   //
-  // ⚠️ That rule is documented in five places and enforced by NONE of them, and
-  // it cannot be enforced here as things stand: staging deliberately runs
+  // "Production never does" cannot key on APP_ENV: staging deliberately runs
   // APP_ENV=production (so it exercises the production posture), and staging is
-  // exactly the environment that must set this flag. A superRefine keyed on
-  // APP_ENV would refuse to boot staging — verified against the running
-  // voxtable-stg-api, which carries APP_ENV=production AND this flag true.
-  //
-  // Enforcing it properly needs a signal that separates posture from target —
-  // a distinct DEPLOY_TARGET, or keying on PUBLIC_API_BASE_URL's host. Until
-  // then this control fails OPEN while every other one in this subsystem fails
-  // closed, and a production .env typo would let placeholder documents be
-  // accepted into an append-only ledger.
+  // exactly the environment that must set this flag. The superRefine below
+  // therefore keys on PUBLIC_API_BASE_URL's host instead — a process reachable
+  // at a production API hostname refuses to boot with this flag set, whatever
+  // its APP_ENV says. The stakes: with the flag on, placeholder documents can
+  // be accepted into the append-only agreement_acceptances ledger, and those
+  // rows can never be corrected, only annotated.
   TERMS_ALLOW_UNPUBLISHED_DOCS: boolFlag(),
   // VoxConcierge is contracted "when released" — the wizard only offers it
   // once this flag is on. VoxDrive is deliberately not a service value
@@ -452,6 +448,40 @@ const envSchema = z
             "verified Google account."
         });
       }
+
+      // DASHBOARD_VERIFY_AUTH is forced on above, and the thing that makes it
+      // work is Firebase Admin, which cannot initialise without a project id
+      // (auth/firebaseAuth.ts). Without this check a deploy that forgets the
+      // variable boots green, passes /health, and 500s every dashboard request
+      // with FIREBASE_NOT_CONFIGURED — the worst kind of failure, because
+      // nothing said no at startup.
+      if (!value.FIREBASE_PROJECT_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["FIREBASE_PROJECT_ID"],
+          message:
+            "FIREBASE_PROJECT_ID is required when PUBLIC_API_BASE_URL is not " +
+            "localhost — dashboard auth is enforced on reachable hosts and " +
+            "cannot verify a token without it."
+        });
+      }
+    }
+
+    // A process reachable at a production API hostname must never accept
+    // unpublished (SAMPLE-*/DRAFT-*) legal documents — the acceptance ledger
+    // is append-only, so a bad row is permanent. Keyed on the host, not
+    // APP_ENV, because staging runs APP_ENV=production and legitimately sets
+    // this flag (see the field's comment above).
+    const productionApiHosts = ["api.biteperk.com.au", "vocotable.algorythmos.com.au"];
+    if (value.TERMS_ALLOW_UNPUBLISHED_DOCS && productionApiHosts.includes(publicUrl.hostname)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["TERMS_ALLOW_UNPUBLISHED_DOCS"],
+        message:
+          "TERMS_ALLOW_UNPUBLISHED_DOCS must not be set when PUBLIC_API_BASE_URL " +
+          `is a production API host (${publicUrl.hostname}) — unpublished documents ` +
+          "would be recorded in the append-only acceptance ledger."
+      });
     }
 
     // ---- Production-only from here -----------------------------------------
