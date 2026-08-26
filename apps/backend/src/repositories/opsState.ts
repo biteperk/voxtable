@@ -38,6 +38,32 @@ export async function setOpsState(
   );
 }
 
+/**
+ * Claim a key exactly once. Returns true only for the caller that created it.
+ *
+ * setOpsState above is an unconditional upsert, so "read, then write if absent"
+ * is a race: two overlapping callers both read nothing, both write, and both
+ * believe they were first. That is fine for a heartbeat and wrong for anything
+ * that must happen once — announcing a payment to a guest, say, where losing
+ * the race means saying it twice.
+ *
+ * ON CONFLICT DO NOTHING makes Postgres the arbiter instead of us, so the
+ * decision is atomic no matter how the callers interleave.
+ */
+export async function claimOpsStateKey(
+  key: string,
+  value: Record<string, unknown>,
+  db: DbClient = pool
+): Promise<boolean> {
+  const result = await db.query(
+    `INSERT INTO ops_state (key, value, updated_at)
+     VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (key) DO NOTHING`,
+    [key, JSON.stringify(value)]
+  );
+  return result.rowCount === 1;
+}
+
 /** Atomically add `by` to value.count — for bucket counters. */
 export async function incrementOpsCounter(
   key: string,

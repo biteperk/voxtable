@@ -38,7 +38,14 @@ import { checkAvailability } from "./availabilityService";
 import { createBooking, modifyBooking } from "./bookingService";
 import { getMenu, lookupMenu } from "./menuService";
 import { searchMenuItemsByName } from "../repositories/menu";
-import { getOrderById } from "../repositories/orders";
+import {
+  claimOpsStateKey,
+  getOpsState,
+  listOpsStateByPrefix,
+  purgeOpsStateByPrefix,
+  setOpsState
+} from "../repositories/opsState";
+import { getOrderPaymentSnapshot } from "../repositories/orders";
 import { createOrder, orderContentFingerprint } from "./orderService";
 import { createOrderPaymentLink } from "./orderPaymentService";
 
@@ -657,6 +664,29 @@ export async function handleRetellFunction(
       source: "voice"
     });
 
+    // Start the watcher. The order_payments row is the durable record; this
+    // call-scoped key is what the payment checks read to know how many times
+    // they have looked and what they last saw, and what the call-end backstop
+    // looks for when deciding whether a guest was left mid-payment.
+    if (outcome.sent) {
+      // Same scoping rule as check_payment_status, so the two agree on the key.
+      const watchCallId = parsed.data.call_id ?? parsed.data.callId ?? null;
+      const watchScope = watchCallId ? `${watchCallId}:${orderId}` : `order:${orderId}`;
+      await setOpsState(`payment_watch:${watchScope}`, {
+        order_id: orderId,
+        restaurant_id: restaurantId,
+        state: "unpaid",
+        checks: 0,
+        started_at: new Date().toISOString()
+      });
+      logger.info({
+        evt: "payment_watch_started",
+        restaurant_id: restaurantId,
+        order_id: orderId,
+        call_id: watchCallId
+      });
+    }
+
     // One flat shape for both branches — the LLM reads confirmation_message
     // aloud either way. The checkout URL is deliberately absent everywhere:
     // the model can't leak (or misread out) what it never sees.
@@ -721,23 +751,94 @@ export async function handleRetellFunction(
         "I'll need to take the order first — what would you like?"
       );
     }
-    const order = await getOrderById(orderId, restaurantId);
-    if (!order) {
+
+    // Primary, not the replica, and three states not two — see
+    // getOrderPaymentSnapshot for why both matter in this exact moment.
+    const snapshot = await getOrderPaymentSnapshot(orderId, restaurantId);
+    if (!snapshot) {
       throw new AppError(404, "ORDER_NOT_FOUND", "I can't find that order — let me take it again.");
     }
-    // Deliberately flat and spoken-ready: the LLM reads confirmation_message
-    // aloud either way, so a caller never hears a status code.
-    const paid = order.payment_status === "paid";
-    const refunded = order.payment_status === "refunded";
+
+    // Scope to THIS call so a guest who rings back is told again. Without a
+    // call_id we fall back to the order alone: announce once ever, rather than
+    // crash or announce every time.
+    const callId = parsed.data.call_id ?? parsed.data.callId ?? null;
+    const scope = callId ? `${callId}:${orderId}` : `order:${orderId}`;
+    const watchKey = `payment_watch:${scope}`;
+    const announcedKey = `payment_announced:${scope}`;
+
+    const watch = await getOpsState(watchKey);
+    const previousState = (watch?.value as { state?: string } | undefined)?.state ?? null;
+    const checkCount = Number((watch?.value as { checks?: number } | undefined)?.checks ?? 0) + 1;
+
+    if (previousState && previousState !== snapshot.state) {
+      logger.info({
+        evt: "payment_state_changed",
+        restaurant_id: restaurantId,
+        order_id: orderId,
+        call_id: callId,
+        from: previousState,
+        to: snapshot.state
+      });
+    }
+    await setOpsState(watchKey, {
+      order_id: orderId,
+      restaurant_id: restaurantId,
+      state: snapshot.state,
+      checks: checkCount,
+      updated_at: new Date().toISOString()
+    });
+    logger.info({
+      evt: "payment_check",
+      restaurant_id: restaurantId,
+      order_id: orderId,
+      call_id: callId,
+      state: snapshot.state,
+      check_count: checkCount
+    });
+
+    // Announce-once is decided by Postgres, not by the prompt: an atomic claim
+    // cannot be won twice, so two overlapping tool calls can never both break
+    // the news. A prompt instruction here would be a request, not a guarantee.
+    let announce = false;
+    if (snapshot.state === "paid") {
+      announce = await claimOpsStateKey(announcedKey, {
+        order_id: orderId,
+        restaurant_id: restaurantId,
+        announced_at: new Date().toISOString()
+      });
+      if (announce) {
+        logger.info({
+          evt: "payment_announced",
+          restaurant_id: restaurantId,
+          order_id: orderId,
+          call_id: callId
+        });
+      }
+    }
+
+    // One flat shape; the LLM reads confirmation_message aloud either way, so a
+    // caller never hears a status code. `processing` is deliberately neither
+    // success nor failure — an in-flight payment reported as failed sends a
+    // guest to pay twice.
+    const message =
+      snapshot.state === "paid"
+        ? announce
+          ? "Beautiful — that's come through. You're all set."
+          : "Yep, still all good — that's paid."
+        : snapshot.state === "processing"
+          ? "I can see the payment's processing — I'll keep an eye on it."
+          : snapshot.state === "refunded"
+            ? "That one shows as refunded — the team can sort it out for you."
+            : "Not showing as paid just yet. No rush — or you can simply pay when you arrive.";
+
     return {
-      paid,
-      payment_status: order.payment_status,
-      order_number: order.order_number,
-      confirmation_message: refunded
-        ? "That one shows as refunded — the team can sort it out for you."
-        : paid
-          ? `Yep, that's come through — payment received. You're all set.`
-          : `Not showing as paid just yet. It can take a few seconds — or you can simply pay when you arrive.`
+      paid: snapshot.state === "paid",
+      state: snapshot.state,
+      announce,
+      check_count: checkCount,
+      order_number: snapshot.orderNumber,
+      confirmation_message: message
     };
   }
 
@@ -763,6 +864,14 @@ async function persistRetellCall(
   if (!restaurantId) {
     logger.warn({ evt: "retell_call_unresolved_tenant", provider_call_id: providerCallId });
     return;
+  }
+
+  // A guest can be mid-payment when a call ends — including when they simply
+  // hang up, which never reaches end_call and so never reaches any prompt rule.
+  // This webhook fires for those calls too, so the record is made right here
+  // rather than depending on what the model did.
+  if (event === "call_ended" || event === "call_analyzed") {
+    await reconcilePaymentWatchers(providerCallId, restaurantId);
   }
 
   const analysis = extractCallAnalysis(call);
@@ -887,6 +996,44 @@ function mapRetellStatus(event: string, call: RetellPayload): CallStatus {
   }
 
   return "started";
+}
+
+/**
+ * Close out any payment watcher left open when the call ended.
+ *
+ * The pre-end_call check in the prompt makes the CALLER's experience right; it
+ * cannot make the RECORD right, because end_call is Retell's own tool and a
+ * caller who hangs up never reaches it. A watcher with no announcement means
+ * someone was mid-payment when the line dropped — worth one log line and worth
+ * being queryable, rather than inferred later from silence.
+ *
+ * Never throws into the webhook: a bookkeeping failure must not make Retell
+ * retry a call event.
+ */
+async function reconcilePaymentWatchers(providerCallId: string, restaurantId: string): Promise<void> {
+  try {
+    const watchers = await listOpsStateByPrefix(`payment_watch:${providerCallId}:`);
+    for (const watcher of watchers) {
+      const orderId = (watcher.value as { order_id?: string } | undefined)?.order_id ?? null;
+      const state = (watcher.value as { state?: string } | undefined)?.state ?? "unknown";
+      const scope = watcher.key.slice("payment_watch:".length);
+      const announced = await getOpsState(`payment_announced:${scope}`);
+      if (!announced) {
+        logger.warn({
+          evt: "payment_watch_unresolved",
+          restaurant_id: restaurantId,
+          provider_call_id: providerCallId,
+          order_id: orderId,
+          last_state: state
+        });
+      }
+    }
+    if (watchers.length > 0) {
+      await purgeOpsStateByPrefix(`payment_watch:${providerCallId}:`, "0 seconds");
+    }
+  } catch (error) {
+    logger.warn({ evt: "payment_watch_reconcile_failed", provider_call_id: providerCallId, error });
+  }
 }
 
 function normalizeFunctionName(name: string | undefined): string {

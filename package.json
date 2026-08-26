@@ -52,6 +52,7 @@
     "smoke:booking-sms": "npm run smoke:booking-sms --workspace=@vocotable/backend",
     "smoke:identity-collision": "npm run smoke:identity-collision --workspace=@vocotable/backend",
     "smoke:menu-substitution": "npm run smoke:menu-substitution --workspace=@vocotable/backend",
+    "smoke:payment-watch": "npm run smoke:payment-watch --workspace=@vocotable/backend",
     "smoke:sms-sender": "npm run smoke:sms-sender --workspace=@vocotable/backend",
     "smoke:payments": "npm run smoke:payments --workspace=@vocotable/backend",
     "audit:backend": "npm audit --workspace=@vocotable/backend --omit=dev --omit=optional",
