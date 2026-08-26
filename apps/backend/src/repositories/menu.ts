@@ -404,7 +404,21 @@ export async function searchMenuItemsByName(
        FROM menu_items
       WHERE restaurant_id = $1
         AND ($4::boolean OR is_available = true)
-        AND similarity(LOWER(name), LOWER($2)) > 0.2
+        -- A caller who asks for a burger must be told there is no burger, not
+        -- offered a ginger beer. That happened on a real call: trigram
+        -- similarity scored "Ginger Beer" against "burger" at exactly 0.200 —
+        -- they share "ger" — and squeaked past a > 0.2 filter on floating point.
+        --
+        -- A higher bare threshold would also drop honest near-misses ("frappe"
+        -- against "Mango & Passionfruit Frappe" is only 0.269), so the rule is
+        -- containment OR a real similarity: a query the caller actually said
+        -- that appears inside the dish name is a match at any score, and
+        -- anything else must clear 0.3. Measured against this venue's menu,
+        -- that keeps every genuine hit and drops the nonsense one.
+        AND (
+          strpos(LOWER(name), LOWER($2)) > 0
+          OR similarity(LOWER(name), LOWER($2)) >= 0.3
+        )
       ORDER BY similarity DESC
       LIMIT $3`,
     [restaurantId, query, limit, options.includeUnavailable === true]
