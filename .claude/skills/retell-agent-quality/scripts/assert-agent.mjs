@@ -39,13 +39,18 @@ if (Object.keys(dv).length > 0) {
 // Golden knobs (see SKILL.md table).
 check(agent.stt_mode === "fast", "stt_mode = fast");
 check(agent.enable_expressive_mode !== true, "expressive mode off (costs ~1s/turn)");
-// Raised 0.6 -> 0.8 on 26 Aug 2026. On a real call she talked over the caller
-// three times while he repeated "fish and chips", and the 23-second menu
-// monologue that caused it is fixed in the prompt separately. The old warning
-// that 0.7 self-interrupts applied to a build WITH ambient_sound, which was
-// removed long ago — the coffee-shop track was being transcribed as speech.
+// Raised 0.6 -> 0.8 on staging, 26 Aug 2026: on a real call she talked over the
+// caller three times while he repeated "fish and chips". The old warning that
+// 0.7 self-interrupts applied to a build WITH ambient_sound, removed long ago —
+// that track was being transcribed as caller speech.
 // Revert trigger: she cuts herself off mid-greeting with no caller audio.
-check(agent.interruption_sensitivity === 0.8, "interruption_sensitivity = 0.8");
+//
+// BOTH values pass until production is promoted. Pinning only the new one made
+// this script fail production for the crime of not having been promoted yet,
+// which turns an hourly check permanently red — and a check that is always red
+// is one people learn to scroll past. Tighten to 0.8 alone on promotion day.
+check([0.6, 0.8].includes(agent.interruption_sensitivity),
+  `interruption_sensitivity is 0.6 (pre-promotion) or 0.8 (current) — got ${agent.interruption_sensitivity}`);
 check(agent.ambient_sound == null, "no ambient_sound");
 check(agent.enable_backchannel === true, "backchannel on");
 check(agent.begin_message_delay_ms === 500, "begin_message_delay_ms = 500");
