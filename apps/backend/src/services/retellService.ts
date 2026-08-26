@@ -36,6 +36,7 @@ import {
 import { checkAvailability } from "./availabilityService";
 import { createBooking, modifyBooking } from "./bookingService";
 import { getMenu, lookupMenu } from "./menuService";
+import { searchMenuItemsByName } from "../repositories/menu";
 import { createOrder, orderContentFingerprint } from "./orderService";
 import { createOrderPaymentLink } from "./orderPaymentService";
 
@@ -408,6 +409,38 @@ export async function handleRetellFunction(
     const nowHm = nowTimeInTz(restaurantTz);
 
     for (const itemInput of parsed.data.items) {
+      // Before trusting the best AVAILABLE match, check whether what the caller
+      // actually said matches something the kitchen has switched off. Without
+      // this the unavailable item simply disappears and the next-best row is
+      // taken silently: on 26 Aug 2026 "Fish & Chips" (off, $22) became "Chips"
+      // ($9) — Bella said "fish and chips" the whole call, the kitchen got
+      // chips, and the caller paid for chips. A substitution nobody agreed to
+      // is worse than a refusal, because only the refusal can be corrected.
+      const withUnavailable = await searchMenuItemsByName(restaurantId, itemInput.name, 6, {
+        includeUnavailable: true
+      });
+      const bestOverall = withUnavailable[0];
+      if (bestOverall && !bestOverall.is_available) {
+        const bestAvailable = withUnavailable.find((m) => m.is_available);
+        // Only when the unavailable item is a genuinely better match than
+        // anything sellable — otherwise an off item with a vaguely similar name
+        // would block an order the caller really did mean.
+        if (!bestAvailable || bestOverall.similarity > bestAvailable.similarity + 0.05) {
+          logger.info({
+            evt: "order_item_unavailable_refused",
+            restaurant_id: restaurantId,
+            requested: itemInput.name,
+            matched: bestOverall.name
+          });
+          throw new AppError(
+            400,
+            "ITEM_UNAVAILABLE",
+            `Sorry, ${bestOverall.name} isn't available at the moment. Would you like something else?`,
+            { item_name: bestOverall.name }
+          );
+        }
+      }
+
       const lookup = await lookupMenu({
         restaurantId,
         query: itemInput.name
