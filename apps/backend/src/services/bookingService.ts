@@ -74,7 +74,7 @@ export function buildBookingConfirmationSms(input: {
   date: string;
   time: string;
 }): string {
-  return `${input.venueName}: booking confirmed. ${input.customerName}, party of ${input.partySize}, ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)}. To change or cancel, call the venue. Do not reply to this SMS.`;
+  return `${input.venueName}: booking confirmed. ${input.customerName}, party of ${input.partySize}, ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)}. To change or cancel, call the venue. Do not reply.`;
 }
 
 export function buildBookingModifiedSms(input: {
@@ -84,7 +84,7 @@ export function buildBookingModifiedSms(input: {
   date: string;
   time: string;
 }): string {
-  return `${input.venueName}: booking updated. ${input.customerName}, party of ${input.partySize}, ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)}. Questions? Call the venue. Do not reply to this SMS.`;
+  return `${input.venueName}: booking updated. ${input.customerName}, party of ${input.partySize}, ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)}. Questions? Call the venue. Do not reply.`;
 }
 
 export function buildBookingCancelledSms(input: {
@@ -92,7 +92,7 @@ export function buildBookingCancelledSms(input: {
   date: string;
   time: string;
 }): string {
-  return `${input.venueName}: your booking for ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)} has been cancelled. Questions? Call the venue. Do not reply to this SMS.`;
+  return `${input.venueName}: your booking for ${formatSmsDate(input.date)}, ${formatVoiceTime(input.time)} has been cancelled. Questions? Call the venue. Do not reply.`;
 }
 
 /**
