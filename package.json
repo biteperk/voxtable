@@ -50,6 +50,9 @@
     "smoke:voice-kill-switch": "npm run smoke:voice-kill-switch --workspace=@vocotable/backend",
     "smoke:notification-lease": "npm run smoke:notification-lease --workspace=@vocotable/backend",
     "smoke:booking-sms": "npm run smoke:booking-sms --workspace=@vocotable/backend",
+    "smoke:identity-collision": "npm run smoke:identity-collision --workspace=@vocotable/backend",
+    "smoke:menu-substitution": "npm run smoke:menu-substitution --workspace=@vocotable/backend",
+    "smoke:payment-watch": "npm run smoke:payment-watch --workspace=@vocotable/backend",
     "smoke:sms-sender": "npm run smoke:sms-sender --workspace=@vocotable/backend",
     "smoke:payments": "npm run smoke:payments --workspace=@vocotable/backend",
     "audit:backend": "npm audit --workspace=@vocotable/backend --omit=dev --omit=optional",
@@ -65,7 +68,9 @@
     "smoke:capacity-ceiling": "npm run smoke:capacity-ceiling --workspace=@vocotable/backend",
     "smoke:inbox-retry": "npm run smoke:inbox-retry --workspace=@vocotable/backend",
     "check:voice-lines": ".claude/skills/retell-agent-quality/scripts/check-all-lines.sh",
-    "check:voice-lines:selftest": "node .claude/skills/retell-agent-quality/scripts/selftest-assert-line.mjs"
+    "check:voice-lines:selftest": "node .claude/skills/retell-agent-quality/scripts/selftest-assert-line.mjs",
+    "check:seed-identities": "node deploy/scripts/assert-seed-identities.mjs --project bp-voxtable-stg --sibling vocotable deploy/seeds/staging-venue.sql",
+    "check:oauth-redirects": "node deploy/scripts/assert-oauth-redirect.mjs 198624206590-sm4ilnql2ve14gk1m0p2cmkpslbb187d.apps.googleusercontent.com bp-voxtable-stg.web.app bp-voxtable-stg.firebaseapp.com"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

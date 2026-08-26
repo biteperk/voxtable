@@ -1,4 +1,5 @@
 import { DbClient, pool } from "../db/pool";
+import { AppError } from "../domain/errors";
 
 export type MemberRole = "owner" | "manager" | "staff" | "server" | "kitchen";
 
@@ -168,18 +169,44 @@ export async function upsertUser(
   input: { id: string; email: string; name?: string | null; emailVerified?: boolean },
   db: DbClient = pool
 ): Promise<void> {
-  await db.query(
-    `
-    INSERT INTO users (id, email, name, email_verified)
-    VALUES ($1, $2, $3, $4)
-    ON CONFLICT (id) DO UPDATE SET
-      email = EXCLUDED.email,
-      name = COALESCE(EXCLUDED.name, users.name),
-      email_verified = EXCLUDED.email_verified,
-      updated_at = now()
-    `,
-    [input.id, input.email, input.name ?? null, input.emailVerified ?? false]
-  );
+  try {
+    await db.query(
+      `
+      INSERT INTO users (id, email, name, email_verified)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        name = COALESCE(EXCLUDED.name, users.name),
+        email_verified = EXCLUDED.email_verified,
+        updated_at = now()
+      `,
+      [input.id, input.email, input.name ?? null, input.emailVerified ?? false]
+    );
+  } catch (error) {
+    // The ON CONFLICT arbiter is (id), but migration 007 ALSO puts a unique index
+    // on lower(email). A single-arbiter clause does not absorb a violation of a
+    // different index, so a NEW uid presenting an email another row already holds
+    // raises 23505 — and nothing used to catch it. It surfaced as a bare 500
+    // "Something went wrong." on the first step of the onboarding wizard, which a
+    // user cannot skip or work around, and identically on accept-invite.
+    //
+    // This is not hypothetical or staging-only: it happens whenever a person's
+    // Firebase identity changes while their email does not — account deleted and
+    // recreated, or an email/password identity replaced by Google sign-in.
+    //
+    // Deliberately NOT auto-relinking the old row to the new uid. That is an
+    // account-merge, it moves venue membership between identities, and doing it
+    // silently on a login path in a product that takes guest payments is the wrong
+    // default. The deliberate, audited version belongs behind the admin surface.
+    if ((error as { code?: string }).code === "23505" && /email/i.test((error as { constraint?: string }).constraint ?? "")) {
+      throw new AppError(
+        409,
+        "EMAIL_ALREADY_REGISTERED",
+        "That email is already linked to a different account. Contact support so we can move your access across — signing up again won't work."
+      );
+    }
+    throw error;
+  }
 }
 
 /**

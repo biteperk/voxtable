@@ -389,7 +389,20 @@ async function categoryOverview(restaurantId: string): Promise<{
   categories: OverviewCategory[];
   names: string;
 }> {
-  const menu = await getMenu(restaurantId);
+  const fullMenu = await getMenu(restaurantId);
+  // Unavailable items are dropped before anything here can speak them. This
+  // overview is what Bella reads out when a caller asks "what have you got?",
+  // and it used to include items the kitchen had switched off — on 26 Aug 2026
+  // it offered "Fish & Chips", the caller ordered it, and because create_order
+  // only searches AVAILABLE items the order silently became "Chips" at less
+  // than half the price. Never offer what cannot be sold.
+  const menu = {
+    ...fullMenu,
+    categories: fullMenu.categories.map((c) => ({
+      ...c,
+      items: c.items.filter((i) => i.is_available)
+    }))
+  };
   // Licensed items are split out rather than filtered away: the section keeps
   // its place in the overview, but never supplies a sample Bella might offer.
   const categories = menu.categories

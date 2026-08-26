@@ -119,7 +119,14 @@ async function tick(): Promise<void> {
       opsStatePurged =
         (await purgeStaleKdsHeartbeats()) +
         (await purgeStaleRetellAuthBuckets()) +
-        (await purgeOpsStateByPrefix("calcom-quota:", "60 days"));
+        (await purgeOpsStateByPrefix("calcom-quota:", "60 days")) +
+        // Payment watchers are call-scoped: worthless the moment the call ends,
+        // and one or two rows per paid phone order. A prefix nobody registers
+        // here is never swept, so leaving them out would grow ops_state forever
+        // — slowly, invisibly, and as nobody's job to notice. A week keeps them
+        // long enough to troubleshoot yesterday's call.
+        (await purgeOpsStateByPrefix("payment_watch:", "7 days")) +
+        (await purgeOpsStateByPrefix("payment_announced:", "7 days"));
     } catch (error) {
       logger.warn({ evt: "cleanup_worker_phase7_skipped", error });
     }
