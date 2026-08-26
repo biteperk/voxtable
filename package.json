@@ -65,7 +65,9 @@
     "smoke:capacity-ceiling": "npm run smoke:capacity-ceiling --workspace=@vocotable/backend",
     "smoke:inbox-retry": "npm run smoke:inbox-retry --workspace=@vocotable/backend",
     "check:voice-lines": ".claude/skills/retell-agent-quality/scripts/check-all-lines.sh",
-    "check:voice-lines:selftest": "node .claude/skills/retell-agent-quality/scripts/selftest-assert-line.mjs"
+    "check:voice-lines:selftest": "node .claude/skills/retell-agent-quality/scripts/selftest-assert-line.mjs",
+    "check:seed-identities": "node deploy/scripts/assert-seed-identities.mjs --project bp-voxtable-stg --sibling vocotable deploy/seeds/staging-venue.sql",
+    "check:oauth-redirects": "node deploy/scripts/assert-oauth-redirect.mjs 198624206590-sm4ilnql2ve14gk1m0p2cmkpslbb187d.apps.googleusercontent.com bp-voxtable-stg.web.app bp-voxtable-stg.firebaseapp.com"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

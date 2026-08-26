@@ -1,7 +1,8 @@
 -- ⚠️ SUPERSEDED IN PART, 18 Aug 2026 — the staging venue is becoming Mazcina.
 --
--- This file still describes the venue's ROW, SETTINGS, TABLES and MEMBERS, and
--- those are still correct. Its MENU is not: the five fixture items below are
+-- This file still describes the venue's ROW, SETTINGS and TABLES, and those are
+-- still correct. Human MEMBERS left this file on 26 Aug 2026 — see the banner at
+-- the end for why. Its MENU is not correct either: the five fixture items below are
 -- being retired in favour of Mazcina's real 31-item menu.
 --   * retire the fixtures: deploy/seeds/mazcina-retire-fixture-menu.sql
 --   * import the real menu: mazcina/mazcina-menu-voxtable-import.json
@@ -54,15 +55,10 @@
 
 BEGIN;
 
--- Owners / members. Membership (not the allowlist) is what makes the venue
--- visible on the dashboard; the email must ALSO be in staging's
--- DASHBOARD_ALLOWED_EMAILS for the request to get past the gate.
-INSERT INTO users (id, email, name, email_verified)
-VALUES ('fBufe7XgkBYDDoQGXZj4aQ50c4T2', 'skalaliya@gmail.com', 'Sam Kalaliya', true)
-ON CONFLICT (id) DO UPDATE
-  SET email = EXCLUDED.email,
-      name = COALESCE(users.name, EXCLUDED.name),
-      email_verified = users.email_verified OR EXCLUDED.email_verified;
+-- Human members are NOT seeded here, deliberately — see the banner at the end of
+-- this file. Membership (not the allowlist) is what makes the venue visible on the
+-- dashboard, and it is granted against the environment, where the uid can be
+-- resolved from the email rather than transcribed.
 
 INSERT INTO restaurants
   (id, name, timezone, phone_number, transfer_phone_number,
@@ -105,10 +101,6 @@ VALUES (
     "sunday":[{"open":"09:00","close":"23:00"}]}'::jsonb
 )
 ON CONFLICT (restaurant_id) DO NOTHING;
-
-INSERT INTO restaurant_members (user_id, restaurant_id, role)
-VALUES ('fBufe7XgkBYDDoQGXZj4aQ50c4T2', '33333333-3333-4333-8333-333333333333', 'owner')
-ON CONFLICT (user_id, restaurant_id) DO NOTHING;
 
 -- The machine smoke user: a password identity in the STAGING Firebase project
 -- (biteperk@gmail.com, uid below; password lives in staging Secret Manager as
@@ -196,3 +188,35 @@ COMMIT;
 -- DELETE FROM restaurant_settings WHERE restaurant_id = '33333333-3333-4333-8333-333333333333';
 -- DELETE FROM restaurants         WHERE id = '33333333-3333-4333-8333-333333333333';
 -- COMMIT;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Why no human owner is seeded here (26 Aug 2026)
+--
+-- This file used to grant ownership to a hardcoded Firebase uid for
+-- skalaliya@gmail.com. That uid was Sam's PRODUCTION uid, pasted into a staging
+-- seed on 18 Aug and unnoticed until 26 Aug, when the first human tried to sign
+-- in to the staging dashboard and was trapped in the onboarding wizard: the
+-- venue had an owner nobody could authenticate as.
+--
+-- Nothing caught it, and the reasons are worth keeping:
+--   * a uid is opaque and environment-scoped with no visible marker. It sits
+--     next to identifiers that DO look checkable (a UUID, a +61 number) and
+--     borrows their credibility.
+--   * re-applying reported "0 rows" — which proves idempotency, not correctness.
+--     ON CONFLICT DO NOTHING is exactly as quiet about a wrong uid as a right one.
+--   * the OTHER uid in this file, the machine smoke user below, was right only
+--     because smoke:staging exercises it and would have gone red.
+--
+-- This is the same reasoning that removed retell_agent_id from this seed: a seed
+-- cannot verify, and the environment can. Human grants therefore happen against
+-- the environment, which resolves email -> uid in ITS OWN Firebase project (the
+-- pattern apps/backend/src/db/seed.ts already uses), making a cross-environment
+-- uid unrepresentable rather than merely wrong.
+--
+-- Guard: `npm run check:seed-identities` fails on any uid in a seed that does not
+-- belong to the target project, and names the sibling project it came from.
+--
+-- The smoke user's row stays because a machine identity has no email->uid path at
+-- apply time and its password is environment-scoped in Secret Manager — but it is
+-- covered by the same guard.
+-- ─────────────────────────────────────────────────────────────────────────────

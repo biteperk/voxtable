@@ -1,3 +1,10 @@
+-- ⚠️ The owner uid below is CI-INERT: this file is applied only to the throwaway
+-- Postgres in ci.yml, where nothing signs in, so the uid never has to match a real
+-- Firebase identity. NEVER copy it into a seed for a real environment — that is
+-- exactly how a production uid reached deploy/seeds/staging-venue.sql on 18 Aug 2026
+-- and locked the only human owner out of staging for eight days. Real environments
+-- resolve email -> uid against their own Firebase project; see that file's closing
+-- banner and `npm run check:seed-identities`.
 -- synthetic_test_restaurants.sql
 -- Five synthetic "hypothesis" restaurants for exercising multi-tenant
 -- operations after the onboarding cutover. Sam (skalaliya@gmail.com) is an
