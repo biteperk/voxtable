@@ -1,4 +1,4 @@
-import { DbClient, readPool } from "../db/pool";
+import { DbClient, pool, readPool } from "../db/pool";
 
 export type OrderSource = "voice" | "waiter" | "qr" | "dashboard";
 export type OrderStatus = "pending" | "preparing" | "ready" | "served" | "cancelled";
@@ -393,6 +393,62 @@ export async function getOrderCoreForUpdate(
 
 export interface OrderWithItems extends OrderRow {
   items: Array<OrderItemRow & { modifiers: OrderItemModifierRow[] }>;
+}
+
+/**
+ * The one payment question the voice agent asks, answered from the primary.
+ *
+ * Deliberately NOT getOrderById, for two reasons that both bite in the same
+ * moment — the seconds after a guest taps Pay while still on the phone:
+ *
+ *  1. getOrderById reads the REPLICA. The Stripe webhook writes the primary.
+ *     A few seconds of lag there produces the worst possible answer: the guest
+ *     has paid, the money has moved, and Bella tells them it has not arrived.
+ *     Load is not worth that; this reads the primary.
+ *  2. `processing` cannot be seen from `orders` at all — orders.payment_status
+ *     is only unpaid|paid|refunded, while an async method that has been
+ *     submitted but not settled lives on the order_payments row. Treating that
+ *     as "unpaid" tells a guest their payment failed when it is in flight.
+ *
+ * The payment row is the MOST RECENT one, not the "active" one: the partial
+ * unique index idx_order_payments_active covers only created/sent/processing,
+ * so a row stops being active the instant it succeeds — and a resend leaves an
+ * older cancelled row behind it. orders.payment_status still wins for
+ * paid/refunded; the payment row only ever supplies `processing`.
+ */
+export type OrderPaymentState = "unpaid" | "processing" | "paid" | "refunded";
+
+export async function getOrderPaymentSnapshot(
+  orderId: string,
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<{ orderNumber: number; state: OrderPaymentState; totalCents: number } | null> {
+  const result = await db.query<{
+    order_number: number;
+    payment_status: PaymentStatus;
+    total_cents: number;
+    latest_payment_status: string | null;
+  }>(
+    `SELECT o.order_number,
+            o.payment_status,
+            o.total_cents,
+            (SELECT p.status FROM order_payments p
+              WHERE p.order_id = o.id
+              ORDER BY p.created_at DESC
+              LIMIT 1) AS latest_payment_status
+       FROM orders o
+      WHERE o.id = $1 AND o.restaurant_id = $2`,
+    [orderId, restaurantId]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+
+  let state: OrderPaymentState = "unpaid";
+  if (row.payment_status === "paid") state = "paid";
+  else if (row.payment_status === "refunded") state = "refunded";
+  else if (row.latest_payment_status === "processing") state = "processing";
+
+  return { orderNumber: row.order_number, state, totalCents: row.total_cents };
 }
 
 export async function getOrderById(

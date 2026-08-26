@@ -390,17 +390,24 @@ export async function loadModifiersForItems(
 export async function searchMenuItemsByName(
   restaurantId: string,
   query: string,
-  limit = 6
+  limit = 6,
+  // Ordering deliberately looks at unavailable items too. Filtering them out in
+  // SQL is what let a caller order "Fish & Chips" (unavailable) and silently
+  // receive "Chips": the exact match vanished from the result set and the next
+  // best remaining row was taken as if it were what they asked for. The caller
+  // must be TOLD the dish is off, never handed a different one — so the search
+  // can see them and the caller decides. See resolveOrderItem in retellService.
+  options: { includeUnavailable?: boolean } = {}
 ): Promise<Array<MenuItemRow & { similarity: number }>> {
   const result = await readPool.query<MenuItemRow & { similarity: number }>(
     `SELECT *, similarity(LOWER(name), LOWER($2)) AS similarity
        FROM menu_items
       WHERE restaurant_id = $1
-        AND is_available = true
+        AND ($4::boolean OR is_available = true)
         AND similarity(LOWER(name), LOWER($2)) > 0.2
       ORDER BY similarity DESC
       LIMIT $3`,
-    [restaurantId, query, limit]
+    [restaurantId, query, limit, options.includeUnavailable === true]
   );
   return result.rows;
 }

@@ -302,6 +302,19 @@ export const createOrderRetellSchema = z.object({
   specialInstructions: z.string().max(500).optional()
 });
 
+/**
+ * Schema for the Retell `check_payment_status` tool. A caller who has just
+ * tapped the link asks "did that go through?" — and until this existed Bella
+ * had to say she could not see payment status, which is a poor answer when the
+ * money has already moved and the system knows it.
+ */
+export const checkPaymentStatusRetellSchema = z.object({
+  call_id: z.string().min(1).max(200).optional(),
+  callId: z.string().min(1).max(200).optional(),
+  order_id: uuidSchema.optional(),
+  orderId: uuidSchema.optional()
+});
+
 export const sendPaymentLinkRetellSchema = z.object({
   call_id: z.string().min(1).max(200).optional(),
   callId: z.string().min(1).max(200).optional(),

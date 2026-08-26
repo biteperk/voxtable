@@ -203,6 +203,25 @@ jobs:
       - name: Prove booking SMS fire once, and only for the right changes
         run: npm run smoke:booking-sms
 
+      # A person whose Firebase identity changes while their email does not —
+      # account recreated, or email/password replaced by Google sign-in — used to
+      # hit a bare 23505 on the users email index and receive HTTP 500 "Something
+      # went wrong." on the one onboarding step they cannot skip.
+      - name: Prove a changed identity gets an actionable error, not a dead end
+        run: npm run smoke:identity-collision
+
+      # A dish the kitchen has switched off must be refused, never swapped for a
+      # cheaper one — a caller ordered Fish and Chips and was charged for Chips.
+      - name: Prove an unavailable dish is refused, not substituted
+        run: npm run smoke:menu-substitution
+
+      # The voice agent's view of a payment: read from the primary (a replica
+      # would tell a guest who just paid that it had not arrived), three states
+      # not two (an in-flight payment is not a failed one), and announced once
+      # even when two checks race.
+      - name: Prove payment status is truthful and announced exactly once
+        run: npm run smoke:payment-watch
+
       # Voice-order payment links: double-fire returns the SAME link (never a
       # second charge path), a paid webhook flips the order exactly once, a
       # refunded order can't be resurrected by a late replay, an order-payment

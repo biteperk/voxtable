@@ -221,10 +221,16 @@ const envSchema = z
   // card details, or open a Customer Portal session against them. Per-tenant
   // billing has been the real path since Phase 3; the fallback outlived its
   // transition. Setting it in a .env is harmless now; it is simply ignored.
-  STRIPE_PORTAL_RETURN_URL: z
-    .string()
-    .url()
-    .default("https://voxtable.biteperk.com.au/billing"),
+  // Where Stripe sends a venue back after the billing portal or Connect
+  // onboarding. This used to DEFAULT to the production dashboard, which meant
+  // every environment that did not override it sent its users to production:
+  // on 26 Aug 2026 a Connect onboarding completed on staging and returned the
+  // operator to voxtable.biteperk.com.au, where they could not sign in. That is
+  // CLAUDE.md §D rule 8 ("never point a staging build at a production
+  // hostname") breached by a silent default rather than by a decision.
+  //
+  // The default is now a dev value, and production must say what it is.
+  STRIPE_PORTAL_RETURN_URL: z.string().url().default("http://localhost:3051/billing"),
   STRIPE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   // Self-serve subscription (Phase 3): the $80/mo recurring Price, the free
   // trial length, the webhook signing secret, and Checkout return URLs.
@@ -240,14 +246,11 @@ const envSchema = z
   // subscription when it is created, so anyone mid-trial keeps what they were
   // promised.
   STRIPE_TRIAL_DAYS: z.coerce.number().int().min(0).max(90).default(7),
-  STRIPE_CHECKOUT_SUCCESS_URL: z
-    .string()
-    .url()
-    .default("https://voxtable.biteperk.com.au/onboarding"),
-  STRIPE_CHECKOUT_CANCEL_URL: z
-    .string()
-    .url()
-    .default("https://voxtable.biteperk.com.au/onboarding"),
+  // Same hazard as STRIPE_PORTAL_RETURN_URL above: these defaulted to the
+  // production dashboard, so any environment that forgot to set them sent its
+  // users there after checkout. Dev defaults; production declares its own.
+  STRIPE_CHECKOUT_SUCCESS_URL: z.string().url().default("http://localhost:3051/onboarding"),
+  STRIPE_CHECKOUT_CANCEL_URL: z.string().url().default("http://localhost:3051/onboarding"),
 
   // ─── Menu OCR ingestion ────────────────────────────────────────────────
   // Menu OCR ingestion (Phase 2). Vision-LLM parses a menu photo/PDF into
@@ -606,6 +609,18 @@ const envSchema = z
         "STRIPE_WEBHOOK_SECRET",
         "STRIPE_WEBHOOK_SECRET is required when STRIPE_BILLING_ENABLED=true."
       );
+      // Not defaulted any more: the old default was the production dashboard, so
+      // a staging deployment silently returned its users to production after a
+      // Stripe flow. Every environment now declares its own return host.
+      if (/localhost/.test(value.STRIPE_PORTAL_RETURN_URL)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["STRIPE_PORTAL_RETURN_URL"],
+          message:
+            "STRIPE_PORTAL_RETURN_URL is still the localhost default. Set it to THIS environment's " +
+            "dashboard billing page — a wrong value sends venues to another environment after Stripe."
+        });
+      }
     }
 
     if (value.ORDER_PAYMENTS_ENABLED) {
