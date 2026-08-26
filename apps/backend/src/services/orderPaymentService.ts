@@ -122,9 +122,12 @@ export function buildPaymentSms(input: {
   url: string;
   expiryMinutes: number;
 }): string {
+  // GSM-7 only (no em-dash): one non-GSM-7 character silently re-encodes the
+  // whole message as UCS-2 and halves the segment size from 160 to 70 chars,
+  // so the link SMS was quietly billing as 2-3 segments.
   const total = `$${(input.totalCents / 100).toFixed(2)}`;
   return (
-    `${input.venueName} — order #${input.orderNumber ?? "—"}, ${total}.\n` +
+    `${input.venueName}: order #${input.orderNumber ?? "?"}, ${total}.\n` +
     `Pay here: ${input.url}\n` +
     `Link expires in ${input.expiryMinutes} minutes. Do not reply to this message.`
   );
