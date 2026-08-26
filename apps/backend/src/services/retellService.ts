@@ -10,6 +10,7 @@ import {
   createOrderRetellSchema,
   menuLookupRetellSchema,
   sendPaymentLinkRetellSchema,
+  checkPaymentStatusRetellSchema,
   modifyBookingRequestSchema,
   normalizeModifyBookingArgs,
   normalizePartySize
@@ -37,6 +38,7 @@ import { checkAvailability } from "./availabilityService";
 import { createBooking, modifyBooking } from "./bookingService";
 import { getMenu, lookupMenu } from "./menuService";
 import { searchMenuItemsByName } from "../repositories/menu";
+import { getOrderById } from "../repositories/orders";
 import { createOrder, orderContentFingerprint } from "./orderService";
 import { createOrderPaymentLink } from "./orderPaymentService";
 
@@ -696,6 +698,46 @@ export async function handleRetellFunction(
       booking_id: result.bookingId,
       status: result.status,
       confirmation_message: result.confirmationMessage
+    };
+  }
+
+  if (name === "check_payment_status" || name === "checkpaymentstatus") {
+    // A caller who has just paid asks "did that go through?". Before this tool
+    // Bella answered "I can't see payment status on my end" — true at the time,
+    // and a poor answer when the money has moved and the system knows it.
+    const parsed = checkPaymentStatusRetellSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new AppError(
+        400,
+        "CHECK_PAYMENT_STATUS_INVALID",
+        `check_payment_status args invalid: ${parsed.error.issues.map((i) => i.message).join("; ")}`
+      );
+    }
+    const orderId = parsed.data.order_id ?? parsed.data.orderId;
+    if (!orderId) {
+      throw new AppError(
+        400,
+        "PAYMENT_STATUS_REQUIRES_ORDER",
+        "I'll need to take the order first — what would you like?"
+      );
+    }
+    const order = await getOrderById(orderId, restaurantId);
+    if (!order) {
+      throw new AppError(404, "ORDER_NOT_FOUND", "I can't find that order — let me take it again.");
+    }
+    // Deliberately flat and spoken-ready: the LLM reads confirmation_message
+    // aloud either way, so a caller never hears a status code.
+    const paid = order.payment_status === "paid";
+    const refunded = order.payment_status === "refunded";
+    return {
+      paid,
+      payment_status: order.payment_status,
+      order_number: order.order_number,
+      confirmation_message: refunded
+        ? "That one shows as refunded — the team can sort it out for you."
+        : paid
+          ? `Yep, that's come through — payment received. You're all set.`
+          : `Not showing as paid just yet. It can take a few seconds — or you can simply pay when you arrive.`
     };
   }
 

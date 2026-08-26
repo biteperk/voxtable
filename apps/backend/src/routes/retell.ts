@@ -94,3 +94,11 @@ retellRouter.post(
     response.json(result);
   })
 );
+
+retellRouter.post(
+  "/retell/tools/check-payment-status",
+  asyncHandler(async (request, response) => {
+    const result = await handleRetellFunction(request.body, "check_payment_status");
+    response.json(result);
+  })
+);
