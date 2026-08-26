@@ -99,6 +99,12 @@ test("SMS copy: venue first, total, url, expiry, and no invitation to reply", ()
   assert.ok(!/\b(reply|respond|text (us|back)|sms us)\b/i.test(withoutDisclaimer));
   // STOP can never be processed on a one-way sender, so offering it is a lie.
   assert.ok(!/\bSTOP\b/.test(sms));
+  // Pure GSM-7: a single em-dash or curly quote re-encodes the whole message
+  // as UCS-2 and halves segments from 160 to 70 chars — this SMS shipped as
+  // 2-3 segments for weeks before anyone noticed.
+  const GSM7 =
+    /^[A-Za-z0-9 @£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ!"#¤%&'()*+,\-./:;<=>?¡ÄÖÑܧ¿äöñüà\n\r^{}\\[\]~|€]*$/;
+  assert.ok(GSM7.test(sms), `non-GSM-7 character in: ${sms}`);
 });
 
 // --- transition table -------------------------------------------------------
