@@ -303,7 +303,13 @@ export async function deleteMenuItem(id: string, restaurantId: string): Promise<
 export interface MenuLookupMatch {
   id: string;
   name: string;
-  price_cents: number;
+  // A formatted string, NOT cents. The model was handed `price_cents: 150` and
+  // read it aloud as "fifteen cents" — and 900 as "nine hundred cents" — on a
+  // real call, quoting a $1.50 item at 1% of its price. It converted correctly
+  // some of the time, which is worse than never: an arithmetic step the model
+  // can skip is one it eventually will. Giving it only the spoken form removes
+  // the possibility rather than asking it to be careful.
+  price: string;
   category_id: string;
   is_restricted: boolean;
   available_from: string | null;
@@ -325,7 +331,7 @@ function toLookupMatch(i: MenuItemPayload, categoryId: string): MenuLookupMatch 
   return {
     id: i.id,
     name: i.name,
-    price_cents: i.base_price_cents,
+    price: speakablePrice(i.base_price_cents),
     category_id: categoryId,
     is_restricted: i.is_restricted,
     available_from: i.available_from,
@@ -456,7 +462,7 @@ export async function lookupMenu(input: {
       matches: matches.map((m) => ({
         id: m.id,
         name: m.name,
-        price_cents: m.base_price_cents,
+        price: speakablePrice(m.base_price_cents),
         category_id: m.category_id,
         is_restricted: m.is_restricted,
         available_from: m.available_from,

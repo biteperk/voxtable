@@ -49,8 +49,12 @@ check(agent.enable_expressive_mode !== true, "expressive mode off (costs ~1s/tur
 // this script fail production for the crime of not having been promoted yet,
 // which turns an hourly check permanently red — and a check that is always red
 // is one people learn to scroll past. Tighten to 0.8 alone on promotion day.
-check([0.6, 0.8].includes(agent.interruption_sensitivity),
-  `interruption_sensitivity is 0.6 (pre-promotion) or 0.8 (current) — got ${agent.interruption_sensitivity}`);
+// The band, not a point: 0.6 is production (unpromoted), 0.8 stopped her talking
+// over a caller, and 0.7 is being measured because 0.8 coincided with e2e p50
+// rising from ~1.2s to ~2.5s. Pin a single value again once that is settled —
+// until then a point check just fails whichever agent is not today's guess.
+check(agent.interruption_sensitivity >= 0.6 && agent.interruption_sensitivity <= 0.8,
+  `interruption_sensitivity is within the tuning band 0.6-0.8 — got ${agent.interruption_sensitivity}`);
 check(agent.ambient_sound == null, "no ambient_sound");
 check(agent.enable_backchannel === true, "backchannel on");
 check(agent.begin_message_delay_ms === 500, "begin_message_delay_ms = 500");

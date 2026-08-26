@@ -45,6 +45,7 @@ import {
   purgeOpsStateByPrefix,
   setOpsState
 } from "../repositories/opsState";
+import { pool } from "../db/pool";
 import { getOrderPaymentSnapshot } from "../repositories/orders";
 import { createOrder, orderContentFingerprint } from "./orderService";
 import { createOrderPaymentLink } from "./orderPaymentService";
@@ -767,7 +768,12 @@ export async function handleRetellFunction(
     const watchKey = `payment_watch:${scope}`;
     const announcedKey = `payment_announced:${scope}`;
 
-    const watch = await getOpsState(watchKey);
+    // pool, not the default readPool: this key was written by the PREVIOUS check
+    // moments earlier, and a replica read cannot see it yet. That kept check_count
+    // pinned at 1 on every call, which quietly made the three-check ceiling
+    // unreachable — she would have polled forever. Same replica trap as the
+    // payment read above; fixing one and not the other fixed nothing.
+    const watch = await getOpsState(watchKey, pool);
     const previousState = (watch?.value as { state?: string } | undefined)?.state ?? null;
     const checkCount = Number((watch?.value as { checks?: number } | undefined)?.checks ?? 0) + 1;
 
