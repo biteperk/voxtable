@@ -4,7 +4,10 @@ import { env } from "../config/env";
 import { AppError } from "../domain/errors";
 import { CallStatus } from "../domain/types";
 import { getRestaurantIdByProviderCallId, upsertCallLog } from "../repositories/callLogs";
-import { getRestaurantIdByDialedNumber } from "../repositories/restaurants";
+import {
+  getRestaurantIdByDialedNumber,
+  getTransferPhoneNumber
+} from "../repositories/restaurants";
 import { logger } from "../utils/logger";
 
 type TwilioPayload = Record<string, any>;
@@ -134,6 +137,69 @@ export async function handleTwilioIncomingCall(body: unknown): Promise<string> {
     },
     env.TWILIO_RETELL_SIP_URI
   );
+
+  return voiceResponse.toString();
+}
+
+/**
+ * Disaster recovery — Twilio calls this ONLY when every origination URI on the
+ * trunk is unreachable (Retell down, DNS broken, TLS failing). Without it the
+ * caller gets dead air and the venue never learns why bookings stopped.
+ *
+ * Two rules shape this handler:
+ *
+ *   1. It must NEVER throw. Anything that escapes becomes a 500, Twilio plays
+ *      nothing, and the caller gets exactly the dead air this endpoint exists to
+ *      prevent. Every failure path still returns speakable TwiML.
+ *   2. It must never guess a venue. An unresolved number gets a generic apology
+ *      rather than a transfer to whoever happens to be restaurant #1 — the same
+ *      fail-closed rule the rest of the Twilio path follows.
+ *
+ * Reaching here is an outage, so the log line is deliberately loud.
+ */
+export async function handleTwilioDisasterRecovery(body: unknown): Promise<string> {
+  const payload = body as TwilioPayload;
+  const dialed = payload.To ?? payload.Called ?? null;
+  const voiceResponse = new twilio.twiml.VoiceResponse();
+
+  let restaurantId: string | null = null;
+  let transferTo: string | null = null;
+
+  try {
+    restaurantId = await getRestaurantIdByDialedNumber(dialed);
+    if (restaurantId) {
+      transferTo = await getTransferPhoneNumber(restaurantId);
+    }
+  } catch (error) {
+    // The database being down is entirely plausible in the outage that got us
+    // here. Fall through to the generic apology rather than failing the call.
+    logger.error({ evt: "twilio_disaster_lookup_failed", error, dialed });
+  }
+
+  logger.warn({
+    evt: "twilio_disaster_recovery_invoked",
+    provider_call_id: getCallSid(payload),
+    dialed,
+    restaurant_id: restaurantId,
+    transfer_to: transferTo ? "set" : null
+  });
+
+  if (transferTo) {
+    voiceResponse.say(
+      "Sorry, our booking assistant is unavailable right now. Putting you through to the restaurant."
+    );
+    // callerId is the number that was dialled: it belongs to the account placing
+    // this call, which is what Twilio requires of an outbound caller ID.
+    const dial = dialed
+      ? voiceResponse.dial({ callerId: dialed, timeout: 20 })
+      : voiceResponse.dial({ timeout: 20 });
+    dial.number(transferTo);
+    voiceResponse.say("Sorry, we could not connect you. Please try again shortly.");
+  } else {
+    voiceResponse.say(
+      "Sorry, we are unable to take your call right now. Please try again shortly."
+    );
+  }
 
   return voiceResponse.toString();
 }
