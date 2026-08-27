@@ -4,6 +4,7 @@ import { env } from "../config/env";
 import { asyncHandler } from "../http/asyncHandler";
 import {
   assertTwilioSignature,
+  handleTwilioDisasterRecovery,
   handleTwilioIncomingCall,
   handleTwilioStatusCallback
 } from "../services/twilioService";
@@ -26,6 +27,17 @@ twilioRouter.post(
   "/twilio/voice",
   asyncHandler(async (request, response) => {
     const twiml = await handleTwilioIncomingCall(request.body);
+    response.type("text/xml").send(twiml);
+  })
+);
+
+// Fires only when the trunk cannot reach ANY origination URI — i.e. Retell is
+// unreachable. Set as the trunk's DisasterRecoveryUrl; see
+// .claude/skills/twilio-au-number-provisioning/references/trunk-hardening.md.
+twilioRouter.post(
+  "/twilio/disaster",
+  asyncHandler(async (request, response) => {
+    const twiml = await handleTwilioDisasterRecovery(request.body);
     response.type("text/xml").send(twiml);
   })
 );

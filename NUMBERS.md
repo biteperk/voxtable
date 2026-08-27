@@ -31,7 +31,7 @@
 
 > ☎️ **Every phone number BitePerk owns, what it can actually do, and what is still
 > unwired.** Read this before you quote a number, wire a number, send an SMS, test a call,
-> or tell anyone a number "works". **BitePerk owns exactly two numbers** (§1) — anything
+> or tell anyone a number "works". **BitePerk owns exactly three numbers** (§1) — anything
 > else you have seen referred to as "the BitePerk number" is either marketing or another
 > company's infrastructure, and wiring it is a mistake.
 >
@@ -60,11 +60,12 @@ Anything on an **Algorythmos** account is a different company's infrastructure a
 
 ---
 
-## 1. BitePerk owns exactly two numbers
+## 1. BitePerk owns exactly three numbers
 
 | Number | Environment | Account | Takes a call today? | SMS? |
 |---|---|---|---|---|
 | `+61 468 202 846` | **Production** | Biteperk-production | ✅ **Answers** — Biteperk workspace, agent `agent_b6b6488af08b82d80e8f4d270a`, venue row resolves. Drops ~1 call in 3 at ~7.6 s (trunk incident) | ✅ Enabled (never actually sent) |
+| `+61 485 071 140` | **Production** — Cuban Corner Parramatta | Biteperk-production | ❌ **Bought and idle, 27 Aug 2026.** No SIP trunk, not imported to Retell, `restaurants.twilio_phone_number` still NULL. Its agent is prepared (`agent_2892d65ceace4e68d8a3f3e80c`) and its venue row exists (`22222222-…`). Voice region is to be set to **US1** *before* a trunk is attached — see `deploy/retell-snapshots/20260827-prod-cuban-corner-post/README.md` | ⚠️ Registration required; nothing wired |
 | `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ✅ Bound — imported to the Staging workspace (webhook mode) 13 Aug; `VoxTable Staging Venue` resolves | ✅ Enabled and **proven 18 Aug 2026** — delivers from the number. Cannot send branded: `BitePerk` is production-only, and the fallback is silent (no `Unverified` stamp) |
 
 That is the whole platform estate. If a number is not in this table, **it is not ours to wire** —

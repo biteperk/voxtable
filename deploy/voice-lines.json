@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "Declared state of every VoxTable voice line — the machine-readable SSOT for the routing",
+    "Declared state of every VoxTable voice line \u2014 the machine-readable SSOT for the routing",
     "chain. NUMBERS.md narrates this file; where they disagree, THIS file is what the checker",
     "enforces and NUMBERS.md is the one that is stale.",
     "",
@@ -9,13 +9,12 @@
     "could vanish and only a human placing a call would find out. On 20 Aug 2026 three of the",
     "four were broken at once on production and had been for a day.",
     "",
-    "Identifiers only. NEVER put an auth token, API key or webhook secret in here (NUMBERS.md §7).",
+    "Identifiers only. NEVER put an auth token, API key or webhook secret in here (NUMBERS.md \u00a77).",
     "",
     "Check it:  node .claude/skills/retell-agent-quality/scripts/assert-line.mjs <number>",
     "Repair it: node .claude/skills/retell-agent-quality/scripts/apply-line.mjs  <number>",
     "Update this file in the SAME change as the vendor mutation, never afterwards."
   ],
-
   "lines": {
     "+61468202846": {
       "environment": "production",
@@ -31,25 +30,28 @@
         "webhook_secret_var": "RETELL_WEBHOOK_SECRET",
         "note": "The repo's local .env holds a DIFFERENT workspace's key (the legacy Algorythmos one). Never use it for this line."
       },
-
       "restaurant_id": "44444444-4444-4444-8444-444444444444",
       "venue_name": "Mazcina Resto-Bar",
-
       "retell_agent_id": "agent_b6b6488af08b82d80e8f4d270a",
       "retell_agent_name": "Mazcina Resto-Bar (production)",
       "retell_llm_id": "llm_5f642f051bb83c28d02cea4e1cbc",
       "inbound_mode": "webhook-only",
       "pronunciation_dictionary": [
-        { "word": "Mazcina", "alphabet": "ipa", "phoneme": "mɑˈsinɑ" }
+        {
+          "word": "Mazcina",
+          "alphabet": "ipa",
+          "phoneme": "m\u0251\u02c8sin\u0251"
+        }
       ],
-      "required_boosted_keywords": ["Mazcina", "Mazcina Resto-Bar"],
-
+      "required_boosted_keywords": [
+        "Mazcina",
+        "Mazcina Resto-Bar"
+      ],
       "twilio_account_sid": "ACd423bd09e9649e552a0b6d19a9eed338",
       "twilio_trunk_sid": "TK6fcd3c96ea8317181d4049ce6f938f10",
       "twilio_region": "au1",
       "termination_uri": "voxtable-prod-au1.pstn.twilio.com",
       "twilio_au1_key_secret": null,
-
       "db": {
         "via": "vm-ssh",
         "instance": "core-central-vm",
@@ -57,11 +59,9 @@
         "gcp_project": "vocotable-497209",
         "container": "vocotable-postgres-1"
       },
-
       "customer_facing": false,
       "notes": "Not customer-facing: the ~7.6s fixed-timer drop is unresolved on voxtable-prod-au1 (deploy/runbooks/incident-7600ms-call-drops.md)."
     },
-
     "+61468203234": {
       "environment": "staging",
       "api_base": "https://voxtable-stg-api-naed3dbhna-ts.a.run.app",
@@ -73,32 +73,92 @@
         "webhook_secret_is_api_key": true,
         "note": "The Staging workspace's single API key is badged as its webhook key, so both take the same string. Production does NOT work this way."
       },
-
       "restaurant_id": "33333333-3333-4333-8333-333333333333",
       "venue_name": "Mazcina Resto-Bar",
-
       "retell_agent_id": "agent_7b67073710604d306443cc569c",
       "retell_agent_name": "Mazcina Resto-Bar (staging)",
       "retell_llm_id": "llm_c1d40dbe180e737dd2ce1309ed3f",
       "inbound_mode": "webhook-only",
       "pronunciation_dictionary": [
-        { "word": "Mazcina", "alphabet": "ipa", "phoneme": "mɑˈsinɑ" }
+        {
+          "word": "Mazcina",
+          "alphabet": "ipa",
+          "phoneme": "m\u0251\u02c8sin\u0251"
+        }
       ],
-      "required_boosted_keywords": ["Mazcina", "Mazcina Resto-Bar"],
-
+      "required_boosted_keywords": [
+        "Mazcina",
+        "Mazcina Resto-Bar"
+      ],
       "twilio_account_sid": "AC8116857da2064ef3251533f3ade56f32",
       "twilio_trunk_sid": "TKdebe2aa1a4287ca4b2f22da0e9d10ed7",
       "twilio_region": "au1",
       "termination_uri": "voxtable-staging-au1.pstn.twilio.com",
       "twilio_au1_key_secret": "voxtable-stg-twilio-au1-key",
-
       "db": {
         "via": "unreachable",
-        "note": "Cloud SQL on a private VPC — not reachable from a laptop. Change the row through the admin API, which verifies the agent before storing it, then re-run assert-line."
+        "note": "Cloud SQL on a private VPC \u2014 not reachable from a laptop. Change the row through the admin API, which verifies the agent before storing it, then re-run assert-line."
       },
-
       "customer_facing": false,
-      "notes": "Internal testing only — never customer-facing, never in a production restaurants row."
+      "notes": "Internal testing only \u2014 never customer-facing, never in a production restaurants row."
+    },
+    "+61485071140": {
+      "environment": "production",
+      "api_base": "https://api.biteperk.com.au",
+      "retell_workspace": "Biteperk",
+      "retell_credentials": {
+        "via": "vm-ssh",
+        "instance": "core-central-vm",
+        "zone": "us-central1-a",
+        "gcp_project": "vocotable-497209",
+        "env_file": "/opt/vocotable/.env",
+        "api_key_var": "RETELL_API_KEY",
+        "webhook_secret_var": "RETELL_WEBHOOK_SECRET",
+        "note": "Same workspace as +61468202846. The repo's local .env holds the LEGACY Algorythmos key \u2014 never use it for this line."
+      },
+      "restaurant_id": "22222222-2222-4222-8222-222222222222",
+      "venue_name": "Cuban Corner Parramatta",
+      "retell_agent_id": "agent_2892d65ceace4e68d8a3f3e80c",
+      "retell_agent_name": "Cuban Corner Parramatta (VoxTable)",
+      "retell_llm_id": "llm_53c6e9de9aac3b60270ffdd6bcba",
+      "inbound_mode": "webhook-only",
+      "required_boosted_keywords": [
+        "Cuban Corner",
+        "Cuban Corner Parramatta"
+      ],
+      "twilio_account_sid": "ACd423bd09e9649e552a0b6d19a9eed338",
+      "twilio_phone_number_sid": "PN6b3d52cb602e66270f907fb2b0b5b1f0",
+      "twilio_trunk_sid": "TK50f2a0cc6c4906a1b946867489716548",
+      "twilio_region": "us1",
+      "termination_uri": "voxtable-prod-us1.pstn.twilio.com",
+      "origination_transport": "tls",
+      "trunk_secure": true,
+      "$trunk_posture_comment": [
+        "Read back from the trunk at build time, 27 Aug 2026 \u2014 not the recipe. Built US1 + tls +",
+        "secure=true deliberately: AU1 drops calls on BOTH tls and tcp, US1+tcp is clean over 25",
+        "calls, and US1+tls was the one untested cell. A clean run here exonerates TLS and convicts",
+        "the region; drops at ~7.6s convict TLS, and the fix is in place (PATCH origination to tcp",
+        "and the trunk to secure=false) \u2014 only REGION is immutable after creation.",
+        "See deploy/runbooks/incident-7600ms-call-drops.md \u00a710."
+      ],
+      "twilio_voice_region_sid": "QQa3d289f958ecaf75e6b79f3369a092cd",
+      "twilio_au1_key_secret": "voxtable-prod-twilio-us1-key",
+      "$twilio_key_comment": [
+        "Field name says au1 for historical reasons; assert-line only uses it for its skip message.",
+        "This line is US1, so a US1-region key is what works. Load as TWILIO_AU1_KEY_SID/SECRET from",
+        "bp-voxtable-prod secrets voxtable-prod-twilio-us1-key-sid / -secret.",
+        "NOTE: voxtable-prod-twilio-account-sid/-auth-token in that project are the LEGACY Algorythmos",
+        "account and 401 \u2014 do not reach for them."
+      ],
+      "db": {
+        "via": "vm-ssh",
+        "instance": "core-central-vm",
+        "zone": "us-central1-a",
+        "gcp_project": "vocotable-497209",
+        "container": "vocotable-postgres-1"
+      },
+      "customer_facing": false,
+      "notes": "Not customer-facing yet: not imported to Retell, not bound, no Disaster Recovery URL. The venue keeps its own line until a dress-rehearsal call passes."
     }
   }
 }
