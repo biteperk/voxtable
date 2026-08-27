@@ -19,7 +19,12 @@ FROM node:24-alpine AS runner
 
 WORKDIR /app
 
-RUN apk add --no-cache wget
+# Alpine ships the openssl fix ahead of the node:24-alpine rebuild, so upgrade
+# explicitly — otherwise every image build fails the Trivy HIGH gate on a CVE we
+# cannot fix by waiting. Pinning the base image instead would freeze us on the
+# vulnerable one.
+RUN apk upgrade --no-cache libcrypto3 libssl3 && \
+    apk add --no-cache wget
 
 COPY package.json package-lock.json ./
 COPY apps/backend/package.json ./apps/backend/package.json
