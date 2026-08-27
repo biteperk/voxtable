@@ -44,7 +44,7 @@ together with a data migration from the old shape.
 
 ### Keeping it level with the numbered chain
 
-**This tree is folded up to migration 036.** Nothing enforces that — the runner
+**This tree is folded up to migration 037.** Nothing enforces that — the runner
 never walks it, so drift is silent and only an audit finds it. It has happened:
 between the parking commit and Aug 2026 only the three feature PRs that
 happened to touch this tree folded anything in, so thirteen standalone
