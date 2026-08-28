@@ -16,8 +16,10 @@ import {
   normalizePartySize
 } from "../http/schemas";
 import { getCallLogIdByProviderCallId, getRestaurantIdByProviderCallId, upsertCallLog } from "../repositories/callLogs";
+import { enqueueNotification } from "../repositories/notifications";
 import {
   getRestaurantIdByDialedNumber,
+  getRestaurantName,
   getRestaurantVoiceContext,
   getRestaurantTimezone,
   getRetellAgentId
@@ -622,6 +624,40 @@ export async function handleRetellFunction(
       createdBy: "voice:retell",
       createdFromCallLogId: callLogId ?? undefined
     });
+
+    // Takeaway confirmation text. A guest who orders on the phone walks away with
+    // nothing to look at — no name, no pickup time, no total — and rings back to
+    // check. The payment-link path already proves this outbox route works; this
+    // is the same enqueue for an order nobody is paying for up front.
+    //
+    // Deliberately narrow:
+    //   - takeaway only. A dine-in pre-order is attached to a booking whose own
+    //     confirmation already went out.
+    //   - never on a replay, or a retried tool call texts the guest twice.
+    //   - never throws. The order is already in the kitchen; a failed SMS must
+    //     not turn a good order into an apology.
+    if (!reservationId && !result.isReplay && env.NOTIFICATIONS_ENABLED) {
+      const smsTo = normalizePhone(call ? getCallerPhone(call) : null);
+      if (smsTo) {
+        try {
+          const venue = await getRestaurantName(restaurantId);
+          const when = pickupTime ? ` Ready ${pickupTime}.` : "";
+          await enqueueNotification({
+            restaurantId,
+            channel: "sms",
+            recipient: smsTo,
+            kind: "order_confirmation",
+            body: `${venue}: ${result.confirmationMessage}${when} Order under ${pickupName}.`
+          });
+        } catch (error) {
+          logger.error({
+            evt: "order_confirmation_sms_enqueue_failed",
+            order_id: result.order.id,
+            error
+          });
+        }
+      }
+    }
 
     return {
       order_id: result.order.id,
