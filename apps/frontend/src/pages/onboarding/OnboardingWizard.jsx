@@ -179,7 +179,7 @@ export function OnboardingWizard({ navigate }) {
         setReviewKey(null);
       }
       window.dispatchEvent(
-        new CustomEvent("vocotable:onboarding-status-changed", {
+        new CustomEvent("voxtable:onboarding-status-changed", {
           detail: { status: r.onboarding_status }
         })
       );

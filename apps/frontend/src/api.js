@@ -90,7 +90,7 @@ async function authedFetch(path, options = {}) {
       // every request keeps failing until a full reload.
       if (response.status === 403 && err.code === "NOT_A_MEMBER") {
         setActiveRestaurantId(null);
-        window.dispatchEvent(new Event("vocotable:memberships-changed"));
+        window.dispatchEvent(new Event("voxtable:memberships-changed"));
       }
       throw err;
     }
