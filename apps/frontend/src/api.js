@@ -1,4 +1,5 @@
 import { auth, signOutUser } from "./firebase";
+import { readStorageKey, writeStorageKey } from "./lib/storageKeys";
 import { fetchLegalDocumentsManifest } from "./lib/legalDocuments";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3050";
@@ -7,23 +8,14 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3050
 // the selection; sent as X-Restaurant-Id on every authed request. The backend
 // validates it against the user's membership (a spoofed id → 403), so this is
 // only a selector, never a trust boundary.
-const ACTIVE_RESTAURANT_KEY = "vocotable.activeRestaurantId";
+const ACTIVE_RESTAURANT_KEY = "activeRestaurantId";
 
 export function getActiveRestaurantId() {
-  try {
-    return localStorage.getItem(ACTIVE_RESTAURANT_KEY);
-  } catch {
-    return null;
-  }
+  return readStorageKey(ACTIVE_RESTAURANT_KEY);
 }
 
 export function setActiveRestaurantId(id) {
-  try {
-    if (id) localStorage.setItem(ACTIVE_RESTAURANT_KEY, id);
-    else localStorage.removeItem(ACTIVE_RESTAURANT_KEY);
-  } catch {
-    /* localStorage unavailable (private mode) — header just won't be sent */
-  }
+  writeStorageKey(ACTIVE_RESTAURANT_KEY, id || null);
 }
 
 async function callOnce(path, options, forceFresh) {

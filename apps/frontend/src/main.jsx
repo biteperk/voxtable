@@ -1,6 +1,7 @@
 // Sentry instrumentation must initialise before anything else mounts, so it is
 // imported first (the module runs Sentry.init as an import side-effect).
 import { captureException } from "./sentry";
+import { readStorageKey, writeStorageKey } from "./lib/storageKeys";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -58,7 +59,7 @@ class ErrorBoundary extends React.Component {
     // Dev-only console logging — raw error text can carry PII, so keep it out of
     // production consoles. Sentry (below) is the production capture path.
     if (import.meta.env.DEV) {
-      console.error("[vocotable] uncaught render error:", {
+      console.error("[voxtable] uncaught render error:", {
         message: error?.message,
         stack: error?.stack?.split("\n").slice(0, 6).join("\n"),
         componentStack: info?.componentStack?.split("\n").slice(0, 6).join("\n")
@@ -271,7 +272,7 @@ function useOnboardingGate() {
  * whatever they were last working in. A product menu between login and work is
  * friction for the manager who opens this at 6pm to check tonight's covers.
  *
- * Mirrors the vocotable.activeRestaurantId convention in api.js.
+ * Mirrors the activeRestaurantId convention in api.js (see lib/storageKeys).
  */
 const PRODUCT_ROUTES = new Set([
   "/live-feed",
@@ -280,11 +281,11 @@ const PRODUCT_ROUTES = new Set([
   "/kitchen-overview"
 ]);
 
-const LAST_PRODUCT_KEY = "vocotable.lastProduct";
+const LAST_PRODUCT_KEY = "lastProduct";
 
 export function rememberProduct(route) {
   try {
-    window.localStorage.setItem(LAST_PRODUCT_KEY, route);
+    writeStorageKey(LAST_PRODUCT_KEY, route);
   } catch {
     /* private browsing — landing falls back to /home, which is harmless */
   }
@@ -292,7 +293,7 @@ export function rememberProduct(route) {
 
 function lastProductRoute() {
   try {
-    return window.localStorage.getItem(LAST_PRODUCT_KEY);
+    return readStorageKey(LAST_PRODUCT_KEY);
   } catch {
     return null;
   }

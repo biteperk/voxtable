@@ -347,6 +347,12 @@ onboardingRouter.get(
     const prov = await getProvisioning(restaurantId);
     response.json({
       onboarding_status: prov?.onboarding_status ?? null,
+      voxtable_number: prov?.twilio_phone_number ?? null,
+      // Deprecated alias, kept for one release. The frontend deploys separately
+      // from the backend (Firebase Hosting vs the VM), so for a window an OLD
+      // bundle is talking to this NEW response — drop this field today and that
+      // bundle renders the forwarding instructions with a blank number, which
+      // reads as "your number isn't ready" on the one screen that must not lie.
       vocotable_number: prov?.twilio_phone_number ?? null,
       number_ready: Boolean(prov?.twilio_phone_number && prov?.retell_agent_id),
       forwarding_verified: prov?.onboarding_status === "live",
