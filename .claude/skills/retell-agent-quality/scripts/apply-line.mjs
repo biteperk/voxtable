@@ -72,7 +72,13 @@ if (apply) {
   } else {
   mkdirSync(`${snapDir}-pre`, { recursive: true });
   const r = spawnSync(new URL("./snapshot.sh", import.meta.url).pathname,
-    [d.retell_agent_id, d.retell_llm_id, `${snapDir}-pre`], { encoding: "utf8", env: process.env });
+    [d.retell_agent_id, d.retell_llm_id, `${snapDir}-pre`],
+    // Pass the RESOLVED key down. snapshot.sh reads RETELL_API_KEY from its environment, and
+    // this script deliberately does not inherit an ambient one — so without this the snapshot
+    // fails and the whole repair aborts before doing anything. Worse is the obvious
+    // workaround: exporting the repo's .env key, which is the LEGACY workspace.
+    // assert-line.mjs does the same for assert-agent.mjs, for the same reason.
+    { encoding: "utf8", env: { ...process.env, RETELL_API_KEY: KEY } });
   if (r.status !== 0) { console.error("snapshot failed — refusing to write without a rollback point.\n", r.stderr); process.exit(1); }
   say(`snapshot: ${snapDir}-pre\n`);
   }
@@ -217,7 +223,8 @@ if (num.status === 404) {
 if (apply && changes.length) {
   mkdirSync(`${snapDir}-post`, { recursive: true });
   spawnSync(new URL("./snapshot.sh", import.meta.url).pathname,
-    [d.retell_agent_id, d.retell_llm_id, `${snapDir}-post`], { encoding: "utf8", env: process.env });
+    [d.retell_agent_id, d.retell_llm_id, `${snapDir}-post`],
+    { encoding: "utf8", env: { ...process.env, RETELL_API_KEY: KEY } });
   say(`\nsnapshot: ${snapDir}-post`);
 }
 
