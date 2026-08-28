@@ -17,6 +17,7 @@ import { AppError } from "../domain/errors";
 import {
   isSynthesizedEmail,
   isTerminalBookingRefusal,
+  ourReservationId,
   synthesizedEmail,
   verifyCalcomSignature
 } from "./calcomService";
@@ -131,4 +132,37 @@ test("a real customer address is not synthetic", () => {
   assert.equal(isSynthesizedEmail(""), false);
   assert.equal(isSynthesizedEmail(null), false);
   assert.equal(isSynthesizedEmail(undefined), false);
+});
+
+// --- our own bookings echoing back --------------------------------------------
+// reconcileMirroredBooking treats this id as positive proof a webhook is our own
+// push coming back. If it reads null for a booking that IS ours, the caller falls
+// through to the genuine-web-booking path and creates a duplicate reservation on
+// a real table — the phantom this whole path exists to prevent.
+
+const RESERVATION_ID = "6f1a0f1e-0000-4000-8000-000000000001";
+
+test("reads the reservation id from the current metadata key", () => {
+  assert.equal(ourReservationId({ voxtable_reservation_id: RESERVATION_ID }), RESERVATION_ID);
+});
+
+test("still reads it from the LEGACY key — bookings made before the rename", () => {
+  // The regression test. A booking created under the old key can be cancelled or
+  // rescheduled years from now; its webhook still carries vocotable_*.
+  assert.equal(ourReservationId({ vocotable_reservation_id: RESERVATION_ID }), RESERVATION_ID);
+});
+
+test("prefers the current key when a payload somehow carries both", () => {
+  assert.equal(
+    ourReservationId({ voxtable_reservation_id: RESERVATION_ID, vocotable_reservation_id: "stale" }),
+    RESERVATION_ID
+  );
+});
+
+test("a genuine web booking carries no reservation id", () => {
+  // Must be null, not a guess: this is what lets a real web booking through.
+  assert.equal(ourReservationId({}), null);
+  assert.equal(ourReservationId(undefined), null);
+  assert.equal(ourReservationId({ voxtable_reservation_id: "" }), null);
+  assert.equal(ourReservationId({ voxtable_reservation_id: 12345 as unknown as string }), null);
 });
