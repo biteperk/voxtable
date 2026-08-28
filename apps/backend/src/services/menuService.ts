@@ -12,6 +12,7 @@ import {
   MenuItemVariantRow,
   replaceModifiers,
   replaceVariants,
+  getRequiredModifierGroups,
   searchMenuItemsByName,
   updateCategory as repoUpdateCategory,
   updateMenuItem as repoUpdateMenuItem
@@ -314,6 +315,11 @@ export interface MenuLookupMatch {
   is_restricted: boolean;
   available_from: string | null;
   available_until: string | null;
+  // The choices that BLOCK an order until the caller picks one — e.g. which
+  // filling a pressed sandwich comes with. Absent when the dish needs none.
+  // Without this the agent has to guess the caller's word for a variant, and a
+  // guess that misses reads to the caller as the system being broken.
+  required_choices?: Array<{ group: string; options: string[] }>;
 }
 
 /**
@@ -458,16 +464,30 @@ export async function lookupMenu(input: {
       .slice(0, 3)
       .map((m) => `${m.name} (${speakablePrice(m.base_price_cents)})`)
       .join(", ");
+    // One extra query for the whole match set, not one per item.
+    const requiredByItem = await getRequiredModifierGroups(matches.map((m) => m.id));
+
     return {
-      matches: matches.map((m) => ({
-        id: m.id,
-        name: m.name,
-        price: speakablePrice(m.base_price_cents),
-        category_id: m.category_id,
-        is_restricted: m.is_restricted,
-        available_from: m.available_from,
-        available_until: m.available_until
-      })),
+      matches: matches.map((m) => {
+        const required = requiredByItem.get(m.id);
+        return {
+          id: m.id,
+          name: m.name,
+          price: speakablePrice(m.base_price_cents),
+          category_id: m.category_id,
+          is_restricted: m.is_restricted,
+          available_from: m.available_from,
+          available_until: m.available_until,
+          ...(required?.length
+            ? {
+                required_choices: required.map((g) => ({
+                  group: g.group_name,
+                  options: g.options
+                }))
+              }
+            : {})
+        };
+      }),
       ambiguous,
       speakable_summary:
         offerable.length === 0

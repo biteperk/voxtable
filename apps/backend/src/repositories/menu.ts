@@ -383,6 +383,50 @@ export async function loadModifiersForItems(
 }
 
 /**
+ * The REQUIRED choices for a set of menu items — the groups that make an order
+ * fail if the caller has not picked one.
+ *
+ * menu_lookup used to return none of this, and the agent could not know that a
+ * "Cuban Pressed Sandwich" needs one of four fillings. On a real call it guessed
+ * the caller's word ("the chicken one"), got UNKNOWN_MODIFIER three times, told
+ * the caller the system had glitched and hung up. The options were in the
+ * database the whole time.
+ *
+ * Only groups with group_min_select >= 1. Optional add-ons are deliberately left
+ * out: they are long, they are not blocking, and on this menu they include
+ * alcohol — which the agent must never read out (licensing).
+ */
+export async function getRequiredModifierGroups(
+  itemIds: string[]
+): Promise<Map<string, Array<{ group_name: string; options: string[] }>>> {
+  const byItem = new Map<string, Array<{ group_name: string; options: string[] }>>();
+  if (itemIds.length === 0) return byItem;
+
+  const result = await readPool.query<{
+    menu_item_id: string;
+    group_name: string;
+    options: string[];
+  }>(
+    `SELECT menu_item_id,
+            group_name,
+            array_agg(name ORDER BY display_order, name) AS options
+       FROM menu_item_modifiers
+      WHERE menu_item_id = ANY($1::uuid[])
+        AND group_min_select >= 1
+      GROUP BY menu_item_id, group_name
+      ORDER BY group_name`,
+    [itemIds]
+  );
+
+  for (const row of result.rows) {
+    const groups = byItem.get(row.menu_item_id) ?? [];
+    groups.push({ group_name: row.group_name, options: row.options });
+    byItem.set(row.menu_item_id, groups);
+  }
+  return byItem;
+}
+
+/**
  * Fuzzy search for the Retell `menu_lookup` tool. pg_trgm similarity against
  * LOWER(name) using the GIN index from migration 006. Returns top N matches,
  * available items only.
