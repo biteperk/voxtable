@@ -91,7 +91,7 @@ class EmbedErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error("[vocotable] BookOnline embed error:", {
+    console.error("[voxtable] BookOnline embed error:", {
       name: error?.name,
       message: error?.message?.slice(0, 200),
       componentStack: info?.componentStack?.split("\n").slice(0, 4).join("\n")

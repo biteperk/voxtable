@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { storageKey } from "../../lib/storageKeys";
 import {
   createAccount,
   sendPasswordReset,
@@ -14,7 +15,7 @@ import { BrandMark } from "../../components/brand/BrandMark";
 // email verification (the backend refuses unverified accounts). AuthProvider
 // flushes this stash to POST /api/me/contact on the first verified session.
 // Never contains the password.
-export const PENDING_SIGNUP_KEY = "vocotable.pendingSignup";
+export const PENDING_SIGNUP_KEY = storageKey("pendingSignup");
 
 // Progressive "04xx xxx xxx" formatting while typing. Only formats numbers
 // that look like local AU mobiles — anything else (e.g. +61…) passes through

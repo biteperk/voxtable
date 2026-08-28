@@ -86,6 +86,12 @@ export function PhoneStep({ onRefresh }) {
     );
   }
 
+  // Read either field. The frontend and backend deploy separately, so a new
+  // bundle can meet a backend that still only sends `vocotable_number` — and a
+  // blank number on this screen reads as "your line isn't ready" on the one page
+  // whose whole job is to tell the owner what to forward calls to.
+  const voxtableNumber = setup.voxtable_number ?? setup.vocotable_number;
+
   return (
     <div className="onboarding-card">
       <h1>Connect your phone</h1>
@@ -94,15 +100,15 @@ export function PhoneStep({ onRefresh }) {
       </p>
       <div className="phone-number-box">
         <span>Your VoxTable number</span>
-        <strong>{setup.vocotable_number}</strong>
+        <strong>{voxtableNumber}</strong>
       </div>
       <ol className="phone-steps">
         <li>
           On the phone that customers call, set up <strong>call forwarding</strong> to{" "}
-          <strong>{setup.vocotable_number}</strong>. Most AU carriers use a code from the handset:
+          <strong>{voxtableNumber}</strong>. Most AU carriers use a code from the handset:
           <ul>
-            <li>All calls: <code>*21*{setup.vocotable_number}#</code></li>
-            <li>When busy / no answer: <code>*61*{setup.vocotable_number}#</code></li>
+            <li>All calls: <code>*21*{voxtableNumber}#</code></li>
+            <li>When busy / no answer: <code>*61*{voxtableNumber}#</code></li>
           </ul>
           (Exact steps vary by carrier — Telstra, Optus and Vodafone all support these GSM codes.)
         </li>
