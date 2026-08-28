@@ -135,8 +135,8 @@ export function AuthProvider({ children }) {
     const onChanged = () => {
       if (auth.currentUser) void loadMe();
     };
-    window.addEventListener("vocotable:memberships-changed", onChanged);
-    return () => window.removeEventListener("vocotable:memberships-changed", onChanged);
+    window.addEventListener("voxtable:memberships-changed", onChanged);
+    return () => window.removeEventListener("voxtable:memberships-changed", onChanged);
   }, []);
 
   const setActiveRestaurant = (id) => {

@@ -252,8 +252,8 @@ function useOnboardingGate() {
         setLoading(false);
       }
     };
-    window.addEventListener("vocotable:onboarding-status-changed", onChanged);
-    return () => window.removeEventListener("vocotable:onboarding-status-changed", onChanged);
+    window.addEventListener("voxtable:onboarding-status-changed", onChanged);
+    return () => window.removeEventListener("voxtable:onboarding-status-changed", onChanged);
   }, []);
 
   return { loading, status };

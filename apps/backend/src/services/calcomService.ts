@@ -58,11 +58,37 @@ import {
 
 // --- helpers -----------------------------------------------------------------
 
-const SYNTH_EMAIL_DOMAIN = "bookings.vocotable.algorythmos.com.au";
+const SYNTH_EMAIL_DOMAIN = "bookings.voxtable.biteperk.com.au";
 
-/** Phone digits → `<digits>@bookings.vocotable.algorythmos.com.au`. Cal.com
- *  requires an attendee email; voice callers rarely have one. The domain has
- *  no MX record so bounces stay quiet. */
+/**
+ * Domains we have ever minted synthetic attendee addresses under. Written: the
+ * first. Recognised: all of them.
+ *
+ * The old domain carried another company's name, which is why it moved. It stays
+ * readable because the addresses live in Cal.com's records, not ours — a booking
+ * made under the old domain can be cancelled or rescheduled years later and will
+ * arrive carrying it. Dropping this list would make those look like real customer
+ * contact details.
+ *
+ * NAMES.md §4 called this identity immutable on the grounds that changing it
+ * "orphans every existing Cal.com booking". It is four bookings, none of them in
+ * our database — `customers` has no email column — and recognising both domains
+ * orphans nothing.
+ */
+const SYNTH_EMAIL_DOMAINS = [
+  SYNTH_EMAIL_DOMAIN,
+  "bookings.vocotable.algorythmos.com.au"
+] as const;
+
+/** True when an address is one we minted for a caller who had no email. */
+export function isSynthesizedEmail(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return SYNTH_EMAIL_DOMAINS.some((domain) => value.includes(`@${domain}`));
+}
+
+/** Phone digits → `<digits>@bookings.voxtable.biteperk.com.au`. Cal.com requires
+ *  an attendee email; voice callers rarely have one. The domain has no MX record
+ *  so bounces stay quiet. */
 export function synthesizedEmail(phone: string | null | undefined): string {
   if (!phone) return `unknown@${SYNTH_EMAIL_DOMAIN}`;
   const digits = phone.replace(/\D+/g, "") || "unknown";
@@ -929,13 +955,14 @@ async function handleBookingCreated(
   const partySize = partySizeValid ? Math.floor(partySizeNum) : 2;
   if (!partySizeValid) reviewFlags.push("party_size_missing");
 
-  // A "real" phone is anything non-empty that isn't the @bookings.vocotable
-  // synthetic email Cal.com gives us when the customer didn't provide one.
+  // A "real" phone is anything non-empty that isn't one of the synthetic
+  // addresses we mint when the caller has no email — either domain, see
+  // SYNTH_EMAIL_DOMAINS.
   const normalizedPhone = normalizePhone(phone);
   const phoneIsSynthetic =
     !phone ||
-    phone.includes(`@${SYNTH_EMAIL_DOMAIN}`) ||
-    (customerEmail && customerEmail.includes(`@${SYNTH_EMAIL_DOMAIN}`) && !normalizedPhone);
+    isSynthesizedEmail(phone) ||
+    (isSynthesizedEmail(customerEmail) && !normalizedPhone);
   if (!normalizedPhone) reviewFlags.push(phoneIsSynthetic ? "phone_synthetic" : "phone_invalid");
 
   if (reviewFlags.length > 0) {
