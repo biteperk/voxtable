@@ -143,6 +143,7 @@
       ],
       "twilio_voice_region_sid": "QQa3d289f958ecaf75e6b79f3369a092cd",
       "twilio_au1_key_secret": "voxtable-prod-twilio-us1-key",
+      "twilio_key_project": "bp-voxtable-prod",
       "$twilio_key_comment": [
         "Field name says au1 for historical reasons; assert-line only uses it for its skip message.",
         "This line is US1, so a US1-region key is what works. Load as TWILIO_AU1_KEY_SID/SECRET from",

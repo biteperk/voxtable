@@ -259,6 +259,12 @@ if (agentExists) {
 // ─── 6. Twilio: the number still points at our trunk ──────────────────────────
 // AU1 resources answer ONLY at {product}.sydney.au1.twilio.com and need AU1-scoped
 // credentials; the US1 endpoints return empty lists that look exactly like a deleted estate.
+// The reverse is equally true and was hardcoded here: a US1 line checked against the AU1 host
+// returns 401, which reads as "the credentials are wrong" when nothing is wrong at all. Derive
+// the host from the DECLARED region instead — Cuban Corner's line is US1 on purpose.
+const twHost = (product) => declared.twilio_region === "au1"
+  ? `https://${product}.sydney.au1.twilio.com`
+  : `https://${product}.twilio.com`;
 const tw = process.env.TWILIO_AU1_KEY_SID && process.env.TWILIO_AU1_KEY_SECRET
   ? { Authorization: `Basic ${Buffer.from(`${process.env.TWILIO_AU1_KEY_SID}:${process.env.TWILIO_AU1_KEY_SECRET}`).toString("base64")}` }
   : null;
@@ -271,7 +277,7 @@ if (!tw) {
 } else {
   const acct = declared.twilio_account_sid;
   const list = await json(
-    `https://api.sydney.au1.twilio.com/2010-04-01/Accounts/${acct}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(number)}`,
+    `${twHost("api")}/2010-04-01/Accounts/${acct}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(number)}`,
     { headers: tw });
   const rec = list.body?.incoming_phone_numbers?.[0];
   const found = check(15, !!rec, `Twilio account ${acct} still owns the number`,
@@ -283,7 +289,7 @@ if (!tw) {
       `attached to ${rec.trunk_sid ?? "(no trunk)"} — with no trunk the call never reaches Retell at all.`);
 
     const orig = await json(
-      `https://trunking.sydney.au1.twilio.com/v1/Trunks/${declared.twilio_trunk_sid}/OriginationUrls`,
+      `${twHost("trunking")}/v1/Trunks/${declared.twilio_trunk_sid}/OriginationUrls`,
       { headers: tw });
     const urls = orig.body?.origination_urls ?? [];
     check(17, urls.some((u) => u.enabled && /sip\.retellai\.com/.test(u.sip_url)),
