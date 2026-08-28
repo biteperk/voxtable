@@ -17,6 +17,7 @@ import {
 } from "../http/schemas";
 import { getCallLogIdByProviderCallId, getRestaurantIdByProviderCallId, upsertCallLog } from "../repositories/callLogs";
 import { enqueueNotification } from "../repositories/notifications";
+import { isSmsEnabled, shouldTextOrderConfirmation } from "./notificationService";
 import {
   getRestaurantIdByDialedNumber,
   getRestaurantName,
@@ -636,26 +637,45 @@ export async function handleRetellFunction(
     //   - never on a replay, or a retried tool call texts the guest twice.
     //   - never throws. The order is already in the kitchen; a failed SMS must
     //     not turn a good order into an apology.
-    if (!reservationId && !result.isReplay && env.NOTIFICATIONS_ENABLED) {
-      const smsTo = normalizePhone(call ? getCallerPhone(call) : null);
-      if (smsTo) {
-        try {
-          const venue = await getRestaurantName(restaurantId);
-          const when = pickupTime ? ` Ready ${pickupTime}.` : "";
-          await enqueueNotification({
-            restaurantId,
-            channel: "sms",
-            recipient: smsTo,
-            kind: "order_confirmation",
-            body: `${venue}: ${result.confirmationMessage}${when} Order under ${pickupName}.`
-          });
-        } catch (error) {
-          logger.error({
-            evt: "order_confirmation_sms_enqueue_failed",
-            order_id: result.order.id,
-            error
-          });
-        }
+    // isSmsEnabled() matters as much as the flag: without a configured sender the
+    // worker never claims these rows, so they would sit pending and then all flush
+    // the moment a sender is switched on — texting people about orders they picked
+    // up hours earlier. Booking SMS has always gated this way; this did not, and
+    // the deploy-then-configure order would have built exactly that backlog.
+    const smsTo = normalizePhone(call ? getCallerPhone(call) : null);
+    // smsTo repeated in the condition so TypeScript narrows it to a string; the
+    // predicate owns the policy, this owns the type.
+    if (
+      smsTo !== null &&
+      shouldTextOrderConfirmation({
+        isTakeaway: !reservationId,
+        isReplay: result.isReplay,
+        flagEnabled: env.ORDER_CONFIRMATION_SMS_ENABLED,
+        senderConfigured: isSmsEnabled(),
+        hasPhone: true
+      })
+    ) {
+      try {
+        const venue = await getRestaurantName(restaurantId);
+        const when = pickupTime ? ` Ready ${pickupTime}.` : "";
+        await enqueueNotification({
+          restaurantId,
+          channel: "sms",
+          recipient: smsTo,
+          kind: "order_confirmation",
+          // "Do not reply": the BitePerk sender ID is alphanumeric and one-way, so a
+          // guest replying "can I add chips" gets silence and assumes we read it.
+          // Same wording as the booking texts.
+          body:
+            `${venue}: ${result.confirmationMessage}${when} Order under ${pickupName}. ` +
+            `Questions? Call the venue. Do not reply.`
+        });
+      } catch (error) {
+        logger.error({
+          evt: "order_confirmation_sms_enqueue_failed",
+          order_id: result.order.id,
+          error
+        });
       }
     }
 

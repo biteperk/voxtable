@@ -327,6 +327,7 @@ const envSchema = z
   // NOTIFICATIONS_ENABLED so booking texts can be turned off without also
   // killing order-payment links, which share the SMS channel.
   BOOKING_CONFIRMATION_SMS_ENABLED: boolFlag(),
+  ORDER_CONFIRMATION_SMS_ENABLED: boolFlag(),
 
   // Which transactional-email API the notification worker speaks. "zeptomail"
   // is Zoho's transactional service (AU data centre by default) — used for the
@@ -716,6 +717,26 @@ const envSchema = z
           message:
             "One of NOTIFICATIONS_MESSAGING_SERVICE_SID or NOTIFICATIONS_SMS_FROM is required " +
             "when BOOKING_CONFIRMATION_SMS_ENABLED=true (booking texts go out by SMS)."
+        });
+      }
+    }
+
+    // Takeaway confirmations ride the same outbox and senders. Same gate as
+    // booking SMS, for the same reason: on with no drainable channel boots green
+    // and sends nothing.
+    if (value.ORDER_CONFIRMATION_SMS_ENABLED) {
+      requireInProd(
+        "NOTIFICATIONS_ENABLED",
+        "NOTIFICATIONS_ENABLED must be true when ORDER_CONFIRMATION_SMS_ENABLED=true " +
+          "(takeaway texts are delivered via the notifications outbox)."
+      );
+      if (!value.NOTIFICATIONS_MESSAGING_SERVICE_SID && !value.NOTIFICATIONS_SMS_FROM) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["NOTIFICATIONS_MESSAGING_SERVICE_SID"],
+          message:
+            "One of NOTIFICATIONS_MESSAGING_SERVICE_SID or NOTIFICATIONS_SMS_FROM is required " +
+            "when ORDER_CONFIRMATION_SMS_ENABLED=true (takeaway texts go out by SMS)."
         });
       }
     }
