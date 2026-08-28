@@ -201,7 +201,7 @@ async function main(): Promise<void> {
 
     // Our own echo (metadata carries the reservation id) reconciles precisely.
     const ours = await reconcileMirroredBooking(
-      { vocotable_reservation_id: voice.bookingId },
+      { voxtable_reservation_id: voice.bookingId },
       `uid-ours-${SMOKE_SUFFIX}`
     );
     assert("B15: our own echo reconciles by reservation id", ours === true);
@@ -210,10 +210,20 @@ async function main(): Promise<void> {
 
     // Replay of the same echo is an idempotent skip, still claimed as ours.
     const replay = await reconcileMirroredBooking(
-      { vocotable_reservation_id: voice.bookingId },
+      { voxtable_reservation_id: voice.bookingId },
       `uid-ours-${SMOKE_SUFFIX}`
     );
     assert("B15: replayed echo is claimed (idempotent), never a web booking", replay === true);
+
+    // A booking pushed BEFORE the vocotable -> voxtable rename carries the legacy
+    // key. It must still be recognised as ours: those bookings live in Cal.com and
+    // can be cancelled or rescheduled at any future date. Reading only the new key
+    // would send them down the genuine-web-booking path and phantom a reservation.
+    const legacyEcho = await reconcileMirroredBooking(
+      { vocotable_reservation_id: voice.bookingId },
+      `uid-legacy-${SMOKE_SUFFIX}`
+    );
+    assert("rename: an echo carrying the LEGACY metadata key is still ours", legacyEcho === true);
 
     // ---- 035: a venue with no Cal.com event type is not mirrored ----------
     //
@@ -264,7 +274,7 @@ async function main(): Promise<void> {
     let mismatchThrew = false;
     try {
       await reconcileMirroredBooking(
-        { vocotable_reservation_id: voice.bookingId },
+        { voxtable_reservation_id: voice.bookingId },
         `uid-mismatch-${SMOKE_SUFFIX}`,
         unboundId // resolved venue differs from the reservation's venue
       );
