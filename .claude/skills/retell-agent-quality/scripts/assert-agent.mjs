@@ -22,6 +22,11 @@ const prose = `${llm.general_prompt}\n${llm.begin_message ?? ""}`.toLowerCase();
 check(!names.some((n) => prose.includes(n)), "prompt + greeting are de-venued (no venue names in prose)");
 
 const functional = (llm.general_tools ?? []).filter((t) => t.type === "custom");
+// DECIDED 29 Aug 2026 (Sam): fillers ON — speak_during_execution = true on every
+// functional tool. The opposite rule on the pipeline-environment-checks branch
+// ("fillers only on send_payment_link"; speak_after was the real cure) is rejected;
+// that branch's checker variant must not be merged. Agents built fillers-off
+// (Cuban Corner, 27 Aug) are to be PATCHed back to true.
 check(functional.length > 0 && functional.every((t) => t.speak_during_execution === true && t.speak_after_execution === true),
   "every functional tool has speak_during + speak_after = true");
 // NUMBERS.md §6: defaults are the fallback when /retell/inbound fails, and nothing
