@@ -78,11 +78,14 @@ point, not the row: two entries here were audited on 28 Aug 2026 and turned out 
 so **check the reason before repeating it.** A false "never rename" is as expensive as a
 missing one, and it froze the other company's name into this product for weeks.
 
-⚠️ One identity that was NOT in this table belongs in it, and is genuinely dangerous — the
-Cal.com `vocotable_*` **metadata keys**. `reconcileMirroredBooking` uses
-`vocotable_reservation_id` as positive proof that a webhook is our own booking echoing back.
-Rename it without reading both and an old booking's webhook falls through to the
-genuine-web-booking path and creates a phantom reservation on a real table.
+✅ **Cal.com `vocotable_*` metadata keys — renamed 28 Aug 2026 to `voxtable_*`, legacy keys read
+FOREVER.** They were never in this table and should have been its first entry.
+`reconcileMirroredBooking` uses the reservation id as positive proof that a webhook is our own
+booking echoing back; read only the new key and a pre-rename booking's webhook falls through to
+the genuine-web-booking path and creates a phantom reservation holding a real table. The lookup
+is `ourReservationId()` in `calcomService.ts` — one function so the two keys cannot drift apart.
+**There is no date after which the legacy key can be dropped**, only a date after which no such
+booking exists, and nothing tracks that.
 
 | Identity | Why it can never change |
 |---|---|
