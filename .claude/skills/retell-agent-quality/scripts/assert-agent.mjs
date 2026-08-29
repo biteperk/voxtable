@@ -103,6 +103,15 @@ check(llm.general_prompt.includes("{{venue_faq}}") || venueSection,
   "can answer venue questions (via {{venue_faq}} or a venue-details section)");
 check(llm.general_prompt.includes("{{today_status}}") || venueSection,
   "can answer opening hours (via {{today_status}} or a venue-details section)");
+// Menu periods (call_4e871f4b, 30 Aug 2026: breakfast-only item offered for a
+// 2 PM pickup, refused only at create_order, caller gave up). Enforced ONLY
+// when the backend provably serves the variable — assert-line sets
+// REQUIRE_MENU_STATUS from its live inbound probe; a {{menu_status}} reference
+// against an older backend renders literally as spoken braces.
+if (process.env.REQUIRE_MENU_STATUS === "1") {
+  check(llm.general_prompt.includes("{{menu_status}}"),
+    "can answer which menu is on right now (via {{menu_status}})");
+}
 if (venueSection && !llm.general_prompt.includes("{{venue_faq}}")) {
   console.log("  note: venue facts are in the PROMPT, not per-call data — this agent must never be cloned for another venue; delete the section once the backend serves venue_faq.");
 }

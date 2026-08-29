@@ -20,6 +20,7 @@ contract, not the text.
 | `today` / `tomorrow` | YYYY-MM-DD in the venue TZ, computed per call | DST-safe calendar arithmetic — never "+24 h" |
 | `now_local` / `weekday_local` | "HH:MM" and lowercase weekday | |
 | `today_status` | **One sentence to speak verbatim**: "CLOSED today (Wednesday). Next open tomorrow (Thursday) from 12 PM." Computed from `opening_hours_json` by `utils/time.ts::formatTodayStatus` (unit-tested incl. multi-day closures) | `""` when a venue has no hours — the prompt must then make no claims |
+| `menu_status` | **One short paragraph to speak verbatim**: "Menu right now: the all-day menu is serving. Items served between 7 AM and 12 PM are NOT available now." Built per call from the venue's distinct item windows by `menuService.ts::formatMenuStatus` (unit-tested: half-open, midnight-wrap, cap at 4 windows / 320 chars) | `""` when the venue has no windowed items — the prompt must then make no menu-time claims. Never name items here (that's `menu_lookup`, whose matches carry `available_now` + `served`). Added after call_4e871f4bc (30 Aug 2026). |
 | `caller_phone` | E.164, or `""` for withheld/anonymous IDs | **Never the literal "anonymous"** — that string reached `create_booking` once (400). `""` triggers the ask-digit-by-digit rule. The call LOG keeps the raw value; only the agent gets "". |
 | `restaurant_id` | For tools; the backend ignores agent-supplied ids anyway (dialled-number resolution is the trust anchor) | |
 

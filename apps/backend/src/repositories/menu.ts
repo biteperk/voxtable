@@ -370,6 +370,36 @@ export async function loadVariantsForItems(
   return result.rows;
 }
 
+/**
+ * The venue's distinct daily serving windows among AVAILABLE items, largest
+ * first. Feeds the per-call `menu_status` variable — Bella must know before
+ * the caller asks which menu periods are on right now, so this returns the
+ * shape of the menu (windows + how many items each covers), never item names.
+ * The unwindowed (all-day) count rides along so the sentence can say whether
+ * an all-day menu exists at all.
+ */
+export async function listMenuItemWindows(restaurantId: string): Promise<
+  Array<{ available_from: string | null; available_until: string | null; item_count: number }>
+> {
+  const result = await readPool.query<{
+    available_from: string | null;
+    available_until: string | null;
+    item_count: string;
+  }>(
+    `SELECT available_from, available_until, COUNT(*)::text AS item_count
+       FROM menu_items
+      WHERE restaurant_id = $1 AND is_available = TRUE
+      GROUP BY available_from, available_until
+      ORDER BY COUNT(*) DESC`,
+    [restaurantId]
+  );
+  return result.rows.map((r) => ({
+    available_from: r.available_from,
+    available_until: r.available_until,
+    item_count: Number(r.item_count)
+  }));
+}
+
 export async function loadModifiersForItems(
   itemIds: string[],
   db: DbClient

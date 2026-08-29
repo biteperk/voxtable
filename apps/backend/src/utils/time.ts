@@ -173,6 +173,20 @@ export function isWithinDailyWindow(
   return now < (end as number);
 }
 
+/**
+ * A menu item's daily window as speech: "between 7 AM and midday", "from 5 PM",
+ * "until 11:30 AM". Empty string for an unwindowed item. This is what the agent
+ * reads to a caller, so it uses formatVoiceTime's wording, not raw HH:MM.
+ */
+export function formatDailyWindow(from: string | null, until: string | null): string {
+  const f = from ? formatVoiceTime(from.slice(0, 5)) : null;
+  const u = until ? formatVoiceTime(until.slice(0, 5)) : null;
+  if (f && u) return `between ${f} and ${u}`;
+  if (f) return `from ${f}`;
+  if (u) return `until ${u}`;
+  return "";
+}
+
 export function todayInTz(timeZone: string, now: Date = new Date()): string {
   return ymdInTz(now, timeZone);
 }
