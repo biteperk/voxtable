@@ -100,15 +100,15 @@ async function expectRejected(path: string, payload: unknown): Promise<void> {
   console.log(`negative-control ${path} → 401 (tampered signature rejected) ✓`);
 }
 
-function getSmokeDate(): string {
+function getSmokeDate(offsetDays: number): string {
   const date = new Date();
-  date.setUTCDate(date.getUTCDate() + 31);
+  date.setUTCDate(date.getUTCDate() + offsetDays);
   return date.toISOString().slice(0, 10);
 }
 
 async function main(): Promise<void> {
-  const date = getSmokeDate();
   const callId = `retell-signed-smoke-${Date.now()}`;
+  let date = getSmokeDate(31);
 
   // 0) Negative control FIRST — prove the gate actually rejects bad signatures.
   await expectRejected("/retell/tools/check-availability", {
@@ -127,13 +127,41 @@ async function main(): Promise<void> {
   });
   console.log("signed inbound ✓", JSON.stringify(inbound).slice(0, 120));
 
-  // 2) check_availability — the tool that 401'd in production.
-  const availability = await signedRequest<unknown>("/retell/tools/check-availability", {
-    name: "check_availability",
-    call: { call_id: callId, metadata: { restaurant_id: restaurantId } },
-    args: { restaurant_id: restaurantId, date, time: "19:00", party_size: 2 }
-  });
-  console.log("signed check-availability ✓", JSON.stringify(availability).slice(0, 160));
+  // 2) check_availability — the tool that 401'd in production. The venue's
+  // opening days are DATA, not a constant: a fixed date+time false-failed the
+  // whole battery whenever day 31 landed on a closed day (30 Aug 2026). Walk
+  // forward up to a week and book the first slot the venue itself says is
+  // open, taking its suggested_time when the requested one is busy.
+  let time = "19:00";
+  let availability: { available?: boolean; suggested_time?: string | null } = {};
+  let found = false;
+  for (let offset = 31; offset < 38; offset += 1) {
+    date = getSmokeDate(offset);
+    availability = await signedRequest("/retell/tools/check-availability", {
+      name: "check_availability",
+      call: { call_id: callId, metadata: { restaurant_id: restaurantId } },
+      args: { restaurant_id: restaurantId, date, time, party_size: 2 }
+    });
+    if (availability.available === true) {
+      found = true;
+      break;
+    }
+    if (availability.suggested_time) {
+      time = availability.suggested_time;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    throw new Error(
+      "check-availability found no open slot in a whole week of dates — either the venue's " +
+        "opening hours are empty or availability is genuinely broken. Both deserve a human."
+    );
+  }
+  console.log(
+    `signed check-availability ✓ (${date} ${time})`,
+    JSON.stringify(availability).slice(0, 160)
+  );
 
   // 3) create_booking — the write that never happened on the failed call.
   const booking = await signedRequest<unknown>("/retell/tools/create-booking", {
@@ -148,7 +176,7 @@ async function main(): Promise<void> {
       customer_name: "SMOKE Retell Signed",
       customer_phone: "+61400000001",
       date,
-      time: "19:00",
+      time,
       party_size: 2,
       notes: "SMOKE — created by npm run smoke:retell-signed"
     }
@@ -164,7 +192,9 @@ async function main(): Promise<void> {
     const token = await mintSmokeIdToken();
     if (token) {
       const cancel = await fetch(`${baseUrl}/bookings/${bookingId}/cancel`, {
-        method: "PATCH",
+        // The route is POST (routes/bookings.ts); this said PATCH and 404'd,
+        // so every smoke run left its booking behind despite "cleanup".
+        method: "POST",
         headers: {
           "content-type": "application/json",
           authorization: `Bearer ${token}`,
