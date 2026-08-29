@@ -947,6 +947,30 @@ export async function getRestaurantByRetellAgentId(
 }
 
 /**
+ * Which restaurant, if any, already claims this phone number — in EITHER
+ * column. Migration 007's per-column unique indexes cannot see across columns,
+ * so venue B's retell_phone_number could legally equal venue A's
+ * twilio_phone_number and calls to it would route nondeterministically (#221).
+ * The admin bind uses this to refuse with a 409 naming the other venue;
+ * migration 039's trigger is the database-level backstop. Excludes `exceptId`
+ * so re-binding a venue to a number it already holds is not a conflict.
+ */
+export async function getRestaurantByPhoneNumber(
+  phoneNumber: string,
+  exceptId?: string
+): Promise<{ id: string; name: string } | null> {
+  const result = await pool.query<{ id: string; name: string }>(
+    `SELECT id, name FROM restaurants
+      WHERE (twilio_phone_number = $1 OR retell_phone_number = $1)
+        AND ($2::uuid IS NULL OR id <> $2::uuid)
+      ORDER BY id
+      LIMIT 1`,
+    [phoneNumber, exceptId ?? null]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
  * Which restaurant, if any, already claims this Cal.com event type. Mirrors
  * getRestaurantByRetellAgentId and exists for the same reason: two venues
  * sharing one event type means one venue's diners silently book the other
