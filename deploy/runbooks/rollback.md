@@ -195,3 +195,9 @@ gcloud run services update-traffic voxtable-stg-api \
 Discipline for the real thing: print the known-good restore command BEFORE shifting anything,
 so the abort path exists before the risk does. Production is the same command against
 `voxtable-prod-api` in `bp-voxtable-prod` once the cutover lands.
+
+⚠️ **Restore with `--to-latest`, never by naming the revision.** The 30 Aug drill restored
+with `--to-revisions <name>=100`, which PINS traffic: every later deploy built a new revision
+that silently did not serve, and staging sat on old code until a probe noticed a missing
+variable. `gcloud run services update-traffic <svc> --to-latest` is the correct final step of
+every rollback — the pin is for the emergency, latest-routing is the steady state.
