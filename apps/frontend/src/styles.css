@@ -15236,3 +15236,9 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
     transition: none;
   }
 }
+
+/* Analytics load-failure line in the page header — red text inline with the
+   subtitle rather than a banner, with the shared link-button retry. */
+.analytics-error {
+  color: #ff8a80;
+}
