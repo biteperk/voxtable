@@ -19,6 +19,7 @@ import {
   saveAgreementElections
 } from "../repositories/agreements";
 import { countCallsSince } from "../repositories/callLogs";
+import { getSelfServePlanPriceCents } from "../services/stripeService";
 import { getUserMemberships, upsertUser } from "../repositories/members";
 import {
   createRestaurantWithOwner,
@@ -125,9 +126,10 @@ onboardingRouter.get(
   resolveTenant,
   asyncHandler(async (request, response) => {
     const restaurantId = tenantId(request);
-    const [status, profile] = await Promise.all([
+    const [status, profile, planPriceCents] = await Promise.all([
       getOnboardingStatus(restaurantId),
-      getRestaurantProfile(restaurantId)
+      getRestaurantProfile(restaurantId),
+      getSelfServePlanPriceCents()
     ]);
     if (!status) {
       throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
@@ -140,7 +142,10 @@ onboardingRouter.get(
       // copy of the number, so what the customer is promised is the same value
       // Stripe is told at checkout. They previously disagreed: the landing page
       // said 7 days, the wizard said 14, and Stripe granted 14.
-      trial_days: env.STRIPE_TRIAL_DAYS
+      trial_days: env.STRIPE_TRIAL_DAYS,
+      // Same lesson for the dollar figure: read from the Stripe price itself
+      // (null when billing is unconfigured — the wizard falls back to copy).
+      plan_price_cents: planPriceCents
     });
   })
 );

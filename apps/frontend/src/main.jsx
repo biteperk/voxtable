@@ -328,7 +328,7 @@ function RootRedirect({ navigate }) {
 }
 
 function AppRouter({ path, navigate, isDashboard }) {
-  const { user, loading, hasMinRole, memberships, meLoading } = useAuth();
+  const { user, loading, hasMinRole, memberships, meLoading, meError, refreshMe } = useAuth();
   const isOnboarding = path === "/onboarding" || path.startsWith("/onboarding/");
   const isInvite = path === "/invite";
   const isVerifyEmail = path === "/verify-email";
@@ -478,6 +478,18 @@ function AppRouter({ path, navigate, isDashboard }) {
   const tenantKnownIncomplete =
     gate.status !== null && gate.status !== "live" && !(isSuspended && isBillingRoute);
   if (isDashboard && (memberships.length === 0 || (tenantKnownIncomplete && !allowDuringOnboarding))) {
+    // memberships can be empty because /api/me genuinely returned none (the
+    // redirect to /onboarding is in flight) or because it failed after retries.
+    // The second must not be an infinite unlabelled spinner.
+    if (meError && memberships.length === 0) {
+      return (
+        <FullPageError
+          title="Couldn't load your account"
+          detail={meError}
+          onRetry={() => refreshMe()}
+        />
+      );
+    }
     return <FullPageMessage title="Loading..." />;
   }
 
@@ -544,6 +556,38 @@ function FullPageMessage({ title }) {
   return (
     <div style={{ display: "grid", placeItems: "center", minHeight: "100vh", color: "#cbd5e1" }}>
       <p style={{ fontSize: 20 }}>{title}</p>
+    </div>
+  );
+}
+
+// A load failure with a way out. Rendered when /api/me failed after retries —
+// the alternative was an unlabelled infinite spinner (or, worse, guessing the
+// user has no restaurant and showing them the create screen).
+function FullPageError({ title, detail, onRetry }) {
+  return (
+    <div
+      style={{ display: "grid", placeItems: "center", minHeight: "100vh", color: "#cbd5e1", padding: 24 }}
+      role="alert"
+    >
+      <div style={{ textAlign: "center", maxWidth: 420 }}>
+        <p style={{ fontSize: 20, margin: "0 0 8px" }}>{title}</p>
+        {detail && <p style={{ color: "#94a3b8", margin: "0 0 20px" }}>{detail}</p>}
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{
+            padding: "10px 18px",
+            borderRadius: 10,
+            border: "none",
+            background: "#6366f1",
+            color: "#fff",
+            fontSize: 15,
+            cursor: "pointer"
+          }}
+        >
+          Try again
+        </button>
+      </div>
     </div>
   );
 }

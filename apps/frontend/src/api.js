@@ -1,4 +1,5 @@
 import { auth, signOutUser } from "./firebase";
+import { captureException } from "./sentry";
 import { readStorageKey, writeStorageKey } from "./lib/storageKeys";
 import { fetchLegalDocumentsManifest } from "./lib/legalDocuments";
 
@@ -18,10 +19,20 @@ export function setActiveRestaurantId(id) {
   writeStorageKey(ACTIVE_RESTAURANT_KEY, id || null);
 }
 
+// A hung connection must never pin a busy/disabled button forever: every request
+// gets a deadline. 30s covers the slow paths we actually have (menu ingest
+// registration, Stripe session creation) with headroom; the backend's own
+// statement_timeout is 15s, so anything past this is the network, not work.
+const REQUEST_TIMEOUT_MS = 30_000;
+
 async function callOnce(path, options, forceFresh) {
   const user = auth.currentUser;
   const token = user ? await user.getIdToken(forceFresh) : null;
-  const activeRestaurantId = getActiveRestaurantId();
+  // The stored selection is a convenience for tenant-scoped reads. On the
+  // restaurant-create call it is semantically wrong (there is no tenant yet —
+  // a stale id from a previous session would ride along), so it is stripped.
+  const activeRestaurantId =
+    path === "/api/onboarding/restaurant" ? null : getActiveRestaurantId();
 
   const headers = {
     "Content-Type": "application/json",
@@ -30,11 +41,38 @@ async function callOnce(path, options, forceFresh) {
     ...(activeRestaurantId ? { "X-Restaurant-Id": activeRestaurantId } : {})
   };
 
-  return fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  return fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+    signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+}
+
+// White-screens reach Sentry via the render boundary; the 500s and dead
+// networks that CAUSE them previously reached nobody. Server faults (5xx),
+// timeouts and network failures are reported here with method + path only —
+// never headers, bodies or tokens. Expected application errors (4xx: validation,
+// auth expiry, membership checks) are the UI's job and stay out of Sentry.
+function reportApiFailure(error, path, options, status) {
+  try {
+    captureException(error, {
+      api_path: path.split("?")[0],
+      method: options.method ?? "GET",
+      ...(status ? { status } : {})
+    });
+  } catch {
+    /* reporting must never break the request path */
+  }
 }
 
 async function authedFetch(path, options = {}) {
-  let response = await callOnce(path, options, false);
+  let response;
+  try {
+    response = await callOnce(path, options, false);
+  } catch (networkError) {
+    reportApiFailure(networkError, path, options);
+    throw networkError;
+  }
 
   // If the cached Firebase ID token expired (1h TTL), force-refresh and retry once.
   if (response.status === 401 && auth.currentUser) {
@@ -84,9 +122,12 @@ async function authedFetch(path, options = {}) {
         setActiveRestaurantId(null);
         window.dispatchEvent(new Event("voxtable:memberships-changed"));
       }
+      if (response.status >= 500) reportApiFailure(err, path, options, response.status);
       throw err;
     }
-    throw new Error(`${response.status} ${response.statusText}: ${body}`);
+    const err = new Error(`${response.status} ${response.statusText}: ${body}`);
+    if (response.status >= 500) reportApiFailure(err, path, options, response.status);
+    throw err;
   }
 
   // 204 No Content (e.g. DELETE endpoints) has an empty body, so response.json()

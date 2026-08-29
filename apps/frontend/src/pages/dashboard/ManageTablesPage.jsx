@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { activateTable, createTable, deactivateTable, deleteTable, listManagedTables, updateTableMeta } from "../../api";
 import { Icon } from "../../components/Icon";
+import { ConfirmModal } from "../../components/ConfirmModal";
 import { DashboardShell } from "./DashboardShell";
 
 const ATTRIBUTE_PRESETS = [
@@ -61,50 +62,60 @@ export function ManageTablesPage({ navigate, path }) {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [activeTables]);
 
-  const handleDeactivate = async (table) => {
-    if (!window.confirm(`Deactivate table ${table.label}? Existing bookings stay intact.`)) return;
+  // Destructive actions confirm through the shared modal, not window.confirm —
+  // native dialogs can be suppressed in kiosk/embedded webviews. `confirming`
+  // is { table, kind } while the modal is open.
+  const [confirming, setConfirming] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
+  const CONFIRM_COPY = {
+    deactivate: (t) => ({
+      title: `Deactivate table ${t.label}?`,
+      message: "Existing bookings stay intact.",
+      confirmLabel: "Deactivate",
+      run: () => deactivateTable(t.id)
+    }),
+    activate: (t) => ({
+      title: `Reactivate table ${t.label}?`,
+      message: "It will become available for bookings again.",
+      confirmLabel: "Reactivate",
+      run: () => activateTable(t.id)
+    }),
+    // The wording matters: the FK is ON DELETE SET NULL, so FUTURE confirmed
+    // bookings are unassigned too — and an unassigned booking drops out of the
+    // overlap guard (migration 025 is `WHERE table_id IS NOT NULL`), so its
+    // seat becomes bookable again.
+    delete: (t) => ({
+      title: `Permanently delete table ${t.label}?`,
+      message:
+        "Every booking on it — including future ones — will be left with no table, " +
+        "which frees their seats to be booked again. Deactivate instead if the table " +
+        "is only temporarily out of service.",
+      confirmLabel: "Delete permanently",
+      run: () => deleteTable(t.id)
+    })
+  };
+
+  const runConfirmed = async () => {
+    if (!confirming || confirmBusy) return;
+    const { run } = CONFIRM_COPY[confirming.kind](confirming.table);
+    setConfirmBusy(true);
     setError(null);
     try {
-      await deactivateTable(table.id);
+      await run();
       await load();
+      setConfirming(null);
     } catch (err) {
       setError(err.message ?? String(err));
+      setConfirming(null);
+    } finally {
+      setConfirmBusy(false);
     }
   };
 
-  const handleActivate = async (table) => {
-    if (!window.confirm(`Reactivate table ${table.label}? It will become available for bookings again.`)) return;
-    setError(null);
-    try {
-      await activateTable(table.id);
-      await load();
-    } catch (err) {
-      setError(err.message ?? String(err));
-    }
-  };
-
-  const handleDelete = async (table) => {
-    // The old wording said "past bookings stay in history", which understated it:
-    // the FK is ON DELETE SET NULL, so FUTURE confirmed bookings are unassigned
-    // too — and an unassigned booking drops out of the overlap guard (migration
-    // 025 is `WHERE table_id IS NOT NULL`), so its seat becomes bookable again.
-    if (
-      !window.confirm(
-        `Permanently delete table ${table.label}?\n\n` +
-          `Every booking on it — including future ones — will be left with no table, ` +
-          `which frees their seats to be booked again. Deactivate instead if the table ` +
-          `is only temporarily out of service.`
-      )
-    )
-      return;
-    setError(null);
-    try {
-      await deleteTable(table.id);
-      await load();
-    } catch (err) {
-      setError(err.message ?? String(err));
-    }
-  };
+  const handleDeactivate = (table) => setConfirming({ table, kind: "deactivate" });
+  const handleActivate = (table) => setConfirming({ table, kind: "activate" });
+  const handleDelete = (table) => setConfirming({ table, kind: "delete" });
 
   return (
     <DashboardShell active="Manage Tables" navigate={navigate} path={path}>
@@ -233,6 +244,20 @@ export function ManageTablesPage({ navigate, path }) {
           }}
         />
       )}
+      {confirming &&
+        (() => {
+          const copy = CONFIRM_COPY[confirming.kind](confirming.table);
+          return (
+            <ConfirmModal
+              title={copy.title}
+              message={copy.message}
+              confirmLabel={copy.confirmLabel}
+              busy={confirmBusy}
+              onConfirm={runConfirmed}
+              onCancel={() => !confirmBusy && setConfirming(null)}
+            />
+          );
+        })()}
     </DashboardShell>
   );
 }
