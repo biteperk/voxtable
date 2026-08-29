@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getCallLog } from "../../api";
+import { fetchCallRecordingObjectUrl, getCallLog } from "../../api";
 import {
   callerDisplayName,
   capitalize,
@@ -29,6 +29,27 @@ export function LiveFeedDetailPage({ navigate, callId, path }) {
       cancelled = true;
     };
   }, [callId]);
+
+  // The recording streams through the backend's authenticated proxy; the
+  // vendor's public URL never reaches the page (#173).
+  const [recordingSrc, setRecordingSrc] = useState(null);
+  const [recordingError, setRecordingError] = useState(null);
+  useEffect(() => {
+    if (!callLog?.has_recording) return undefined;
+    let cancelled = false;
+    let objectUrl = null;
+    fetchCallRecordingObjectUrl(callId)
+      .then((url) => {
+        objectUrl = url;
+        if (cancelled) URL.revokeObjectURL(url);
+        else setRecordingSrc(url);
+      })
+      .catch((e) => !cancelled && setRecordingError(e.message));
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [callId, callLog?.has_recording]);
 
   const messages = parseTranscript(callLog?.transcript);
   const isLive = !!callLog && !callLog.ended_at;
@@ -160,11 +181,15 @@ export function LiveFeedDetailPage({ navigate, callId, path }) {
                 <p>{callLog.special_requests}</p>
               </div>
             )}
-            {callLog?.recording_url && (
+            {callLog?.has_recording && (
               <div className="context-note">
                 <span>Recording</span>
                 <div className="context-note-audio">
-                  <AudioPlayer src={callLog.recording_url} />
+                  {recordingSrc ? (
+                    <AudioPlayer src={recordingSrc} />
+                  ) : (
+                    <p className="muted">{recordingError ?? "Loading recording…"}</p>
+                  )}
                 </div>
               </div>
             )}
