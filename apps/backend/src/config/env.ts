@@ -622,6 +622,21 @@ const envSchema = z
             "dashboard billing page — a wrong value sends venues to another environment after Stripe."
         });
       }
+      // Same hazard, same rule, for the Checkout return legs (#271): a
+      // localhost default in production strands a customer who has just handed
+      // over a card on a page that does not exist. Each environment declares
+      // its own hosts, aligned on NAMES.md §2.
+      for (const key of ["STRIPE_CHECKOUT_SUCCESS_URL", "STRIPE_CHECKOUT_CANCEL_URL"] as const) {
+        if (/localhost/.test(value[key])) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message:
+              `${key} is still the localhost default. Set it to THIS environment's onboarding ` +
+              "page — it is where Stripe sends the customer back after checkout."
+          });
+        }
+      }
     }
 
     if (value.ORDER_PAYMENTS_ENABLED) {
