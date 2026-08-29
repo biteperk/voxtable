@@ -21,6 +21,14 @@
  *
  * No-op unless RETELL_LLM_ID and RETELL_API_KEY are both set, following the
  * same "off unless configured" pattern as the other integrations.
+ *
+ * DELIBERATELY single-LLM (#264 asked it to iterate venues; that was declined):
+ * production lines are webhook-only with default_dynamic_variables kept EMPTY —
+ * assert-agent hard-fails an agent whose defaults carry today/tomorrow, because
+ * a stale fallback date books guests for the wrong night (NUMBERS.md §6).
+ * Pushing per-venue dates here would recreate exactly that hazard. This worker
+ * survives only for a dev/legacy setup that names one LLM explicitly; do not
+ * set RETELL_LLM_ID in production.
  */
 
 import Retell from "retell-sdk";
