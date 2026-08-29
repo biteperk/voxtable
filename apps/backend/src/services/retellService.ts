@@ -94,6 +94,30 @@ export async function assertRetellSignature(
   }
 }
 
+// Retell's signature covers the body only — no timestamp, no nonce — so a
+// captured /retell/tools/create-booking or send-payment-link request verified
+// forever (#268). The body itself carries call.start_timestamp, and an attacker
+// cannot strip or change it without breaking the signature, so bounding on it
+// bounds the replay. Generous window: a call can legitimately run long, and a
+// tool call always arrives while the call is live — hours, never days.
+// Payloads with no call timestamp (e.g. inbound webhooks) are left alone: for
+// them the window would add nothing the signature check doesn't already do.
+const RETELL_REPLAY_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+export function assertRetellFreshness(body: unknown): void {
+  if (!env.RETELL_VERIFY_SIGNATURE) return;
+  const call = (body as RetellPayload | undefined)?.call as RetellPayload | undefined;
+  const startTimestamp = Number(call?.start_timestamp);
+  if (!Number.isFinite(startTimestamp) || startTimestamp <= 0) return;
+  if (Math.abs(Date.now() - startTimestamp) > RETELL_REPLAY_WINDOW_MS) {
+    throw new AppError(
+      401,
+      "RETELL_REPLAY_REJECTED",
+      "Retell payload's call timestamp is outside the replay window."
+    );
+  }
+}
+
 export async function handleRetellWebhook(body: unknown): Promise<void> {
   const payload = body as RetellPayload;
   const event = String(payload.event ?? "");
