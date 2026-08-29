@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getPhoneSetup, verifyForwarding } from "../../../api";
 import { Icon } from "../../../components/Icon";
+import { EMAIL_HREF } from "../../../lib/brand";
 
 export function PhoneStep({ onRefresh }) {
   const [setup, setSetup] = useState(null);
@@ -8,12 +9,26 @@ export function PhoneStep({ onRefresh }) {
   const [verifying, setVerifying] = useState(false);
   const pollRef = useRef(null);
 
+  // The poll can outlive the component; writes after unmount are dropped.
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const r = await getPhoneSetup();
+      if (unmountedRef.current) return;
       setSetup(r);
+      // A recovered poll clears the error — otherwise one transient failure
+      // stays on screen for the rest of the session while polling works fine.
+      setError(null);
       if (r.forwarding_verified) onRefresh?.();
     } catch (e) {
+      if (unmountedRef.current) return;
       setError(e.message);
     }
   }, [onRefresh]);
@@ -56,6 +71,13 @@ export function PhoneStep({ onRefresh }) {
     return (
       <div className="onboarding-card is-loading">
         <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error}` : "Loading…"}</p>
+        {error && (
+          <div className="onboarding-actions">
+            <button type="button" className="primary-button" onClick={load}>
+              Try again
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -73,6 +95,12 @@ export function PhoneStep({ onRefresh }) {
         <p className="onboarding-note">
           <Icon name="info" /> {setup.dev_can_skip_phone_setup ? "Local setup can be finished without provisioning." : "Provisioning in progress…"}
         </p>
+        {!setup.dev_can_skip_phone_setup && (
+          <p className="onboarding-note">
+            Taking longer than expected? <a href={EMAIL_HREF}>Contact support</a> and we'll check
+            on it for you.
+          </p>
+        )}
         {error && <p className="onboarding-error">{error}</p>}
         {setup.dev_can_skip_phone_setup && (
           <div className="onboarding-actions">

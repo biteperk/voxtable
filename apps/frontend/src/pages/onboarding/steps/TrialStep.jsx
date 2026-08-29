@@ -2,21 +2,27 @@ import { useEffect, useRef, useState } from "react";
 import { createBillingCheckoutSession } from "../../../api";
 import { priceIncGst, TRIAL_DAYS } from "../../../data/pricing";
 import { Icon } from "../../../components/Icon";
+import { EMAIL_HREF } from "../../../lib/brand";
 
-// The self-serve plan this wizard subscribes people to. Kept as one constant so
-// the ex-GST and inc-GST figures on screen are derived from the same number and
-// cannot drift apart.
-// NOTE: this must match the price behind STRIPE_PRICE_ID. It is not read from
-// pricing.js because which TIER maps to the self-serve checkout isn't encoded
-// anywhere in the codebase — worth wiring up properly rather than trusting two
-// places to be edited together.
-const SELF_SERVE_PRICE = "$80";
-const SELF_SERVE_PRICE_INC_GST = priceIncGst(SELF_SERVE_PRICE);
+// Fallback shown only until /api/onboarding/status delivers the REAL price
+// behind STRIPE_PRICE_ID (plan_price_cents) — the figure someone sees right
+// before handing over a card must come from Stripe itself, not a string that
+// has to be manually kept in sync with it.
+const SELF_SERVE_PRICE_FALLBACK = "$80";
 
-export function TrialStep({ onRefresh, onBack = null, trialDays = TRIAL_DAYS }) {
+export function TrialStep({ onRefresh, onBack = null, trialDays = TRIAL_DAYS, planPriceCents = null }) {
+  const price = Number.isFinite(planPriceCents)
+    ? `$${(planPriceCents / 100).toLocaleString("en-AU", { maximumFractionDigits: 2 })}`
+    : SELF_SERVE_PRICE_FALLBACK;
+  const priceIncGstLabel = priceIncGst(price);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [unavailable, setUnavailable] = useState(false);
+  // Flips true once the bounded poll gives up, so someone whose Stripe webhook
+  // lagged past the window gets a visible "check again" instead of silence —
+  // previously the poll stopped with no state change and a paid user was left
+  // staring at "Start your free trial".
+  const [pollExhausted, setPollExhausted] = useState(false);
   const pollsRef = useRef(0);
 
   // After returning from Stripe Checkout the webhook may lag a few seconds
@@ -26,12 +32,19 @@ export function TrialStep({ onRefresh, onBack = null, trialDays = TRIAL_DAYS }) 
       pollsRef.current += 1;
       if (pollsRef.current > 8) {
         clearInterval(id);
+        setPollExhausted(true);
         return;
       }
       onRefresh?.();
     }, 4000);
     return () => clearInterval(id);
   }, [onRefresh]);
+
+  const checkAgain = () => {
+    pollsRef.current = 0;
+    setPollExhausted(false);
+    onRefresh?.();
+  };
 
   const startTrial = async () => {
     if (busy) return;
@@ -77,7 +90,7 @@ export function TrialStep({ onRefresh, onBack = null, trialDays = TRIAL_DAYS }) 
           <span>Unlimited AI-answered calls, bookings &amp; orders</span>
         </div>
         <div className="trial-price">
-          <strong>{SELF_SERVE_PRICE}</strong>
+          <strong>{price}</strong>
           <span>+ GST / month after trial</span>
         </div>
       </div>
@@ -88,26 +101,39 @@ export function TrialStep({ onRefresh, onBack = null, trialDays = TRIAL_DAYS }) 
             ex-GST, so without this the checkout page shows a bigger number
             than the one they just agreed to — which reads as a bait-and-switch
             at the exact moment they're handing over a card. */}
-        {SELF_SERVE_PRICE_INC_GST && (
+        {priceIncGstLabel && (
           <li>
-            <Icon name="check" /> {SELF_SERVE_PRICE_INC_GST} per month including GST
+            <Icon name="check" /> {priceIncGstLabel} per month including GST
           </li>
         )}
         <li><Icon name="check" /> Cancel anytime</li>
       </ul>
       {unavailable && (
         <p className="onboarding-note">
-          <Icon name="info" /> Billing isn't switched on yet — your progress is saved.
+          <Icon name="info" /> Billing isn't switched on yet — your progress is saved. Try again
+          in a little while, or <a href={EMAIL_HREF}>contact support</a> and
+          we'll finish this step with you.
         </p>
       )}
       {error && <p className="onboarding-error" role="alert">{error}</p>}
+      {pollExhausted && (
+        <p className="onboarding-note">
+          <Icon name="info" /> Already completed checkout? It can take a moment to confirm.{" "}
+          <button type="button" className="link-button" onClick={checkAgain}>
+            Check again
+          </button>
+        </p>
+      )}
       <div className="onboarding-actions">
         {onBack && (
           <button type="button" className="ghost-button" onClick={onBack} disabled={busy}>
             <Icon name="arrow_back" /> Back
           </button>
         )}
-        <button type="button" className="primary-button" onClick={startTrial} disabled={busy || unavailable}>
+        {/* `unavailable` deliberately does NOT disable the button: billing being
+            unconfigured is a transient operator state, and a permanently dead
+            primary button turns this required step into a wizard dead-end. */}
+        <button type="button" className="primary-button" onClick={startTrial} disabled={busy}>
           {busy ? "Opening secure checkout…" : `Start ${trialDays}-day free trial`}
           <Icon name="arrow_forward" />
         </button>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../auth";
 import { listActiveOrders, sendOrderPaymentLink, updateOrderStatus } from "../../api";
 import { Icon } from "../../components/Icon";
+import { ConfirmModal } from "../../components/ConfirmModal";
 import { DashboardShell } from "./DashboardShell";
 
 const KITCHEN_COLUMNS = [
@@ -63,15 +64,28 @@ export function KitchenOverviewPage({ navigate, path }) {
     }
   };
 
-  const handleCancel = async (order) => {
-    const reason = window.prompt(`Cancel order #${order.order_number}? (Optional reason)`);
-    if (reason === null) return;
+  // Cancellation confirms through the shared modal, not window.prompt — the
+  // kitchen screen is the one most likely to run in a kiosk webview where
+  // native dialogs are suppressed. The reason stays optional.
+  const [cancelling, setCancelling] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+
+  const handleCancel = (order) => {
+    setCancelReason("");
+    setCancelling(order);
+  };
+
+  const confirmCancel = async () => {
+    const order = cancelling;
+    if (!order || busyId) return;
     setBusyId(order.id);
     try {
-      await updateOrderStatus(order.id, "cancelled", order.version, reason || undefined);
+      await updateOrderStatus(order.id, "cancelled", order.version, cancelReason.trim() || undefined);
       await refresh();
+      setCancelling(null);
     } catch (e) {
       setError(e.message ?? "Cancel failed");
+      setCancelling(null);
     } finally {
       setBusyId(null);
     }
@@ -117,6 +131,27 @@ export function KitchenOverviewPage({ navigate, path }) {
           />
         ))}
       </section>
+      {cancelling && (
+        <ConfirmModal
+          title={`Cancel order #${cancelling.order_number}?`}
+          message="This can't be undone. You can add a reason for the record."
+          confirmLabel="Cancel order"
+          busy={busyId === cancelling.id}
+          onConfirm={confirmCancel}
+          onCancel={() => !busyId && setCancelling(null)}
+        >
+          <label className="menu-field" style={{ padding: "0 20px 4px" }}>
+            <span>Reason (optional)</span>
+            <input
+              type="text"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="e.g. customer called to cancel"
+              maxLength={200}
+            />
+          </label>
+        </ConfirmModal>
+      )}
     </DashboardShell>
   );
 }
