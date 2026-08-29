@@ -33,17 +33,41 @@ BEGIN
 
     -- Demote first. A role that still holds cloudsqlsuperuser does not need the
     -- grants below and can undo anything they express.
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN
-      EXECUTE format('REVOKE cloudsqlsuperuser FROM %I', app_role);
-    END IF;
-    EXECUTE format('ALTER ROLE %I NOCREATEDB NOCREATEROLE NOINHERIT', app_role);
+    --
+    -- Guarded: on staging the migrate job connects AS the app role itself
+    -- (voxtable-stg-database-url), and a role cannot ALTER itself without
+    -- CREATEROLE — so this block hard-failed with 42501 and wedged every
+    -- staging deploy from 28 Aug. A migration must not require privileges the
+    -- executing role provably lacks; when demotion is impossible it now warns
+    -- loudly and moves on, and the demotion becomes a runbook step for a role
+    -- that CAN do it (the owner, or postgres during the cutover). The grants
+    -- below still run — they are the half a pg_dump restore silently drops.
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN
+        EXECUTE format('REVOKE cloudsqlsuperuser FROM %I', app_role);
+      END IF;
+      EXECUTE format('ALTER ROLE %I NOCREATEDB NOCREATEROLE NOINHERIT', app_role);
+      RAISE NOTICE 'demoted %', app_role;
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE WARNING
+        'cannot demote % (insufficient privilege — the migrate connection is not '
+        'CREATEROLE). The append-only ledger guard is NOT hardened until a '
+        'privileged role runs: REVOKE cloudsqlsuperuser FROM %; ALTER ROLE % '
+        'NOCREATEDB NOCREATEROLE NOINHERIT;', app_role, app_role, app_role;
+    END;
 
     -- DML on what exists — this is the half a restore silently drops.
-    EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', app_role);
-    EXECUTE format(
-      'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', app_role);
-    EXECUTE format(
-      'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', app_role);
+    -- Same guard, same reason: an environment where the executing role cannot
+    -- grant must say so in the log, not block every future deploy.
+    BEGIN
+      EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', app_role);
+      EXECUTE format(
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', app_role);
+      EXECUTE format(
+        'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', app_role);
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE WARNING 'cannot grant DML to % (insufficient privilege) — run the grants as the owner', app_role;
+    END;
 
     -- …and on what later migrations create. Default privileges attach to the
     -- role executing this file (the owner), so this only covers objects that
