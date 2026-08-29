@@ -13,11 +13,13 @@ import {
   replaceModifiers,
   replaceVariants,
   getRequiredModifierGroups,
+  listMenuItemWindows,
   searchMenuItemsByName,
   updateCategory as repoUpdateCategory,
   updateMenuItem as repoUpdateMenuItem
 } from "../repositories/menu";
 import { logger } from "../utils/logger";
+import { formatDailyWindow, isWithinDailyWindow } from "../utils/time";
 
 export interface MenuItemPayload {
   id: string;
@@ -315,6 +317,15 @@ export interface MenuLookupMatch {
   is_restricted: boolean;
   available_from: string | null;
   available_until: string | null;
+  // Whether the item is servable at the reference time (the call's "now", or
+  // the pickup time for orders). Absent when the caller didn't supply a time.
+  // On call_4e871f4b (30 Aug 2026) three haloumi variants — one late-night
+  // only, one breakfast only — were offered identically for a 2 PM pickup and
+  // the order was refused only at create_order. The agent must know BEFORE
+  // offering.
+  available_now?: boolean;
+  // Spoken window for a windowed item, e.g. "between 7 AM and midday".
+  served?: string;
   // The choices that BLOCK an order until the caller picks one — e.g. which
   // filling a pressed sandwich comes with. Absent when the dish needs none.
   // Without this the agent has to guess the caller's word for a variant, and a
@@ -333,7 +344,22 @@ function speakablePrice(cents: number): string {
   return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
 }
 
-function toLookupMatch(i: MenuItemPayload, categoryId: string): MenuLookupMatch {
+// The window annotations, shared by every lookup shape. Only added when a
+// reference time exists — dashboard callers get the raw columns as before.
+function windowFields(
+  from: string | null,
+  until: string | null,
+  nowHm?: string
+): Pick<MenuLookupMatch, "available_now" | "served"> {
+  if (!nowHm) return {};
+  const windowed = Boolean(from || until);
+  return {
+    available_now: isWithinDailyWindow(nowHm, from, until),
+    ...(windowed ? { served: formatDailyWindow(from, until) } : {})
+  };
+}
+
+function toLookupMatch(i: MenuItemPayload, categoryId: string, nowHm?: string): MenuLookupMatch {
   return {
     id: i.id,
     name: i.name,
@@ -341,7 +367,8 @@ function toLookupMatch(i: MenuItemPayload, categoryId: string): MenuLookupMatch 
     category_id: categoryId,
     is_restricted: i.is_restricted,
     available_from: i.available_from,
-    available_until: i.available_until
+    available_until: i.available_until,
+    ...windowFields(i.available_from, i.available_until, nowHm)
   };
 }
 
@@ -396,7 +423,7 @@ const DRINK_SECTION_WORDS = [
  * invite the caller to pick a section; `matches` still carries one sample item
  * per category so the agent has something concrete to suggest.
  */
-async function categoryOverview(restaurantId: string): Promise<{
+async function categoryOverview(restaurantId: string, nowHm?: string): Promise<{
   matches: MenuLookupMatch[];
   categories: OverviewCategory[];
   names: string;
@@ -428,14 +455,95 @@ async function categoryOverview(restaurantId: string): Promise<{
   return {
     names: speakList(categories.map((c) => c.name)),
     categories,
-    matches: categories.flatMap((c) => c.items.slice(0, 1).map((i) => toLookupMatch(i, c.id)))
+    // The sample item a section is introduced with prefers one servable at the
+    // reference time — the 8 PM caller should not meet the breakfast toastie
+    // as a section's example (call_4e871f4b's cousin failure).
+    matches: categories.flatMap((c) => {
+      const sample = nowHm
+        ? (c.items.find((i) => isWithinDailyWindow(nowHm, i.available_from, i.available_until)) ?? c.items[0])
+        : c.items[0];
+      return sample ? [toLookupMatch(sample, c.id, nowHm)] : [];
+    })
   };
+}
+
+// menu_status caps. Cuban Corner has 109 windowed items across an unknown
+// number of distinct windows; an unbounded paragraph would bloat every call's
+// prompt. Name periods, never items — items are menu_lookup's job.
+const MENU_STATUS_MAX_WINDOWS = 4;
+const MENU_STATUS_MAX_CHARS = 320;
+
+// Same scrub as venueFaq: `{}` corrupts Retell's variable rendering, control
+// characters corrupt the prompt.
+function sanitiseForVariable(text: string): string {
+  return (
+    text
+      .replace(/[{}]/g, " ")
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001f\u007f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+/**
+ * The spoken menu-period sentence for `{{menu_status}}` — pure, so every edge
+ * (half-open, midnight-wrap, no windows, over-cap) is unit-testable.
+ * "" when the venue has no windowed items: the variable then says nothing and
+ * the prompt's fallback behaviour is unchanged (Mazcina today).
+ */
+export function formatMenuStatus(
+  windows: Array<{ available_from: string | null; available_until: string | null; item_count: number }>,
+  nowHm: string
+): string {
+  const windowed = windows.filter((w) => w.available_from || w.available_until);
+  if (windowed.length === 0) return "";
+  const allDayCount = windows
+    .filter((w) => !w.available_from && !w.available_until)
+    .reduce((n, w) => n + w.item_count, 0);
+
+  const parts: string[] = [];
+  parts.push(
+    allDayCount > 0
+      ? "Menu right now: the all-day menu is serving."
+      : "Menu right now: every section has serving times."
+  );
+  for (const w of windowed.slice(0, MENU_STATUS_MAX_WINDOWS)) {
+    const spoken = formatDailyWindow(w.available_from, w.available_until);
+    const active = isWithinDailyWindow(nowHm, w.available_from, w.available_until);
+    parts.push(
+      active
+        ? `Items served ${spoken} are AVAILABLE now.`
+        : `Items served ${spoken} are NOT available now.`
+    );
+  }
+  const sentence = sanitiseForVariable(parts.join(" "));
+  return sentence.length > MENU_STATUS_MAX_CHARS
+    ? `${sentence.slice(0, MENU_STATUS_MAX_CHARS - 1).trimEnd()}…`
+    : sentence;
+}
+
+/**
+ * `{{menu_status}}` for the inbound webhook. Fail-open: any error returns ""
+ * with a warning — a menu hiccup must never 500 /retell/inbound, because that
+ * kills the entire call (the invalid-timezone incident's lesson).
+ */
+export async function buildMenuStatus(restaurantId: string, nowHm: string): Promise<string> {
+  try {
+    const windows = await listMenuItemWindows(restaurantId);
+    return formatMenuStatus(windows, nowHm);
+  } catch (error) {
+    logger.warn({ evt: "menu_status_build_failed", restaurant_id: restaurantId, error });
+    return "";
+  }
 }
 
 export async function lookupMenu(input: {
   restaurantId: string;
   query?: string;
   category?: string;
+  /** Wall-clock reference time (restaurant tz) for window annotations. */
+  nowHm?: string;
 }): Promise<{
   matches: MenuLookupMatch[];
   speakable_summary: string;
@@ -447,7 +555,7 @@ export async function lookupMenu(input: {
       // The old reply hardcoded "mains, salads, kids meals, and drinks" — the
       // FIXTURE menu's categories, spoken verbatim to every venue's callers.
       // Build the miss reply from the venue's real categories instead.
-      const { names } = await categoryOverview(input.restaurantId);
+      const { names } = await categoryOverview(input.restaurantId, input.nowHm);
       return {
         matches: [],
         ambiguous: false,
@@ -462,7 +570,15 @@ export async function lookupMenu(input: {
     const summarySource = offerable.length > 0 ? offerable : matches;
     const summary = summarySource
       .slice(0, 3)
-      .map((m) => `${m.name} (${speakablePrice(m.base_price_cents)})`)
+      .map((m) => {
+        const base = `${m.name} (${speakablePrice(m.base_price_cents)})`;
+        // Say the window out loud for anything not servable at the reference
+        // time, so the agent never offers what the kitchen will refuse.
+        if (input.nowHm && !isWithinDailyWindow(input.nowHm, m.available_from, m.available_until)) {
+          return `${base} — served ${formatDailyWindow(m.available_from, m.available_until)}, not right now`;
+        }
+        return base;
+      })
       .join(", ");
     // One extra query for the whole match set, not one per item.
     const requiredByItem = await getRequiredModifierGroups(matches.map((m) => m.id));
@@ -478,6 +594,7 @@ export async function lookupMenu(input: {
           is_restricted: m.is_restricted,
           available_from: m.available_from,
           available_until: m.available_until,
+          ...windowFields(m.available_from, m.available_until, input.nowHm),
           ...(required?.length
             ? {
                 required_choices: required.map((g) => ({
@@ -492,13 +609,21 @@ export async function lookupMenu(input: {
       speakable_summary:
         offerable.length === 0
           ? `That's from our licensed drinks list, which I can't take orders for over the phone — but I can pop a note on your order for the team.`
-          : ambiguous
-            ? `I have ${summary} — which one?`
-            : `We have ${summary}. Want one of those?`
+          : input.nowHm &&
+              !summarySource
+                .slice(0, 3)
+                .some((m) => isWithinDailyWindow(input.nowHm!, m.available_from, m.available_until))
+            ? // Everything matched is off its window right now — closing with
+              // "want one of those?" would invite exactly the order the gate
+              // refuses. Redirect instead.
+              `We have ${summary}. Would you like something from the current menu instead?`
+            : ambiguous
+              ? `I have ${summary} — which one?`
+              : `We have ${summary}. Want one of those?`
     };
   }
 
-  const { matches, categories, names } = await categoryOverview(input.restaurantId);
+  const { matches, categories, names } = await categoryOverview(input.restaurantId, input.nowHm);
 
   // Category browse ("what drinks do you have?" → category: "drinks"). This
   // parameter was in the tool schema and its Retell description from day one

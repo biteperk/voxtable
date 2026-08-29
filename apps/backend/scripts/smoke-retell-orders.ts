@@ -160,7 +160,23 @@ async function main(): Promise<void> {
     typeof lookup.body.speakable_summary === "string" && lookup.body.speakable_summary.length > 0,
     "speakable_summary must be present"
   );
-  console.log(`✓ menu_lookup("barros luco") → top=${lookup.body.matches![0]!.name}`);
+  // Window awareness (call_4e871f4b): every match carries available_now so the
+  // agent knows at OFFER time what the order gate would refuse. Windowed items
+  // additionally carry the spoken `served` window.
+  for (const m of lookup.body.matches!) {
+    const match = m as { name: string; available_now?: unknown; served?: unknown };
+    assert(
+      typeof match.available_now === "boolean",
+      `match ${match.name} must carry available_now, got ${typeof match.available_now}`
+    );
+    if (match.available_now === false) {
+      assert(
+        typeof match.served === "string" && (match.served as string).length > 0,
+        `out-of-window ${match.name} must say when it IS served`
+      );
+    }
+  }
+  console.log(`✓ menu_lookup("barros luco") → top=${lookup.body.matches![0]!.name} (window-annotated)`);
 
   // 2) menu_lookup zero matches
   const noMatch = await callTool("menu_lookup", { query: "xyznonexistent" });
