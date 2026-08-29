@@ -131,8 +131,49 @@ async function tick(): Promise<void> {
       logger.warn({ evt: "cleanup_worker_phase7_skipped", error });
     }
 
+    // Phase 8: enforce the retention_days each venue elected on its Order Form
+    // (#134). The agreement promises "call data kept N days"; nothing enforced
+    // it, and telling a venue or a regulator 30 while keeping 80 is the gap
+    // that is hard to explain. The row survives for analytics (counts,
+    // durations, outcomes) — what goes is the sensitive payload: transcript,
+    // summary, recording link, analysis and special requests. Venues with no
+    // election (manually onboarded before the legal layer, retention_days
+    // NULL) are deliberately untouched until #164 records their terms.
+    let callDataScrubbed = 0;
+    try {
+      const scrub = await pool.query<{ scrubbed: number }>(
+        `
+        WITH scrubbed AS (
+          UPDATE call_logs cl
+             SET transcript = NULL,
+                 summary = NULL,
+                 recording_url = NULL,
+                 -- NOT NULL column; empty object is its "nothing" value.
+                 analysis_json = '{}'::jsonb,
+                 special_requests = NULL
+            FROM restaurants r
+           WHERE r.id = cl.restaurant_id
+             AND r.retention_days IS NOT NULL
+             AND COALESCE(cl.ended_at, cl.created_at)::timestamptz
+                 < now() - make_interval(days => r.retention_days)
+             AND (cl.transcript IS NOT NULL
+               OR cl.summary IS NOT NULL
+               OR cl.recording_url IS NOT NULL
+               OR cl.analysis_json <> '{}'::jsonb
+               OR cl.special_requests IS NOT NULL)
+           RETURNING 1
+        )
+        SELECT count(*)::int AS scrubbed FROM scrubbed
+        `
+      );
+      callDataScrubbed = scrub.rows[0]?.scrubbed ?? 0;
+    } catch (error) {
+      logger.warn({ evt: "cleanup_worker_phase8_skipped", error });
+    }
+
     logger.info({
       evt: "cleanup_worker_tick",
+      call_data_scrubbed: callDataScrubbed,
       outbox_deleted: outbox.rows[0]?.deleted ?? 0,
       inbox_deleted: inbox.rows[0]?.deleted ?? 0,
       notifications_deleted: notificationsDeleted,
