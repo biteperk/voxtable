@@ -246,6 +246,19 @@ const listCallLogsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional()
 });
 
+// The stored recording_url is an UNAUTHENTICATED public CloudFront link to the
+// complete call audio (#173). It must never reach the browser: rendered into
+// the DOM it leaks via page source, history, extensions and referrers, and
+// anyone holding it can replay a customer's phone call forever. The API returns
+// has_recording instead, and playback goes through the authenticated,
+// tenant-scoped proxy below.
+function withoutRecordingUrl<T extends { recording_url: string | null }>(
+  row: T
+): Omit<T, "recording_url"> & { has_recording: boolean } {
+  const { recording_url, ...rest } = row;
+  return { ...rest, has_recording: Boolean(recording_url) };
+}
+
 dashboardRouter.get(
   "/api/call-logs",
   asyncHandler(async (request, response) => {
@@ -254,7 +267,7 @@ dashboardRouter.get(
       restaurantId: tenantId(request),
       limit: query.limit
     });
-    response.json({ call_logs: rows });
+    response.json({ call_logs: rows.map(withoutRecordingUrl) });
   })
 );
 
@@ -270,7 +283,50 @@ dashboardRouter.get(
       throw new AppError(404, "CALL_LOG_NOT_FOUND", "Call log not found.");
     }
 
-    response.json({ call_log: row });
+    response.json({ call_log: withoutRecordingUrl(row) });
+  })
+);
+
+// Authenticated playback proxy: same auth + tenant gates as the call-log
+// itself, then the audio is streamed server-side from the vendor URL. The
+// public link stays inside the backend.
+dashboardRouter.get(
+  "/api/call-logs/:id/recording",
+  asyncHandler(async (request, response) => {
+    const id = callLogIdParam.parse(request.params.id);
+    const row = await getCallLogById(id);
+
+    if (!row || row.restaurant_id !== tenantId(request)) {
+      throw new AppError(404, "CALL_LOG_NOT_FOUND", "Call log not found.");
+    }
+    if (!row.recording_url) {
+      throw new AppError(404, "RECORDING_NOT_FOUND", "This call has no recording.");
+    }
+
+    const upstream = await fetch(row.recording_url, {
+      signal: AbortSignal.timeout(20_000)
+    });
+    if (!upstream.ok || !upstream.body) {
+      // A vendor-expired recording (retention finally enforced, or signed URLs
+      // turned on) surfaces as a clean 404 here rather than a broken player.
+      throw new AppError(404, "RECORDING_UNAVAILABLE", "The recording is no longer available.");
+    }
+
+    response.setHeader(
+      "Content-Type",
+      upstream.headers.get("content-type") ?? "audio/wav"
+    );
+    const length = upstream.headers.get("content-length");
+    if (length) response.setHeader("Content-Length", length);
+    response.setHeader("Cache-Control", "private, no-store");
+
+    const reader = upstream.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      response.write(Buffer.from(value));
+    }
+    response.end();
   })
 );
 

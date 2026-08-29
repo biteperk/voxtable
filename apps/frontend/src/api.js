@@ -291,6 +291,30 @@ export function getCallLog(id) {
   return authedFetch(`/api/call-logs/${id}`);
 }
 
+// Recording audio comes through the backend's authenticated proxy — the raw
+// vendor URL is a public link and never reaches the browser (#173). An <audio>
+// element can't send a Bearer header, so fetch the bytes here and hand back an
+// object URL. Caller must URL.revokeObjectURL it on unmount.
+export async function fetchCallRecordingObjectUrl(id) {
+  const user = auth.currentUser;
+  const token = user ? await user.getIdToken() : null;
+  const activeRestaurantId = getActiveRestaurantId();
+  const response = await fetch(`${API_BASE_URL}/api/call-logs/${id}/recording`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(activeRestaurantId ? { "X-Restaurant-Id": activeRestaurantId } : {})
+    }
+  });
+  if (!response.ok) {
+    throw new Error(
+      response.status === 404
+        ? "The recording is no longer available."
+        : "Couldn't load the recording."
+    );
+  }
+  return URL.createObjectURL(await response.blob());
+}
+
 // A range (`from`/`to`, YYYY-MM-DD) selects a calendar month; `days` is the
 // legacy rolling window. Range wins when both are passed.
 function analyticsQs({ days, from, to } = {}) {
