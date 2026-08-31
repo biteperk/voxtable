@@ -39,7 +39,7 @@ import {
 } from "../utils/time";
 import { checkAvailability } from "./availabilityService";
 import { createBooking, modifyBooking } from "./bookingService";
-import { buildMenuStatus, getMenu, lookupMenu } from "./menuService";
+import { buildMenuHighlights, buildMenuStatus, getMenu, lookupMenu } from "./menuService";
 import { searchMenuItemsByName } from "../repositories/menu";
 import {
   claimOpsStateKey,
@@ -235,6 +235,15 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
   });
 
   const now = new Date();
+  // Both menu variables are computed together. buildMenuStatus used to be a
+  // bare `await` inside the response literal; adding a second one there would
+  // have put another serial DB round-trip on /retell/inbound, the one path that
+  // must not get slower. Both fail open to "" on their own.
+  const menuNowHm = nowTimeInTz(tz, now);
+  const [menuStatus, menuHighlights] = await Promise.all([
+    buildMenuStatus(restaurantId, menuNowHm),
+    buildMenuHighlights(restaurantId, menuNowHm)
+  ]);
   return {
     call_inbound: {
       ...(overrideAgentId ? { override_agent_id: overrideAgentId } : {}),
@@ -262,7 +271,13 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
         // late-night-only; the order was refused only at create_order and the
         // caller gave up). Precomputed, spoken verbatim, "" when the venue has
         // no windowed items. Fail-open inside buildMenuStatus.
-        menu_status: await buildMenuStatus(restaurantId, nowTimeInTz(tz, now))
+        menu_status: menuStatus,
+        // The owner's own ranked picks, in his order, preloaded so the agent
+        // can answer "what do you recommend?" instantly instead of spending a
+        // tool round-trip — and so it recommends what the venue wants sold
+        // rather than whatever the search index surfaces. "" = nothing ranked,
+        // and the prompt falls back to menu_lookup.
+        menu_highlights: menuHighlights
       },
       metadata: {
         restaurant_id: restaurantId,
@@ -299,6 +314,45 @@ export function voiceBookingDisabledResponse(): {
     natural_alternatives_message: message,
     confirmation_message: message
   };
+}
+
+/**
+ * Above the venue's auto-book ceiling the agent takes a message instead.
+ *
+ * The venue owner asked for anything above a small party to reach him
+ * personally. Enforced here rather than in the prompt because otherwise
+ * check_availability happily reports a real free table for a larger party, and
+ * an agent told a table is free will book it.
+ */
+export function partyTooLargeResponse(
+  partySize: number,
+  ownerName: string | null
+): {
+  available: false;
+  success: false;
+  reason: "party_needs_venue";
+  message: string;
+  natural_alternatives_message: string;
+  confirmation_message: string;
+} {
+  const who = ownerName?.trim() ? ownerName.trim() : "the team";
+  const message =
+    `For a group of ${partySize} I'll get ${who} to give you a call and sort it out properly — ` +
+    `could I grab your name and the best number to reach you on?`;
+  return {
+    available: false,
+    success: false,
+    reason: "party_needs_venue",
+    message,
+    natural_alternatives_message: message,
+    confirmation_message: message
+  };
+}
+
+/** Is this party above the venue's auto-book ceiling? 0 disables the cap. */
+export function exceedsAutoBookCap(partySize: number | undefined, cap: number): boolean {
+  if (!cap || cap <= 0) return false;
+  return typeof partySize === "number" && Number.isFinite(partySize) && partySize > cap;
 }
 
 export async function handleRetellFunction(
@@ -341,6 +395,29 @@ export async function handleRetellFunction(
       "RESTAURANT_NOT_CONFIGURED",
       "Sorry, this phone line isn't fully set up yet. Please try again later."
     );
+  }
+
+  // The cap is checked before availability, not after. If she is told a table
+  // exists she will offer it, and taking it back reads as the system failing.
+  const requestedPartySize = Number(
+    (args.party_size ?? args.partySize ?? args.partysize) as unknown
+  );
+  if (
+    (name === "check_availability" ||
+      name === "checkavailability" ||
+      name === "create_booking" ||
+      name === "createbooking") &&
+    exceedsAutoBookCap(requestedPartySize, env.VOICE_AUTOBOOK_MAX_PARTY)
+  ) {
+    const venue = await getRestaurantVoiceContext(restaurantId);
+    logger.info({
+      evt: "party_above_autobook_cap",
+      tool: name,
+      restaurant_id: restaurantId,
+      party_size: requestedPartySize,
+      cap: env.VOICE_AUTOBOOK_MAX_PARTY
+    });
+    return partyTooLargeResponse(requestedPartySize, venue.ownerName);
   }
 
   if (name === "check_availability" || name === "checkavailability") {
