@@ -1,6 +1,54 @@
 # Incident: calls dropping at a fixed ~7.6 seconds
 
-**Status: OPEN — narrowed to the SIP trunk. One experiment away from a verdict. 20 Aug 2026.**
+**Status: RESOLVED (cause identified) — the trunk's REGION is the cause. AU1 drops, US1 does not.
+Transport (TLS vs TCP) is exonerated. 31 Aug 2026. The fix — move `+61 468 202 846` to a US1
+trunk — is not yet applied, so the Mazcina line still drops.**
+
+## 0a. The verdict, and the experiment that produced it (31 Aug 2026)
+
+§6 proposed flipping staging's transport to TCP and said: *"Any 7.6 s drop → transport
+exonerated; **AU1 is the remaining variable**."* That experiment was never run as written.
+A better one ran by accident, and it decides the question.
+
+Cuban Corner was built on a **US1** trunk (`voxtable-prod-us1`, `TK50f2a0cc…`) with
+origination **`transport=tls`** and `secure=true` — i.e. the same TLS posture as the two
+failing trunks, differing **only in region**. Both venues sit on the **same Twilio account**
+(`ACd423bd09…`), the **same Retell workspace** (Biteperk), the **same backend**
+(`api.biteperk.com.au`) and the same API host, so account, workspace, backend and credentials
+are all controlled.
+
+| Line | Trunk | Region | Transport | Phone calls | 7–9 s `user_hangup` drops |
+|---|---|---|---|---|---|
+| Cuban Corner `+61 485 071 140` | `voxtable-prod-us1` | **US1** | TLS | 8 | **0 (0 %)** — 42 s to 232 s, all healthy |
+| Mazcina `+61 468 202 846` | `voxtable-prod-au1` | **AU1** | TLS | 8 | **4 (50 %)** — 7,585 / 7,602 / 8,215 / 8,359 ms |
+
+**TLS is present on both.** That is the whole point: §4 listed transport and region as the
+two surviving confounded candidates, and this pair separates them. Transport is held
+constant at TLS while region varies, and the fault tracks region exactly.
+
+At the observed ~50 % failure rate, eight consecutive clean calls on US1 has probability
+~0.4 %.
+
+**Honest caveats.** Cuban Corner's calls are recent while Mazcina's cluster on 20 Aug, so a
+time component is not fully excluded — though §4b already eliminated everything that changed
+in between. Eight calls per arm is a small sample; it is decisive about *region* only because
+§2–§5 had already eliminated the agent, prompt, workspace, backend, account, caller and call
+content. And a trunk's region cannot be changed after creation, so confirming it costs a new
+trunk either way.
+
+**Consequence for go-live:** the fix is to move `+61 468 202 846` onto a US1 trunk built to
+the `voxtable-prod-us1` recipe, then re-verify with `npm run check:voice-lines` and a call
+battery. Until that happens, Mazcina drops roughly half its calls and must not be
+customer-facing. Cuban Corner's line is unaffected and has never shown the signature.
+
+⚠️ **The number's voice region must be changed to US1 *before* attaching it to a US1 trunk** —
+a US1 number is invisible to an AU1 trunk and vice versa, and the reverse mistake looks
+exactly like a deleted trunk. See `deploy/runbooks/twilio-account-topology.md`.
+
+⚠️ Do **not** conclude "AU1 is broken for everyone". What is established is that this
+recipe — AU1 origination over TLS to an out-of-region SIP endpoint (`sip.retellai.com`, US) —
+releases a third to a half of calls at a fixed ~7.6 s. The Twilio ticket in §8 is still worth
+filing, now with this cleaner comparison in it.
 
 ⚠️ **This file previously concluded the caller's handset/carrier was the prime suspect and
 that "calling from a different phone is the decider". That conclusion was WRONG** and is
