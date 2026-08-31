@@ -14,6 +14,7 @@ import {
   replaceVariants,
   getRequiredModifierGroups,
   listMenuItemWindows,
+  listRecommendedItems,
   searchMenuItemsByName,
   updateCategory as repoUpdateCategory,
   updateMenuItem as repoUpdateMenuItem
@@ -416,6 +417,98 @@ const DRINK_SECTION_WORDS = [
 ];
 
 /**
+ * Section synonyms. Category matching is plain substring against the venue's
+ * own section names, which works for "mains", "sides", "salads", "desserts",
+ * "kids" and even "sharing"/"chef" (both substrings of "Chef Suggestions for
+ * Sharing") — but silently misses the words callers actually use for the
+ * starters section. A miss is not harmless: it answers "we don't have a
+ * starters section" about a section the venue definitely has.
+ *
+ * Australian usage: "entree" is a STARTER here, not a main. This venue is in
+ * Sydney; do not map it the American way.
+ */
+const CATEGORY_SYNONYMS: Array<{ spoken: RegExp; sectionWords: string[] }> = [
+  {
+    spoken:
+      /^(a |some |any |the )*(entr[ée]e|appeti[sz]er|small plate|nibble|starter)s?$|^(something |anything )?to (start|begin)( with)?$/i,
+    sectionWords: ["starter", "entree", "entrée", "appetiser", "appetizer", "small plate", "to start"]
+  },
+  {
+    spoken: /^(a |some |any |the )*(platter|board|share plate|sharing plate|shared plate)s?$|^(something )?to share$/i,
+    sectionWords: ["sharing", "share", "platter", "board", "chef suggestion"]
+  }
+];
+
+/**
+ * Resolve a caller's word for a section to the venue's actual categories.
+ * Shared by the query path and the browse path so both answer identically —
+ * they used to disagree, which is how a category-shaped query bypassed all of
+ * this and searched the whole menu by name.
+ */
+export function resolveCategoryHits<T extends { name: string }>(categories: T[], categoryWord: string): T[] {
+  const wanted = categoryWord.trim().toLowerCase();
+  const direct = categories.filter(
+    (c) => c.name.toLowerCase().includes(wanted) || wanted.includes(c.name.toLowerCase())
+  );
+
+  // The umbrella fans out when the caller's word landed on AT MOST one section.
+  // Checked before the plain-substring return on purpose: "Juices & Soft
+  // Drinks" contains "drinks", so a direct-match-wins rule answers "what
+  // drinks do you have?" from the juices alone and never mentions the bar.
+  if (DRINK_UMBRELLA.test(wanted) && direct.length <= 1) {
+    const bar = categories.filter((c) =>
+      DRINK_SECTION_WORDS.some((w) => c.name.toLowerCase().includes(w))
+    );
+    if (bar.length > 0) return bar;
+  }
+
+  if (direct.length > 0) return direct;
+
+  const synonym = CATEGORY_SYNONYMS.find((s) => s.spoken.test(wanted));
+  if (synonym) {
+    const viaSynonym = categories.filter((c) =>
+      synonym.sectionWords.some((w) => c.name.toLowerCase().includes(w))
+    );
+    if (viaSynonym.length > 0) return viaSynonym;
+  }
+
+  return [];
+}
+
+/**
+ * Is the caller naming a SECTION rather than a dish? "Can I have some
+ * suggestions for starters?" is a browse, but it arrives as `query` because
+ * the LLM passes the caller's words through — and a query beat the category
+ * parameter to the return, so it was searched as a dish name against all 97
+ * items. That is exactly how the owner was offered a side and a salad when he
+ * asked for starters.
+ */
+export function categoryShapedQuery(query: string): string | null {
+  const cleaned = query
+    .trim()
+    .toLowerCase()
+    .replace(/[?.!]+$/, "")
+    // Strip the polite scaffolding the caller wraps the section name in.
+    .replace(
+      /^(can i (have|get)|could i (have|get)|what|whats|what's|do you have|have you got|any|some|give me|i'd like|id like|tell me about)\s+/,
+      ""
+    )
+    .replace(/^(are |is )?(some |any |your |the )?(good |nice |best )?(suggestions?|recommendations?|options?|choices?)\s+(for|from|in|on)\s+/, "")
+    .replace(/^(you have|you got|do you have)\s+/, "")
+    .replace(/\s+(do you have|have you got|are there|on the menu)$/, "")
+    // "what's GOOD to share" / "your BEST starters" — the quality adjective is
+    // not part of the section name.
+    .replace(/^(is|are|was)\s+/, "")
+    .replace(/^(the |your |our |some |any )+/, "")
+    .replace(/^(good|best|nice|great|popular|top|favourite|favorite)\s+/, "")
+    .replace(/^(on|in|from|for)\s+(the\s+)?/, "")
+    .replace(/^(the |your |some |any )+/, "")
+    .trim();
+  if (cleaned.length === 0 || cleaned.length > 40) return null;
+  return cleaned;
+}
+
+/**
  * The real category overview, built from THIS venue's menu. The summary speaks
  * category NAMES only — an earlier version read 2 items from each of the first
  * 4 categories, which on a real 8-category menu produced a 17-second monologue
@@ -538,6 +631,106 @@ export async function buildMenuStatus(restaurantId: string, nowHm: string): Prom
   }
 }
 
+/** Row shape formatMenuHighlights needs. Kept structural so the formatter
+ * stays pure and testable without a database. */
+export interface RecommendableItem {
+  name: string;
+  base_price_cents: number;
+  recommend_rank: number | null;
+  is_signature: boolean;
+  is_quick_bite: boolean;
+  available_from: string | null;
+  available_until: string | null;
+  category_name: string;
+}
+
+// The variable is injected into the prompt on every call, so it competes with
+// the prompt for the model's attention. Long enough to carry the owner's list,
+// short enough that it cannot swamp the instructions around it.
+const MENU_HIGHLIGHTS_MAX_CHARS = 800;
+
+/**
+ * The owner's picks, phrased for the agent to read from.
+ *
+ * Pure on purpose: the DB half is one query and the judgement is all in here,
+ * which is what lets this be covered by DB-free tests per the repo's testing
+ * doctrine.
+ *
+ * Items outside their daily window are dropped, not annotated. This list is
+ * what the agent recommends UNPROMPTED; offering a breakfast dish to an 8 PM
+ * caller and having create_order refuse it is the call_4e871f4b failure, and a
+ * recommendation is a worse place for it than a lookup because the caller never
+ * asked.
+ */
+export function formatMenuHighlights(items: RecommendableItem[], nowHm?: string): string {
+  const servable = nowHm
+    ? items.filter((i) => isWithinDailyWindow(nowHm, i.available_from, i.available_until))
+    : items;
+  if (servable.length === 0) return "";
+
+  const describe = (i: RecommendableItem): string => {
+    const notes = [i.is_signature ? "signature" : null].filter(Boolean).join(", ");
+    return `${i.name} (${speakablePrice(i.base_price_cents)}${notes ? `, ${notes}` : ""})`;
+  };
+
+  const lines: string[] = [];
+
+  // The quick-to-make pair leads, and crosses sections deliberately: the owner
+  // pairs them precisely because one is a Starter and one is a Side.
+  const quick = servable.filter((i) => i.is_quick_bite);
+  if (quick.length > 0) {
+    lines.push(`Quick to make, good while mains cook: ${quick.map(describe).join(", ")}.`);
+  }
+
+  const bySection = new Map<string, RecommendableItem[]>();
+  for (const item of servable) {
+    const list = bySection.get(item.category_name) ?? [];
+    list.push(item);
+    bySection.set(item.category_name, list);
+  }
+  for (const [section, sectionItems] of bySection) {
+    const ranked = sectionItems
+      .slice()
+      .sort((a, b) => (a.recommend_rank ?? 0) - (b.recommend_rank ?? 0))
+      .map((i, idx) => `${idx + 1}. ${describe(i)}`)
+      .join(" ");
+    lines.push(`${section} — ${ranked}`);
+  }
+
+  // Truncate at a SECTION boundary. A mid-sentence cut would leave the agent
+  // reading half a dish name and half a price out loud.
+  const out: string[] = [];
+  let length = 0;
+  for (const line of lines) {
+    const next = length + line.length + (out.length > 0 ? 1 : 0);
+    if (next > MENU_HIGHLIGHTS_MAX_CHARS) {
+      logger.warn({
+        evt: "menu_highlights_truncated",
+        kept_sections: out.length,
+        total_sections: lines.length
+      });
+      break;
+    }
+    out.push(line);
+    length = next;
+  }
+  return out.join("\n");
+}
+
+/**
+ * Fail-open by design: an empty string makes the agent fall back to
+ * menu_lookup. A menu problem must never be able to take the phone line down.
+ */
+export async function buildMenuHighlights(restaurantId: string, nowHm?: string): Promise<string> {
+  try {
+    const items = await listRecommendedItems(restaurantId);
+    return formatMenuHighlights(items as unknown as RecommendableItem[], nowHm);
+  } catch (error) {
+    logger.warn({ evt: "menu_highlights_build_failed", restaurant_id: restaurantId, error });
+    return "";
+  }
+}
+
 export async function lookupMenu(input: {
   restaurantId: string;
   query?: string;
@@ -549,13 +742,56 @@ export async function lookupMenu(input: {
   speakable_summary: string;
   ambiguous: boolean;
 }> {
-  if (input.query && input.query.trim().length > 0 && !GENERIC_MENU_QUERY.test(input.query.trim())) {
-    const matches = await searchMenuItemsByName(input.restaurantId, input.query.trim(), 6);
+  const rawQuery = input.query?.trim() ?? "";
+  const hasDishQuery = rawQuery.length > 0 && !GENERIC_MENU_QUERY.test(rawQuery);
+
+  // Resolve the section BEFORE deciding which branch answers. This ordering is
+  // the whole fix: the query branch used to return before the category
+  // parameter was ever read, so `{query:"starters", category:"Starters"}`
+  // searched dish names across the entire menu and offered a side and a salad
+  // as starters on a real owner call.
+  //
+  // The overview runs in parallel with the name search, so resolving a section
+  // costs no extra wall-clock on the voice path even though it is a second
+  // read. Latency is the scarce resource here, not read-pool capacity.
+  const overviewPromise = categoryOverview(input.restaurantId, input.nowHm);
+  const categoryWord = input.category?.trim()
+    ? input.category.trim()
+    : hasDishQuery
+      ? categoryShapedQuery(rawQuery)
+      : null;
+
+  if (hasDishQuery) {
+    const [overview, nameMatches] = await Promise.all([
+      overviewPromise,
+      searchMenuItemsByName(input.restaurantId, rawQuery, 6)
+    ]);
+    const sectionHits = categoryWord ? resolveCategoryHits(overview.categories, categoryWord) : [];
+
+    // The caller named a SECTION, not a dish ("suggestions for starters") —
+    // browse it. Only when the caller's words landed on exactly one section,
+    // so a genuine dish query is never hijacked by a stray category word.
+    const explicitCategory = Boolean(input.category?.trim());
+    if (sectionHits.length === 1 && (explicitCategory || nameMatches.length === 0 || sectionHits[0]!.name.toLowerCase() === categoryWord?.toLowerCase())) {
+      return browseCategory(sectionHits, categoryWord ?? sectionHits[0]!.name, overview.names, input.nowHm);
+    }
+    if (sectionHits.length > 1) {
+      return browseCategory(sectionHits, categoryWord ?? "", overview.names, input.nowHm);
+    }
+
+    // A dish query WITH a section: scope the search to that section so a
+    // starters request can never surface a salad. `matches` is scoped too, not
+    // just the spoken summary — create_order consumes `matches`, so scoping
+    // only the summary would make Bella say starters and order a salad.
+    const matches =
+      explicitCategory && sectionHits.length === 1
+        ? await searchMenuItemsByName(input.restaurantId, rawQuery, 6, { categoryId: sectionHits[0]!.id })
+        : nameMatches;
     if (matches.length === 0) {
       // The old reply hardcoded "mains, salads, kids meals, and drinks" — the
       // FIXTURE menu's categories, spoken verbatim to every venue's callers.
       // Build the miss reply from the venue's real categories instead.
-      const { names } = await categoryOverview(input.restaurantId, input.nowHm);
+      const names = overview.names;
       return {
         matches: [],
         ambiguous: false,
@@ -623,70 +859,84 @@ export async function lookupMenu(input: {
     };
   }
 
-  const { matches, categories, names } = await categoryOverview(input.restaurantId, input.nowHm);
+  const overview = await overviewPromise;
 
   // Category browse ("what drinks do you have?" → category: "drinks"). This
   // parameter was in the tool schema and its Retell description from day one
   // but was silently ignored — the agent browsing drinks got the generic food
   // overview back and told the caller the drinks list was broken.
-  if (input.category && input.category.trim().length > 0) {
-    const wanted = input.category.trim().toLowerCase();
-    const named = categories.filter(
-      (c) => c.name.toLowerCase().includes(wanted) || wanted.includes(c.name.toLowerCase())
-    );
-    // An umbrella ask only fans out when the caller's own word didn't already
-    // land on a section, so a venue that really does have a "Drinks" category
-    // keeps answering from it.
-    const hits =
-      DRINK_UMBRELLA.test(wanted) && named.length <= 1
-        ? categories.filter((c) => DRINK_SECTION_WORDS.some((w) => c.name.toLowerCase().includes(w)))
-        : named;
-
-    // Several sections match — offer their names. Answering from whichever one
-    // sorted first is how "what drinks do you have?" used to return the juices
-    // and never mention the cocktails.
-    if (hits.length > 1) {
-      return {
-        matches: hits.flatMap((c) => c.items.slice(0, 1).map((i) => toLookupMatch(i, c.id))),
-        ambiguous: false,
-        speakable_summary: `For ${input.category} we have ${speakList(hits.map((c) => c.name))}. Which sounds good?`
-      };
+  if (categoryWord) {
+    const hits = resolveCategoryHits(overview.categories, categoryWord);
+    if (hits.length > 0 || input.category) {
+      return browseCategory(hits, categoryWord, overview.names, input.nowHm);
     }
-
-    const hit = hits[0];
-    if (hit) {
-      // Speak what she can sell; fall back to the licensed rows so an all-bar
-      // section gets described rather than denied.
-      const source = hit.items.length > 0 ? hit.items : hit.restricted;
-      const items = source.slice(0, 6);
-      const spoken = items
-        .slice(0, 4)
-        .map((i) => `${i.name} (${speakablePrice(i.base_price_cents)})`)
-        .join(", ");
-      const tail =
-        hit.items.length === 0
-          ? " That's our licensed list, so I can't take those orders over the phone — the team will sort you out when you arrive."
-          : hit.restricted.length > 0
-            ? " There's a licensed list too, which I can't take orders for over the phone. Want any of those?"
-            : " Want any of those?";
-      return {
-        matches: items.map((i) => toLookupMatch(i, hit.id)),
-        ambiguous: false,
-        speakable_summary: `For ${hit.name} we have ${spoken}${source.length > 4 ? ", and a few more" : ""}.${tail}`
-      };
-    }
-    // Honest miss: the section genuinely isn't on the menu.
-    return {
-      matches: [],
-      ambiguous: false,
-      speakable_summary: `We don't have a ${input.category} section on the menu. We have ${names}. Which would you like?`
-    };
   }
 
   // No query (or a generic "the menu" one): speak the category names.
   return {
-    matches,
+    matches: overview.matches,
     ambiguous: false,
-    speakable_summary: `We have ${names}. What sounds good?`
+    speakable_summary: `We have ${overview.names}. What sounds good?`
+  };
+}
+
+/**
+ * Speak one section, or offer the names when the caller's word spans several.
+ * Extracted so the query path and the browse path answer a section request
+ * identically — they used to diverge, and the query path won.
+ */
+function browseCategory(
+  hits: OverviewCategory[],
+  categoryWord: string,
+  allNames: string,
+  nowHm?: string
+): { matches: MenuLookupMatch[]; speakable_summary: string; ambiguous: boolean } {
+  // Several sections match — offer their names. Answering from whichever one
+  // sorted first is how "what drinks do you have?" used to return the juices
+  // and never mention the cocktails.
+  if (hits.length > 1) {
+    return {
+      matches: hits.flatMap((c) => c.items.slice(0, 1).map((i) => toLookupMatch(i, c.id, nowHm))),
+      ambiguous: false,
+      speakable_summary: `For ${categoryWord} we have ${speakList(hits.map((c) => c.name))}. Which sounds good?`
+    };
+  }
+
+  const hit = hits[0];
+  if (hit) {
+    // Speak what she can sell; fall back to the licensed rows so an all-bar
+    // section gets described rather than denied.
+    const source = hit.items.length > 0 ? hit.items : hit.restricted;
+    // Prefer items servable at the reference time. Offering the breakfast
+    // toastie to an 8 PM caller is the call_4e871f4b failure: create_order
+    // then refuses what Bella just recommended.
+    const servable = nowHm
+      ? source.filter((i) => isWithinDailyWindow(nowHm, i.available_from, i.available_until))
+      : source;
+    const usable = servable.length > 0 ? servable : source;
+    const offWindow = servable.length === 0 && source.length > 0;
+    const items = usable.slice(0, 6);
+    const spoken = items
+      .slice(0, 4)
+      .map((i) => `${i.name} (${speakablePrice(i.base_price_cents)})`)
+      .join(", ");
+    const tail = offWindow
+      ? ` Those aren't served right now, though — want something from the current menu instead?`
+      : hit.items.length === 0
+        ? " That's our licensed list, so I can't take those orders over the phone — the team will sort you out when you arrive."
+        : hit.restricted.length > 0
+          ? " There's a licensed list too, which I can't take orders for over the phone. Want any of those?"
+          : " Want any of those?";
+    return {
+      matches: items.map((i) => toLookupMatch(i, hit.id, nowHm)),
+      ambiguous: false,
+      speakable_summary: `For ${hit.name} we have ${spoken}${usable.length > 4 ? ", and a few more" : ""}.${tail}`
+    };
+  }
+  // Honest miss: the section genuinely isn't on the menu.
+  return {
+    matches: [],
+    ambiguous: false,
+    speakable_summary: `We don't have a ${categoryWord} section on the menu. We have ${allNames}. Which would you like?`
   };
 }
