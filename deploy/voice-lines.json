@@ -74,6 +74,17 @@
         "Trunk attachment is per-region config, so the AU1 trunk association still exists but is",
         "inert. ROLLBACK = POST VoiceRegion=au1 to routes.twilio.com/v2/PhoneNumbers/+61468202846;",
         "nothing else needs undoing. A trunk's region is immutable, which is why this is a new trunk."
+      ],
+      "greeting_ai_disclosure": false,
+      "$greeting_disclosure_comment": [
+        "The venue owner asked for the 'an AI assistant' phrase to be removed, 31 Aug 2026.",
+        "Applied. The RECORDING disclosure stays — that is the half with statutory weight",
+        "(NSW Surveillance Devices Act 2007) and there is no per-line waiver for it.",
+        "Safe for this venue specifically: Mazcina has ZERO rows in agreement_acceptances, so",
+        "there is no signed certification that an AI announcement is made. A venue that HAS",
+        "signed must not get this flag without re-papering that clause first.",
+        "Open: deploy/runbooks/legal-brief-call-recording.md was sent 3 Aug 2026 and its six",
+        "questions have no recorded answer in this repo."
       ]
     },
     "+61468203234": {
