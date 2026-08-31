@@ -18,6 +18,12 @@ import {
   upsertCustomer
 } from "../repositories/reservations";
 import { getRestaurantName, getRestaurantSettings, getRestaurantTimezone } from "../repositories/restaurants";
+import {
+  cancelOrdersForReservation,
+  insertOrderEvent,
+  rescheduleOrdersForReservation
+} from "../repositories/orders";
+import { computeFireAt } from "./orderService";
 import { enqueueNotification } from "../repositories/notifications";
 import { isSmsEnabled } from "./notificationService";
 import { env } from "../config/env";
@@ -107,6 +113,60 @@ export function buildBookingCancelledSms(input: {
  * with a permanent 4xx, so the "+" check makes enqueueing one structurally
  * impossible rather than relying on every caller remembering.
  */
+/**
+ * Tell the venue's owner a booking just landed.
+ *
+ * Silent when the venue has no owner_phone, or SMS is not configured — both are
+ * ordinary states (most venues have neither), not errors worth logging on every
+ * booking.
+ *
+ * Runs inside the booking transaction, exactly like the guest confirmation, so
+ * there is one row per committed booking and no dedupe column is needed. Note
+ * that means a database error here fails the booking: it is NOT swallowed, and
+ * catching it would be theatre — a failed statement already poisons the
+ * transaction, so the COMMIT would fail regardless.
+ */
+async function enqueueOwnerBookingNotice(
+  input: {
+    restaurantId: string;
+    customerName: string;
+    partySize: number;
+    date: string;
+    time: string;
+    reservationId: string;
+  },
+  db: DbClient
+): Promise<void> {
+  if (!isSmsEnabled()) return;
+  {
+    const owner = await db.query<{ owner_phone: string | null }>(
+      "SELECT owner_phone FROM restaurants WHERE id = $1",
+      [input.restaurantId]
+    );
+    const recipient = owner.rows[0]?.owner_phone?.trim();
+    if (!recipient || !recipient.startsWith("+")) return;
+
+    const notificationId = await enqueueNotification(
+      {
+        restaurantId: input.restaurantId,
+        channel: "sms",
+        recipient,
+        kind: "owner_booking_alert",
+        body:
+          `New booking: ${input.customerName}, ${input.partySize} ` +
+          `${input.partySize === 1 ? "guest" : "guests"}, ` +
+          `${input.date} at ${input.time.slice(0, 5)}.`
+      },
+      db
+    );
+    logger.info({
+      evt: "owner_booking_notice_enqueued",
+      reservation_id: input.reservationId,
+      notification_id: notificationId
+    });
+  }
+}
+
 async function enqueueBookingSms(
   input: {
     restaurantId: string;
@@ -392,6 +452,24 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
       );
     }
 
+    // Owner ping — the venue owner asked to know the moment a booking lands.
+    //
+    // Same transaction as the reservation, so there is exactly one row per
+    // committed booking. The outbox is at-least-once with no dedupe key, so a
+    // worker crash mid-send can repeat it; a duplicate "new booking" text is a
+    // fair price for never missing one.
+    await enqueueOwnerBookingNotice(
+      {
+        restaurantId: input.restaurantId,
+        customerName: input.customerName,
+        partySize: input.partySize,
+        date: input.date,
+        time: input.time,
+        reservationId: reservation.id
+      },
+      lockClient
+    );
+
     await lockClient.query("COMMIT");
 
     return {
@@ -525,6 +603,65 @@ export async function modifyBooking(input: {
         await enqueueRescheduleForReservation(current.id, db);
       }
 
+      // Pre-orders follow the booking. Neither of these paths touched `orders`
+      // before, so a moved booking cooked early and a cancelled one cooked at
+      // all — for a table nobody was coming to.
+      if (becameCancelled) {
+        const cancelled = await cancelOrdersForReservation(
+          current.id,
+          "Booking cancelled",
+          db
+        );
+        for (const orderId of cancelled) {
+          await insertOrderEvent(
+            {
+              orderId,
+              eventType: "cancelled",
+              toValue: "cancelled",
+              actor: "system",
+              metadata: { reason: "reservation_cancelled", reservation_id: current.id }
+            },
+            db
+          );
+        }
+        if (cancelled.length > 0) {
+          logger.info({
+            evt: "preorders_cancelled_with_booking",
+            reservation_id: current.id,
+            order_count: cancelled.length
+          });
+        }
+      } else if (dateOrTimeChanged && env.ORDER_FIRE_AT_ENABLED) {
+        const tz = await getRestaurantTimezone(current.restaurant_id);
+        const movedFireAt = computeFireAt(
+          reservation.reservation_date,
+          reservation.start_time,
+          tz,
+          env.KITCHEN_LEAD_MINUTES
+        );
+        const moved = await rescheduleOrdersForReservation(current.id, movedFireAt, db);
+        for (const orderId of moved) {
+          await insertOrderEvent(
+            {
+              orderId,
+              eventType: "modified",
+              toValue: movedFireAt,
+              actor: "system",
+              metadata: { reason: "reservation_moved", reservation_id: current.id }
+            },
+            db
+          );
+        }
+        if (moved.length > 0) {
+          logger.info({
+            evt: "preorders_rescheduled_with_booking",
+            reservation_id: current.id,
+            order_count: moved.length,
+            fire_at: movedFireAt
+          });
+        }
+      }
+
       // Name correction — only fire the UPDATE if the name actually changed.
       // Fetch current customer name inside the txn so it shares the snapshot.
       let nameChanged = false;
@@ -646,6 +783,33 @@ export async function cancelBooking(input: {
 
     if (reservation) {
       await enqueueCancelForReservation(reservation.id, calcomUid, input.reason, client);
+
+      // Kill any pre-order with it. Without this the kitchen still cooks for a
+      // table nobody is coming to, and the ticket sits on the pass forever.
+      const cancelledOrders = await cancelOrdersForReservation(
+        reservation.id,
+        "Booking cancelled",
+        client
+      );
+      for (const orderId of cancelledOrders) {
+        await insertOrderEvent(
+          {
+            orderId,
+            eventType: "cancelled",
+            toValue: "cancelled",
+            actor: "system",
+            metadata: { reason: "reservation_cancelled", reservation_id: reservation.id }
+          },
+          client
+        );
+      }
+      if (cancelledOrders.length > 0) {
+        logger.info({
+          evt: "preorders_cancelled_with_booking",
+          reservation_id: reservation.id,
+          order_count: cancelledOrders.length
+        });
+      }
 
       // Guest cancellation SMS — only when this call actually flipped the row
       // (the loser of a concurrent-cancel race gets reservation=null above and

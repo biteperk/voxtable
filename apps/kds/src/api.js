@@ -50,7 +50,9 @@ export async function authedFetch(path, options = {}) {
 }
 
 export function listActiveOrders() {
-  return authedFetch("/api/orders/active");
+  // Scheduled pre-orders too: the kitchen needs to see what is coming so a
+  // tray can be ready on arrival, not just what is due right now.
+  return authedFetch("/api/orders/active?include_upcoming=true");
 }
 
 export function updateOrderStatus(orderId, status, version) {
