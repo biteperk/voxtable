@@ -67,14 +67,15 @@
       "twilio_voice_region_sid": "QQa222ceeb482b6c796a750bfabe7b79e8",
       "twilio_key_project": "bp-voxtable-prod",
       "$trunk_posture_comment": [
-<<<<<<< Updated upstream
-        "Moved AU1 -> US1 on 31 Aug 2026. The AU1 trunk voxtable-prod-au1 (TK6fcd3c96ea…) dropped",
-        "4 of 8 calls at a fixed ~7.6s while Cuban Corner on US1+TLS dropped 0 of 8 — same Twilio",
-        "account, same Retell workspace, same backend, TLS on both. That separates the two confounded",
-        "candidates in incident-7600ms-call-drops.md §4 and convicts REGION, exonerating transport.",
-        "Trunk attachment is per-region config, so the AU1 trunk association still exists but is",
-        "inert. ROLLBACK = POST VoiceRegion=au1 to routes.twilio.com/v2/PhoneNumbers/+61468202846;",
-        "nothing else needs undoing. A trunk's region is immutable, which is why this is a new trunk."
+        "Moved AU1 -> US1 on 31 Aug 2026 on the hypothesis that the trunk region caused the",
+        "fixed ~7.6s drops. THE HYPOTHESIS WAS WRONG: the fault reproduced on US1 40 minutes",
+        "later (call_78fb2b89dfe0c031f282a33ebb6, 7,594ms, greeting-only, caller never spoke).",
+        "Region is now exonerated alongside transport. See incident-7600ms-call-drops.md §0.",
+        "The move is RETAINED anyway: US1 is no worse, and it is the only reason assert-line",
+        "checks 15-17 can run on this line at all — no AU1 API key exists on this account.",
+        "Surviving hypothesis is the number/carrier range: both numbers that drop are",
+        "+61 4 6820 xxxx bought 13 Aug; +61485071140 and the pilot line have never dropped.",
+        "ROLLBACK (not recommended) = POST VoiceRegion=au1 to routes.twilio.com/v2/PhoneNumbers/."
       ],
       "greeting_ai_disclosure": false,
       "$greeting_disclosure_comment": [
@@ -86,17 +87,6 @@
         "signed must not get this flag without re-papering that clause first.",
         "Open: deploy/runbooks/legal-brief-call-recording.md was sent 3 Aug 2026 and its six",
         "questions have no recorded answer in this repo."
-=======
-        "Moved AU1 -> US1 on 31 Aug 2026 on the hypothesis that the trunk region caused the",
-        "fixed ~7.6s drops. THE HYPOTHESIS WAS WRONG: the fault reproduced on US1 40 minutes",
-        "later (call_78fb2b89dfe0c031f282a33ebb6, 7,594ms, greeting-only, caller never spoke).",
-        "Region is now exonerated alongside transport. See incident-7600ms-call-drops.md §0.",
-        "The move is RETAINED anyway: US1 is no worse, and it is the only reason assert-line",
-        "checks 15-17 can run on this line at all — no AU1 API key exists on this account.",
-        "Surviving hypothesis is the number/carrier range: both numbers that drop are",
-        "+61 4 6820 xxxx bought 13 Aug; +61485071140 and the pilot line have never dropped.",
-        "ROLLBACK (not recommended) = POST VoiceRegion=au1 to routes.twilio.com/v2/PhoneNumbers/."
->>>>>>> Stashed changes
       ]
     },
     "+61468203234": {
