@@ -345,6 +345,33 @@ export async function createPortalSession(customer: string): Promise<{ url: stri
 
 // --- Self-serve subscription (Phase 3) -------------------------------------
 
+// The wizard shows the plan price on the screen right before Stripe collects a
+// card. It used to be a hardcoded frontend string that had to be manually kept
+// in sync with the price behind STRIPE_PRICE_ID — two places to edit, one of
+// them invisible to whoever edits the other. This reads the real price once
+// and caches it for the process lifetime (prices are immutable in Stripe; a
+// price change means a new price id, which means a deploy anyway).
+let cachedPlanPriceCents: number | null | undefined;
+
+export async function getSelfServePlanPriceCents(): Promise<number | null> {
+  if (cachedPlanPriceCents !== undefined) return cachedPlanPriceCents;
+  if (!env.STRIPE_PRICE_ID || !env.STRIPE_BILLING_ENABLED) {
+    cachedPlanPriceCents = null;
+    return null;
+  }
+  try {
+    const stripe = getStripe();
+    const price = await stripe.prices.retrieve(env.STRIPE_PRICE_ID);
+    cachedPlanPriceCents = typeof price.unit_amount === "number" ? price.unit_amount : null;
+  } catch (error) {
+    // Non-fatal: the wizard falls back to its marketing copy. Don't cache the
+    // failure — the next status fetch retries.
+    logger.warn({ msg: "stripe_plan_price_lookup_failed", error });
+    return null;
+  }
+  return cachedPlanPriceCents;
+}
+
 /**
  * Resolve (or lazily create) the Stripe customer for a restaurant. The id is
  * persisted on restaurants.stripe_customer_id so it's stable across calls.

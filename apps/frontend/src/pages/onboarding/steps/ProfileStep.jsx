@@ -66,6 +66,9 @@ export function ProfileStep({ onSaved }) {
     [placesReady]
   );
 
+  // Bumped by "Try again" so a transient profile-load failure isn't a dead card.
+  const [loadNonce, setLoadNonce] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     getRestaurantProfile()
@@ -89,12 +92,26 @@ export function ProfileStep({ onSaved }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadNonce]);
 
   if (!form) {
     return (
       <div className="onboarding-card is-loading">
         <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error.message}` : "Loading…"}</p>
+        {error && (
+          <div className="onboarding-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                setError(null);
+                setLoadNonce((n) => n + 1);
+              }}
+            >
+              Try again
+            </button>
+          </div>
+        )}
       </div>
     );
   }

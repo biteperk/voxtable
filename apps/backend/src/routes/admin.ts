@@ -30,6 +30,7 @@ import {
   clearProvisioningBindings,
   getProvisioning,
   getRestaurantByCalcomEventTypeId,
+  getRestaurantByPhoneNumber,
   getRestaurantByRetellAgentId,
   getOnboardingFunnel,
   getOnboardingStatus,
@@ -437,13 +438,35 @@ adminRouter.patch(
       }
     }
 
+    // Refuse a number another venue already holds — in either column. The
+    // per-column unique indexes from 007 cannot see across columns, and the
+    // dialled-number lookup ORs them, so a cross-column duplicate routes calls
+    // to whichever venue sorts first (#221). Checked here for the readable
+    // 409; migration 039's trigger is the backstop for writes that skip this
+    // route.
+    const normalizedTwilio = body.twilio_phone_number
+      ? normalizePhone(body.twilio_phone_number) ?? body.twilio_phone_number
+      : undefined;
+    const normalizedRetell = body.retell_phone_number
+      ? normalizePhone(body.retell_phone_number) ?? body.retell_phone_number
+      : undefined;
+    for (const number of new Set([normalizedTwilio, normalizedRetell])) {
+      if (!number) continue;
+      const holder = await getRestaurantByPhoneNumber(number, id);
+      if (holder) {
+        throw new AppError(
+          409,
+          "PHONE_NUMBER_ALREADY_BOUND",
+          `${number} is already bound to "${holder.name}". A number can belong to exactly ` +
+            `one venue — calls to a shared number would reach whichever venue the database ` +
+            `returns first. Unbind it there before binding it here.`
+        );
+      }
+    }
+
     const updated = await setProvisioningBindings(id, {
-      twilioPhoneNumber: body.twilio_phone_number
-        ? normalizePhone(body.twilio_phone_number) ?? body.twilio_phone_number
-        : undefined,
-      retellPhoneNumber: body.retell_phone_number
-        ? normalizePhone(body.retell_phone_number) ?? body.retell_phone_number
-        : undefined,
+      twilioPhoneNumber: normalizedTwilio,
+      retellPhoneNumber: normalizedRetell,
       retellAgentId: body.retell_agent_id,
       calcomEventTypeId: body.calcom_event_type_id
     });

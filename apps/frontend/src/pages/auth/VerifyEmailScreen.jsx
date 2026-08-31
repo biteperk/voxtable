@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readStorageKey, writeStorageKey } from "../../lib/storageKeys";
 import { auth, resendVerification, signOutUser } from "../../firebase";
 import { sendVerificationCode, confirmVerificationCode } from "../../api";
 import { authErrorMessage } from "../../lib/authErrors";
@@ -255,14 +256,14 @@ function CodeVerifyEmail({ navigate, onFallback }) {
 const POLL_MS = 5000;
 const MAX_POLLS = 60; // ~5 minutes, then the manual button takes over
 const RESEND_COOLDOWN_S = 30;
-const SENT_AT_KEY = "vocotable:verify-email-sent-at";
+const SENT_AT_KEY = "verify-email-sent-at";
 
 // Resend cooldown that survives a page reload — so a client who refreshes and
 // clicks again sees the countdown, not a fresh-looking button that trips
 // Firebase's server-side rate limit.
 function readStoredCooldown() {
   try {
-    const raw = window.localStorage.getItem(SENT_AT_KEY);
+    const raw = readStorageKey(SENT_AT_KEY, ":");
     if (!raw) return 0;
     const elapsed = Math.floor((Date.now() - Number(raw)) / 1000);
     return Math.max(0, RESEND_COOLDOWN_S - elapsed);
@@ -273,7 +274,7 @@ function readStoredCooldown() {
 
 function markSent() {
   try {
-    window.localStorage.setItem(SENT_AT_KEY, String(Date.now()));
+    writeStorageKey(SENT_AT_KEY, String(Date.now()), ":");
   } catch {
     // Storage disabled (e.g. private mode) — the cooldown just won't persist.
   }

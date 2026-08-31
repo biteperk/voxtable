@@ -48,6 +48,35 @@ export function resolveSmsSender(config: {
   return null;
 }
 
+/**
+ * Whether a completed order should text the guest.
+ *
+ * A pure predicate rather than an inline condition because every clause here is
+ * a bug someone already shipped:
+ *   - `isTakeaway`   — a dine-in pre-order hangs off a booking that already texted.
+ *   - `isReplay`     — a retried tool call would text twice.
+ *   - `flagEnabled`  — takeaway texts must be switchable off without touching bookings.
+ *   - `senderConfigured` — the one that bites silently. Without a sender the worker
+ *     never claims the row, so it sits pending and then flushes the moment a sender
+ *     is switched on, texting people about orders they collected hours ago.
+ *   - `hasPhone`     — a withheld caller ID has nowhere to send.
+ */
+export function shouldTextOrderConfirmation(input: {
+  isTakeaway: boolean;
+  isReplay: boolean;
+  flagEnabled: boolean;
+  senderConfigured: boolean;
+  hasPhone: boolean;
+}): boolean {
+  return (
+    input.isTakeaway &&
+    !input.isReplay &&
+    input.flagEnabled &&
+    input.senderConfigured &&
+    input.hasPhone
+  );
+}
+
 /** `resolveSmsSender` bound to the live environment. */
 export function smsSenderParams(): { messagingServiceSid: string } | { from: string } | null {
   return resolveSmsSender({

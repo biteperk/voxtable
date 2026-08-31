@@ -81,6 +81,37 @@ async function main(): Promise<void> {
   }
   console.log("twilio voice twiml ✓", voice.text.slice(0, 120));
 
+  // Disaster recovery: fires only when Retell is unreachable, so it must always
+  // produce speakable TwiML — a 500 here would be the dead air it exists to
+  // prevent. Two cases, because the interesting property is the unmapped one.
+  const disaster = await request("/twilio/disaster", params());
+  if (
+    disaster.status !== 200 ||
+    !disaster.text.includes("<Response>") ||
+    !disaster.text.includes("<Say>")
+  ) {
+    throw new Error(`Expected disaster TwiML (200) with <Say>, got ${disaster.status}: ${disaster.text}`);
+  }
+  console.log("twilio disaster twiml ✓", disaster.text.slice(0, 120));
+
+  // An unmapped number must NOT be transferred anywhere: fail closed rather than
+  // dialling whichever venue happens to be first.
+  const unmapped = await request(
+    "/twilio/disaster",
+    new URLSearchParams({
+      CallSid: `CA${Date.now()}u`,
+      From: "+61400000002",
+      To: "+61299999999",
+      CallStatus: "ringing"
+    })
+  );
+  if (unmapped.status !== 200 || unmapped.text.includes("<Dial")) {
+    throw new Error(
+      `unmapped disaster call must apologise without dialling, got ${unmapped.status}: ${unmapped.text}`
+    );
+  }
+  console.log("twilio disaster unmapped → apology, no transfer ✓");
+
   const status = await request(
     "/twilio/status",
     new URLSearchParams({

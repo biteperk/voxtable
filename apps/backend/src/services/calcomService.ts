@@ -58,11 +58,37 @@ import {
 
 // --- helpers -----------------------------------------------------------------
 
-const SYNTH_EMAIL_DOMAIN = "bookings.vocotable.algorythmos.com.au";
+const SYNTH_EMAIL_DOMAIN = "bookings.voxtable.biteperk.com.au";
 
-/** Phone digits → `<digits>@bookings.vocotable.algorythmos.com.au`. Cal.com
- *  requires an attendee email; voice callers rarely have one. The domain has
- *  no MX record so bounces stay quiet. */
+/**
+ * Domains we have ever minted synthetic attendee addresses under. Written: the
+ * first. Recognised: all of them.
+ *
+ * The old domain carried another company's name, which is why it moved. It stays
+ * readable because the addresses live in Cal.com's records, not ours — a booking
+ * made under the old domain can be cancelled or rescheduled years later and will
+ * arrive carrying it. Dropping this list would make those look like real customer
+ * contact details.
+ *
+ * NAMES.md §4 called this identity immutable on the grounds that changing it
+ * "orphans every existing Cal.com booking". It is four bookings, none of them in
+ * our database — `customers` has no email column — and recognising both domains
+ * orphans nothing.
+ */
+const SYNTH_EMAIL_DOMAINS = [
+  SYNTH_EMAIL_DOMAIN,
+  "bookings.vocotable.algorythmos.com.au"
+] as const;
+
+/** True when an address is one we minted for a caller who had no email. */
+export function isSynthesizedEmail(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return SYNTH_EMAIL_DOMAINS.some((domain) => value.includes(`@${domain}`));
+}
+
+/** Phone digits → `<digits>@bookings.voxtable.biteperk.com.au`. Cal.com requires
+ *  an attendee email; voice callers rarely have one. The domain has no MX record
+ *  so bounces stay quiet. */
 export function synthesizedEmail(phone: string | null | undefined): string {
   if (!phone) return `unknown@${SYNTH_EMAIL_DOMAIN}`;
   const digits = phone.replace(/\D+/g, "") || "unknown";
@@ -145,10 +171,10 @@ export function buildCreatePayload(input: CreatePayloadInput): Record<string, un
     // to attendees"); metadata is purely an audit trail for our DB ↔ Cal.com
     // reconciliation.
     metadata: {
-      vocotable_reservation_id: String(input.reservation.id),
-      vocotable_source: String(input.reservation.source),
-      vocotable_restaurant_id: String(input.reservation.restaurant_id),
-      vocotable_suppress_email: suppressEmail ? "true" : "false"
+      voxtable_reservation_id: String(input.reservation.id),
+      voxtable_source: String(input.reservation.source),
+      voxtable_restaurant_id: String(input.reservation.restaurant_id),
+      voxtable_suppress_email: suppressEmail ? "true" : "false"
     }
   };
 }
@@ -817,7 +843,7 @@ async function handleBookingCreated(
   }
 
   // Reconcile by the metadata WE stamped on every outbound push
-  // (buildCreatePayload sets `vocotable_reservation_id`). If the key is
+  // (buildCreatePayload stamps our reservation id). If the key is
   // present, this webhook is the echo of our own push — the outbox worker's
   // commit may simply not have landed yet — so attach the uid and stop.
   // Absence of the key positively identifies a genuine web booking. The old
@@ -929,13 +955,14 @@ async function handleBookingCreated(
   const partySize = partySizeValid ? Math.floor(partySizeNum) : 2;
   if (!partySizeValid) reviewFlags.push("party_size_missing");
 
-  // A "real" phone is anything non-empty that isn't the @bookings.vocotable
-  // synthetic email Cal.com gives us when the customer didn't provide one.
+  // A "real" phone is anything non-empty that isn't one of the synthetic
+  // addresses we mint when the caller has no email — either domain, see
+  // SYNTH_EMAIL_DOMAINS.
   const normalizedPhone = normalizePhone(phone);
   const phoneIsSynthetic =
     !phone ||
-    phone.includes(`@${SYNTH_EMAIL_DOMAIN}`) ||
-    (customerEmail && customerEmail.includes(`@${SYNTH_EMAIL_DOMAIN}`) && !normalizedPhone);
+    isSynthesizedEmail(phone) ||
+    (isSynthesizedEmail(customerEmail) && !normalizedPhone);
   if (!normalizedPhone) reviewFlags.push(phoneIsSynthetic ? "phone_synthetic" : "phone_invalid");
 
   if (reviewFlags.length > 0) {
@@ -1106,8 +1133,30 @@ async function handleBookingCancelled(
 }
 
 /**
+ * The reservation id we stamped on an outbound push, under either key.
+ *
+ * The keys moved from `vocotable_*` to `voxtable_*` when BitePerk separated from
+ * Algorythmos. Reading BOTH is not tidiness, it is the difference between a
+ * correct no-op and a phantom booking: `reconcileMirroredBooking` treats this id
+ * as positive proof that a webhook is our own push echoing back, and a booking
+ * created before the rename can be cancelled or rescheduled at any point in the
+ * future. Miss it and the event falls through to the genuine-web-booking path,
+ * which creates a duplicate reservation occupying a real table.
+ *
+ * So the legacy key is read FOREVER. There is no date after which it is safe to
+ * drop — only a date after which no such booking exists, which nothing tracks.
+ */
+export function ourReservationId(metadata: Record<string, unknown> | undefined): string | null {
+  for (const key of ["voxtable_reservation_id", "vocotable_reservation_id"]) {
+    const value = metadata?.[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return null;
+}
+
+/**
  * Reconciler: a BOOKING_CREATED arrived for a uid we don't hold. If the
- * webhook's metadata carries the `vocotable_reservation_id` we stamp on every
+ * webhook's metadata carries the reservation id we stamp on every
  * outbound push, it is OUR booking echoed back (typically the webhook beating
  * the outbox worker's commit) — attach the uid to exactly that reservation.
  *
@@ -1122,10 +1171,7 @@ export async function reconcileMirroredBooking(
   uid: string,
   expectedRestaurantId?: string | null
 ): Promise<boolean> {
-  const reservationId =
-    metadata && typeof metadata["vocotable_reservation_id"] === "string"
-      ? (metadata["vocotable_reservation_id"] as string)
-      : null;
+  const reservationId = ourReservationId(metadata);
   if (!reservationId) return false;
 
   const result = await pool.query<{
@@ -1150,7 +1196,7 @@ export async function reconcileMirroredBooking(
     // mirrored. Exactly the uncancellable ghost the rest of this file works to
     // avoid.
     //
-    // The presence of vocotable_reservation_id is positive proof this is our own
+    // The presence of our reservation id is positive proof this is our own
     // push echoing back; a genuine web booking can never carry it. So the answer
     // is never "treat it as a web booking" — it is "stop, loudly". Terminal
     // rather than retried, because a rebind does not un-happen, and no cancel

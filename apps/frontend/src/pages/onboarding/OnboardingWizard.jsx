@@ -138,11 +138,14 @@ function ComingSoonStep({ title, body }) {
 const REVIEWABLE_KEYS = ["profile", "agreement", "menu"];
 
 export function OnboardingWizard({ navigate }) {
-  const { memberships, refreshMe } = useAuth();
+  const { memberships, refreshMe, meError, meLoading } = useAuth();
   const [, setStatus] = useState(null);
   // Seeded from the marketing constant so the first paint isn't blank, then
   // replaced by the server's real value the moment status loads.
   const [trialDays, setTrialDays] = useState(TRIAL_DAYS);
+  // The real price behind STRIPE_PRICE_ID, served by /api/onboarding/status.
+  // Null until known — the trial card falls back to the marketing constant.
+  const [planPriceCents, setPlanPriceCents] = useState(null);
   const [checklist, setChecklist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -170,6 +173,7 @@ export function OnboardingWizard({ navigate }) {
       setStatus(r.onboarding_status);
       setChecklist(r.checklist);
       if (Number.isFinite(r.trial_days)) setTrialDays(r.trial_days);
+      if (Number.isFinite(r.plan_price_cents)) setPlanPriceCents(r.plan_price_cents);
       // If the real current step moved underneath a review (e.g. the Stripe
       // webhook advanced the tenant), drop review mode so the client isn't
       // left editing a stale card.
@@ -179,7 +183,7 @@ export function OnboardingWizard({ navigate }) {
         setReviewKey(null);
       }
       window.dispatchEvent(
-        new CustomEvent("vocotable:onboarding-status-changed", {
+        new CustomEvent("voxtable:onboarding-status-changed", {
           detail: { status: r.onboarding_status }
         })
       );
@@ -218,6 +222,34 @@ export function OnboardingWizard({ navigate }) {
   }
 
   if (!hasRestaurant) {
+    // Empty memberships is only proof of a NEW account when /api/me actually
+    // succeeded. On a failed load, showing CreateRestaurantStep to an existing
+    // owner is one click from a duplicate venue — show a retry instead.
+    if (meLoading) {
+      return (
+        <OnboardingShell onSignOut={handleSignOut}>
+          <div className="onboarding-card">
+            <p style={{ color: "var(--on-surface-variant)" }}>Loading…</p>
+          </div>
+        </OnboardingShell>
+      );
+    }
+    if (meError) {
+      return (
+        <OnboardingShell onSignOut={handleSignOut}>
+          <div className="onboarding-card">
+            <p className="onboarding-error" role="alert">
+              Couldn't load your account: {meError}
+            </p>
+            <div className="onboarding-actions">
+              <button type="button" className="primary-button" onClick={() => refreshMe()}>
+                Try again
+              </button>
+            </div>
+          </div>
+        </OnboardingShell>
+      );
+    }
     return (
       <OnboardingShell onSignOut={handleSignOut} welcome>
         <CreateRestaurantStep onCreated={refreshMe} />
@@ -297,7 +329,14 @@ export function OnboardingWizard({ navigate }) {
   } else if (current === "menu") {
     content = <MenuStep onContinue={advance} navigate={navigate} onBack={goBack} />;
   } else if (current === "trial") {
-    content = <TrialStep onRefresh={silentRefresh} onBack={goBack} trialDays={trialDays} />;
+    content = (
+      <TrialStep
+        onRefresh={silentRefresh}
+        onBack={goBack}
+        trialDays={trialDays}
+        planPriceCents={planPriceCents}
+      />
+    );
   } else if (current === "phone") {
     content = <PhoneStep onRefresh={silentRefresh} />;
   } else if (current) {

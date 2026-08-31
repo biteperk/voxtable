@@ -14,6 +14,7 @@ const AuthContext = createContext({
   activeRestaurantId: null,
   role: null,
   meLoading: false,
+  meError: null,
   setActiveRestaurant: () => {},
   refreshMe: () => {},
   hasMinRole: () => false
@@ -72,6 +73,9 @@ export function AuthProvider({ children }) {
   const [memberships, setMemberships] = useState([]);
   const [activeRestaurantId, setActiveId] = useState(getActiveRestaurantId());
   const [meLoading, setMeLoading] = useState(false);
+  // Non-null when /api/me failed after retries — the shell renders a retryable
+  // error instead of guessing between "new user" and "broken session".
+  const [meError, setMeError] = useState(null);
   // Platform admin (BitePerk staff) — a UI hint from /api/me for showing the
   // /admin entry point. Authority lives server-side on every /api/admin call.
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
@@ -80,25 +84,49 @@ export function AuthProvider({ children }) {
 
   // Load identity + memberships for the signed-in user. Sets the active
   // restaurant (and persists it) so X-Restaurant-Id is sent on later calls.
+  //
+  // Transient failures retry with backoff and then surface as meError rather
+  // than being folded into "no memberships": an existing owner shown the
+  // create-restaurant screen because /api/me 500'd once is a single click from
+  // a duplicate venue, and the dashboard's fallback for empty memberships is
+  // an unlabelled spinner. Only a definitive "this account has no restaurant"
+  // may produce the empty state.
   async function loadMe() {
     setMeLoading(true);
-    try {
-      const me = await getMe();
-      const list = Array.isArray(me?.memberships) ? me.memberships : [];
-      setMemberships(list);
-      setIsPlatformAdmin(me?.is_admin === true);
-      const active = pickActive(list, me?.active_restaurant_id ?? null);
-      setActiveRestaurantId(active);
-      setActiveId(active);
-    } catch {
-      // 403 NO_RESTAURANT_MEMBERSHIP (no restaurant yet) or a transient error:
-      // leave memberships empty so the app can route to onboarding (Phase 1).
-      setMemberships([]);
-      setIsPlatformAdmin(false);
-      setActiveRestaurantId(null);
-      setActiveId(null);
-    } finally {
-      setMeLoading(false);
+    setMeError(null);
+    const attempts = 3;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const me = await getMe();
+        const list = Array.isArray(me?.memberships) ? me.memberships : [];
+        setMemberships(list);
+        setIsPlatformAdmin(me?.is_admin === true);
+        const active = pickActive(list, me?.active_restaurant_id ?? null);
+        setActiveRestaurantId(active);
+        setActiveId(active);
+        setMeLoading(false);
+        return;
+      } catch (e) {
+        if (e?.code === "NO_RESTAURANT_MEMBERSHIP") {
+          // Genuinely no restaurant yet — route to onboarding (Phase 1).
+          setMemberships([]);
+          setIsPlatformAdmin(false);
+          setActiveRestaurantId(null);
+          setActiveId(null);
+          setMeLoading(false);
+          return;
+        }
+        if (attempt < attempts) {
+          await new Promise((r) => setTimeout(r, attempt * 1500));
+          continue;
+        }
+        // Out of retries: keep whatever memberships we already had (a mid-
+        // session refresh failing must not evict a working dashboard) and let
+        // the shell render a retryable error instead of a wrong screen.
+        setMeError(e?.message || "Couldn't load your account.");
+        setMeLoading(false);
+        return;
+      }
     }
   }
 
@@ -118,6 +146,7 @@ export function AuthProvider({ children }) {
         setIsPlatformAdmin(false);
         setActiveRestaurantId(null);
         setActiveId(null);
+        setMeError(null);
       }
     });
 
@@ -135,8 +164,8 @@ export function AuthProvider({ children }) {
     const onChanged = () => {
       if (auth.currentUser) void loadMe();
     };
-    window.addEventListener("vocotable:memberships-changed", onChanged);
-    return () => window.removeEventListener("vocotable:memberships-changed", onChanged);
+    window.addEventListener("voxtable:memberships-changed", onChanged);
+    return () => window.removeEventListener("voxtable:memberships-changed", onChanged);
   }, []);
 
   const setActiveRestaurant = (id) => {
@@ -162,6 +191,7 @@ export function AuthProvider({ children }) {
         activeRestaurantId,
         role,
         meLoading,
+        meError,
         isPlatformAdmin,
         setActiveRestaurant,
         refreshMe: loadMe,

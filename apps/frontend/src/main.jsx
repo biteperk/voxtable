@@ -1,6 +1,7 @@
 // Sentry instrumentation must initialise before anything else mounts, so it is
 // imported first (the module runs Sentry.init as an import side-effect).
 import { captureException } from "./sentry";
+import { readStorageKey, writeStorageKey } from "./lib/storageKeys";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -58,7 +59,7 @@ class ErrorBoundary extends React.Component {
     // Dev-only console logging — raw error text can carry PII, so keep it out of
     // production consoles. Sentry (below) is the production capture path.
     if (import.meta.env.DEV) {
-      console.error("[vocotable] uncaught render error:", {
+      console.error("[voxtable] uncaught render error:", {
         message: error?.message,
         stack: error?.stack?.split("\n").slice(0, 6).join("\n"),
         componentStack: info?.componentStack?.split("\n").slice(0, 6).join("\n")
@@ -252,8 +253,8 @@ function useOnboardingGate() {
         setLoading(false);
       }
     };
-    window.addEventListener("vocotable:onboarding-status-changed", onChanged);
-    return () => window.removeEventListener("vocotable:onboarding-status-changed", onChanged);
+    window.addEventListener("voxtable:onboarding-status-changed", onChanged);
+    return () => window.removeEventListener("voxtable:onboarding-status-changed", onChanged);
   }, []);
 
   return { loading, status };
@@ -271,7 +272,7 @@ function useOnboardingGate() {
  * whatever they were last working in. A product menu between login and work is
  * friction for the manager who opens this at 6pm to check tonight's covers.
  *
- * Mirrors the vocotable.activeRestaurantId convention in api.js.
+ * Mirrors the activeRestaurantId convention in api.js (see lib/storageKeys).
  */
 const PRODUCT_ROUTES = new Set([
   "/live-feed",
@@ -280,11 +281,11 @@ const PRODUCT_ROUTES = new Set([
   "/kitchen-overview"
 ]);
 
-const LAST_PRODUCT_KEY = "vocotable.lastProduct";
+const LAST_PRODUCT_KEY = "lastProduct";
 
 export function rememberProduct(route) {
   try {
-    window.localStorage.setItem(LAST_PRODUCT_KEY, route);
+    writeStorageKey(LAST_PRODUCT_KEY, route);
   } catch {
     /* private browsing — landing falls back to /home, which is harmless */
   }
@@ -292,7 +293,7 @@ export function rememberProduct(route) {
 
 function lastProductRoute() {
   try {
-    return window.localStorage.getItem(LAST_PRODUCT_KEY);
+    return readStorageKey(LAST_PRODUCT_KEY);
   } catch {
     return null;
   }
@@ -327,7 +328,7 @@ function RootRedirect({ navigate }) {
 }
 
 function AppRouter({ path, navigate, isDashboard }) {
-  const { user, loading, hasMinRole, memberships, meLoading } = useAuth();
+  const { user, loading, hasMinRole, memberships, meLoading, meError, refreshMe } = useAuth();
   const isOnboarding = path === "/onboarding" || path.startsWith("/onboarding/");
   const isInvite = path === "/invite";
   const isVerifyEmail = path === "/verify-email";
@@ -477,6 +478,18 @@ function AppRouter({ path, navigate, isDashboard }) {
   const tenantKnownIncomplete =
     gate.status !== null && gate.status !== "live" && !(isSuspended && isBillingRoute);
   if (isDashboard && (memberships.length === 0 || (tenantKnownIncomplete && !allowDuringOnboarding))) {
+    // memberships can be empty because /api/me genuinely returned none (the
+    // redirect to /onboarding is in flight) or because it failed after retries.
+    // The second must not be an infinite unlabelled spinner.
+    if (meError && memberships.length === 0) {
+      return (
+        <FullPageError
+          title="Couldn't load your account"
+          detail={meError}
+          onRetry={() => refreshMe()}
+        />
+      );
+    }
     return <FullPageMessage title="Loading..." />;
   }
 
@@ -543,6 +556,38 @@ function FullPageMessage({ title }) {
   return (
     <div style={{ display: "grid", placeItems: "center", minHeight: "100vh", color: "#cbd5e1" }}>
       <p style={{ fontSize: 20 }}>{title}</p>
+    </div>
+  );
+}
+
+// A load failure with a way out. Rendered when /api/me failed after retries —
+// the alternative was an unlabelled infinite spinner (or, worse, guessing the
+// user has no restaurant and showing them the create screen).
+function FullPageError({ title, detail, onRetry }) {
+  return (
+    <div
+      style={{ display: "grid", placeItems: "center", minHeight: "100vh", color: "#cbd5e1", padding: 24 }}
+      role="alert"
+    >
+      <div style={{ textAlign: "center", maxWidth: 420 }}>
+        <p style={{ fontSize: 20, margin: "0 0 8px" }}>{title}</p>
+        {detail && <p style={{ color: "#94a3b8", margin: "0 0 20px" }}>{detail}</p>}
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{
+            padding: "10px 18px",
+            borderRadius: 10,
+            border: "none",
+            background: "#6366f1",
+            color: "#fff",
+            fontSize: 15,
+            cursor: "pointer"
+          }}
+        >
+          Try again
+        </button>
+      </div>
     </div>
   );
 }

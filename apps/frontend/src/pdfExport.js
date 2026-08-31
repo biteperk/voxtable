@@ -214,7 +214,7 @@ export function exportAnalyticsPdf({ periodLabel, fileSlug, metrics, dailySeries
 
   // Save
   const fileDate = new Date().toISOString().slice(0, 10);
-  doc.save(`vocotable-analytics-${fileSlug ?? "report"}-${fileDate}.pdf`);
+  doc.save(`voxtable-analytics-${fileSlug ?? "report"}-${fileDate}.pdf`);
 }
 
 // ─── Receipt / Tax Invoice export ──────────────────────────────────────────
@@ -458,5 +458,5 @@ export function exportReceiptPdf({ invoice, customer, plan }) {
     { align: "center" }
   );
 
-  doc.save(`vocotable-receipt-${invoice.id}.pdf`);
+  doc.save(`voxtable-receipt-${invoice.id}.pdf`);
 }

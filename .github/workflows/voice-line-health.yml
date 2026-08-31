@@ -1,8 +1,14 @@
 name: Voice line health
 
-# Asserts that every line declared in deploy/voice-lines.json still routes end to end:
+# Asserts that EVERY line declared in deploy/voice-lines.json still routes end to end:
 # number imported in the right Retell workspace -> webhook -> the backend resolves the
 # declared agent -> that agent exists -> its name passes the bind guard -> golden config.
+#
+# The numbers are read from the declaration at run time, not listed here. They were listed
+# here once, and Cuban Corner's line — the newest, on a trunk configuration nothing else in
+# the estate uses — went unmonitored from the day it was declared, because adding a line to
+# the declaration silently did not add it to the check. The `coverage` job below fails if a
+# declared line belongs to an environment no job handles, so the next one cannot slip either.
 #
 # It exists because none of that was checked by anything. On 20 Aug 2026 three of those
 # layers were broken at once on production, had been for a day, and the detector was Sam
@@ -42,6 +48,17 @@ permissions:
   id-token: write
 
 jobs:
+  coverage:
+    # A declared line that no job asserts is worse than an undeclared one: it reads as covered.
+    name: Every declared line has a job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/voice-lines-by-environment.mjs --assert-covered staging production
+
   staging:
     name: Staging line
     runs-on: ubuntu-latest
@@ -60,7 +77,7 @@ jobs:
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v3
 
-      - name: Assert +61468203234
+      - name: Assert every declared staging line
         run: |
           set -euo pipefail
           # The Retell credentials are resolved by the script from deploy/voice-lines.json,
@@ -68,7 +85,13 @@ jobs:
           # Only the Twilio pair is passed in, since assert-line takes those from the env.
           export TWILIO_AU1_KEY_SID=$(gcloud secrets versions access latest --secret=voxtable-stg-twilio-au1-key-sid --project=bp-voxtable-stg)
           export TWILIO_AU1_KEY_SECRET=$(gcloud secrets versions access latest --secret=voxtable-stg-twilio-au1-key-secret --project=bp-voxtable-stg)
-          node .claude/skills/retell-agent-quality/scripts/assert-line.mjs +61468203234 --strict
+          fail=0
+          for number in $(node scripts/voice-lines-by-environment.mjs staging); do
+            echo "::group::$number"
+            node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$number" --strict || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
 
   production:
     name: Production line
@@ -86,7 +109,7 @@ jobs:
       # secrets this job cannot check the production line, and it FAILS rather than passing
       # quietly: an unchecked line reported green is the exact failure this workflow exists
       # to prevent.
-      - name: Assert +61468202846
+      - name: Assert every declared production line
         env:
           RETELL_API_KEY: ${{ secrets.RETELL_PROD_API_KEY }}
           RETELL_WEBHOOK_SECRET: ${{ secrets.RETELL_PROD_WEBHOOK_SECRET }}
@@ -109,4 +132,14 @@ jobs:
           # runner cannot SSH there. The script preflights the key against the declared agent
           # first, so a secret pointing at the wrong workspace fails as a credential error
           # instead of reporting a healthy line as broken.
-          node .claude/skills/retell-agent-quality/scripts/assert-line.mjs +61468202846 --use-env
+          #
+          # Every production line runs on the SAME Retell workspace (Biteperk), so one pair of
+          # secrets covers all of them. Looping keeps going after a failure: with two lines
+          # live, stopping at the first would hide the state of the second.
+          fail=0
+          for number in $(node scripts/voice-lines-by-environment.mjs production); do
+            echo "::group::$number"
+            node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$number" --use-env || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail

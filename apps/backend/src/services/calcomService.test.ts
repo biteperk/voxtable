@@ -14,7 +14,13 @@ import { test } from "node:test";
 
 import { env } from "../config/env";
 import { AppError } from "../domain/errors";
-import { isTerminalBookingRefusal, verifyCalcomSignature } from "./calcomService";
+import {
+  isSynthesizedEmail,
+  isTerminalBookingRefusal,
+  ourReservationId,
+  synthesizedEmail,
+  verifyCalcomSignature
+} from "./calcomService";
 
 const SECRET = env.CALCOM_WEBHOOK_SECRET;
 const BODY = JSON.stringify({ triggerEvent: "BOOKING_CREATED", payload: { uid: "abc" } });
@@ -94,4 +100,69 @@ test("infrastructure failures are never treated as a refusal", () => {
   // An unlisted code defaults to retry: a retry costs work, a wrong refusal
   // costs a guest their table.
   assert.equal(isTerminalBookingRefusal(new AppError(409, "SOME_NEW_CODE", "?")), false);
+});
+
+// --- synthetic attendee addresses ---------------------------------------------
+// The domain moved off another company's name. What matters is not the new value
+// but that the OLD one is still recognised: those addresses live in Cal.com's
+// records, not ours, and a booking made under the old domain can be cancelled or
+// rescheduled long after the rename.
+
+const LEGACY_DOMAIN = "bookings.vocotable.algorythmos.com.au";
+const CURRENT_DOMAIN = "bookings.voxtable.biteperk.com.au";
+
+test("mints addresses under the current domain", () => {
+  assert.equal(synthesizedEmail("+61450011140"), `61450011140@${CURRENT_DOMAIN}`);
+  assert.equal(synthesizedEmail(null), `unknown@${CURRENT_DOMAIN}`);
+});
+
+test("recognises addresses minted under the CURRENT domain", () => {
+  assert.equal(isSynthesizedEmail(`61450011140@${CURRENT_DOMAIN}`), true);
+});
+
+test("still recognises addresses minted under the LEGACY domain", () => {
+  // The regression test for the rename. Without this, a historical booking's
+  // synthetic address reads as a real customer contact detail.
+  assert.equal(isSynthesizedEmail(`61450011140@${LEGACY_DOMAIN}`), true);
+  assert.equal(isSynthesizedEmail(`unknown@${LEGACY_DOMAIN}`), true);
+});
+
+test("a real customer address is not synthetic", () => {
+  assert.equal(isSynthesizedEmail("diner@gmail.com"), false);
+  assert.equal(isSynthesizedEmail(""), false);
+  assert.equal(isSynthesizedEmail(null), false);
+  assert.equal(isSynthesizedEmail(undefined), false);
+});
+
+// --- our own bookings echoing back --------------------------------------------
+// reconcileMirroredBooking treats this id as positive proof a webhook is our own
+// push coming back. If it reads null for a booking that IS ours, the caller falls
+// through to the genuine-web-booking path and creates a duplicate reservation on
+// a real table — the phantom this whole path exists to prevent.
+
+const RESERVATION_ID = "6f1a0f1e-0000-4000-8000-000000000001";
+
+test("reads the reservation id from the current metadata key", () => {
+  assert.equal(ourReservationId({ voxtable_reservation_id: RESERVATION_ID }), RESERVATION_ID);
+});
+
+test("still reads it from the LEGACY key — bookings made before the rename", () => {
+  // The regression test. A booking created under the old key can be cancelled or
+  // rescheduled years from now; its webhook still carries vocotable_*.
+  assert.equal(ourReservationId({ vocotable_reservation_id: RESERVATION_ID }), RESERVATION_ID);
+});
+
+test("prefers the current key when a payload somehow carries both", () => {
+  assert.equal(
+    ourReservationId({ voxtable_reservation_id: RESERVATION_ID, vocotable_reservation_id: "stale" }),
+    RESERVATION_ID
+  );
+});
+
+test("a genuine web booking carries no reservation id", () => {
+  // Must be null, not a guess: this is what lets a real web booking through.
+  assert.equal(ourReservationId({}), null);
+  assert.equal(ourReservationId(undefined), null);
+  assert.equal(ourReservationId({ voxtable_reservation_id: "" }), null);
+  assert.equal(ourReservationId({ voxtable_reservation_id: 12345 as unknown as string }), null);
 });

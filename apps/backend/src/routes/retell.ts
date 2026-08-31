@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import { asyncHandler } from "../http/asyncHandler";
 import {
+  assertRetellFreshness,
   assertRetellSignature,
   handleRetellFunction,
   handleRetellInbound,
@@ -19,6 +20,9 @@ retellRouter.use(
       request.header("x-retell-signature"),
       (request as RequestWithRawBody).rawBody
     );
+    // Signature proves who sent it; the freshness bound proves roughly when.
+    // Without it a captured tool call replays indefinitely (#268).
+    assertRetellFreshness(request.body);
     next();
   })
 );

@@ -16,8 +16,11 @@ import {
   normalizePartySize
 } from "../http/schemas";
 import { getCallLogIdByProviderCallId, getRestaurantIdByProviderCallId, upsertCallLog } from "../repositories/callLogs";
+import { enqueueNotification } from "../repositories/notifications";
+import { isSmsEnabled, shouldTextOrderConfirmation } from "./notificationService";
 import {
   getRestaurantIdByDialedNumber,
+  getRestaurantName,
   getRestaurantVoiceContext,
   getRestaurantTimezone,
   getRetellAgentId
@@ -88,6 +91,30 @@ export async function assertRetellSignature(
 
   if (!isValid) {
     throw new AppError(401, "RETELL_SIGNATURE_INVALID", "Invalid Retell signature.");
+  }
+}
+
+// Retell's signature covers the body only — no timestamp, no nonce — so a
+// captured /retell/tools/create-booking or send-payment-link request verified
+// forever (#268). The body itself carries call.start_timestamp, and an attacker
+// cannot strip or change it without breaking the signature, so bounding on it
+// bounds the replay. Generous window: a call can legitimately run long, and a
+// tool call always arrives while the call is live — hours, never days.
+// Payloads with no call timestamp (e.g. inbound webhooks) are left alone: for
+// them the window would add nothing the signature check doesn't already do.
+const RETELL_REPLAY_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+export function assertRetellFreshness(body: unknown): void {
+  if (!env.RETELL_VERIFY_SIGNATURE) return;
+  const call = (body as RetellPayload | undefined)?.call as RetellPayload | undefined;
+  const startTimestamp = Number(call?.start_timestamp);
+  if (!Number.isFinite(startTimestamp) || startTimestamp <= 0) return;
+  if (Math.abs(Date.now() - startTimestamp) > RETELL_REPLAY_WINDOW_MS) {
+    throw new AppError(
+      401,
+      "RETELL_REPLAY_REJECTED",
+      "Retell payload's call timestamp is outside the replay window."
+    );
   }
 }
 
@@ -622,6 +649,59 @@ export async function handleRetellFunction(
       createdBy: "voice:retell",
       createdFromCallLogId: callLogId ?? undefined
     });
+
+    // Takeaway confirmation text. A guest who orders on the phone walks away with
+    // nothing to look at — no name, no pickup time, no total — and rings back to
+    // check. The payment-link path already proves this outbox route works; this
+    // is the same enqueue for an order nobody is paying for up front.
+    //
+    // Deliberately narrow:
+    //   - takeaway only. A dine-in pre-order is attached to a booking whose own
+    //     confirmation already went out.
+    //   - never on a replay, or a retried tool call texts the guest twice.
+    //   - never throws. The order is already in the kitchen; a failed SMS must
+    //     not turn a good order into an apology.
+    // isSmsEnabled() matters as much as the flag: without a configured sender the
+    // worker never claims these rows, so they would sit pending and then all flush
+    // the moment a sender is switched on — texting people about orders they picked
+    // up hours earlier. Booking SMS has always gated this way; this did not, and
+    // the deploy-then-configure order would have built exactly that backlog.
+    const smsTo = normalizePhone(call ? getCallerPhone(call) : null);
+    // smsTo repeated in the condition so TypeScript narrows it to a string; the
+    // predicate owns the policy, this owns the type.
+    if (
+      smsTo !== null &&
+      shouldTextOrderConfirmation({
+        isTakeaway: !reservationId,
+        isReplay: result.isReplay,
+        flagEnabled: env.ORDER_CONFIRMATION_SMS_ENABLED,
+        senderConfigured: isSmsEnabled(),
+        hasPhone: true
+      })
+    ) {
+      try {
+        const venue = await getRestaurantName(restaurantId);
+        const when = pickupTime ? ` Ready ${pickupTime}.` : "";
+        await enqueueNotification({
+          restaurantId,
+          channel: "sms",
+          recipient: smsTo,
+          kind: "order_confirmation",
+          // "Do not reply": the BitePerk sender ID is alphanumeric and one-way, so a
+          // guest replying "can I add chips" gets silence and assumes we read it.
+          // Same wording as the booking texts.
+          body:
+            `${venue}: ${result.confirmationMessage}${when} Order under ${pickupName}. ` +
+            `Questions? Call the venue. Do not reply.`
+        });
+      } catch (error) {
+        logger.error({
+          evt: "order_confirmation_sms_enqueue_failed",
+          order_id: result.order.id,
+          error
+        });
+      }
+    }
 
     return {
       order_id: result.order.id,

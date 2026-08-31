@@ -28,7 +28,7 @@ import { env } from "../config/env";
 import { pool } from "../db/pool";
 import { getInboxStats } from "../repositories/inbox";
 import { getOutboxStats } from "../repositories/outbox";
-import { getOnboardingFunnel } from "../repositories/restaurants";
+import { getOnboardingFunnel, listByOnboardingStatus } from "../repositories/restaurants";
 import { getBreakerState } from "../services/calcomClient";
 import { quotaSnapshotFromDb } from "../services/calcomQuotaTracker";
 import { kdsHealthSnapshot } from "../services/orderService";
@@ -92,12 +92,6 @@ interface AlertState {
   inboxDeadLetterAlerted: boolean;
   outboxDeadLetterCount: number;
   outboxDeadLetterAlerted: boolean;
-  kdsOldestPendingAlerted: boolean;
-  kdsTabletOfflineAlerted: boolean;
-  // Sticky flag: once a tablet has EVER checked in, future silence is a real
-  // outage, not "the kiosk was never installed". Survives across ticks, resets
-  // only on process restart.
-  kdsHasSeenAnyHeartbeat: boolean;
   // Retell signed-surface 401/403 storm (wrong/stale RETELL_API_KEY).
   retellAuthAlerted: boolean;
   // D1: UTC day-key of the last onboarding-funnel summary posted, so it fires
@@ -139,9 +133,6 @@ const DEFAULT_STATE: AlertState = {
   inboxDeadLetterAlerted: false,
   outboxDeadLetterCount: 0,
   outboxDeadLetterAlerted: false,
-  kdsOldestPendingAlerted: false,
-  kdsTabletOfflineAlerted: false,
-  kdsHasSeenAnyHeartbeat: false,
   retellAuthAlerted: false,
   funnelSummaryDayKey: null,
   provisioningStuckAlerted: false,
@@ -226,53 +217,87 @@ async function postToSlack(text: string): Promise<void> {
   }
 }
 
+// Per-venue KDS alert state, keyed by restaurant id. This used to be three
+// booleans watching env.DEFAULT_RESTAURANT_ID only — with a second live venue
+// its kitchen was simply unmonitored (#264). Every alert now names the venue.
+interface KdsVenueState {
+  oldestPendingAlerted: boolean;
+  tabletOfflineAlerted: boolean;
+  hasSeenAnyHeartbeat: boolean;
+}
+const kdsStateByVenue = new Map<string, KdsVenueState>();
+
+function kdsStateFor(restaurantId: string): KdsVenueState {
+  let s = kdsStateByVenue.get(restaurantId);
+  if (!s) {
+    s = { oldestPendingAlerted: false, tabletOfflineAlerted: false, hasSeenAnyHeartbeat: false };
+    kdsStateByVenue.set(restaurantId, s);
+  }
+  return s;
+}
+
 async function checkKds(): Promise<void> {
+  let venues: Array<{ id: string; name: string }> = [];
   try {
-    const kds = await kdsHealthSnapshot(env.DEFAULT_RESTAURANT_ID);
-
-    // 6) Oldest pending order age. Voice-created orders that the kitchen
-    //    hasn't picked up — line cook checked out, kiosk locked, tablet
-    //    dropped. Edge-triggered with a recovery message.
-    if (
-      kds.oldest_pending_order_age_seconds !== null &&
-      kds.oldest_pending_order_age_seconds > KDS_OLDEST_PENDING_SECONDS
-    ) {
-      if (!state.kdsOldestPendingAlerted) {
-        const mins = Math.floor(kds.oldest_pending_order_age_seconds / 60);
-        await postToSlack(
-          `:fire: Kitchen has a ${mins}-min old PENDING order. Check the wall display or call the line.`
-        );
-        state.kdsOldestPendingAlerted = true;
-      }
-    } else if (state.kdsOldestPendingAlerted) {
-      await postToSlack(`:white_check_mark: Kitchen pending queue cleared.`);
-      state.kdsOldestPendingAlerted = false;
-    }
-
-    // 7) Tablet heartbeat. Each kiosk pings every 60s. We only alert AFTER
-    //    we've ever seen at least one heartbeat — otherwise a venue that
-    //    hasn't deployed the kiosk yet would page on every check.
-    const heartbeats = await getKdsHeartbeats(env.DEFAULT_RESTAURANT_ID);
-    if (heartbeats.length > 0) {
-      state.kdsHasSeenAnyHeartbeat = true;
-    }
-    const allTabletsSilent =
-      state.kdsHasSeenAnyHeartbeat &&
-      (heartbeats.length === 0 ||
-        heartbeats.every((h) => h.last_seen_ms_ago > KDS_TABLET_SILENCE_MS));
-    if (allTabletsSilent) {
-      if (!state.kdsTabletOfflineAlerted) {
-        await postToSlack(
-          `:rotating_light: No kitchen tablet has checked in for 5+ min. Kitchen is flying blind — check the wall display.`
-        );
-        state.kdsTabletOfflineAlerted = true;
-      }
-    } else if (state.kdsTabletOfflineAlerted) {
-      await postToSlack(`:white_check_mark: Kitchen tablet back online.`);
-      state.kdsTabletOfflineAlerted = false;
-    }
+    venues = (await listByOnboardingStatus("live")).map((r) => ({ id: r.id, name: r.name }));
   } catch (error) {
-    logger.warn({ evt: "health_alerter_kds_check_failed", error: (error as Error).message });
+    logger.warn({ evt: "health_alerter_kds_venue_list_failed", error: (error as Error).message });
+    return;
+  }
+
+  for (const venue of venues) {
+    try {
+      const s = kdsStateFor(venue.id);
+      const kds = await kdsHealthSnapshot(venue.id);
+
+      // 6) Oldest pending order age. Voice-created orders that the kitchen
+      //    hasn't picked up — line cook checked out, kiosk locked, tablet
+      //    dropped. Edge-triggered with a recovery message.
+      if (
+        kds.oldest_pending_order_age_seconds !== null &&
+        kds.oldest_pending_order_age_seconds > KDS_OLDEST_PENDING_SECONDS
+      ) {
+        if (!s.oldestPendingAlerted) {
+          const mins = Math.floor(kds.oldest_pending_order_age_seconds / 60);
+          await postToSlack(
+            `:fire: ${venue.name}: kitchen has a ${mins}-min old PENDING order. Check the wall display or call the line.`
+          );
+          s.oldestPendingAlerted = true;
+        }
+      } else if (s.oldestPendingAlerted) {
+        await postToSlack(`:white_check_mark: ${venue.name}: kitchen pending queue cleared.`);
+        s.oldestPendingAlerted = false;
+      }
+
+      // 7) Tablet heartbeat. Each kiosk pings every 60s. We only alert AFTER
+      //    we've ever seen at least one heartbeat — otherwise a venue that
+      //    hasn't deployed the kiosk yet would page on every check.
+      const heartbeats = await getKdsHeartbeats(venue.id);
+      if (heartbeats.length > 0) {
+        s.hasSeenAnyHeartbeat = true;
+      }
+      const allTabletsSilent =
+        s.hasSeenAnyHeartbeat &&
+        (heartbeats.length === 0 ||
+          heartbeats.every((h) => h.last_seen_ms_ago > KDS_TABLET_SILENCE_MS));
+      if (allTabletsSilent) {
+        if (!s.tabletOfflineAlerted) {
+          await postToSlack(
+            `:rotating_light: ${venue.name}: no kitchen tablet has checked in for 5+ min. Kitchen is flying blind — check the wall display.`
+          );
+          s.tabletOfflineAlerted = true;
+        }
+      } else if (s.tabletOfflineAlerted) {
+        await postToSlack(`:white_check_mark: ${venue.name}: kitchen tablet back online.`);
+        s.tabletOfflineAlerted = false;
+      }
+    } catch (error) {
+      logger.warn({
+        evt: "health_alerter_kds_check_failed",
+        restaurant_id: venue.id,
+        error: (error as Error).message
+      });
+    }
   }
 }
 

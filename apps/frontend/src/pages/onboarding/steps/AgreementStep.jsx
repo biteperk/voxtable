@@ -21,6 +21,9 @@ export function AgreementStep({ onSaved, onBack = null }) {
   const [error, setError] = useState(null);
   // Validation messages pinned to a specific input, keyed by API field name.
   const [fieldErrors, setFieldErrors] = useState({});
+  // Bumped by "Try again" — a transient failure (the legal-documents manifest
+  // rides a CDN) must not leave contract signing behind a dead card.
+  const [loadNonce, setLoadNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,12 +53,26 @@ export function AgreementStep({ onSaved, onBack = null }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadNonce]);
 
   if (!form || !config) {
     return (
       <div className="onboarding-card is-loading">
         <p style={{ color: "var(--on-surface-variant)" }}>{error ? `Couldn't load: ${error}` : "Loading…"}</p>
+        {error && (
+          <div className="onboarding-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                setError(null);
+                setLoadNonce((n) => n + 1);
+              }}
+            >
+              Try again
+            </button>
+          </div>
+        )}
       </div>
     );
   }

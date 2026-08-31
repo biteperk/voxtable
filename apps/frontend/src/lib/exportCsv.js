@@ -49,10 +49,10 @@ function downloadBlob(filename, text) {
   URL.revokeObjectURL(url);
 }
 
-// Exports the given (already filtered) rows to `vocotable-<page>-<yyyy-mm-dd>.csv`.
+// Exports the given (already filtered) rows to `voxtable-<page>-<yyyy-mm-dd>.csv`.
 // Returns false and does nothing when there are no rows.
 export function exportRowsToCsv({ page, columns, rows }) {
   if (!rows || rows.length === 0) return false;
-  downloadBlob(`vocotable-${page}-${isoDate()}.csv`, toCsv(columns, rows));
+  downloadBlob(`voxtable-${page}-${isoDate()}.csv`, toCsv(columns, rows));
   return true;
 }

@@ -21,7 +21,14 @@ export function AnalyticsPage({ navigate }) {
   const [dailySeries, setDailySeries] = useState([]);
   const [monthlySeries, setMonthlySeries] = useState([]);
   const [loading, setLoading] = useState(true);
+  // One slot per fetch — the month stats, the 12-month trend, and export used
+  // to share a single `error`, so whichever failed last clobbered the others
+  // and a failed month rendered zeros indistinguishable from a quiet month.
   const [error, setError] = useState(null);
+  const [trendError, setTrendError] = useState(null);
+  const [exportError, setExportError] = useState(null);
+  // Bumped by "Try again" to re-run the failed fetches.
+  const [loadNonce, setLoadNonce] = useState(0);
   const [periodOpen, setPeriodOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const periodRef = useRef(null);
@@ -46,6 +53,7 @@ export function AnalyticsPage({ navigate }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     const { from, to } = monthRangeFromKey(monthKey);
     Promise.all([getAnalytics({ from, to }), getAnalyticsDailySeries({ from, to })])
       .then(([statsRes, seriesRes]) => {
@@ -58,18 +66,19 @@ export function AnalyticsPage({ navigate }) {
     return () => {
       cancelled = true;
     };
-  }, [monthKey]);
+  }, [monthKey, loadNonce]);
 
-  // 12-month trend — fetched once; drives the trend chart and MoM deltas.
+  // 12-month trend — drives the trend chart and MoM deltas.
   useEffect(() => {
     let cancelled = false;
+    setTrendError(null);
     getAnalyticsMonthlySeries({ months: MONTHS_IN_PICKER })
       .then((res) => !cancelled && setMonthlySeries(decorateMonthlySeries(res.series ?? [])))
-      .catch((e) => !cancelled && setError(e.message));
+      .catch((e) => !cancelled && setTrendError(e.message));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadNonce]);
 
   useEffect(() => {
     if (!periodOpen) return;
@@ -118,6 +127,7 @@ export function AnalyticsPage({ navigate }) {
   const handleExport = async () => {
     if (exporting || loading) return;
     setExporting(true);
+    setExportError(null);
     try {
       const { exportAnalyticsPdf } = await import("../../pdfExport.js");
       exportAnalyticsPdf({
@@ -135,7 +145,7 @@ export function AnalyticsPage({ navigate }) {
         analytics
       });
     } catch (e) {
-      setError(`Export failed: ${e.message ?? e}`);
+      setExportError(`Export failed: ${e.message ?? e}`);
     } finally {
       setExporting(false);
     }
@@ -146,7 +156,18 @@ export function AnalyticsPage({ navigate }) {
       <header className="analytics-header">
         <div>
           <h1>Performance Analytics</h1>
-          <p>{error ? `Error: ${error}` : `${periodLabel} of VoxTable AI activity.`}</p>
+          {error || trendError ? (
+            <p role="alert" className="analytics-error">
+              {error ? `Couldn't load this month's numbers: ${error}` : `Couldn't load the trend: ${trendError}`}{" "}
+              <button type="button" className="link-button" onClick={() => setLoadNonce((n) => n + 1)}>
+                Try again
+              </button>
+            </p>
+          ) : exportError ? (
+            <p role="alert" className="analytics-error">{exportError}</p>
+          ) : (
+            <p>{`${periodLabel} of VoxTable AI activity.`}</p>
+          )}
         </div>
         <div className="analytics-actions">
           <div className="period-dropdown" ref={periodRef}>
@@ -195,14 +216,14 @@ export function AnalyticsPage({ navigate }) {
         <Metric
           icon="call"
           label="Total Calls"
-          value={loading ? "…" : String(totalCalls)}
+          value={loading ? "…" : error ? "—" : String(totalCalls)}
           change={callsDelta ? callsDelta.text : "no prior month"}
           down={callsDelta?.down ?? false}
         />
         <Metric
           icon="event_available"
           label="Booking Conversion"
-          value={loading ? "…" : bookingRate}
+          value={loading ? "…" : error ? "—" : bookingRate}
           change={bookingsDelta ? bookingsDelta.text : `${bookingsCount} bookings`}
           down={bookingsDelta?.down ?? false}
           tone="secondary"
@@ -210,7 +231,7 @@ export function AnalyticsPage({ navigate }) {
         <Metric
           icon="payments"
           label="Est. Revenue"
-          value={loading ? "…" : monthlyRevenue}
+          value={loading ? "…" : error ? "—" : monthlyRevenue}
           change={bookingsDelta ? bookingsDelta.text : "$80 / booking"}
           down={bookingsDelta?.down ?? false}
           tone="tertiary"
@@ -218,7 +239,7 @@ export function AnalyticsPage({ navigate }) {
         <Metric
           icon="timer"
           label="Avg Call Duration"
-          value={loading ? "…" : avgDuration}
+          value={loading ? "…" : error ? "—" : avgDuration}
           change={analytics?.avg_latency_ms ? `${avgLatency} latency` : ""}
         />
       </section>

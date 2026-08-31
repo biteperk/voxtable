@@ -176,3 +176,22 @@ If you forgot to tag before deploying, look at `docker image history` to see if 
 3. **Only touch the DB last** — and only after telling Abhishek in chat.
 
 You'll always be able to take voice bookings as long as Postgres + api are up. Cal.com mirror is a nice-to-have, not a service.
+
+## Cloud Run revision rollback — drilled, not theoretical
+
+Executed on staging 30 Aug 2026 (issue #138), so the first real incident is not the first
+rehearsal. Measured, not estimated:
+
+```
+gcloud run services update-traffic voxtable-stg-api \
+  --to-revisions <previous-revision>=100 \
+  --project bp-voxtable-stg --region australia-southeast1
+```
+
+- Roll back to previous revision (00097 → 00096): **14 s**, `/health` = `{"status":"ok","database":"ok"}`, `/readyz` 200.
+- Restore to latest (00096 → 00097): **14 s**, same green checks.
+- Traffic verified back at 100% on latest afterwards.
+
+Discipline for the real thing: print the known-good restore command BEFORE shifting anything,
+so the abort path exists before the risk does. Production is the same command against
+`voxtable-prod-api` in `bp-voxtable-prod` once the cutover lands.

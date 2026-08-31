@@ -71,16 +71,29 @@ there; this table registers them.
 | Repos | product `biteperk/voxtable` (renamed from `biteperk/vocotable`) · infra `biteperk/biteperk-cloud-platform` · marketing site `biteperk/biteperk-website` |
 | Branches (product repo, since 1 Aug 2026) | `integration` (default; deploys staging) · `main` (production; reached by promotion only) |
 
-## 4. Immutable legacy identities — NEVER rename
+## 4. Legacy identities — check the reason before renaming
 
-These look like leftovers. They are not. Each has a hard reason:
+These look like leftovers. Most are not. Each row states its reason — and the reason is the
+point, not the row: two entries here were audited on 28 Aug 2026 and turned out to be movable,
+so **check the reason before repeating it.** A false "never rename" is as expensive as a
+missing one, and it froze the other company's name into this product for weeks.
+
+✅ **Cal.com `vocotable_*` metadata keys — renamed 28 Aug 2026 to `voxtable_*`, legacy keys read
+FOREVER.** They were never in this table and should have been its first entry.
+`reconcileMirroredBooking` uses the reservation id as positive proof that a webhook is our own
+booking echoing back; read only the new key and a pre-rename booking's webhook falls through to
+the genuine-web-booking path and creates a phantom reservation holding a real table. The lookup
+is `ourReservationId()` in `calcomService.ts` — one function so the two keys cannot drift apart.
+**There is no date after which the legacy key can be dropped**, only a date after which no such
+booking exists, and nothing tracks that.
 
 | Identity | Why it can never change |
 |---|---|
 | Firebase/GCP project `vocotable` / `vocotable-497209` | Project ids are immutable in GCP. |
-| `SYNTH_EMAIL_DOMAIN=bookings.vocotable.algorythmos.com.au` (`services/calcomService.ts`) | Baked into the attendee identity of every existing Cal.com booking; changing it orphans them. Internal-only, never shown to customers. |
+| ~~`SYNTH_EMAIL_DOMAIN`~~ — **moved 28 Aug 2026** to `bookings.voxtable.biteperk.com.au` | The old reason ("orphans every existing Cal.com booking") did not survive checking: **four** bookings, `CALCOM_SYNC_ENABLED` unset in production, and **no synthetic address is stored in our database** — `customers` has no email column. `calcomService.ts` writes the new domain and recognises both, so nothing was orphaned. The legacy domain stays *readable* forever: those addresses live in Cal.com's records and an old booking can be cancelled years later. |
 | `vocotable_number` API field | Public API contract. |
-| `vocotable.*` localStorage keys + `vocotable:*` window events | Persisted in customers' browsers. |
+| `vocotable.*` localStorage keys | Persisted in customers' browsers. Renameable only behind a read-old/write-new shim — a bare rename resets the active restaurant and can drop an in-flight signup. |
+| ~~`vocotable:*` window events~~ — **renamed 28 Aug 2026** | Never belonged here: same-page pub/sub, dispatcher and listener ship in the same bundle, nothing persisted. Now `voxtable:*`. |
 | Legacy VM-world registry `us-central1-docker.pkg.dev/vocotable-497209/vocotable/*` | Serves the VM production until the Cloud Run cutover retires it. |
 | Legacy `voco*` / `perk*` URL slugs (website 301s + `PRODUCT_SLUGS`) | Printed collateral and cached links use them — keep forever. |
 | Local checkout dir `~/vocotable` | Sam's machine; scripts and muscle memory point at it. Renaming buys nothing. |

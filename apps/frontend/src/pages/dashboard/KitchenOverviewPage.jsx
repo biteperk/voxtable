@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../auth";
 import { listActiveOrders, sendOrderPaymentLink, updateOrderStatus } from "../../api";
 import { Icon } from "../../components/Icon";
+import { ConfirmModal } from "../../components/ConfirmModal";
 import { DashboardShell } from "./DashboardShell";
 
 const KITCHEN_COLUMNS = [
@@ -19,23 +20,49 @@ export function KitchenOverviewPage({ navigate, path }) {
   const [notice, setNotice] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
+  // Poll cadence + failure tracking. A backend outage used to mean 12 failing
+  // requests/minute per open kitchen tablet forever, with the error banner
+  // flickering. Consecutive failures now back off 5s → 10 → 20 → 40 → 60s cap
+  // (reset on the first success), and the header shows when data was last
+  // fresh so a quiet kitchen and a dead connection stop looking identical.
+  const failsRef = useRef(0);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [connectionLost, setConnectionLost] = useState(false);
+
   const refresh = useCallback(async () => {
     try {
       const data = await listActiveOrders();
       setOrders(data.orders ?? []);
       setServerNow(data.server_now ?? new Date().toISOString());
       setError(null);
+      setLastUpdated(new Date());
+      failsRef.current = 0;
+      setConnectionLost(false);
     } catch (e) {
+      failsRef.current += 1;
+      if (failsRef.current >= 2) setConnectionLost(true);
       setError(e.message ?? "Failed to load orders");
     }
   }, []);
 
   useEffect(() => {
-    refresh();
-    const interval = setInterval(() => {
-      if (!document.hidden) refresh();
-    }, 5000);
-    return () => clearInterval(interval);
+    // Single timeout chain (never stacked intervals): the next tick is armed
+    // only after the previous refresh settles, with the delay derived from the
+    // consecutive-failure count. document.hidden pauses work but keeps ticking
+    // cheaply so the board catches up as soon as the tablet wakes.
+    let cancelled = false;
+    let timer = null;
+    const tick = async () => {
+      if (!document.hidden) await refresh();
+      if (cancelled) return;
+      const delay = Math.min(5000 * 2 ** Math.min(failsRef.current, 4), 60000);
+      timer = setTimeout(tick, delay);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [refresh]);
 
   const handleAdvance = async (order, nextStatus) => {
@@ -63,15 +90,28 @@ export function KitchenOverviewPage({ navigate, path }) {
     }
   };
 
-  const handleCancel = async (order) => {
-    const reason = window.prompt(`Cancel order #${order.order_number}? (Optional reason)`);
-    if (reason === null) return;
+  // Cancellation confirms through the shared modal, not window.prompt — the
+  // kitchen screen is the one most likely to run in a kiosk webview where
+  // native dialogs are suppressed. The reason stays optional.
+  const [cancelling, setCancelling] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+
+  const handleCancel = (order) => {
+    setCancelReason("");
+    setCancelling(order);
+  };
+
+  const confirmCancel = async () => {
+    const order = cancelling;
+    if (!order || busyId) return;
     setBusyId(order.id);
     try {
-      await updateOrderStatus(order.id, "cancelled", order.version, reason || undefined);
+      await updateOrderStatus(order.id, "cancelled", order.version, cancelReason.trim() || undefined);
       await refresh();
+      setCancelling(null);
     } catch (e) {
       setError(e.message ?? "Cancel failed");
+      setCancelling(null);
     } finally {
       setBusyId(null);
     }
@@ -87,7 +127,18 @@ export function KitchenOverviewPage({ navigate, path }) {
       <header className="operational-header">
         <div>
           <h1>Kitchen overview</h1>
-          <p>All active orders, grouped by stage. Advance each ticket with its action button.</p>
+          <p>
+            {connectionLost ? (
+              <span role="alert" style={{ color: "#ff8a80" }}>
+                Connection lost — retrying.
+                {lastUpdated
+                  ? ` Showing orders as of ${lastUpdated.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}.`
+                  : ""}
+              </span>
+            ) : (
+              "All active orders, grouped by stage. Advance each ticket with its action button."
+            )}
+          </p>
         </div>
         <div className="active-call-pill">
           <Icon name="receipt_long" />
@@ -117,6 +168,27 @@ export function KitchenOverviewPage({ navigate, path }) {
           />
         ))}
       </section>
+      {cancelling && (
+        <ConfirmModal
+          title={`Cancel order #${cancelling.order_number}?`}
+          message="This can't be undone. You can add a reason for the record."
+          confirmLabel="Cancel order"
+          busy={busyId === cancelling.id}
+          onConfirm={confirmCancel}
+          onCancel={() => !busyId && setCancelling(null)}
+        >
+          <label className="menu-field" style={{ padding: "0 20px 4px" }}>
+            <span>Reason (optional)</span>
+            <input
+              type="text"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="e.g. customer called to cancel"
+              maxLength={200}
+            />
+          </label>
+        </ConfirmModal>
+      )}
     </DashboardShell>
   );
 }
