@@ -1,8 +1,66 @@
 # Incident: calls dropping at a fixed ~7.6 seconds
 
-**Status: RESOLVED (cause identified) — the trunk's REGION is the cause. AU1 drops, US1 does not.
-Transport (TLS vs TCP) is exonerated. 31 Aug 2026. The fix — move `+61 468 202 846` to a US1
-trunk — is not yet applied, so the Mazcina line still drops.**
+**Status: OPEN. Region has now been tested and EXONERATED along with transport.
+The surviving candidate is the NUMBER itself (or its carrier range), not the trunk. 31 Aug 2026.**
+
+## 0. RETRACTION — the region verdict below was wrong, and a real call disproved it
+
+Earlier on 31 Aug this file was marked RESOLVED, concluding that the trunk's **region** caused
+the drops, on the strength of Cuban Corner (US1+TLS, 8 calls, 0 drops) versus Mazcina
+(AU1+TLS, 8 calls, 4 drops). Acting on it, `+61 468 202 846` was moved to a **US1** trunk
+(`voxtable-prod-us1-mazcina`, `TK3140735e…`), region flipped 04:16:09Z.
+
+**The fault reproduced on US1 forty minutes later.**
+
+| Call | Time (UTC) | Region processed | Duration | Disconnect |
+|---|---|---|---|---|
+| `call_60c0dbaab2ca19b4cb145bdf307` | 04:35:58 | US1 | 75,467 ms | agent_hangup |
+| **`call_78fb2b89dfe0c031f282a33ebb6`** | **04:56:01** | **US1** | **7,594 ms** | **user_hangup** |
+| `call_6a417ae31f0e498c99375c44de3` | 04:56:15 | US1 | 48,884 ms | agent_hangup |
+| `call_ec21ceab93cb3038344ac7f496d` | 04:57:10 | US1 | 65,501 ms | agent_hangup |
+
+Confirmed genuine, not a caller hang-up: the transcript holds **only the greeting**, whose last
+word ends at **6.65 s**; the caller never spoke and redialled 14 s later. 7,594 ms sits inside
+the 7,593–7,653 ms band. Confirmed genuinely US1: all four appear in the **US1** Calls API
+(`api.twilio.com`), which is region-partitioned, and the number's `voice_region` reads `us1`.
+
+So the 8-vs-8 comparison was **confounded by venue**, and the lesson is the one §6 already
+gave and this file then ignored: a natural experiment across two venues is not the controlled
+experiment. It should have been stated as a hypothesis, not a verdict. Post-cutover Mazcina is
+1 drop in 4 (25 %) — statistically indistinguishable from its AU1 rate.
+
+### What that leaves
+
+| Variable | Status |
+|---|---|
+| Transport (TLS vs TCP) | exonerated — §0a, TLS held constant across a clean arm and a failing arm |
+| **Region (AU1 vs US1)** | **exonerated — this section, fault reproduced on US1** |
+| Agent / LLM / prompt / workspace / backend / account | exonerated — §4b |
+| Caller handset | exonerated — same handset `+61450011140` on every clean Cuban Corner call |
+| **The number itself, or its carrier range** | **the only variable never changed** |
+
+Sorted by number rather than by trunk, the data separates cleanly:
+
+| Number | Bought | Trunk configs tried | Drops |
+|---|---|---|---|
+| `+61 468 203 234` (staging) | 13 Aug | AU1+TLS | yes |
+| `+61 468 202 846` (Mazcina) | 13 Aug | AU1+TLS, **US1+TLS** | yes, on both |
+| `+61 485 071 140` (Cuban Corner) | 27 Aug | US1+TLS | never |
+| `+61 2 7501 1140` (pilot) | — | US1+TCP | never |
+
+**Both failing numbers are `+61 4 6820 xxxx`, bought the same day; neither clean number is.**
+That is now the leading hypothesis and it is a carrier-range question, not a configuration
+one — which also explains why §4b's replacement of everything under our control never helped.
+
+⚠️ **Do not act on this the way the region verdict was acted on.** It is one more untested
+correlation across an uncontrolled variable. The controlled test is a *second number from a
+different range* on the *same* trunk, or Twilio answering §8 with the Q.850 release cause and
+which side sent BYE — which remains the highest-value open action, and now has much better
+evidence attached to it.
+
+**The US1 move is retained regardless** — it is no worse than AU1, it made the Twilio layer
+verifiable by API for the first time (no AU1 key exists on that account), and reverting would
+cost the only working `assert-line` coverage of checks 15–17 for this line.
 
 ## 0a. The verdict, and the experiment that produced it (31 Aug 2026)
 
