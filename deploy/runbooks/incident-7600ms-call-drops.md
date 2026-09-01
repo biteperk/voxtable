@@ -281,7 +281,44 @@ either way, and the alternative is a restaurant line that drops a third of its c
 experiment proves transport, the right end state is still TLS that works — so file the ticket
 too.
 
-## 8. Twilio ticket (needs a human on the console)
+## 8. Twilio case — OPEN, with an engineer assigned
+
+**Status, 1 Sep 2026: raised, owned and being worked.** Vipin Jain of the SIP Trunking support
+team has taken ownership and is:
+
+- pulling raw signalling traces and carrier logs for the 26 Aug calls
+  (`CA2f6db49984dcfca614189de6edb7305e`, `CAad2c09801078606bdd7abb2773d0a0c5`,
+  `CA4c177e347b13f0d89b80b4dfc82effcf`) to extract the **Q.850 release cause** and establish
+  **which side sent BYE** — the single data point §0 says decides where this is fixed;
+- cross-referencing regional edge configuration for an **AU1 session timer (RFC 4028), SIP
+  OPTIONS ping expectation, or media-inactivity threshold in the 7–8 s range** that differs
+  from US1 defaults.
+
+⚠️ **The case number is not recorded here.** Sam has the correspondence; add the case id so the
+next person can find it without going through a mailbox.
+
+### The band is wider than this file says elsewhere
+
+Two further staging drops on 30 Aug — `CAeb3fda6b9698c1bc72911c5689b8cce4` (7,587 ms) and
+`CA4c6498c13397177580eaee59f61561db` (**7,447 ms**) — put one occurrence *below* the
+7,593–7,653 ms band reported to Twilio. The corrected range across seventeen occurrences is
+**~7,447–7,653 ms**, and it was volunteered to Twilio rather than left to be discovered: a
+support engineer matching traces against a range that excludes a real example wastes the one
+thing this case is for.
+
+Two questions were put to Twilio alongside it, both still open:
+
+1. Does anything in the AU1 edge apply a session or media timeout to an inbound trunk call
+   **before the far end has sent any in-dialog request**? Releases happen both while our
+   endpoint is still speaking its opening prompt and mid-caller-sentence.
+2. If the BYE originates upstream rather than at Twilio, **which carrier terminates AU
+   mobile-originated calls to this number**, so it can be pursued from that direction rather
+   than each party pointing at the other.
+
+The staging number `+61468203234` has been offered for a scheduled test window at Twilio's
+convenience.
+
+### The original message, as sent
 
 > Subject: Inbound trunk calls released at a fixed ~7.6 s on AU1 trunks (accounts
 > AC8116857da2064ef3251533f3ade56f32 and ACd423bd09e9649e552a0b6d19a9eed338)
