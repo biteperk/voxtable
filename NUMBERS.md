@@ -65,7 +65,7 @@ Anything on an **Algorythmos** account is a different company's infrastructure a
 | Number | Environment | Account | Takes a call today? | SMS? |
 |---|---|---|---|---|
 | `+61 468 202 846` | **Production** | Biteperk-production | ✅ **Answers** — Biteperk workspace, agent `agent_b6b6488af08b82d80e8f4d270a`, venue row resolves. Drops roughly half its calls in a fixed ~7,447–7,653 ms band (trunk incident, #341) | ✅ Enabled (never actually sent) |
-| `+61 485 071 140` | **Production** — Cuban Corner Parramatta | Biteperk-production | ✅ **Wired end to end, verified 1 Sep 2026.** Imported to the Biteperk workspace webhook-only, bound to agent `agent_2892d65ceace4e68d8a3f3e80c` / llm `llm_53c6e9de9aac3b60270ffdd6bcba`, venue row `22222222-…` resolves, US1 trunk `TK50f2a0cc6c4906a1b946867489716548`. `assert-line.mjs --strict` passes **17/17**, including the Twilio trunk layer. ⚠️ Still **no Disaster Recovery URL** on the trunk (#343), so a Retell outage is dead air. Not customer-facing: the eleven-leg rehearsal battery has not been run | ⚠️ Registration required; nothing wired |
+| `+61 485 071 140` | **Production** — Cuban Corner Parramatta | Biteperk-production | ✅ **Wired end to end, verified 1 Sep 2026.** Imported to the Biteperk workspace webhook-only, bound to agent `agent_2892d65ceace4e68d8a3f3e80c` / llm `llm_53c6e9de9aac3b60270ffdd6bcba`, venue row `22222222-…` resolves, US1 trunk `TK50f2a0cc6c4906a1b946867489716548`. `assert-line.mjs --strict` passes **17/17**, including the Twilio trunk layer. ⚠️ Still **no Disaster Recovery URL** on the trunk (#343), so a Retell outage is dead air. Not customer-facing: the eleven-leg rehearsal battery has not been run | ⚠️ **In no Messaging Service.** Read from the API 1 Sep 2026: `MG7ceaa2aaa3cea6195ea7979d57b78b14` contains only `+61468202846`. So a Cuban Corner guest SMS would be sent from Mazcina's number, or from the `BitePerk` sender ID — which is one-way, so no guest can reply. Decide which before enabling guest SMS for this venue |
 | `+61 468 203 234` | **Staging** — never customer-facing | Biteperk-staging | ✅ Bound — imported to the Staging workspace (webhook mode) 13 Aug; `VoxTable Staging Venue` resolves | ✅ Enabled and **proven 18 Aug 2026** — delivers from the number. Cannot send branded: `BitePerk` is production-only, and the fallback is silent (no `Unverified` stamp) |
 
 That is the whole platform estate. If a number is not in this table, **it is not ours to wire** —
@@ -94,7 +94,7 @@ Two numbers get mistaken for platform numbers often enough to name:
 | Resource | Identifier |
 |---|---|
 | Phone number SID | `PN05a730d0f19b14578b76f72a547fa48e` |
-| Elastic SIP Trunk | `TK6fcd3c96ea8317181d4049ce6f938f10` — `voxtable-prod-au1`, region **AU1** |
+| Elastic SIP Trunk | `TK3140735e33b7b22007a88f00f15e0e9a` — region **US1**, read from the API 1 Sep 2026. The former AU1 trunk `TK6fcd3c96ea8317181d4049ce6f938f10` was left behind by the 31 Aug cutover |
 | Trunk origination | `sip:sip.retellai.com;transport=tls` · priority 10 · weight 10 · enabled |
 | Trunk termination | **Deliberately unconfigured** — VoxTable is inbound-only |
 | Messaging Service | `MG7ceaa2aaa3cea6195ea7979d57b78b14` — `voxtable-prod-notifications`, region **US1** |
