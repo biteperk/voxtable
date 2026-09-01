@@ -302,6 +302,34 @@ if (!tw) {
     check(17, urls.some((u) => u.enabled && /sip\.retellai\.com/.test(u.sip_url)),
       "trunk has an enabled origination URL to sip.retellai.com",
       `found ${JSON.stringify(urls.map((u) => ({ sip_url: u.sip_url, enabled: u.enabled })))}`);
+
+    // [19]/[20] exist because a hand change to this trunk went unrecorded for six days
+    // (incident-7600ms-call-drops.md §3b). Nothing referenced the transport, so nothing could
+    // notice, and call data from that window was read against the wrong assumed config.
+    const transportOf = (u) => u?.sip_url?.match(/transport=(\w+)/)?.[1] ?? "unspecified";
+    const live = transportOf(urls.find((u) => /sip\.retellai\.com/.test(u.sip_url)));
+
+    if (declared.origination_transport == null) {
+      skip(19, "trunk origination transport",
+        "not declared for this line. That is deliberate where nobody can read the trunk back " +
+        "(production has no API credentials outside the console) — a guessed value in a " +
+        "declaration is worse than a blank. Read it from the console and fill it in.");
+    } else {
+      check(19, live === declared.origination_transport,
+        `origination transport is ${declared.origination_transport}`,
+        `trunk says ${live}. Someone changed it at the vendor without updating this declaration — ` +
+        `treat every conclusion drawn from recent call data as being about an unknown config.`);
+    }
+
+    const trunk = await json(`${twHost("trunking")}/v1/Trunks/${declared.twilio_trunk_sid}`, { headers: tw });
+    if (declared.trunk_secure == null) {
+      skip(20, "Secure Trunking flag", "not declared for this line — see [19].");
+    } else {
+      check(20, trunk.body?.secure === declared.trunk_secure,
+        `Secure Trunking is ${declared.trunk_secure}`,
+        `trunk says ${trunk.body?.secure}. Secure Trunking REQUIRES TLS, so this flag and [19] ` +
+        `move together: secure=true with a non-TLS transport is a broken line, not a downgrade.`);
+    }
   }
 }
 

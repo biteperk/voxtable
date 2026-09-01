@@ -21,7 +21,7 @@
  */
 import { pool } from "../src/db/pool";
 import { getOrderPaymentSnapshot, markOrderPaidIfUnpaid } from "../src/repositories/orders";
-import { claimOpsStateKey } from "../src/repositories/opsState";
+import { claimOpsStateKey, getOpsState, setOpsState } from "../src/repositories/opsState";
 import {
   assert,
   cleanupSmokeRestaurant,
@@ -126,7 +126,32 @@ async function main(): Promise<void> {
     } finally {
       await cleanupSmokeRestaurant(other.restaurantId);
     }
+    // ---- The counter must actually count ----
+    // Two live calls looked healthy while check_count was pinned at 1 on every
+    // check, because the handler read `watch.value.checks` when getOpsState
+    // already returns the value. `checks` was undefined, so the ceiling was
+    // unreachable and no state change was ever logged. The earlier assertions
+    // all passed throughout: they exercised the repository, and the bug was in
+    // how the caller used it. This asserts the round trip the handler performs.
+    const watchKey = `payment_watch:smoke-${SUFFIX}:${orderId}`;
+    await setOpsState(watchKey, { order_id: orderId, state: "unpaid", checks: 0 });
+    const first = await getOpsState(watchKey, pool);
+    assert(
+      "getOpsState returns the stored value directly, not a row wrapping it",
+      (first as { checks?: number } | null)?.checks === 0 &&
+        (first as { value?: unknown } | null)?.value === undefined,
+      { got: first }
+    );
+
+    await setOpsState(watchKey, { order_id: orderId, state: "unpaid", checks: 1 });
+    const second = await getOpsState(watchKey, pool);
+    assert(
+      "a subsequent read sees the previous write — the counter can advance",
+      Number((second as { checks?: number } | null)?.checks ?? 0) + 1 === 2,
+      { got: second }
+    );
   } finally {
+    await pool.query(`DELETE FROM ops_state WHERE key LIKE $1`, [`payment_watch:smoke-${SUFFIX}%`]);
     await pool.query(`DELETE FROM ops_state WHERE key LIKE $1`, [`payment_announced:smoke-${SUFFIX}%`]);
     // order_payments FKs are ON DELETE RESTRICT, so the harness cleanup cannot
     // remove the venue while a payment row references it.
