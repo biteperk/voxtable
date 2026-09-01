@@ -101,7 +101,7 @@ Two numbers get mistaken for platform numbers often enough to name:
 | Regulatory bundle | `BU8cb2353e1b34a75c6ed0cec20e163356` (AU Mobile Business, approved 13 Aug, instant) |
 | Compliance address | `AD3ea533a6a658f822c84cb37ebd88233e` |
 | Customer profile | `BU975db7eebfb0b5525d6762f3d77e2087` (approved) |
-| Alphanumeric sender ID | `BitePerk` — ✅ **ACMA-approved 18 Aug 2026**. Twilio bundle `BUce1fa0ad6053c4444f3faca4c7957f25`, ticket `28926493`. **Not yet attached to the Messaging Service, and nothing sends as it** |
+| Alphanumeric sender ID | `BitePerk` — ✅ **ACMA-approved 18 Aug 2026**. Twilio bundle `BUce1fa0ad6053c4444f3faca4c7957f25`, ticket `28926493`. ✅ **Attached to `voxtable-prod-notifications` (`MG7ceaa2aaa3cea6195ea7979d57b78b14`)** — sender `AIdcca9ac75bbd77a5ff1a7570ed698660`, SMS-capable, in the pool alongside `+61468202846` as fallback. Read back over the API 28 Aug 2026 and again 1 Sep 2026. ⚠️ **Nothing sends as it, for two reasons and the second is the bigger one:** the app configures no messaging sender, AND the VM authenticates as the legacy Algorythmos account `AC949756ac8dc4aced25b15b2e0bbb3a61`, which owns neither this Messaging Service nor `+61468202846` — so no sender value can work until the credentials are corrected |
 
 **Region split: `AU1 — Voice` / `US1 — Messaging`.** Twilio has no messaging in AU1, so this is
 the only shape available, not a misconfiguration. Never "fix" it by moving the number back to US1
