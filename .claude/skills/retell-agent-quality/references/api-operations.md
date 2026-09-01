@@ -49,6 +49,7 @@ assertions. Signed probes are also how `smoke:retell-signed` proves the machine 
 
 ## Retell gotchas (each cost real time)
 
+- **Tool descriptions cap at 1024 chars** — the PATCH 400s ("Tool description too long") and nothing hints which tool. Trim before appending contract lines (hit 30 Aug 2026 adding the available_now contract to menu_lookup).
 - **PATCH updates in place** — the version number does not bump; don't use version to detect
   your own change, use read-back.
 - **A missing dynamic variable renders literally** (`{{today_status}}` spoken aloud as
