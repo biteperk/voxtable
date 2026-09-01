@@ -354,6 +354,20 @@ Four rules, agreed with Abhishek on #350 after four branches went orphan:
 3. **Reference the story as a `Refs #NNN` trailer in the commit body**, not in the subject — "story" means the GitHub issue number, which is what the board tracks. The subject stays a plain sentence about what changed for the customer; squash-merge already appends the PR number, and GitHub links the trailer in both directions.
 4. **Merge or close within a week.**
 
+**Attribution: everything ships as BitePerk's work.** No tooling credit anywhere a reader or a
+customer can see — no `Co-Authored-By` trailers, no "Generated with" footers, no assistant named
+in a commit message, PR or issue body, code comment, release note, email or SMS. The work is the
+company's; the tools used to produce it are an implementation detail, the same way nobody credits
+an IDE. This applies to every repo in the estate, not just this one.
+
+Two clarifications, because the rule gets over-applied. `CLAUDE.md` and `.claude/` are **tooling
+configuration** — the filenames are fixed by the tool and are not attribution; leave them. And the
+rule is forward-looking: existing commit messages carrying a trailer stay as they are, because
+rewriting them changes every SHA, and this repo cites SHAs constantly — runbooks, snapshot READMEs,
+issue comments and the incident log would all lose their references, while force-push is blocked on
+`integration` and `main` by design. Clean the surfaces people actually read (PR and issue bodies,
+which stay editable after merge) and leave history alone.
+
 ⚠️ **Rule 4 is the one that matters, and it is not about tidiness.** Both branches that went orphan *were* cut from `integration` — they drifted because they lived without a PR while `integration` moved 34 and 29 commits past them. At that distance **rebasing becomes the dangerous option**: three files on `pipeline-environment-checks` would have reverted work that had landed since (the drop detector replaced by #354, the greeting-disclosure waiver from #332, `REQUIRE_MENU_STATUS` from #329), and its `assert-agent.mjs` is the variant this repo's own code comment names and rejects. Salvage was by hand — #354, #356, #358, #359 — not by merge. A branch more than about two weeks behind should be cherry-picked forward, never merged backwards.
 
 **Pipeline state — verified 6 Aug 2026.** The deploy half was rewritten 4 Aug (#94/#95): `deploy-backend.yml`/`deploy-frontend.yml` deploy `integration` → Cloud Run staging and `main` → Cloud Run production, both gated on a successful CI `workflow_run`; the backend job runs the migration job before rolling services. Deploy recovery is a Cloud Run revision traffic rollback done by hand — extra pipeline rollback tooling was reviewed and declined (PR #100). Current gaps:
