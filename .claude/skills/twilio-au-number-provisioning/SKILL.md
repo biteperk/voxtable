@@ -267,6 +267,39 @@ from any other account (including staging) is stamped `Unverified` on the handse
 approval. Adding an account means asking Twilio support. It is also **one-way**: recipients cannot
 reply, `STOP` does not work, so no notification copy may invite a reply.
 
+### Sending AS the registered sender ID — the config that decides it
+
+⚠️ **A registered sender ID is not used because it exists. It is used because the send went
+through the Messaging Service.** Approval, and even attaching the sender to the pool, changes
+nothing on their handset if the app sends from a bare number.
+
+Verified on `ACd423bd09…` on **28 Aug 2026** by reading the service back over the API — the pool
+of `MG7ceaa2aaa3cea6195ea7979d57b78b14` (`voxtable-prod-notifications`) holds **both**:
+
+| Sender | |
+|---|---|
+| `BitePerk` | alphanumeric, SMS — ACMA-approved, attached |
+| `+61468202846` | the production number |
+
+With the service alone, Twilio picks the alphanumeric sender for destinations that support it
+(Australia does) and falls back to the number where they do not. So the rule is:
+
+- **Set `NOTIFICATIONS_MESSAGING_SERVICE_SID`** to that `MG…`.
+- **Leave `NOTIFICATIONS_SMS_FROM` unset.** `resolveSmsSender` in `services/notificationService.ts`
+  returns the service when both are present, so a stray `SMS_FROM` is currently harmless — but it
+  is the rollback lever, not the normal setting, and sending both to Twilio at once reads as "keep
+  the service but pin this From", which switches sender selection OFF and silently drops you back
+  to the number.
+- **Rolling back to the plain number is unsetting the SID** — an env change, no deploy.
+
+**Proving it, rather than assuming:** after the first real send, read the Message resource back
+and check `from`. It must read `BitePerk`, not `+61…`. A handset screenshot is the other half —
+an unregistered alphanumeric is overstamped `Unverified` in Australia, and the API cannot see that.
+
+⚠️ **Neither BitePerk account has ever actually sent an SMS** (NUMBERS.md §1). Messaging shows
+"enabled" on both, which proves configuration and not delivery. Treat the whole path as unproven
+until one message lands on a real handset.
+
 ---
 
 ## Phase 7 — Retell and the database
