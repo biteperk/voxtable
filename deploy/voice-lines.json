@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "Declared state of every VoxTable voice line \u2014 the machine-readable SSOT for the routing",
+    "Declared state of every VoxTable voice line — the machine-readable SSOT for the routing",
     "chain. NUMBERS.md narrates this file; where they disagree, THIS file is what the checker",
     "enforces and NUMBERS.md is the one that is stale.",
     "",
@@ -9,7 +9,7 @@
     "could vanish and only a human placing a call would find out. On 20 Aug 2026 three of the",
     "four were broken at once on production and had been for a day.",
     "",
-    "Identifiers only. NEVER put an auth token, API key or webhook secret in here (NUMBERS.md \u00a77).",
+    "Identifiers only. NEVER put an auth token, API key or webhook secret in here (NUMBERS.md §7).",
     "",
     "Check it:  node .claude/skills/retell-agent-quality/scripts/assert-line.mjs <number>",
     "Repair it: node .claude/skills/retell-agent-quality/scripts/apply-line.mjs  <number>",
@@ -40,7 +40,7 @@
         {
           "word": "Mazcina",
           "alphabet": "ipa",
-          "phoneme": "m\u0251\u02c8sin\u0251"
+          "phoneme": "mɑˈsinɑ"
         }
       ],
       "required_boosted_keywords": [
@@ -48,10 +48,10 @@
         "Mazcina Resto-Bar"
       ],
       "twilio_account_sid": "ACd423bd09e9649e552a0b6d19a9eed338",
-      "twilio_trunk_sid": "TK6fcd3c96ea8317181d4049ce6f938f10",
-      "twilio_region": "au1",
-      "termination_uri": "voxtable-prod-au1.pstn.twilio.com",
-      "twilio_au1_key_secret": null,
+      "twilio_trunk_sid": "TK3140735e33b7b22007a88f00f15e0e9a",
+      "twilio_region": "us1",
+      "termination_uri": "voxtable-prod-us1-mazcina.pstn.twilio.com",
+      "twilio_au1_key_secret": "voxtable-prod-twilio-us1-key",
       "db": {
         "via": "vm-ssh",
         "instance": "core-central-vm",
@@ -60,7 +60,34 @@
         "container": "vocotable-postgres-1"
       },
       "customer_facing": false,
-      "notes": "Not customer-facing: the ~7.6s fixed-timer drop is unresolved on voxtable-prod-au1 (deploy/runbooks/incident-7600ms-call-drops.md)."
+      "notes": "Not customer-facing: the fixed ~7.6s drop is UNRESOLVED and reproduced on US1 on 31 Aug 2026 (1 in 4 calls). Chain otherwise proven end to end that day — a real call booked Johnson, 3 people, 19:30, and the row landed in Postgres.",
+      "twilio_phone_number_sid": "PN05a730d0f19b14578b76f72a547fa48e",
+      "origination_transport": "tls",
+      "trunk_secure": true,
+      "twilio_voice_region_sid": "QQa222ceeb482b6c796a750bfabe7b79e8",
+      "twilio_key_project": "bp-voxtable-prod",
+      "$trunk_posture_comment": [
+        "Moved AU1 -> US1 on 31 Aug 2026 on the hypothesis that the trunk region caused the",
+        "fixed ~7.6s drops. THE HYPOTHESIS WAS WRONG: the fault reproduced on US1 40 minutes",
+        "later (call_78fb2b89dfe0c031f282a33ebb6, 7,594ms, greeting-only, caller never spoke).",
+        "Region is now exonerated alongside transport. See incident-7600ms-call-drops.md §0.",
+        "The move is RETAINED anyway: US1 is no worse, and it is the only reason assert-line",
+        "checks 15-17 can run on this line at all — no AU1 API key exists on this account.",
+        "Surviving hypothesis is the number/carrier range: both numbers that drop are",
+        "+61 4 6820 xxxx bought 13 Aug; +61485071140 and the pilot line have never dropped.",
+        "ROLLBACK (not recommended) = POST VoiceRegion=au1 to routes.twilio.com/v2/PhoneNumbers/."
+      ],
+      "greeting_ai_disclosure": false,
+      "$greeting_disclosure_comment": [
+        "The venue owner asked for the 'an AI assistant' phrase to be removed, 31 Aug 2026.",
+        "Applied. The RECORDING disclosure stays — that is the half with statutory weight",
+        "(NSW Surveillance Devices Act 2007) and there is no per-line waiver for it.",
+        "Safe for this venue specifically: Mazcina has ZERO rows in agreement_acceptances, so",
+        "there is no signed certification that an AI announcement is made. A venue that HAS",
+        "signed must not get this flag without re-papering that clause first.",
+        "Open: deploy/runbooks/legal-brief-call-recording.md was sent 3 Aug 2026 and its six",
+        "questions have no recorded answer in this repo."
+      ]
     },
     "+61468203234": {
       "environment": "staging",
@@ -83,7 +110,7 @@
         {
           "word": "Mazcina",
           "alphabet": "ipa",
-          "phoneme": "m\u0251\u02c8sin\u0251"
+          "phoneme": "mɑˈsinɑ"
         }
       ],
       "required_boosted_keywords": [
@@ -97,10 +124,10 @@
       "twilio_au1_key_secret": "voxtable-stg-twilio-au1-key",
       "db": {
         "via": "unreachable",
-        "note": "Cloud SQL on a private VPC \u2014 not reachable from a laptop. Change the row through the admin API, which verifies the agent before storing it, then re-run assert-line."
+        "note": "Cloud SQL on a private VPC — not reachable from a laptop. Change the row through the admin API, which verifies the agent before storing it, then re-run assert-line."
       },
       "customer_facing": false,
-      "notes": "Internal testing only \u2014 never customer-facing, never in a production restaurants row."
+      "notes": "Internal testing only — never customer-facing, never in a production restaurants row."
     },
     "+61485071140": {
       "environment": "production",
@@ -114,7 +141,7 @@
         "env_file": "/opt/vocotable/.env",
         "api_key_var": "RETELL_API_KEY",
         "webhook_secret_var": "RETELL_WEBHOOK_SECRET",
-        "note": "Same workspace as +61468202846. The repo's local .env holds the LEGACY Algorythmos key \u2014 never use it for this line."
+        "note": "Same workspace as +61468202846. The repo's local .env holds the LEGACY Algorythmos key — never use it for this line."
       },
       "restaurant_id": "22222222-2222-4222-8222-222222222222",
       "venue_name": "Cuban Corner Parramatta",
@@ -134,12 +161,12 @@
       "origination_transport": "tls",
       "trunk_secure": true,
       "$trunk_posture_comment": [
-        "Read back from the trunk at build time, 27 Aug 2026 \u2014 not the recipe. Built US1 + tls +",
+        "Read back from the trunk at build time, 27 Aug 2026 — not the recipe. Built US1 + tls +",
         "secure=true deliberately: AU1 drops calls on BOTH tls and tcp, US1+tcp is clean over 25",
         "calls, and US1+tls was the one untested cell. A clean run here exonerates TLS and convicts",
         "the region; drops at ~7.6s convict TLS, and the fix is in place (PATCH origination to tcp",
-        "and the trunk to secure=false) \u2014 only REGION is immutable after creation.",
-        "See deploy/runbooks/incident-7600ms-call-drops.md \u00a710."
+        "and the trunk to secure=false) — only REGION is immutable after creation.",
+        "See deploy/runbooks/incident-7600ms-call-drops.md §10."
       ],
       "twilio_voice_region_sid": "QQa3d289f958ecaf75e6b79f3369a092cd",
       "twilio_au1_key_secret": "voxtable-prod-twilio-us1-key",
@@ -149,7 +176,7 @@
         "This line is US1, so a US1-region key is what works. Load as TWILIO_AU1_KEY_SID/SECRET from",
         "bp-voxtable-prod secrets voxtable-prod-twilio-us1-key-sid / -secret.",
         "NOTE: voxtable-prod-twilio-account-sid/-auth-token in that project are the LEGACY Algorythmos",
-        "account and 401 \u2014 do not reach for them."
+        "account and 401 — do not reach for them."
       ],
       "db": {
         "via": "vm-ssh",
@@ -159,7 +186,7 @@
         "container": "vocotable-postgres-1"
       },
       "customer_facing": false,
-      "notes": "Not customer-facing yet: not imported to Retell, not bound, no Disaster Recovery URL. The venue keeps its own line until a dress-rehearsal call passes."
+      "notes": "Not customer-facing yet: the venue keeps its own line until a dress-rehearsal call passes. Imported to Retell and fully bound as of 31 Aug 2026 — assert-line passes all 17 applicable checks including the Twilio trunk layer; the earlier 'not imported, not bound' note here was stale and misread as a blocker. Still no Disaster Recovery URL on trunk TK50f2a0cc6c4906a1b946867489716548 (verified null, 31 Aug), so a Retell outage gives callers dead air."
     }
   }
 }

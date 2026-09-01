@@ -397,6 +397,26 @@ const envSchema = z
   // gates link CREATION only (Retell tool + staff resend) — webhook
   // reconciliation and the expiry reaper deliberately ignore it, because links
   // already in guests' hands must keep settling after a flag-off.
+  // Schedule a pre-order to reach the pass near the guest's arrival instead of
+  // immediately. Off by default: with it off every order fires on creation,
+  // which is exactly the behaviour that shipped before fire_at existed, so
+  // turning it off is a complete revert without touching the schema.
+  // Largest party the voice agent may book on its own. Above it she takes a
+  // name and number and hands off to the venue.
+  //
+  // A number, not prompt text, on purpose. Prompt-only, check_availability
+  // would still answer "yes, table available" for a larger party — the
+  // strongest possible pressure on the agent to book it anyway — and raising
+  // the cap later would mean another hand-PATCH of a live production agent.
+  // 0 disables the cap.
+  VOICE_AUTOBOOK_MAX_PARTY: z.coerce.number().int().min(0).max(50).default(0),
+  ORDER_FIRE_AT_ENABLED: boolFlag(),
+  // How long before the booking the kitchen should start, so a 7pm table's
+  // pre-order hits the pass at 6:35pm. Sam's working figure (31 Aug 2026),
+  // meant to be adjusted once a venue has watched it against real service —
+  // it is a venue-level number in truth, and arguably a per-dish one: the
+  // owner's quick bites (is_quick_bite) want less lead than a grilled main.
+  KITCHEN_LEAD_MINUTES: z.coerce.number().int().min(0).max(240).default(25),
   ORDER_PAYMENTS_ENABLED: boolFlag(),
   // Stripe Connect (destination charges to venue connected accounts). Order
   // payments require it; it can be on alone to let venues onboard early.

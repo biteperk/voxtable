@@ -33,7 +33,13 @@ const FRONT_OF_HOUSE_ROLES = ["staff", "server", "manager", "owner"] as const;
 const KITCHEN_ROLES = ["kitchen", "manager", "owner"] as const;
 const ORDER_READ_ROLES = ["staff", "server", "kitchen", "manager", "owner"] as const;
 const activeOrdersQuerySchema = z.object({
-  table_id: z.string().uuid().optional()
+  table_id: z.string().uuid().optional(),
+  // Scheduled pre-orders that have not reached their fire time yet. Opt-in so
+  // existing callers (live-tables view) keep seeing only what is on the pass.
+  include_upcoming: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true")
 });
 
 // Read endpoints — live tables and kitchen views both need current orders.
@@ -44,7 +50,10 @@ ordersRouter.get(
   requireAnyMemberRole(ORDER_READ_ROLES),
   asyncHandler(async (request, response) => {
     const query = activeOrdersQuerySchema.parse(request.query);
-    const orders = await getActiveOrders(tenantId(request), { tableId: query.table_id });
+    const orders = await getActiveOrders(tenantId(request), {
+      tableId: query.table_id,
+      includeUpcoming: query.include_upcoming
+    });
     // Provide server-now so clients can compute "time since ordered" without
     // trusting their local clock (kitchen tablet drift mitigation).
     response.json({

@@ -21,7 +21,17 @@ const POLL_INTERVAL_MS = 2000;
 const POLL_BACKOFF_MAX_MS = 16000;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
+// A pre-order is not a status — it is a pending order whose fire time has not
+// arrived. So this lane matches on a predicate rather than a status list, and
+// carries no advance action: the kitchen should not start it yet, and it moves
+// into Pending on its own when fire_at passes.
 const LANES = [
+  {
+    key: "upcoming",
+    title: "Upcoming",
+    scheduled: true,
+    match: (order, nowMs) => order.fire_at != null && new Date(order.fire_at).getTime() > nowMs
+  },
   { key: "pending", title: "Pending", statuses: ["pending"], next: "preparing", actionLabel: "Start" },
   { key: "preparing", title: "Preparing", statuses: ["preparing"], next: "ready", actionLabel: "Mark Ready" },
   { key: "ready", title: "Ready", statuses: ["ready"], next: "served", actionLabel: "Served" }
@@ -35,6 +45,12 @@ function formatAge(seconds) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+/** "7:30 pm" in the viewer's locale — the kitchen reads a clock, not an ISO string. */
+function formatClock(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 function classifyAge(seconds) {
   if (seconds == null) return "ok";
   if (seconds > 900) return "bad";
@@ -43,12 +59,21 @@ function classifyAge(seconds) {
 }
 
 function OrderCard({ order, serverNow, lane, onAdvance, onItemAdvance, busy }) {
-  const orderedAt = new Date(order.ordered_at).getTime();
   const nowMs = new Date(serverNow).getTime();
-  const ageSeconds = Math.max(0, Math.round((nowMs - orderedAt) / 1000));
-  const ageClass = classifyAge(ageSeconds);
+  const fireAtMs = order.fire_at ? new Date(order.fire_at).getTime() : null;
+  const scheduled = fireAtMs != null && fireAtMs > nowMs;
+  // Age runs from when the kitchen could start. Measured from ordered_at, a
+  // pre-order taken this morning arrives on the pass already red.
+  const clockFrom = Math.max(new Date(order.ordered_at).getTime(), fireAtMs ?? 0);
+  const ageSeconds = scheduled ? null : Math.max(0, Math.round((nowMs - clockFrom) / 1000));
+  const ageClass = scheduled ? "ok" : classifyAge(ageSeconds);
+  const dueInSeconds = scheduled ? Math.round((fireAtMs - nowMs) / 1000) : null;
 
-  const tableLabel = order.table_id ? `T${order.table_id.slice(0, 4)}` : "Pickup";
+  const tableLabel = order.table_id
+    ? `T${order.table_id.slice(0, 4)}`
+    : order.reservation_id
+      ? "Booking"
+      : "Pickup";
 
   return (
     <div className={`kds-card age-${ageClass}`}>
@@ -57,7 +82,9 @@ function OrderCard({ order, serverNow, lane, onAdvance, onItemAdvance, busy }) {
           <div className="kds-card-number">#{order.order_number ?? "—"}</div>
           <div className="kds-card-table">{tableLabel}</div>
         </div>
-        <div className={`kds-card-age ${ageClass}`}>{formatAge(ageSeconds)}</div>
+        <div className={`kds-card-age ${ageClass}`}>
+          {scheduled ? `in ${formatAge(dueInSeconds)}` : formatAge(ageSeconds)}
+        </div>
       </div>
 
       <div className="kds-card-pills">
@@ -107,14 +134,20 @@ function OrderCard({ order, serverNow, lane, onAdvance, onItemAdvance, busy }) {
         ))}
       </div>
 
-      <button
-        type="button"
-        className="kds-card-action"
-        onClick={() => onAdvance(order, lane.next)}
-        disabled={busy}
-      >
-        {lane.actionLabel}
-      </button>
+      {lane.next ? (
+        <button
+          type="button"
+          className="kds-card-action"
+          onClick={() => onAdvance(order, lane.next)}
+          disabled={busy}
+        >
+          {lane.actionLabel}
+        </button>
+      ) : (
+        // Scheduled: no action. It moves into Pending on its own at fire time,
+        // and starting it early is the whole failure this lane prevents.
+        <div className="kds-card-scheduled">Starts {formatClock(order.fire_at)}</div>
+      )}
     </div>
   );
 }
@@ -122,12 +155,17 @@ function OrderCard({ order, serverNow, lane, onAdvance, onItemAdvance, busy }) {
 function Board({ orders, serverNow, onAdvance, onItemAdvance, busyOrderIds }) {
   const grouped = useMemo(() => {
     const map = new Map(LANES.map((lane) => [lane.key, []]));
+    const nowMs = new Date(serverNow).getTime();
     for (const order of orders) {
-      const lane = LANES.find((l) => l.statuses.includes(order.status));
+      // Predicate lanes are checked first: a scheduled order is still
+      // status='pending', so a status match would put it on the pass.
+      const lane =
+        LANES.find((l) => l.match && l.match(order, nowMs)) ??
+        LANES.find((l) => l.statuses?.includes(order.status));
       if (lane) map.get(lane.key).push(order);
     }
     return map;
-  }, [orders]);
+  }, [orders, serverNow]);
 
   return (
     <div className="kds-board">
@@ -183,8 +221,12 @@ function KdsApp({ user }) {
     try {
       const data = await listActiveOrders();
       // Detect new pending orders for the ding.
+      // A pre-order is created hours before service. Dinging on creation
+      // called the kitchen to a ticket they must not start yet.
+      const dingNow = new Date(data.server_now ?? Date.now()).getTime();
       const newPending = (data.orders ?? [])
         .filter((o) => o.status === "pending")
+        .filter((o) => !o.fire_at || new Date(o.fire_at).getTime() <= dingNow)
         .map((o) => o.id);
       const previousSet = previousIds.current;
       const hasNewOrder = newPending.some((id) => !previousSet.has(id));
