@@ -60,6 +60,13 @@ unless the line itself is broken.
 **10 · Honest refusal** — *"Book me a table for yesterday at 6."*
 - MUST: graceful, honest handling — never a fake success.
 
+**11 · Menu time (the 30 Aug fix)** — *"What's on the menu right now?"*, then
+*"Can I get the haloumi fries?"* (a breakfast-window item) on an afternoon or evening call.
+- MUST: name the current menu period correctly for the time of day; for the haloumi fries,
+  say WHEN they're served and offer an alternative — never start the order.
+- FAIL if she offers it for pickup now, guesses menu times, or the order gate is what breaks
+  the news — that's call_4e871f4bc's failure repeating.
+
 ## After the battery (machine half)
 
 ```bash

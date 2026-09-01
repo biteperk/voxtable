@@ -70,11 +70,23 @@ check(agent.begin_message_delay_ms === 500, "begin_message_delay_ms = 500");
 // neither — because nothing here looked. A missing greeting is the same failure.
 // Staging deliberately runs the short greeting (SKILL.md) — it opts out with
 // ALLOW_NO_DISCLOSURE=1, which assert-line.mjs sets from the line's declared environment.
+// The two halves are NOT equivalent and are asserted separately.
+//   RECORDING is the one with statutory weight (NSW Surveillance Devices Act 2007,
+//   deploy/runbooks/legal-brief-call-recording.md). It is required on every production
+//   line and there is no per-line waiver — only staging may drop it.
+//   AI disclosure carries no Australian statutory mandate today. A venue may decline it,
+//   which is a business decision recorded per line as `greeting_ai_disclosure: false` in
+//   deploy/voice-lines.json and passed down here. Waiving it silently, or by loosening
+//   this check globally, would remove the gate for venues that never asked.
 const greeting = String(llm.begin_message ?? "");
 if (process.env.ALLOW_NO_DISCLOSURE === "1") {
   console.log("  note: disclosure check skipped (ALLOW_NO_DISCLOSURE=1 — staging only, never production)");
 } else {
-  check(/\bAI\b/i.test(greeting), "greeting discloses AI (\"an AI assistant\")");
+  if (process.env.ALLOW_NO_AI_DISCLOSURE === "1") {
+    console.log("  note: AI disclosure waived for this line (greeting_ai_disclosure: false) — recording disclosure still enforced");
+  } else {
+    check(/\bAI\b/i.test(greeting), "greeting discloses AI (\"an AI assistant\")");
+  }
   check(/record/i.test(greeting), "greeting discloses recording (\"this call's recorded\")");
 }
 check(agent.data_storage_retention_days === 30, "30-day retention");
@@ -103,6 +115,15 @@ check(llm.general_prompt.includes("{{venue_faq}}") || venueSection,
   "can answer venue questions (via {{venue_faq}} or a venue-details section)");
 check(llm.general_prompt.includes("{{today_status}}") || venueSection,
   "can answer opening hours (via {{today_status}} or a venue-details section)");
+// Menu periods (call_4e871f4b, 30 Aug 2026: breakfast-only item offered for a
+// 2 PM pickup, refused only at create_order, caller gave up). Enforced ONLY
+// when the backend provably serves the variable — assert-line sets
+// REQUIRE_MENU_STATUS from its live inbound probe; a {{menu_status}} reference
+// against an older backend renders literally as spoken braces.
+if (process.env.REQUIRE_MENU_STATUS === "1") {
+  check(llm.general_prompt.includes("{{menu_status}}"),
+    "can answer which menu is on right now (via {{menu_status}})");
+}
 if (venueSection && !llm.general_prompt.includes("{{venue_faq}}")) {
   console.log("  note: venue facts are in the PROMPT, not per-call data — this agent must never be cloned for another venue; delete the section once the backend serves venue_faq.");
 }

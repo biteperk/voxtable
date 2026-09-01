@@ -30,8 +30,8 @@ import { enrichLogContext, logger } from "../utils/logger";
 import type { OpeningHours } from "../domain/types";
 import {
   dayNameInTz,
+  formatDailyWindow,
   formatTodayStatus,
-  formatVoiceTime,
   isWithinDailyWindow,
   nowTimeInTz,
   todayInTz,
@@ -39,7 +39,7 @@ import {
 } from "../utils/time";
 import { checkAvailability } from "./availabilityService";
 import { createBooking, modifyBooking } from "./bookingService";
-import { getMenu, lookupMenu } from "./menuService";
+import { buildMenuHighlights, buildMenuStatus, getMenu, lookupMenu } from "./menuService";
 import { searchMenuItemsByName } from "../repositories/menu";
 import {
   claimOpsStateKey,
@@ -235,6 +235,15 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
   });
 
   const now = new Date();
+  // Both menu variables are computed together. buildMenuStatus used to be a
+  // bare `await` inside the response literal; adding a second one there would
+  // have put another serial DB round-trip on /retell/inbound, the one path that
+  // must not get slower. Both fail open to "" on their own.
+  const menuNowHm = nowTimeInTz(tz, now);
+  const [menuStatus, menuHighlights] = await Promise.all([
+    buildMenuStatus(restaurantId, menuNowHm),
+    buildMenuHighlights(restaurantId, menuNowHm)
+  ]);
   return {
     call_inbound: {
       ...(overrideAgentId ? { override_agent_id: overrideAgentId } : {}),
@@ -256,7 +265,19 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
         // Precomputed open/closed sentence the agent speaks verbatim — no
         // mid-call reasoning over the hours table, no check_availability call
         // just to learn today is a closed day. "" = no hours configured.
-        today_status: formatTodayStatus(venue.openingHours as OpeningHours, tz, now)
+        today_status: formatTodayStatus(venue.openingHours as OpeningHours, tz, now),
+        // Same doctrine for menu periods (call_4e871f4b, 30 Aug 2026: three
+        // haloumi variants offered for a 2 PM pickup, one breakfast-only, one
+        // late-night-only; the order was refused only at create_order and the
+        // caller gave up). Precomputed, spoken verbatim, "" when the venue has
+        // no windowed items. Fail-open inside buildMenuStatus.
+        menu_status: menuStatus,
+        // The owner's own ranked picks, in his order, preloaded so the agent
+        // can answer "what do you recommend?" instantly instead of spending a
+        // tool round-trip — and so it recommends what the venue wants sold
+        // rather than whatever the search index surfaces. "" = nothing ranked,
+        // and the prompt falls back to menu_lookup.
+        menu_highlights: menuHighlights
       },
       metadata: {
         restaurant_id: restaurantId,
@@ -293,6 +314,45 @@ export function voiceBookingDisabledResponse(): {
     natural_alternatives_message: message,
     confirmation_message: message
   };
+}
+
+/**
+ * Above the venue's auto-book ceiling the agent takes a message instead.
+ *
+ * The venue owner asked for anything above a small party to reach him
+ * personally. Enforced here rather than in the prompt because otherwise
+ * check_availability happily reports a real free table for a larger party, and
+ * an agent told a table is free will book it.
+ */
+export function partyTooLargeResponse(
+  partySize: number,
+  ownerName: string | null
+): {
+  available: false;
+  success: false;
+  reason: "party_needs_venue";
+  message: string;
+  natural_alternatives_message: string;
+  confirmation_message: string;
+} {
+  const who = ownerName?.trim() ? ownerName.trim() : "the team";
+  const message =
+    `For a group of ${partySize} I'll get ${who} to give you a call and sort it out properly — ` +
+    `could I grab your name and the best number to reach you on?`;
+  return {
+    available: false,
+    success: false,
+    reason: "party_needs_venue",
+    message,
+    natural_alternatives_message: message,
+    confirmation_message: message
+  };
+}
+
+/** Is this party above the venue's auto-book ceiling? 0 disables the cap. */
+export function exceedsAutoBookCap(partySize: number | undefined, cap: number): boolean {
+  if (!cap || cap <= 0) return false;
+  return typeof partySize === "number" && Number.isFinite(partySize) && partySize > cap;
 }
 
 export async function handleRetellFunction(
@@ -335,6 +395,29 @@ export async function handleRetellFunction(
       "RESTAURANT_NOT_CONFIGURED",
       "Sorry, this phone line isn't fully set up yet. Please try again later."
     );
+  }
+
+  // The cap is checked before availability, not after. If she is told a table
+  // exists she will offer it, and taking it back reads as the system failing.
+  const requestedPartySize = Number(
+    (args.party_size ?? args.partySize ?? args.partysize) as unknown
+  );
+  if (
+    (name === "check_availability" ||
+      name === "checkavailability" ||
+      name === "create_booking" ||
+      name === "createbooking") &&
+    exceedsAutoBookCap(requestedPartySize, env.VOICE_AUTOBOOK_MAX_PARTY)
+  ) {
+    const venue = await getRestaurantVoiceContext(restaurantId);
+    logger.info({
+      evt: "party_above_autobook_cap",
+      tool: name,
+      restaurant_id: restaurantId,
+      party_size: requestedPartySize,
+      cap: env.VOICE_AUTOBOOK_MAX_PARTY
+    });
+    return partyTooLargeResponse(requestedPartySize, venue.ownerName);
   }
 
   if (name === "check_availability" || name === "checkavailability") {
@@ -387,10 +470,13 @@ export async function handleRetellFunction(
         `menu_lookup args invalid: ${parsed.error.issues.map((i) => i.message).join("; ")}`
       );
     }
+    // Window annotations are judged at the venue's current wall clock, so the
+    // agent knows at OFFER time what the kitchen will refuse at ORDER time.
     const result = await lookupMenu({
       restaurantId,
       query: parsed.data.query,
-      category: parsed.data.category
+      category: parsed.data.category,
+      nowHm: nowTimeInTz(await getRestaurantTimezone(restaurantId))
     });
     return {
       matches: result.matches,
@@ -440,10 +526,17 @@ export async function handleRetellFunction(
       specialRequests?: string;
     }> = [];
 
-    // Wall-clock "now" in the restaurant's own timezone, for daily menu
-    // windows (breakfast until noon, lunch specials, happy hour).
+    // Wall-clock time the food will actually be SERVED, in the restaurant's
+    // own timezone, for daily menu windows (breakfast until noon, lunch
+    // specials, happy hour). The window used to be checked against the time of
+    // the CALL — on call_4e871f4b (30 Aug) that was coincidentally right, but
+    // a 10 AM caller ordering a breakfast item for 2 PM pickup would have
+    // passed, and a 4 PM caller pre-ordering tomorrow's breakfast would have
+    // been refused. When a parseable pickup time exists, judge that; otherwise
+    // fall back to now.
     const restaurantTz = await getRestaurantTimezone(restaurantId);
-    const nowHm = nowTimeInTz(restaurantTz);
+    const pickupHm = /^([01]?\d|2[0-3]):[0-5]\d/.exec(pickupTime)?.[0] ?? null;
+    const serveHm = pickupHm ?? nowTimeInTz(restaurantTz);
 
     for (const itemInput of parsed.data.items) {
       // Before trusting the best AVAILABLE match, check whether what the caller
@@ -480,7 +573,8 @@ export async function handleRetellFunction(
 
       const lookup = await lookupMenu({
         restaurantId,
-        query: itemInput.name
+        query: itemInput.name,
+        nowHm: serveHm
       });
       if (lookup.matches.length === 0) {
         throw new AppError(
@@ -525,12 +619,10 @@ export async function handleRetellFunction(
       }
 
       // Daily windows: a breakfast item at 8pm gets a helpful redirect, not a
-      // silent acceptance the kitchen can't honour.
-      if (!isWithinDailyWindow(nowHm, top.available_from, top.available_until)) {
-        const from = top.available_from ? formatVoiceTime(top.available_from.slice(0, 5)) : null;
-        const until = top.available_until ? formatVoiceTime(top.available_until.slice(0, 5)) : null;
-        const windowSpoken =
-          from && until ? `between ${from} and ${until}` : from ? `from ${from}` : `until ${until}`;
+      // silent acceptance the kitchen can't honour. Judged at serve time, not
+      // call time (see serveHm above).
+      if (!isWithinDailyWindow(serveHm, top.available_from, top.available_until)) {
+        const windowSpoken = formatDailyWindow(top.available_from, top.available_until);
         throw new AppError(
           400,
           "ITEM_NOT_AVAILABLE_NOW",

@@ -1,6 +1,112 @@
 # Incident: calls dropping at a fixed ~7.6 seconds
 
-**Status: OPEN — narrowed to the SIP trunk. One experiment away from a verdict. 20 Aug 2026.**
+**Status: OPEN. Region has now been tested and EXONERATED along with transport.
+The surviving candidate is the NUMBER itself (or its carrier range), not the trunk. 31 Aug 2026.**
+
+## 0. RETRACTION — the region verdict below was wrong, and a real call disproved it
+
+Earlier on 31 Aug this file was marked RESOLVED, concluding that the trunk's **region** caused
+the drops, on the strength of Cuban Corner (US1+TLS, 8 calls, 0 drops) versus Mazcina
+(AU1+TLS, 8 calls, 4 drops). Acting on it, `+61 468 202 846` was moved to a **US1** trunk
+(`voxtable-prod-us1-mazcina`, `TK3140735e…`), region flipped 04:16:09Z.
+
+**The fault reproduced on US1 forty minutes later.**
+
+| Call | Time (UTC) | Region processed | Duration | Disconnect |
+|---|---|---|---|---|
+| `call_60c0dbaab2ca19b4cb145bdf307` | 04:35:58 | US1 | 75,467 ms | agent_hangup |
+| **`call_78fb2b89dfe0c031f282a33ebb6`** | **04:56:01** | **US1** | **7,594 ms** | **user_hangup** |
+| `call_6a417ae31f0e498c99375c44de3` | 04:56:15 | US1 | 48,884 ms | agent_hangup |
+| `call_ec21ceab93cb3038344ac7f496d` | 04:57:10 | US1 | 65,501 ms | agent_hangup |
+
+Confirmed genuine, not a caller hang-up: the transcript holds **only the greeting**, whose last
+word ends at **6.65 s**; the caller never spoke and redialled 14 s later. 7,594 ms sits inside
+the 7,593–7,653 ms band. Confirmed genuinely US1: all four appear in the **US1** Calls API
+(`api.twilio.com`), which is region-partitioned, and the number's `voice_region` reads `us1`.
+
+So the 8-vs-8 comparison was **confounded by venue**, and the lesson is the one §6 already
+gave and this file then ignored: a natural experiment across two venues is not the controlled
+experiment. It should have been stated as a hypothesis, not a verdict. Post-cutover Mazcina is
+1 drop in 4 (25 %) — statistically indistinguishable from its AU1 rate.
+
+### What that leaves
+
+| Variable | Status |
+|---|---|
+| Transport (TLS vs TCP) | exonerated — §0a, TLS held constant across a clean arm and a failing arm |
+| **Region (AU1 vs US1)** | **exonerated — this section, fault reproduced on US1** |
+| Agent / LLM / prompt / workspace / backend / account | exonerated — §4b |
+| Caller handset | exonerated — same handset `+61450011140` on every clean Cuban Corner call |
+| **The number itself, or its carrier range** | **the only variable never changed** |
+
+Sorted by number rather than by trunk, the data separates cleanly:
+
+| Number | Bought | Trunk configs tried | Drops |
+|---|---|---|---|
+| `+61 468 203 234` (staging) | 13 Aug | AU1+TLS | yes |
+| `+61 468 202 846` (Mazcina) | 13 Aug | AU1+TLS, **US1+TLS** | yes, on both |
+| `+61 485 071 140` (Cuban Corner) | 27 Aug | US1+TLS | never |
+| `+61 2 7501 1140` (pilot) | — | US1+TCP | never |
+
+**Both failing numbers are `+61 4 6820 xxxx`, bought the same day; neither clean number is.**
+That is now the leading hypothesis and it is a carrier-range question, not a configuration
+one — which also explains why §4b's replacement of everything under our control never helped.
+
+⚠️ **Do not act on this the way the region verdict was acted on.** It is one more untested
+correlation across an uncontrolled variable. The controlled test is a *second number from a
+different range* on the *same* trunk, or Twilio answering §8 with the Q.850 release cause and
+which side sent BYE — which remains the highest-value open action, and now has much better
+evidence attached to it.
+
+**The US1 move is retained regardless** — it is no worse than AU1, it made the Twilio layer
+verifiable by API for the first time (no AU1 key exists on that account), and reverting would
+cost the only working `assert-line` coverage of checks 15–17 for this line.
+
+## 0a. The verdict, and the experiment that produced it (31 Aug 2026)
+
+§6 proposed flipping staging's transport to TCP and said: *"Any 7.6 s drop → transport
+exonerated; **AU1 is the remaining variable**."* That experiment was never run as written.
+A better one ran by accident, and it decides the question.
+
+Cuban Corner was built on a **US1** trunk (`voxtable-prod-us1`, `TK50f2a0cc…`) with
+origination **`transport=tls`** and `secure=true` — i.e. the same TLS posture as the two
+failing trunks, differing **only in region**. Both venues sit on the **same Twilio account**
+(`ACd423bd09…`), the **same Retell workspace** (Biteperk), the **same backend**
+(`api.biteperk.com.au`) and the same API host, so account, workspace, backend and credentials
+are all controlled.
+
+| Line | Trunk | Region | Transport | Phone calls | 7–9 s `user_hangup` drops |
+|---|---|---|---|---|---|
+| Cuban Corner `+61 485 071 140` | `voxtable-prod-us1` | **US1** | TLS | 8 | **0 (0 %)** — 42 s to 232 s, all healthy |
+| Mazcina `+61 468 202 846` | `voxtable-prod-au1` | **AU1** | TLS | 8 | **4 (50 %)** — 7,585 / 7,602 / 8,215 / 8,359 ms |
+
+**TLS is present on both.** That is the whole point: §4 listed transport and region as the
+two surviving confounded candidates, and this pair separates them. Transport is held
+constant at TLS while region varies, and the fault tracks region exactly.
+
+At the observed ~50 % failure rate, eight consecutive clean calls on US1 has probability
+~0.4 %.
+
+**Honest caveats.** Cuban Corner's calls are recent while Mazcina's cluster on 20 Aug, so a
+time component is not fully excluded — though §4b already eliminated everything that changed
+in between. Eight calls per arm is a small sample; it is decisive about *region* only because
+§2–§5 had already eliminated the agent, prompt, workspace, backend, account, caller and call
+content. And a trunk's region cannot be changed after creation, so confirming it costs a new
+trunk either way.
+
+**Consequence for go-live:** the fix is to move `+61 468 202 846` onto a US1 trunk built to
+the `voxtable-prod-us1` recipe, then re-verify with `npm run check:voice-lines` and a call
+battery. Until that happens, Mazcina drops roughly half its calls and must not be
+customer-facing. Cuban Corner's line is unaffected and has never shown the signature.
+
+⚠️ **The number's voice region must be changed to US1 *before* attaching it to a US1 trunk** —
+a US1 number is invisible to an AU1 trunk and vice versa, and the reverse mistake looks
+exactly like a deleted trunk. See `deploy/runbooks/twilio-account-topology.md`.
+
+⚠️ Do **not** conclude "AU1 is broken for everyone". What is established is that this
+recipe — AU1 origination over TLS to an out-of-region SIP endpoint (`sip.retellai.com`, US) —
+releases a third to a half of calls at a fixed ~7.6 s. The Twilio ticket in §8 is still worth
+filing, now with this cleaner comparison in it.
 
 ⚠️ **This file previously concluded the caller's handset/carrier was the prime suspect and
 that "calling from a different phone is the decider". That conclusion was WRONG** and is
@@ -175,7 +281,44 @@ either way, and the alternative is a restaurant line that drops a third of its c
 experiment proves transport, the right end state is still TLS that works — so file the ticket
 too.
 
-## 8. Twilio ticket (needs a human on the console)
+## 8. Twilio case — OPEN, with an engineer assigned
+
+**Status, 1 Sep 2026: raised, owned and being worked.** Vipin Jain of the SIP Trunking support
+team has taken ownership and is:
+
+- pulling raw signalling traces and carrier logs for the 26 Aug calls
+  (`CA2f6db49984dcfca614189de6edb7305e`, `CAad2c09801078606bdd7abb2773d0a0c5`,
+  `CA4c177e347b13f0d89b80b4dfc82effcf`) to extract the **Q.850 release cause** and establish
+  **which side sent BYE** — the single data point §0 says decides where this is fixed;
+- cross-referencing regional edge configuration for an **AU1 session timer (RFC 4028), SIP
+  OPTIONS ping expectation, or media-inactivity threshold in the 7–8 s range** that differs
+  from US1 defaults.
+
+⚠️ **The case number is not recorded here.** Sam has the correspondence; add the case id so the
+next person can find it without going through a mailbox.
+
+### The band is wider than this file says elsewhere
+
+Two further staging drops on 30 Aug — `CAeb3fda6b9698c1bc72911c5689b8cce4` (7,587 ms) and
+`CA4c6498c13397177580eaee59f61561db` (**7,447 ms**) — put one occurrence *below* the
+7,593–7,653 ms band reported to Twilio. The corrected range across seventeen occurrences is
+**~7,447–7,653 ms**, and it was volunteered to Twilio rather than left to be discovered: a
+support engineer matching traces against a range that excludes a real example wastes the one
+thing this case is for.
+
+Two questions were put to Twilio alongside it, both still open:
+
+1. Does anything in the AU1 edge apply a session or media timeout to an inbound trunk call
+   **before the far end has sent any in-dialog request**? Releases happen both while our
+   endpoint is still speaking its opening prompt and mid-caller-sentence.
+2. If the BYE originates upstream rather than at Twilio, **which carrier terminates AU
+   mobile-originated calls to this number**, so it can be pursued from that direction rather
+   than each party pointing at the other.
+
+The staging number `+61468203234` has been offered for a scheduled test window at Twilio's
+convenience.
+
+### The original message, as sent
 
 > Subject: Inbound trunk calls released at a fixed ~7.6 s on AU1 trunks (accounts
 > AC8116857da2064ef3251533f3ade56f32 and ACd423bd09e9649e552a0b6d19a9eed338)

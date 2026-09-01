@@ -45,6 +45,7 @@ canonical proof of connectivity (NUMBERS.md). Check via the throwaway job
 | 8 | **Honest capacity.** "Table for 8, Friday at 7pm." | Bella does NOT offer alternative times — none can ever work, the largest table seats 6 and nothing combines tables. She says so plainly and offers a callback. `checkAvailability` returns `reason: "party_too_large"`; if you hear a time suggestion, the prompt is ignoring it. |
 | 9 | **A party that just fits.** "Table for 6, Friday at 7pm." | Succeeds, on T9 or T10. The control for leg 8: it proves the new floor plan is reachable rather than merely inserted, so a refusal in leg 8 means the ceiling, not a broken table set. |
 | 10 | **Closed day.** "Table for 2 next Tuesday at 7pm." | Bella declines — Mazcina is closed Tuesday and Wednesday — and offers an open day instead. She must NOT book into a closed day, and must not blame the time (it is the day that is wrong). Nothing in the automated suite covers a fully-closed weekday; this leg is the only cover. |
+| 11 | **Menu time.** "What's on the menu right now?" — and, if the venue has any time-windowed item, ask for one outside its window. | She names the current menu period from `{{menu_status}}` without a tool call; for the out-of-window item she says WHEN it's served and offers an alternative — never starts the order. (Mazcina has no windowed items today, so the first half must produce no menu-time claims at all; the full leg bites on Cuban Corner. Added after call_4e871f4bc, 30 Aug 2026.) |
 
 
 ### The floor plan is real now

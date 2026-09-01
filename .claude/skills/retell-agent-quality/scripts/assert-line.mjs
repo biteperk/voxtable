@@ -247,7 +247,14 @@ if (agentExists) {
         VOXTABLE_API: declared.api_base,
         // The AI/recording disclosure is required on every production greeting. Staging
         // runs the short greeting by design; only a line DECLARED staging may skip it.
-        ALLOW_NO_DISCLOSURE: declared.environment === "staging" ? "1" : "0"
+        ALLOW_NO_DISCLOSURE: declared.environment === "staging" ? "1" : "0",
+        // Per-line, and only ever the AI half — the recording disclosure stays
+        // enforced in production regardless. Absent means true (disclose).
+        ALLOW_NO_AI_DISCLOSURE: declared.greeting_ai_disclosure === false ? "1" : "0",
+        // The backend proved (check [2]/[5]'s probe) whether it serves menu_status.
+        // Only then may the prompt be required to reference {{menu_status}} — a
+        // reference against an older backend renders literally as spoken braces.
+        REQUIRE_MENU_STATUS: "menu_status" in dv ? "1" : "0"
       }, encoding: "utf8" });
   const ok = r.status === 0;
   check(14, ok, "golden agent config (assert-agent.mjs)",
