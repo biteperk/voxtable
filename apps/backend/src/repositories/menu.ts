@@ -457,6 +457,34 @@ export async function getRequiredModifierGroups(
 }
 
 /**
+ * The owner's ranked picks, for the {{menu_highlights}} dynamic variable.
+ *
+ * Available items only, and licensed (is_restricted) rows are excluded here
+ * rather than filtered later: this list exists to be READ OUT, and the agent
+ * cannot take an order for a licensed drink over the phone. Ordered by the
+ * section's own display order so the agent walks the menu the way the venue
+ * lays it out, then by the owner's rank within each section.
+ */
+export async function listRecommendedItems(
+  restaurantId: string
+): Promise<Array<MenuItemRow & { category_name: string; category_display_order: number }>> {
+  const result = await readPool.query<
+    MenuItemRow & { category_name: string; category_display_order: number }
+  >(
+    `SELECT m.*, c.name AS category_name, c.display_order AS category_display_order
+       FROM menu_items m
+       JOIN menu_categories c ON c.id = m.category_id
+      WHERE m.restaurant_id = $1
+        AND m.recommend_rank IS NOT NULL
+        AND m.is_available = true
+        AND m.is_restricted = false
+      ORDER BY c.display_order, c.name, m.recommend_rank`,
+    [restaurantId]
+  );
+  return result.rows;
+}
+
+/**
  * Fuzzy search for the Retell `menu_lookup` tool. pg_trgm similarity against
  * LOWER(name) using the GIN index from migration 006. Returns top N matches,
  * available items only.
@@ -471,13 +499,19 @@ export async function searchMenuItemsByName(
   // best remaining row was taken as if it were what they asked for. The caller
   // must be TOLD the dish is off, never handed a different one — so the search
   // can see them and the caller decides. See resolveOrderItem in retellService.
-  options: { includeUnavailable?: boolean } = {}
+  //
+  // categoryId scopes the search to one section. A caller who asks for a
+  // STARTER must not be offered a salad: unscoped, trigram similarity ranks
+  // across the whole menu and "suggestions for starters" returned a side and a
+  // salad on a real call. Optional so every existing caller is unaffected.
+  options: { includeUnavailable?: boolean; categoryId?: string } = {}
 ): Promise<Array<MenuItemRow & { similarity: number }>> {
   const result = await readPool.query<MenuItemRow & { similarity: number }>(
     `SELECT *, similarity(LOWER(name), LOWER($2)) AS similarity
        FROM menu_items
       WHERE restaurant_id = $1
         AND ($4::boolean OR is_available = true)
+        AND ($5::uuid IS NULL OR category_id = $5::uuid)
         -- A caller who asks for a burger must be told there is no burger, not
         -- offered a ginger beer. That happened on a real call: trigram
         -- similarity scored "Ginger Beer" against "burger" at exactly 0.200 —
@@ -495,7 +529,7 @@ export async function searchMenuItemsByName(
         )
       ORDER BY similarity DESC
       LIMIT $3`,
-    [restaurantId, query, limit, options.includeUnavailable === true]
+    [restaurantId, query, limit, options.includeUnavailable === true, options.categoryId ?? null]
   );
   return result.rows;
 }

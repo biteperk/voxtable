@@ -26,6 +26,9 @@ import {
   loadModifiersForItems,
   loadVariantsForItems
 } from "../repositories/menu";
+import { getRestaurantTimezone } from "../repositories/restaurants";
+import { env } from "../config/env";
+import { zonedWallClockToUtcISO } from "../utils/time";
 import { logger } from "../utils/logger";
 import { cancelActivePaymentForOrder } from "./orderPaymentService";
 
@@ -110,6 +113,26 @@ export function orderContentFingerprint(
  *      changes later.
  *   6. Writes order_events audit row in the same txn.
  */
+/**
+ * When the kitchen should start a pre-order: the booking's wall-clock time
+ * minus the venue's lead, as a UTC instant.
+ *
+ * Pure so the arithmetic — including the DST edges zonedWallClockToUtcISO
+ * already handles — can be tested without a database.
+ */
+export function computeFireAt(
+  reservationDate: string,
+  startTime: string,
+  timeZone: string,
+  leadMinutes: number
+): string {
+  // Convert the venue's wall clock first, THEN subtract. Subtracting minutes
+  // from a wall-clock string would step over a DST boundary in local time and
+  // land an hour out twice a year.
+  const bookingUtc = new Date(zonedWallClockToUtcISO(reservationDate, startTime.slice(0, 5), timeZone));
+  return new Date(bookingUtc.getTime() - leadMinutes * 60_000).toISOString();
+}
+
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
   if (input.items.length === 0) {
     throw new AppError(400, "ORDER_EMPTY", "An order needs at least one item.");
@@ -142,6 +165,40 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       const existing = await findOrderByIdempotencyKey(input.restaurantId, input.idempotencyKey, db);
       if (existing) {
         return { orderId: existing.id, isReplay: true };
+      }
+    }
+
+    // 2b) A booking-linked order fires near the guest's arrival, not now.
+    //
+    //     The reservation is REQUIRED to resolve. The agent can call tools in
+    //     any order, so an order can arrive before the booking exists; letting
+    //     that through would leave fire_at NULL, and NULL means "fire now" —
+    //     a pre-order for tonight silently becoming a ticket on the pass this
+    //     minute. Refusing is recoverable (the agent re-books, then re-orders);
+    //     a wrongly-fired tray is not.
+    let fireAt: string | null = null;
+    if (input.reservationId) {
+      const reservation = await db.query<{ reservation_date: string; start_time: string }>(
+        `SELECT reservation_date, start_time
+           FROM reservations
+          WHERE id = $1 AND restaurant_id = $2 AND status <> 'cancelled'`,
+        [input.reservationId, input.restaurantId]
+      );
+      if (reservation.rowCount === 0) {
+        throw new AppError(
+          400,
+          "RESERVATION_NOT_FOUND",
+          "That booking doesn't exist yet, so I can't attach an order to it."
+        );
+      }
+      if (env.ORDER_FIRE_AT_ENABLED) {
+        const tz = await getRestaurantTimezone(input.restaurantId);
+        fireAt = computeFireAt(
+          reservation.rows[0]!.reservation_date,
+          reservation.rows[0]!.start_time,
+          tz,
+          env.KITCHEN_LEAD_MINUTES
+        );
       }
     }
 
@@ -285,7 +342,8 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       idempotencyKey: input.idempotencyKey,
       orderNumber,
       createdBy: input.createdBy,
-      createdFromCallLogId: input.createdFromCallLogId
+      createdFromCallLogId: input.createdFromCallLogId,
+      fireAt
     }, db);
 
     for (const line of planned) {
@@ -528,7 +586,7 @@ export async function updatePaymentStatus(input: {
 
 export async function getActiveOrders(
   restaurantId: string,
-  options: { tableId?: string } = {}
+  options: { tableId?: string; includeUpcoming?: boolean } = {}
 ): Promise<OrderWithItems[]> {
   return listActiveOrders(restaurantId, options);
 }

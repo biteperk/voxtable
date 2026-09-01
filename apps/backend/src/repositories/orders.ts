@@ -129,15 +129,18 @@ export async function insertOrder(input: {
   orderNumber: number;
   createdBy?: string | null;
   createdFromCallLogId?: string | null;
+  /** When the kitchen should start. NULL = now, which is every walk-in order. */
+  fireAt?: string | null;
 }, db: DbClient): Promise<OrderRow> {
   const result = await db.query<OrderRow>(
     `
     INSERT INTO orders (
       restaurant_id, reservation_id, table_id, source,
       subtotal_cents, total_cents, special_instructions,
-      idempotency_key, order_number, created_by, created_from_call_log_id
+      idempotency_key, order_number, created_by, created_from_call_log_id,
+      fire_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING *
     `,
     [
@@ -151,7 +154,8 @@ export async function insertOrder(input: {
       input.idempotencyKey ?? null,
       input.orderNumber,
       input.createdBy ?? null,
-      input.createdFromCallLogId ?? null
+      input.createdFromCallLogId ?? null,
+      input.fireAt ?? null
     ]
   );
   return result.rows[0]!;
@@ -215,6 +219,52 @@ export async function insertOrderItemModifier(input: {
       input.priceDeltaCentsSnapshot
     ]
   );
+}
+
+/**
+ * Keep booking-linked orders in step when the booking moves.
+ *
+ * Before this existed, modifyBooking and cancelBooking never touched `orders`
+ * at all. A guest who pre-ordered and then moved 7pm to 9pm had their food
+ * plated two hours early, and a guest who CANCELLED still had it cooked — real
+ * food cost, for a table nobody was coming to.
+ *
+ * Served and already-cancelled orders are left alone: the food is out, or the
+ * decision was already made.
+ */
+export async function rescheduleOrdersForReservation(
+  reservationId: string,
+  fireAt: string | null,
+  db: DbClient
+): Promise<string[]> {
+  const result = await db.query<{ id: string }>(
+    `UPDATE orders
+        SET fire_at = $2, updated_at = now()
+      WHERE reservation_id = $1
+        AND status NOT IN ('served', 'cancelled')
+        AND fire_at IS DISTINCT FROM $2
+    RETURNING id`,
+    [reservationId, fireAt]
+  );
+  return result.rows.map((r) => r.id);
+}
+
+/** Cancel every open order attached to a reservation. */
+export async function cancelOrdersForReservation(
+  reservationId: string,
+  reason: string,
+  db: DbClient
+): Promise<string[]> {
+  const result = await db.query<{ id: string }>(
+    `UPDATE orders
+        SET status = 'cancelled', cancelled_at = now(),
+            cancellation_reason = $2, updated_at = now()
+      WHERE reservation_id = $1
+        AND status NOT IN ('served', 'cancelled')
+    RETURNING id`,
+    [reservationId, reason]
+  );
+  return result.rows.map((r) => r.id);
 }
 
 export async function insertOrderEvent(input: {
@@ -493,21 +543,45 @@ export async function getOrderById(
 
 export async function listActiveOrders(
   restaurantId: string,
-  options: { tableId?: string; limit?: number } = {}
+  options: { tableId?: string; limit?: number; includeUpcoming?: boolean } = {}
 ): Promise<OrderWithItems[]> {
   // The venue-wide LIMIT is a kitchen-screen guard. A single table's view
   // must never be subject to it — a busy night would silently hide that
   // table's orders once the venue passed the cap — so the table filter is
   // applied in SQL, not client-side after truncation.
   const limit = options.limit ?? 50;
+  // Sorting by created_at put PRE-ORDERS FIRST: they are created hours, even
+  // days, before the service they belong to, so under `ORDER BY created_at ASC
+  // LIMIT 50` they occupied the front of the budget and silently truncated the
+  // tickets actually on the pass right now. Sort by when the kitchen needs the
+  // food instead, and give scheduled orders their own budget so they can never
+  // crowd out live service no matter how many were taken.
+  const upcomingLimit = options.includeUpcoming ? Math.max(1, Math.floor(limit / 2)) : 0;
   const orderResult = await readPool.query<OrderRow>(
-    `SELECT * FROM orders
-      WHERE restaurant_id = $1
-        AND status NOT IN ('served', 'cancelled')
-        AND ($3::uuid IS NULL OR table_id = $3::uuid)
-      ORDER BY created_at ASC
-      LIMIT $2`,
-    [restaurantId, limit, options.tableId ?? null]
+    `WITH live AS (
+       SELECT * FROM orders
+        WHERE restaurant_id = $1
+          AND status NOT IN ('served', 'cancelled')
+          AND ($3::uuid IS NULL OR table_id = $3::uuid)
+          AND (fire_at IS NULL OR fire_at <= now())
+        ORDER BY COALESCE(fire_at, created_at) ASC
+        LIMIT $2
+     ), upcoming AS (
+       SELECT * FROM orders
+        WHERE restaurant_id = $1
+          AND status NOT IN ('served', 'cancelled')
+          AND ($3::uuid IS NULL OR table_id = $3::uuid)
+          AND fire_at > now()
+        ORDER BY fire_at ASC
+        LIMIT $4
+     )
+     SELECT * FROM (
+       SELECT * FROM live
+       UNION ALL
+       SELECT * FROM upcoming
+     ) merged
+     ORDER BY COALESCE(fire_at, created_at) ASC`,
+    [restaurantId, limit, options.tableId ?? null, upcomingLimit]
   );
   const orders = orderResult.rows;
   if (orders.length === 0) return [];
@@ -566,7 +640,14 @@ export async function getKdsHealth(restaurantId: string): Promise<KdsHealthSnaps
       `SELECT
          COUNT(*) FILTER (WHERE status NOT IN ('served', 'cancelled')) AS active_orders,
          COUNT(*) FILTER (WHERE status NOT IN ('served', 'cancelled') AND payment_status = 'unpaid') AS payment_pending_count,
-         EXTRACT(EPOCH FROM (now() - MIN(ordered_at) FILTER (WHERE status = 'pending')))::text AS oldest_pending_age
+         -- Age from when the kitchen was meant to START, not when the order
+         -- was taken. A pre-order sits pending for hours by design; measured
+         -- from ordered_at it looked like an 8-hour-stale ticket and paged ops
+         -- within minutes of the first pre-order — then, because the alert is
+         -- edge-triggered, stayed alerted and masked genuinely stalled tickets
+         -- for the rest of service.
+         EXTRACT(EPOCH FROM (now() - MIN(GREATEST(ordered_at, COALESCE(fire_at, ordered_at)))
+           FILTER (WHERE status = 'pending' AND (fire_at IS NULL OR fire_at <= now()))))::text AS oldest_pending_age
        FROM orders
        WHERE restaurant_id = $1
          AND ordered_at > now() - interval '24 hours'`,
@@ -574,8 +655,11 @@ export async function getKdsHealth(restaurantId: string): Promise<KdsHealthSnaps
     ),
     readPool.query<{ p50: string | null; p95: string | null }>(
       `SELECT
-         percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (ready_at - ordered_at)))::text AS p50,
-         percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (ready_at - ordered_at)))::text AS p95
+         -- Same clock base: prep time is measured from when the kitchen could
+         -- start, or every pre-order injects its entire lead time as a sample
+         -- and drags p50/p95 into fiction.
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (ready_at - GREATEST(ordered_at, COALESCE(fire_at, ordered_at)))))::text AS p50,
+         percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (ready_at - GREATEST(ordered_at, COALESCE(fire_at, ordered_at)))))::text AS p95
        FROM orders
        WHERE restaurant_id = $1
          AND ready_at IS NOT NULL
