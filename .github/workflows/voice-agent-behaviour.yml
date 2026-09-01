@@ -1,0 +1,101 @@
+name: Voice agent behaviour
+
+# Grades the staging agent against deploy/voice-tests/cases.json using Retell's
+# simulation testing: an AI-simulated caller runs each scenario in text and
+# success criteria grade the transcript. No phone call is placed.
+#
+# Why this exists. Until 27 Aug 2026 the only verification an agent change ever
+# got was one human phone call. 58 calls had ever been placed, the latency gate
+# had been met on three days, fourteen "verification still owed" items were
+# never done, and the same four complaints were re-reported across twelve
+# sessions. voice-line-health.yml proves the line ROUTES; nothing proved the
+# agent BEHAVES. This does.
+#
+# Every case is a call that already went wrong, so this is a regression net for
+# August 2026 rather than a wishlist.
+on:
+  workflow_dispatch:
+  push:
+    # integration/main only — the workload identity provider authorises those two
+    # refs and nothing else, so a run from any other branch fails at auth before
+    # reaching an assertion. Same reasoning as voice-line-health.yml.
+    branches: [integration, main]
+    paths:
+      - deploy/voice-tests/cases.json
+      - .claude/skills/retell-agent-quality/scripts/run-sim-tests.mjs
+      - .github/workflows/voice-agent-behaviour.yml
+
+concurrency:
+  group: voice-agent-behaviour
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  staging:
+    name: Staging agent behaviour
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Selftest the mock safety gate
+        run: |
+          set -euo pipefail
+          # Retell falls through to the REAL tool when a call matches no mock, so an
+          # unmocked case would write live bookings and text live payment links. The
+          # runner refuses to start unless every tool on the live engine is mocked in
+          # every case. A guard nobody has watched fail is a green light, not a guard —
+          # so break it on purpose here and require the refusal.
+          export RETELL_API_KEY=$(gcloud secrets versions access latest --secret=voxtable-stg-retell-api-key --project=bp-voxtable-stg)
+          cp deploy/voice-tests/cases.json /tmp/cases.bak
+          node -e '
+            const fs = require("fs");
+            const s = JSON.parse(fs.readFileSync("deploy/voice-tests/cases.json", "utf8"));
+            s.cases[0].tool_mocks = s.cases[0].tool_mocks.filter((m) => m.tool_name !== "create_booking");
+            fs.writeFileSync("deploy/voice-tests/cases.json", JSON.stringify(s, null, 2));
+          '
+          set +e
+          node .claude/skills/retell-agent-quality/scripts/run-sim-tests.mjs > /tmp/selftest.log 2>&1
+          code=$?
+          set -e
+          cp /tmp/cases.bak deploy/voice-tests/cases.json
+          cat /tmp/selftest.log
+          if [ "$code" -ne 2 ]; then
+            echo "::error::The mock safety gate did NOT refuse an unmocked tool (exit $code, expected 2)."
+            echo "::error::Refusing to run the suite: a case could reach the real booking and payment APIs."
+            exit 1
+          fi
+          echo "Safety gate refused as expected."
+
+      - name: Run the graded suite
+        run: |
+          set -euo pipefail
+          export RETELL_API_KEY=$(gcloud secrets versions access latest --secret=voxtable-stg-retell-api-key --project=bp-voxtable-stg)
+          # --sync so the cases on Retell always match what is in git. Without it the
+          # suite silently grades whatever was uploaded last, which is the same class of
+          # drift this repo already hit with dashboard edits that never reached the API.
+          node .claude/skills/retell-agent-quality/scripts/run-sim-tests.mjs --sync
+
+      # Reminder rather than a check, because no transcript-graded suite can see it:
+      # backchannel audio never appears as agent turns, which is why the "mm" problem
+      # was dropped once for lack of evidence and only resurfaced when a caller asked
+      # about it mid-call.
+      - name: What this run did not cover
+        if: always()
+        run: |
+          echo "::notice::Filler words, pacing and backchannel are NOT graded here — they are"
+          echo "::notice::inaudible to a transcript. Verify those with a Retell web call."
