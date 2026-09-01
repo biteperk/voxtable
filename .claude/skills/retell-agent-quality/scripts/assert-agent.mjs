@@ -70,11 +70,23 @@ check(agent.begin_message_delay_ms === 500, "begin_message_delay_ms = 500");
 // neither — because nothing here looked. A missing greeting is the same failure.
 // Staging deliberately runs the short greeting (SKILL.md) — it opts out with
 // ALLOW_NO_DISCLOSURE=1, which assert-line.mjs sets from the line's declared environment.
+// The two halves are NOT equivalent and are asserted separately.
+//   RECORDING is the one with statutory weight (NSW Surveillance Devices Act 2007,
+//   deploy/runbooks/legal-brief-call-recording.md). It is required on every production
+//   line and there is no per-line waiver — only staging may drop it.
+//   AI disclosure carries no Australian statutory mandate today. A venue may decline it,
+//   which is a business decision recorded per line as `greeting_ai_disclosure: false` in
+//   deploy/voice-lines.json and passed down here. Waiving it silently, or by loosening
+//   this check globally, would remove the gate for venues that never asked.
 const greeting = String(llm.begin_message ?? "");
 if (process.env.ALLOW_NO_DISCLOSURE === "1") {
   console.log("  note: disclosure check skipped (ALLOW_NO_DISCLOSURE=1 — staging only, never production)");
 } else {
-  check(/\bAI\b/i.test(greeting), "greeting discloses AI (\"an AI assistant\")");
+  if (process.env.ALLOW_NO_AI_DISCLOSURE === "1") {
+    console.log("  note: AI disclosure waived for this line (greeting_ai_disclosure: false) — recording disclosure still enforced");
+  } else {
+    check(/\bAI\b/i.test(greeting), "greeting discloses AI (\"an AI assistant\")");
+  }
   check(/record/i.test(greeting), "greeting discloses recording (\"this call's recorded\")");
 }
 check(agent.data_storage_retention_days === 30, "30-day retention");
