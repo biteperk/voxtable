@@ -18,8 +18,11 @@ for (const c of calls) {
   durations.push(c.duration_ms ?? 0);
   const t = new Date(c.start_timestamp).toTimeString().slice(0, 8);
   const l = (k, p) => (c.latency?.[k]?.[p] != null ? String(Math.round(c.latency[k][p])).padStart(7) : "      -");
-  // The 19 Aug signature: short call + user_hangup in a tight duration band.
-  const dead = (c.duration_ms ?? 0) < 15000 && c.disconnection_reason === "user_hangup";
+  // The signature is a TIGHT band (7,593-8,532 ms observed), not merely "short".
+  // Flagging every short user_hangup produced false positives — an 11.3 s call was
+  // marked as the fault when it is plainly outside the band. Match the band only.
+  const ms = c.duration_ms ?? 0;
+  const dead = ms >= 7000 && ms <= 8600 && c.disconnection_reason === "user_hangup";
   console.log(`${t} | ${String(c.duration_ms).padStart(7)} | ${String(c.disconnection_reason).padEnd(13)} |${l("e2e","p50")} |${l("e2e","p90")} |${l("llm","p50")} |${l("tts","p50")} | ${dead ? "DEAD?" : ""}`);
 }
 const shorts = durations.filter((d) => d > 0 && d < 15000);
