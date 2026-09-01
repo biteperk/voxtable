@@ -30,3 +30,20 @@ if (shorts.length >= 2 && Math.max(...shorts) - Math.min(...shorts) < 1500) {
   console.log(`\n⚠️ ${shorts.length} short calls within a ${Math.max(...shorts) - Math.min(...shorts)}ms band — fixed-duration drop signature. See references/call-forensics.md and deploy/runbooks/incident-7600ms-call-drops.md.`);
 }
 console.log("\nGate: e2e p50 ≤ 1700ms on healthy calls.");
+
+// Judge agent quality on healthy calls ONLY. A sub-15s drop is the telephony
+// incident, not Bella — and on 27 Aug 2026, 21 of 58 calls ever placed were
+// drops, so a blended average was reporting a broken LINE as a bad AGENT.
+const healthy = calls.filter(
+  (c) => (!c.call_type || c.call_type === "phone_call") && (c.duration_ms ?? 0) >= 15000
+);
+const p50s = healthy.map((c) => c.latency?.e2e?.p50).filter((x) => x != null).sort((a, b) => a - b);
+console.log(`\nHealthy calls (>15s): ${healthy.length} of ${durations.length}. Drops excluded: ${shorts.length}.`);
+if (p50s.length) {
+  const med = Math.round(p50s[Math.floor(p50s.length / 2)]);
+  console.log(`e2e p50 across healthy calls: median ${med}ms, best ${Math.round(p50s[0])}ms — ${med <= 1700 ? "PASS" : "OVER GATE"}`);
+} else {
+  console.log("No healthy calls in this window — nothing to judge the agent on.");
+}
+console.log("\nGate: e2e p50 ≤ 1700ms on healthy calls.");
+console.log("For WHERE the time goes rather than how much, run turn-latency.mjs.");
