@@ -37,7 +37,7 @@ COPY apps/frontend/package.json ./apps/frontend/package.json
 COPY apps/kds/package.json ./apps/kds/package.json
 
 # Install production dependencies only
-RUN npm ci --workspace=@vocotable/backend --omit=dev --omit=optional && \
+RUN npm ci --workspace=@voxtable/backend --omit=dev --omit=optional && \
     npm cache clean --force && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 

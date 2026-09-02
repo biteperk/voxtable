@@ -171,7 +171,7 @@ GET /api/menu   →   must contain no fixture item
 ## 4. Import Mazcina's menu
 
 ```
-APP_ENV=migration npm run menu:import --workspace=@vocotable/backend -- \
+APP_ENV=migration npm run menu:import --workspace=@voxtable/backend -- \
   --restaurant-id 33333333-3333-4333-8333-333333333333 \
   --file "$PWD/mazcina/mazcina-menu-voxtable-import.json" --dry-run
 ```
