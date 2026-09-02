@@ -137,7 +137,7 @@ route around. It becomes BitePerk's production line — and Natalia's line — a
 |---|---|
 | Phone number SID | `PN5a99b73b6f6a9e9a1cc40f7eb7feba42` |
 | Elastic SIP Trunk | `TKdebe2aa1a4287ca4b2f22da0e9d10ed7` — `voxtable-staging-au1`, region **AU1** |
-| Trunk origination | `sip:sip.retellai.com;transport=tls` · priority 10 · weight 10 · enabled |
+| Trunk origination | `sip:sip.retellai.com;transport=tcp` · priority 10 · weight 10 · enabled — **§6 experiment, not reverted** (`incident-7600ms-call-drops.md`) |
 | Messaging Service | `MG692c54a793f914c2e43c7d691f4cb41e` — `voxtable-staging-notifications`, region **US1** |
 | Regulatory bundle | `BUd5fe40c147a21757f04616a1180cdd89` (approved 13 Aug, ~1 day from documents) |
 | Compliance address | `AD0b3b71dc0a972ac2e678cb633e3a2c3d` |
@@ -145,7 +145,7 @@ route around. It becomes BitePerk's production line — and Natalia's line — a
 | Alphanumeric sender ID | **None.** `BitePerk` is approved against the *production* Account SID only |
 
 Same **Twilio** wiring as production, verified item-for-item: origination
-`sip:sip.retellai.com;transport=tls` (pri 10, wt 10, enabled), Traffic Status **Voice enabled** and
+`sip:sip.retellai.com;transport=tcp` (pri 10, wt 10, enabled — **diverged from production at the §6 experiment in `incident-7600ms-call-drops.md`, never reverted**), Traffic Status **Voice enabled** and
 **Messaging enabled**, sender attached to `voxtable-staging-notifications`, no Disaster Recovery URL.
 
 Beyond Twilio, staging has since gone **further than production**: the number was imported to the
@@ -162,13 +162,13 @@ read from the console, not assumed.
 | Setting | `voxtable-prod-au1` | `voxtable-staging-au1` | Wanted |
 |---|---|---|---|
 | Region | AU1 | AU1 | ✅ |
-| Origination URI | `sip:sip.retellai.com;transport=tls` · 10 · 10 · enabled | same | ✅ |
+| Origination URI | `sip:sip.retellai.com;transport=tls` · 10 · 10 · enabled | `…transport=tcp` — §6 experiment, not reverted | ⚠️ decide: revert or keep |
 | Termination | unconfigured | unconfigured | ✅ deliberate — inbound only |
 | Call Recording | Disabled | Disabled | ✅ |
 | Call Transfer (SIP REFER) | Disabled | Disabled | ✅ |
 | Symmetric RTP | Disabled | Disabled | ✅ Twilio's recommended state |
 | CNAM Lookup | Off | Off | ✅ US/CA only, billed per lookup |
-| **Secure Trunking** | **Disabled** | **✅ ON** (19 Aug 2026, via AU1 API, read back `secure=true`) | prod still ⚠️ — flip at cutover |
+| **Secure Trunking** | **Disabled** | **OFF** — was ON 19–26 Aug 2026, then turned off by the §6 experiment (`incident-7600ms-call-drops.md`); read back `secure=false` 2 Sep 2026 | ⚠️ both off — decide staging; prod flip at cutover |
 | **Disaster Recovery URL** | **blank** | **blank** | ⚠️ **should be set** |
 | Header manipulation | none | none | ✅ |
 
@@ -424,7 +424,7 @@ it does.
 | 2a | ~~Staging key into `voxtable-stg-retell-api-key` + roll a revision~~ ✅ 13 Aug — version 4, revisions `api-00031` / `worker-00027`; signed request verifies **204**, wrong key **401** | — | — |
 | 2b | ~~`restaurants` row bound to `+61 468 203 234`~~ ✅ 13 Aug — number imported to the Staging workspace (webhook mode) and `VoxTable Staging Venue` resolves with fresh per-call variables; unknown numbers fail closed | — | — |
 | 2c | **Make a real call to `+61 468 203 234`** — everything but audio is proven. The machine half is green (`npm run smoke:staging`, first green run 14 Aug); what remains is the ten-leg human battery (legs 8–9 added 19 Aug 2026: honest capacity, closed day; leg 4 blocked on the drinks list) in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md), whose results table is still empty. Leg 6 (SMS) additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker — issue #185, not set today | Confidence before the production cutover | Sam |
-| 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first — ✅ **staging trunk secured 19 Aug 2026** (AU1 API key in Secret Manager: `voxtable-stg-twilio-au1-key-sid`/`-secret`; readback `secure=true`); production trunk and both DR URLs still open — ⚠️ was upgraded to urgent by the no-media incident: a 19 Aug staging call lost caller media entirely (zero inbound audio, §3a) on the plain-RTP path, intermittently. One-command toggle recorded in §3a's incident note; verify with several calls, and escalate to Twilio with the recorded SIDs if no-media calls recur under SRTP | Plain-RTP media today; dead air during a Retell outage; intermittent no-media calls indistinguishable from caller hangups | Sam |
+| 3 | **Secure Trunking ON** + **Disaster Recovery URL** on both trunks, staging first — ✅ **staging trunk secured 19 Aug 2026** (AU1 API key in Secret Manager: `voxtable-stg-twilio-au1-key-sid`/`-secret`; readback `secure=true`; **since turned off** by the §6 experiment — read back `secure=false` 2 Sep 2026, and assert-line [19]/[20] now guard it); production trunk and both DR URLs still open — ⚠️ was upgraded to urgent by the no-media incident: a 19 Aug staging call lost caller media entirely (zero inbound audio, §3a) on the plain-RTP path, intermittently. One-command toggle recorded in §3a's incident note; verify with several calls, and escalate to Twilio with the recorded SIDs if no-media calls recur under SRTP | Plain-RTP media today; dead air during a Retell outage; intermittent no-media calls indistinguishable from caller hangups | Sam |
 | 4 | Move the API hostname to `api.biteperk.com.au` and repoint the agents' `webhook_url` + 5 tool URLs | The last operational tie to the other company — see §6 | — |
 
 ### Put Natalia's back on the air
