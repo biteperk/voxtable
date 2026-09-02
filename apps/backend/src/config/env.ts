@@ -72,7 +72,7 @@ const envSchema = z
   PG_POOL_MAX_READ: z.coerce.number().int().positive().default(10),
   // Shows up in pg_stat_activity. The worker overrides this in its image so
   // "who is holding connections" is answerable during an incident.
-  PG_APPLICATION_NAME: z.string().default("vocotable-api"),
+  PG_APPLICATION_NAME: z.string().default("voxtable-api"),
   DEFAULT_RESTAURANT_ID: z
     .string()
     .uuid()

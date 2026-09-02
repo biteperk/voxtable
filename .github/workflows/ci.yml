@@ -303,10 +303,10 @@ jobs:
         run: gcloud auth configure-docker "$REGISTRY_HOST" --quiet
 
       - name: Build api image
-        run: docker build -f Dockerfile.api -t vocotable-api:ci .
+        run: docker build -f Dockerfile.api -t voxtable-api:ci .
 
       - name: Build worker image
-        run: docker build -f Dockerfile.worker -t vocotable-worker:ci .
+        run: docker build -f Dockerfile.worker -t voxtable-worker:ci .
 
       # A built image is not a working image: on 1 Aug 2026 a green pipeline
       # shipped containers that died on their first line (CommonJS output run
@@ -315,13 +315,13 @@ jobs:
       # compiled output can't run, CI fails here instead of production.
       - name: Boot-check compiled images
         run: |
-          docker run --rm -e APP_ENV=test -e DATABASE_URL=postgres://test:test@localhost:5432/test vocotable-api:ci node apps/backend/dist/bootCheck.js
-          docker run --rm -e APP_ENV=test -e DATABASE_URL=postgres://test:test@localhost:5432/test vocotable-worker:ci node apps/backend/dist/bootCheck.js
+          docker run --rm -e APP_ENV=test -e DATABASE_URL=postgres://test:test@localhost:5432/test voxtable-api:ci node apps/backend/dist/bootCheck.js
+          docker run --rm -e APP_ENV=test -e DATABASE_URL=postgres://test:test@localhost:5432/test voxtable-worker:ci node apps/backend/dist/bootCheck.js
 
       - name: Scan api image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: vocotable-api:ci
+          image-ref: voxtable-api:ci
           format: table
           exit-code: "1"
           ignore-unfixed: true
@@ -330,7 +330,7 @@ jobs:
       - name: Scan worker image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: vocotable-worker:ci
+          image-ref: voxtable-worker:ci
           format: table
           exit-code: "1"
           ignore-unfixed: true
@@ -339,16 +339,16 @@ jobs:
       - name: Push commit hash images from integration
         if: env.PUSH_SHA_IMAGES == 'true'
         run: |
-          docker tag vocotable-api:ci "$API_IMAGE:${{ github.sha }}"
-          docker tag vocotable-worker:ci "$WORKER_IMAGE:${{ github.sha }}"
+          docker tag voxtable-api:ci "$API_IMAGE:${{ github.sha }}"
+          docker tag voxtable-worker:ci "$WORKER_IMAGE:${{ github.sha }}"
           docker push "$API_IMAGE:${{ github.sha }}"
           docker push "$WORKER_IMAGE:${{ github.sha }}"
 
       - name: Push semantic version images from main
         if: env.PUSH_VERSION_IMAGES == 'true'
         run: |
-          docker tag vocotable-api:ci "$API_IMAGE:${{ steps.package-version.outputs.version }}"
-          docker tag vocotable-worker:ci "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
+          docker tag voxtable-api:ci "$API_IMAGE:${{ steps.package-version.outputs.version }}"
+          docker tag voxtable-worker:ci "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
           docker push "$API_IMAGE:${{ steps.package-version.outputs.version }}"
           docker push "$WORKER_IMAGE:${{ steps.package-version.outputs.version }}"
 

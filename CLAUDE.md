@@ -177,11 +177,11 @@ npm run smoke:staging                   # the whole battery against real staging
 
 # These exist ONLY in apps/backend and are NOT forwarded to the root, so they
 # need --workspace (or a cd). Copy-pasting them at the root fails:
-npm run smoke:backend --workspace=@vocotable/backend   # full lifecycle: health → availability → create → update → cancel
-npm run smoke:retell  --workspace=@vocotable/backend   # exercises /retell/inbound, /retell/webhook, /retell/tools/*
-npm run smoke:twilio  --workspace=@vocotable/backend   # exercises /twilio/voice, /twilio/status
-npm run smoke:calcom  --workspace=@vocotable/backend   # Cal.com outbox/inbox mirror
-npm run smoke:orders  --workspace=@vocotable/backend   # menu + order endpoints (KDS)
+npm run smoke:backend --workspace=@voxtable/backend   # full lifecycle: health → availability → create → update → cancel
+npm run smoke:retell  --workspace=@voxtable/backend   # exercises /retell/inbound, /retell/webhook, /retell/tools/*
+npm run smoke:twilio  --workspace=@voxtable/backend   # exercises /twilio/voice, /twilio/status
+npm run smoke:calcom  --workspace=@voxtable/backend   # Cal.com outbox/inbox mirror
+npm run smoke:orders  --workspace=@voxtable/backend   # menu + order endpoints (KDS)
 # plus: smoke:retell-signed, smoke:retell-dates, smoke:retell-orders, smoke:verify-email
 
 # Production builds (used inside the Dockerfile)

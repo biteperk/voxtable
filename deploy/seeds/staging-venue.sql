@@ -157,7 +157,7 @@ ON CONFLICT (restaurant_id, label) DO UPDATE
 --
 -- Mazcina's menu is real data and lives with the venue, not in this repo:
 --
---   npm run menu:import --workspace=@vocotable/backend -- \
+--   npm run menu:import --workspace=@voxtable/backend -- \
 --     --restaurant-id 33333333-3333-4333-8333-333333333333 \
 --     --file mazcina/mazcina-menu-voxtable-import.json --dry-run
 --

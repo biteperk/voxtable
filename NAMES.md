@@ -35,9 +35,9 @@ Procedure SSOT: [`deploy/runbooks/domain-migration.md`](deploy/runbooks/domain-m
 
 | Surface | New name | Old name(s) — still serving | Status (25 Aug 2026) |
 |---|---|---|---|
-| Client dashboard | `voxtable.biteperk.com.au` | `vocotable.biteperk.com.au`, `vocotable.web.app` | Firebase Hosting target `app`; custom domain pending (Phase 5). Decision 25 Aug 2026: product-named subdomain **supersedes the never-shipped `app.biteperk.com.au`** — `app.` was planned, never had DNS/cert/traffic, and must not be created |
+| Client dashboard | `voxtable.biteperk.com.au` | `vocotable.web.app` (~~`vocotable.biteperk.com.au`~~ — **no DNS record exists**, checked in Cloudflare 2 Sep 2026; the custom domain was never/no-longer wired, only the `web.app`/`firebaseapp.com` URLs serve) | Firebase Hosting target `app`; custom domain pending (Phase 5). Decision 25 Aug 2026: product-named subdomain **supersedes the never-shipped `app.biteperk.com.au`** — `app.` was planned, never had DNS/cert/traffic, and must not be created |
 | Backend API | `api.biteperk.com.au` | `vocotable.algorythmos.com.au` | **Live on both names** since 3 Aug (one cert covers both); Stripe repointed 3 Aug; Cal.com → Retell → Twilio cut over one at a time (Phase 4) |
-| Kitchen display | `kds.biteperk.com.au` | `kitchen.vocotable.biteperk.com.au`, `vocotable-kds.web.app` | Firebase Hosting target `kds`; custom domain pending (Phase 5) |
+| Kitchen display | `kds.biteperk.com.au` | `vocotable-kds.web.app` (~~`kitchen.vocotable.biteperk.com.au`~~ — **no DNS record exists**, checked in Cloudflare 2 Sep 2026) | Firebase Hosting target `kds`; custom domain pending (Phase 5) |
 | Public brand site | `biteperk.com.au` | — | Live (Vox rename shipped 22 Jul 2026) |
 | VoxOrder (reserved) | `voxorder.biteperk.com.au` | — | 301 → `biteperk.com.au/au-en/products/voxorder` (Cloudflare redirect rule); becomes the product's app host when one exists |
 | VoxConcierge (reserved) | `voxconcierge.biteperk.com.au` | — | 301 → `biteperk.com.au/au-en/products/voxconcierge`; same rule |
@@ -97,6 +97,16 @@ booking exists, and nothing tracks that.
 | Legacy VM-world registry `us-central1-docker.pkg.dev/vocotable-497209/vocotable/*` | Serves the VM production until the Cloud Run cutover retires it. |
 | Legacy `voco*` / `perk*` URL slugs (website 301s + `PRODUCT_SLUGS`) | Printed collateral and cached links use them — keep forever. |
 | Local checkout dir `~/vocotable` | Sam's machine; scripts and muscle memory point at it. Renaming buys nothing. |
+
+✅ **npm package names + Postgres application names — renamed 2 Sep 2026.** `vocotable` /
+`@vocotable/{backend,frontend,kds}` → `voxtable` / `@voxtable/*` (workspaces are path-based, so
+only the `--workspace=` flags referenced the names: root scripts, both Dockerfiles' `npm ci`,
+CI, and living runbooks' commands — dated session reports keep the old spelling as historical
+record). `PG_APPLICATION_NAME` defaults `vocotable-api`/`vocotable-worker` → `voxtable-*`
+(display-only in `pg_stat_activity`; nothing filters on it). The CI ephemeral image tags
+`vocotable-*:ci` moved with them. `vocotable_number` is already aliased — the onboarding
+response serves `voxtable_number` first with `vocotable_number` as a deprecated sibling, and the
+frontend reads new-then-old; the old key stays until no deployed bundle reads it.
 
 ## 5. Conventions for minting NEW names
 
