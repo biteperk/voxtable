@@ -427,6 +427,12 @@ export function buildCheckoutSessionParams(input: {
     client_reference_id: input.restaurantId,
     line_items: [{ price: input.priceId, quantity: 1 }],
     payment_method_collection: "always",
+    // Venues can enter a promotion code (e.g. a launch discount) on the
+    // Checkout page itself. Codes are created and managed in the Stripe
+    // dashboard; nothing here names one, so this is inert until a code
+    // exists. Stripe forbids combining this with a hard-coded `discounts`
+    // list — keep it that way.
+    allow_promotion_codes: true,
     automatic_tax: { enabled: true },
     billing_address_collection: "required",
     customer_update: { address: "auto" },
