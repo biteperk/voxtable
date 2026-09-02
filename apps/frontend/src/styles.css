@@ -858,6 +858,39 @@ button {
   line-height: 1.15;
 }
 
+/* "by bitePerk" parent-brand attribution under the VoxTable wordmark.
+   Every property is set explicitly so no descendant-span rule leaks in.
+   Brand rule: perk = --primary (text-safe gold), bite = strong text,
+   --gold-fill is never used for text. */
+.dashboard-brand .brand-attribution {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  font-style: normal;
+  color: var(--on-surface-variant);
+}
+.dashboard-brand .brand-attribution svg {
+  display: block;
+  flex-shrink: 0;
+}
+.dashboard-brand .brand-attribution .brand-wordmark {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
+}
+.dashboard-brand .brand-attribution .perk {
+  color: var(--primary);
+  font-style: italic;
+  font-weight: 700;
+}
+
 .login-mark {
   display: block;
   margin: 0 auto 20px;
@@ -2458,17 +2491,6 @@ gmp-place-autocomplete {
   line-height: 18px;
   font-weight: 700;
   letter-spacing: 0;
-}
-
-.dashboard-brand span {
-  display: block;
-  margin-top: 1px;
-  color: var(--on-surface-variant);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 8px;
-  line-height: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
 .side-links {
@@ -6342,10 +6364,6 @@ td button {
 .dashboard-brand strong {
   letter-spacing: -0.01em;
 }
-.dashboard-brand span {
-  letter-spacing: 0.08em;
-  font-size: 10px;
-}
 
 /* Footer "1 reservation" / "N records" lines — sans, lighter */
 .booking-table-footer span,
@@ -7471,10 +7489,6 @@ button {
   /* Sidebar header inside drawer — visible label */
   .drawer .dashboard-brand strong {
     font-size: 17px;
-  }
-
-  .drawer .dashboard-brand span {
-    font-size: 12px;
   }
 
   /* Top-nav landing icon-button: keep 44px target on phone */
