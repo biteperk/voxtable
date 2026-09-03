@@ -6,6 +6,7 @@ import { useScrolled } from "../../hooks/useScrolled";
 import { Icon } from "../../components/Icon";
 import { RestaurantSwitcher } from "../../components/dashboard/RestaurantSwitcher";
 import { SidebarUserButton } from "../../components/dashboard/SidebarUserButton";
+import { BiteperkMark } from "../../components/brand/BiteperkMark";
 
 export function DashboardShell({ active, children, navigate, path }) {
   const { user, hasMinRole, role, isPlatformAdmin } = useAuth();
@@ -48,7 +49,7 @@ export function DashboardShell({ active, children, navigate, path }) {
         <button
           className="dashboard-brand"
           onClick={() => navigate("/home")}
-          aria-label="VoxTable home"
+          aria-label="VoxTable by BitePerk — home"
         >
           <img
             src="/brand/mark-light-on-dark.svg"
@@ -59,7 +60,12 @@ export function DashboardShell({ active, children, navigate, path }) {
           />
           <span className="dashboard-brand-text">
             <strong>VoxTable</strong>
-            <span>Restaurant AI Hub</span>
+            <span className="brand-attribution">
+              by
+              <BiteperkMark size={20} />
+              {/* Company wordmark is two parts by brand rule: bite + gold italic perk. */}
+              <span className="brand-wordmark">bite<span className="perk">perk</span></span>
+            </span>
           </span>
         </button>
         <RestaurantSwitcher />

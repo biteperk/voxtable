@@ -2,10 +2,16 @@
 
 Ordered, copy-paste steps with a verification gate and an abort line after each. Written so
 cutover day is execution, not research. Prereqs: PR #323 merged to `main`; platform #62
-resolved (migrate job on an owner-role URL); a person on a phone.
+resolved (migrate job on an owner-role URL); **platform PR #63 merged and applied** (Stripe
+return URLs + notifications parity — without it the api fails its boot gate; its apply needs
+the `runtime_zeptomail_token` GitHub secret set and `managed_runtime_secret_version_nonce`
+bumped); a person on a phone.
 
 **Who runs what:** `[agent]` = Claude with Sam's gcloud session · `[sam]` = Sam only
-(DNS, phones, consoles) · `[abhi]` = Abhishek (Terraform applies).
+(DNS, phones, consoles) · `[abhi]` = Abhishek (Terraform applies **and all prod-GCP
+mutations** — Sam's account is denied Cloud Run/Cloud SQL/IAM on `bp-voxtable-prod`, so the
+`[agent]` steps that mutate prod GCP are executed by Abhishek in practice; `[agent]` still
+runs the read-only gates).
 
 **The honest sequencing caveat:** Retell and Twilio call `api.biteperk.com.au`, so live calls
 exercise Cloud Run **only after the DNS flip** (step 7). Steps 1–6 prove the stack by direct
@@ -26,7 +32,10 @@ gcloud compute ssh core-central-vm --zone us-central1-a --project vocotable-4972
   --command "sudo docker exec vocotable-postgres-1 pg_dump -U vocotable --no-owner --no-acl vocotable" > /tmp/cutover-dump.sql
 grep -c '^COPY' /tmp/cutover-dump.sql   # table count sanity (expect ~32)
 ```
-Gate: dump >500KB, ~32 COPY blocks. Record row counts to reconcile in step 3:
+Gate: dump >500KB, ~32 COPY blocks. **Expect 6 `restaurants` rows, not 2** — Mazcina (`live`)
+and Cuban Corner (`provisioning`) plus four test/leftover venues (Dishoom, Haryana, Mazcina 123,
+Dnata). All six migrate; that is correct. Clean up test rows post-cutover, never mid-cutover.
+Record row counts to reconcile in step 3:
 ```bash
 gcloud compute ssh core-central-vm --zone us-central1-a --project vocotable-497209 \
   --command "sudo docker exec vocotable-postgres-1 psql -U vocotable -t -c \"SELECT 'restaurants',count(*) FROM restaurants UNION ALL SELECT 'reservations',count(*) FROM reservations UNION ALL SELECT 'menu_items',count(*) FROM menu_items UNION ALL SELECT 'call_logs',count(*) FROM call_logs\""
@@ -34,23 +43,47 @@ gcloud compute ssh core-central-vm --zone us-central1-a --project vocotable-4972
 **From this moment the VM is read-only in spirit: no bookings should land between dump and
 flip, so do steps 2–7 inside one quiet window (early morning).**
 
-### 3. Restore into Cloud SQL + reconcile `[agent]`
-Restore via the Cloud SQL proxy or an import bucket (whichever the prod root provisioned), into
-the database the prod `DATABASE_URL` secret names — **check the secret first, do not assume**:
+### 3. Restore into Cloud SQL + reconcile `[abhi]`
+**Restore via the Cloud SQL Auth Proxy, CONNECTING AS `vocotable_app`.** Do **not** use
+`gcloud sql import sql` — it restores as `cloudsqladmin`, so with `--no-owner --no-acl` every
+table lands owned by the wrong role, the app hits `permission denied for table restaurants`,
+and migration 038 will NOT repair it (038 is already recorded in the restored
+`schema_migrations`, so it never re-runs). Restoring as `vocotable_app` makes ownership ==
+runtime role and grants are inherent.
+
+Target the database the prod `DATABASE_URL` secret names — **check the secret first, do not
+assume** (it also carries the `vocotable_app` password):
 ```bash
 gcloud secrets versions access latest --secret voxtable-prod-database-url --project bp-voxtable-prod | sed -E 's#//([^:]+):[^@]+@#//\1:***@#'
 ```
-Gate: the four row counts match step 2 exactly. Abort: drop and re-restore; nothing else has
-happened yet.
+```bash
+cloud-sql-proxy bp-voxtable-prod:australia-southeast1:voxtable-prod-postgres --port 5433 &
+# The target DB must be EMPTY (services are still on the bootstrap image; the migrate job is
+# a placeholder that has never run). If \dt shows tables, stop and find out why before
+# dropping anything.
+psql "postgresql://vocotable_app:<PW_FROM_SECRET>@localhost:5433/<DB_FROM_SECRET>" -c '\dt'
+psql "postgresql://vocotable_app:<PW_FROM_SECRET>@localhost:5433/<DB_FROM_SECRET>" \
+  -v ON_ERROR_STOP=1 -f /tmp/cutover-dump.sql
+```
+Gate: the four row counts match step 2 exactly (re-run the step-2 count query over the proxy).
+Abort: drop and re-restore; nothing else has happened yet.
 
-### 4. Migrate from the NEW image `[agent]`
+### 4. Migrate from the NEW image `[abhi]`
+⚠️ **Placeholder trap:** Terraform ships `voxtable-prod-migrate` as a bootstrap placeholder
+(`/bin/sh -c "echo bootstrap migration job"` — `prod/main.tf`). Executing it before anything
+has swapped its image **echoes and exits 0 having migrated nothing** — the same silent-no-op
+class as the 20 Aug VM incident. The deploy-backend workflow is what updates the job to the
+real api image running `dist/db/migrate.js` and executes it; if running by hand, `gcloud run
+jobs update voxtable-prod-migrate --image <api:semver> ...` FIRST, then:
 ```bash
 gcloud run jobs execute voxtable-prod-migrate --project bp-voxtable-prod --region australia-southeast1 --wait
 ```
+Because step 3 restored a dump already at the current head, the expected result is a clean
+**no-op pass** (every file already in `schema_migrations`) — that is success, not a failure.
 Gate — both, as the app role:
 ```
-SELECT max(filename) FROM schema_migrations;   -- expect 039_phone_number_single_owner.sql
-SELECT count(*) FROM restaurants;              -- connects and reads as the runtime role
+SELECT max(filename) FROM schema_migrations;   -- expect the repo's current head (042_restaurant_owner_phone.sql as of 2 Sep 2026)
+SELECT count(*) FROM restaurants;              -- connects and reads as the runtime role (expect 6)
 ```
 Watch the job logs for the 038 demotion WARNING — if it appears, the role demotion still needs
 a privileged run (platform #62's one-liner). Abort: read the job logs; do not roll services on
@@ -99,9 +132,10 @@ curl -s -X POST https://trunking.twilio.com/v1/Trunks/TK50f2a0cc6c4906a1b9468674
   -u "$TWILIO_US1_KEY_SID:$TWILIO_US1_KEY_SECRET" \
   --data-urlencode "DisasterRecoveryUrl=https://api.biteperk.com.au/twilio/disaster" \
   --data-urlencode "DisasterRecoveryMethod=POST"
-# AU1 trunk (Mazcina) — same, against TK6fcd3c96ea8317181d4049ce6f938f10 via the AU1 endpoint:
-curl -s -X POST https://trunking.sydney.au1.twilio.com/v1/Trunks/TK6fcd3c96ea8317181d4049ce6f938f10 \
-  -u "$TWILIO_AU1_KEY_SID:$TWILIO_AU1_KEY_SECRET" \
+# Mazcina's trunk — US1 since the 31 Aug cutover (TK3140735e…, per voice-lines.json — the
+# old AU1 trunk TK6fcd3c96… this step used to name is no longer the live one). Same US1 key:
+curl -s -X POST https://trunking.twilio.com/v1/Trunks/TK3140735e33b7b22007a88f00f15e0e9a \
+  -u "$TWILIO_US1_KEY_SID:$TWILIO_US1_KEY_SECRET" \
   --data-urlencode "DisasterRecoveryUrl=https://api.biteperk.com.au/twilio/disaster" \
   --data-urlencode "DisasterRecoveryMethod=POST"
 ```

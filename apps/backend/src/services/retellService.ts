@@ -151,6 +151,17 @@ export async function handleRetellWebhook(body: unknown): Promise<void> {
  * Pure so the production branch is testable — `env` is parsed once at import,
  * so APP_ENV cannot be flipped inside a test that imports this module.
  */
+/**
+ * Does the agent have a number it can actually use?
+ *
+ * Exported so the withheld-caller-ID case is testable without a call: it is the
+ * branch that decides whether the agent asks for a phone number, and getting it
+ * wrong books a guest nobody can ring back.
+ */
+export function callerPhoneKnownFlag(callerPhoneForAgent: string): "yes" | "no" {
+  return callerPhoneForAgent === "" ? "no" : "yes";
+}
+
 export function resolveOverrideAgentId(
   perRestaurantAgentId: string | null,
   appEnv: string,
@@ -201,6 +212,12 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
   // the caller for a number instead. The call log keeps the raw value — for
   // forensics, "anonymous" is information.
   const callerPhoneForAgent = normalizePhone(callerPhoneRaw) ?? "";
+  // Whether we have a usable number, said plainly. The prompt cannot reliably
+  // branch on an empty string — "is {{caller_phone}} empty" asks a model to
+  // reason about the absence of a value, and it guesses. A literal "yes"/"no"
+  // is something it can match. Without this the agent skips asking a withheld
+  // caller for a number and books them with no way to reach them.
+  const callerPhoneKnown = callerPhoneKnownFlag(callerPhoneForAgent);
 
   // One cached query for the venue's identity + FAQ, and one uncached query for
   // the agent id (kept separate so a rebind lands on the very next call).
@@ -258,6 +275,7 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
         venue_faq: formatVenueFaq(venue.faq, restaurantId),
         restaurant_timezone: tz,
         caller_phone: callerPhoneForAgent,
+        caller_phone_known: callerPhoneKnown,
         today: todayInTz(tz, now),
         tomorrow: tomorrowInTz(tz, now),
         now_local: nowTimeInTz(tz, now),

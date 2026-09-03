@@ -26,7 +26,7 @@ COPY package.json package-lock.json ./
 COPY apps/backend/package.json ./apps/backend/package.json
 COPY apps/frontend/package.json ./apps/frontend/package.json
 COPY apps/kds/package.json ./apps/kds/package.json
-RUN npm ci --workspace=@vocotable/backend --omit=dev --omit=optional && \
+RUN npm ci --workspace=@voxtable/backend --omit=dev --omit=optional && \
     npm cache clean --force && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
@@ -44,7 +44,7 @@ USER appuser
 # processes during an incident.
 ENV PG_POOL_MAX_WRITE=30 \
     PG_POOL_MAX_READ=5 \
-    PG_APPLICATION_NAME=vocotable-worker
+    PG_APPLICATION_NAME=voxtable-worker
 
 # The worker had NO healthcheck, so a wedged one was invisible: a tick hung
 # inside an open transaction stops the Cal.com mirror, notifications,

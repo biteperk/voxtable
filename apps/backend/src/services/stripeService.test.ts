@@ -35,6 +35,14 @@ test("the collected address may be saved to the customer — required for automa
   assert.deepEqual(params.customer_update, { address: "auto" });
 });
 
+test("promotion codes can be entered on the Checkout page", () => {
+  // Codes live in the Stripe dashboard; the session only permits entering one.
+  // Must never be combined with a hard-coded `discounts` list — Stripe rejects
+  // sessions that set both.
+  assert.equal(params.allow_promotion_codes, true);
+  assert.equal("discounts" in params, false);
+});
+
 test("the subscription shape is unchanged by the GST wiring", () => {
   assert.equal(params.mode, "subscription");
   assert.equal(params.customer, "cus_test123");
