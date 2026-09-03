@@ -152,21 +152,6 @@ export function submitContact(payload) {
   });
 }
 
-// ===== Email verification (6-digit code) =====
-// Both endpoints accept an authenticated-but-unverified account. A 404
-// (FEATURE_DISABLED, or an older backend) tells the verify screen to fall
-// back to the legacy Firebase-link flow.
-export function sendVerificationCode() {
-  return authedFetch(`/api/auth/verify-email/send`, { method: "POST", body: "{}" });
-}
-
-export function confirmVerificationCode(code) {
-  return authedFetch(`/api/auth/verify-email/confirm`, {
-    method: "POST",
-    body: JSON.stringify({ code })
-  });
-}
-
 // ===== Onboarding =====
 
 export function createRestaurant(payload) {

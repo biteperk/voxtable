@@ -220,9 +220,8 @@ const verifyContinueUrl = () => ({ url: `${window.location.origin}/verify-email`
 
 /**
  * Create an email/password account for a restaurant representative.
- * Deliberately does NOT send Firebase's verification email here — the verify
- * screen owns sending (a branded 6-digit code via our backend, or the Firebase
- * link only as its legacy fallback), so signup can't double-send.
+ * The native Firebase verification screen owns sending the verification link,
+ * so signup cannot double-send.
  * Returns the (signed-in, unverified) user; the caller routes to /verify-email.
  */
 export async function createAccount({ name, email, password }) {
