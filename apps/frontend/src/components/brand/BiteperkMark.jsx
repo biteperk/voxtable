@@ -1,12 +1,7 @@
-import { useId } from "react";
-
-// Biteperk brand mark — the gold star with a green fork, matching
-// biteperk.com.au (StarMark). Pure SVG. ids are made unique per render
-// so multiple instances on one page (nav + footer) don't collide.
+// Biteperk brand mark — gold star, green fork. Geometry copied verbatim from the
+// generated export biteperk-website/public/brand/biteperk-mark.svg (`npm run brand`).
+// Flat by design: this is the official mark. Do not redraw — regenerate upstream and re-copy.
 export function BiteperkMark({ size = 42 }) {
-  const uid = useId().replace(/:/g, "");
-  const grad = `bp-star-${uid}`;
-  const shadow = `bp-shadow-${uid}`;
   return (
     <svg
       viewBox="0 0 64 64"
@@ -14,28 +9,18 @@ export function BiteperkMark({ size = 42 }) {
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <defs>
-        <radialGradient id={grad} cx="35%" cy="30%" r="80%">
-          <stop offset="0%" stopColor="#fff7c4" />
-          <stop offset="30%" stopColor="#f5c418" />
-          <stop offset="100%" stopColor="#9a7a0a" />
-        </radialGradient>
-        <filter id={shadow} x="-40%" y="-40%" width="180%" height="180%">
-          <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#000" floodOpacity="0.4" />
-        </filter>
-      </defs>
-      <g filter={`url(#${shadow})`}>
-        <polygon
-          points="32,4 39,24 60,24 43,37 49,58 32,46 15,58 21,37 4,24 25,24"
-          fill={`url(#${grad})`}
-          stroke="#1a4d1a"
-          strokeWidth="1.2"
-        />
-        {/* Fork tines */}
-        <rect x="29" y="20" width="2.5" height="22" fill="#1a4d1a" rx="0.8" />
-        <rect x="32.5" y="20" width="2.5" height="14" fill="#1a4d1a" rx="0.8" />
-        <rect x="35.5" y="20" width="2.5" height="22" fill="#1a4d1a" rx="0.8" />
-      </g>
+      <polygon
+        points="32,4 39,24 60,24 43,37 49,58 32,46 15,58 21,37 4,24 25,24"
+        fill="#f5c418"
+        strokeLinejoin="round"
+      />
+      <rect x="27.0" y="16" width="2.7" height="12.5" rx="1.35" fill="#1a4d1a" />
+      <rect x="30.65" y="16" width="2.7" height="12.5" rx="1.35" fill="#1a4d1a" />
+      <rect x="34.3" y="16" width="2.7" height="12.5" rx="1.35" fill="#1a4d1a" />
+      <path
+        d="M28.3 26.5 h7.4 q2.3 0 2.3 2.3 v0.9 q0 2.8 -2.8 2.8 h-0.6 v10.2 q0 2.6 -2.6 2.6 t-2.6 -2.6 v-10.2 h-0.6 q-2.8 0 -2.8 -2.8 v-0.9 q0 -2.3 2.3 -2.3 z"
+        fill="#1a4d1a"
+      />
     </svg>
   );
 }
