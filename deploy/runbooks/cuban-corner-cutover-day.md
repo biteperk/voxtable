@@ -107,6 +107,26 @@ reached the real backend.
    credentials per `domain-migration.md`; Cloud Run should hold Biteperk-production's — confirm
    the SID is `ACd423bd09…`). Stripe and OCR must be settled before step 7: if Cloud Run's Stripe
    key is not the **live** key the VM bills with, every checkout after the flip is wrong.
+0o. **The missing verification code, 3 Sep — read from the ZeptoMail Biteperk dashboard
+   (org 7007381411, `agent_1`), the same account both the VM and Cloud Run send through
+   (token hash identical).** TWO separate faults:
+   - **The worker is not dispatching queued emails.** Last-24h counters: 0 sent, 0 delivered,
+     0 soft/hard bounces, **0 process failed** — i.e. the worker made zero send requests today,
+     even though the api returned a 429 resend-cooldown (a code row WAS queued). Egress is fine
+     (`vpc_egress = PRIVATE_RANGES_ONLY`, so public traffic to ZeptoMail bypasses the VPC; no
+     Cloud NAT is needed and none exists), `NOTIFICATIONS_ENABLED=true`, `EMAIL_PROVIDER=zeptomail`,
+     token present. So the fault is the worker itself. **Needs `[abhi]` to read
+     `voxtable-prod-worker` logs** (Sam's account is denied `logging.read` on the project) for
+     the `notificationWorker` tick — is it running, is it claiming email rows, is the ZeptoMail
+     call erroring. This is the blocker for even one signup.
+   - **The ZeptoMail account is unvalidated.** "Validation form yet to be submitted",
+     **0 / 10000 credits**, interim **daily limit of 100** emails. Even after the worker is fixed,
+     100/day caps how many venues can verify per day and unvalidated accounts are throttled.
+     `[sam]`: ZeptoMail dashboard → the **Customer Validation** card → **Complete**, submit the
+     form. Hard go-live blocker for "anyone can sign up".
+   VoxTable codes DID deliver before the move (real codes in `vocotable@biteperk.com.au` on
+   Aug 7 and Aug 12), so the template and the send path are sound — this regressed with the
+   Cloud Run worker, not the code.
 0n. **The worker's CPU allocation was inherited, not declared.** Every outbox tick —
    verification codes, booking SMS, Cal.com mirror, reapers — is a `setInterval` that only runs
    while the instance has CPU. The module never set `cpu_idle`; the staging worker's live
