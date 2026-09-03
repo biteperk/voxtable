@@ -4,7 +4,7 @@
 > estate** — products, hostnames, GCP projects, services, images, repos, branches.
 > **Check it before you name anything, and before you type a name you "remember".**
 > When this file and any other doc disagree, this file wins and the other doc gets
-> fixed. Migrations here are **additive — old names keep serving; never a cutover.**
+> fixed. Legacy names may redirect, but must never keep a sandbox backend serving.
 > Minting a new name the tables don't cover? Extend THIS file in the same PR.
 
 Last full audit: 7 Aug 2026, cross-checked against `deploy/runbooks/domain-migration.md`,
@@ -27,16 +27,16 @@ Visual identity, tokens, wordmark and NAP facts live in the website repo's
 | **Bella** | The voice persona | Never renames. |
 | ~~VocoTable~~, ~~PerkTable~~ | Retired product names | Historical narration only. Never introduce in new code, docs, or UI. |
 
-## 2. Customer-facing hostnames (domain migration, in flight since 3 Aug 2026)
+## 2. Customer-facing hostnames
 
 Procedure SSOT: [`deploy/runbooks/domain-migration.md`](deploy/runbooks/domain-migration.md).
-**Every "old" hostname is still serving and must not be removed** until Phase 6's
-90-day grace period completes.
+Production application hostnames resolve only to the production Firebase/Cloud Run estate.
+Legacy names may redirect; they must not route application traffic to `core-central-vm`.
 
 | Surface | New name | Old name(s) — still serving | Status (25 Aug 2026) |
 |---|---|---|---|
 | Client dashboard | `voxtable.biteperk.com.au` | `vocotable.web.app` (~~`vocotable.biteperk.com.au`~~ — **no DNS record exists**, checked in Cloudflare 2 Sep 2026; the custom domain was never/no-longer wired, only the `web.app`/`firebaseapp.com` URLs serve) | Firebase Hosting target `app`; custom domain pending (Phase 5). Decision 25 Aug 2026: product-named subdomain **supersedes the never-shipped `app.biteperk.com.au`** — `app.` was planned, never had DNS/cert/traffic, and must not be created |
-| Backend API | `api.biteperk.com.au` | `vocotable.algorythmos.com.au` | **Live on both names** since 3 Aug (one cert covers both); Stripe repointed 3 Aug; Cal.com → Retell → Twilio cut over one at a time (Phase 4) |
+| Backend API | `api.biteperk.com.au` | `vocotable.algorythmos.com.au` (redirect/retire; never a VM production origin) | Cloud Run `voxtable-prod-api` in `bp-voxtable-prod` |
 | Kitchen display | `kds.biteperk.com.au` | `vocotable-kds.web.app` (~~`kitchen.vocotable.biteperk.com.au`~~ — **no DNS record exists**, checked in Cloudflare 2 Sep 2026) | Firebase Hosting target `kds`; custom domain pending (Phase 5) |
 | Public brand site | `biteperk.com.au` | — | Live (Vox rename shipped 22 Jul 2026) |
 | VoxOrder (reserved) | `voxorder.biteperk.com.au` | — | 301 → `biteperk.com.au/au-en/products/voxorder` (Cloudflare redirect rule); becomes the product's app host when one exists |
@@ -57,7 +57,7 @@ there; this table registers them.
 | Thing | Name |
 |---|---|
 | Staging project | `bp-voxtable-stg` |
-| Production project (**exists as an empty shell**) | `bp-voxtable-prod` — **`-prod`, never `-prd`**. Older notes had `-prd`; Terraform enforces the correct form (`roots/products/voxtable/prod/variables.tf` validation). ⚠️ The project **does** exist — one secret, Cloud Run API not even enabled — so "does the project exist?" answers a misleading *yes*. Nothing runs there; production is still the VM. |
+| Production project | `bp-voxtable-prod` — **`-prod`, never `-prd`**. Cloud Run, Cloud SQL, Firebase and Secret Manager production resources live here. |
 | Shared registry project | `bp-shared-artifacts` |
 | Docker images (new world) | `australia-southeast1-docker.pkg.dev/bp-shared-artifacts/voxtable/api` and `…/worker` |
 | Cloud Run **services** — staging (exist today) | `voxtable-stg-api`, `voxtable-stg-worker` |
@@ -65,7 +65,9 @@ there; this table registers them.
 | Cloud SQL **instance** — staging | `voxtable-stg-postgres` (a database, not a Cloud Run service) |
 | Service **account** — staging runtime | `voxtable-stg-runtime@…iam.gserviceaccount.com` |
 | Secret Manager **name prefixes** — staging | `voxtable-stg-retell-*`, `voxtable-stg-twilio-*` (see `deploy/runbooks/staging-secrets.md` for the full registry) |
-| Cloud Run — production (pattern; created at cutover, no services exist yet) | `voxtable-prod-<service>` mirroring the staging fleet |
+| Cloud Run **services** — production | `voxtable-prod-api`, `voxtable-prod-worker` |
+| Cloud Run **job** — production | `voxtable-prod-migrate` |
+| Cloud SQL **instance** — production | `voxtable-prod-postgres` |
 | Firebase Hosting (new world) | `bp-voxtable-stg.web.app` / `bp-voxtable-prod.web.app` |
 | Database roles (Cloud SQL) | `voxtable_owner` (migrations) / `voxtable_app` (runtime) |
 | Repos | product `biteperk/voxtable` (renamed from `biteperk/vocotable`) · infra `biteperk/biteperk-cloud-platform` · marketing site `biteperk/biteperk-website` |
@@ -94,7 +96,7 @@ booking exists, and nothing tracks that.
 | `vocotable_number` API field | Public API contract. |
 | `vocotable.*` localStorage keys | Persisted in customers' browsers. Renameable only behind a read-old/write-new shim — a bare rename resets the active restaurant and can drop an in-flight signup. |
 | ~~`vocotable:*` window events~~ — **renamed 28 Aug 2026** | Never belonged here: same-page pub/sub, dispatcher and listener ship in the same bundle, nothing persisted. Now `voxtable:*`. |
-| Legacy VM-world registry `us-central1-docker.pkg.dev/vocotable-497209/vocotable/*` | Serves the VM production until the Cloud Run cutover retires it. |
+| Legacy VM-world registry `us-central1-docker.pkg.dev/vocotable-497209/vocotable/*` | Sandbox-only legacy images; never use for a production deployment. |
 | Legacy `voco*` / `perk*` URL slugs (website 301s + `PRODUCT_SLUGS`) | Printed collateral and cached links use them — keep forever. |
 | Local checkout dir `~/vocotable` | Sam's machine; scripts and muscle memory point at it. Renaming buys nothing. |
 

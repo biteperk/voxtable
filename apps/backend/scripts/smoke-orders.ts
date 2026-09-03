@@ -1,5 +1,5 @@
 // End-to-end smoke for the KDS order lifecycle. Hits the new menu + orders
-// routes against either local dev or PUBLIC_API_BASE_URL=https://… in prod.
+// routes against either local dev or the staging PUBLIC_API_BASE_URL.
 //
 // Asserts:
 //   1. GET /api/menu returns Fish & Chips with Large + drink modifier group
@@ -15,8 +15,10 @@
 //  10. /api/ops/kds-health snapshot reflects reality
 
 import { mintSmokeIdToken } from "./lib/firebaseToken";
+import { assertSafeSmokeTarget } from "./lib/smokeTarget";
 
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
 
 interface MenuItem {
   id: string;

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# VocoTable — Automated PostgreSQL Backup Script
+# VoxTable sandbox — local PostgreSQL backup script
 # =============================================================================
 #
-# Runs pg_dump from the postgres Docker container, compresses the output with
-# gzip, and deletes backups older than 7 days.
+# SANDBOX ONLY. Runs pg_dump from a Docker Postgres container. This is not a
+# production backup; production uses Cloud SQL automated backups and PITR.
 #
 # Usage:
 #   ./backup-postgres.sh                # Manual run

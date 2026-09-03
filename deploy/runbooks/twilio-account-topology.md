@@ -194,9 +194,10 @@ become false. Two models, and they are not interchangeable:
 | Does cloning help? | Yes | **No** — the identity differs per venue |
 | Guest sees | BitePerk | The venue |
 
-**Confirm the correct model with Twilio before the first venue is auto-provisioned.** This
-is one of the few places where staging genuinely does not rehearse production, because both
-current bundles are deliberately Direct Customer.
+**Confirm the correct model with Twilio before the first venue is auto-provisioned.** Test
+the chosen provisioning behaviour with staging identities and a staging venue. Production
+account status is then verified by configuration read-back only; do not create a dummy
+production venue or End User.
 
 ---
 

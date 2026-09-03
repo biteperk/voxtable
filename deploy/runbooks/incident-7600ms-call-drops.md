@@ -1,5 +1,9 @@
 # Incident: calls dropping at a fixed ~7.6 seconds
 
+> Environment correction (3 Sep 2026): `core-central-vm` observations in this incident are
+> sandbox observations, even where the historical notes call them production. Production
+> application behavior must be verified against `bp-voxtable-prod` Cloud Run and Cloud SQL.
+
 **Status: OPEN. Region has now been tested and EXONERATED along with transport.
 The surviving candidate is the NUMBER itself (or its carrier range), not the trunk. 31 Aug 2026.**
 
@@ -215,7 +219,7 @@ Everything under our control has now been replaced at least once while the fault
 | Retell agent, LLM, prompt, greeting (many versions) | yes |
 | Retell workspace | yes |
 | Backend credentials (`RETELL_API_KEY` / webhook secret) | yes |
-| Backend runtime (Cloud Run staging vs VM production) | yes |
+| Backend runtime (Cloud Run staging vs the then-mislabelled VM sandbox) | yes |
 | Twilio account (`AC8116857da…` vs `ACd423bd09…`) | yes |
 | Venue row, database, menu | yes |
 | Caller ID presented vs withheld | yes |
@@ -237,7 +241,7 @@ on both failing numbers, and different on the one number that has never shown th
   protective" clue was retracted the same hour).
 - Twilio account health — both accounts active, funded, zero Monitor alerts.
 - Cloud Run cold start / backend — the agent answers and greets on every dead call, and
-  production (a different backend entirely, on the VM) drops identically.
+  the then-mislabelled VM sandbox dropped identically.
 
 ## 6. The experiment — one variable, staging, reversible
 

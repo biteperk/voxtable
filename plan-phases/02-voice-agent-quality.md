@@ -14,7 +14,7 @@ Target milestone by Day 5: Natalia hears the assistant, gives feedback, and sign
 - Write production-oriented RetellAI prompts for the booking flow.
 - Add top restaurant FAQs.
 - Define staff-transfer behavior.
-- Run at least 20 internal test calls before Natalia's demo.
+- Run at least 20 internal calls on the staging number before Natalia's demo.
 
 ## Conversation Design
 The assistant should be concise, warm, and operational. It must not over-explain that it is an AI unless legally or commercially required by the call script.
@@ -111,7 +111,7 @@ Choose based on:
 
 Record the chosen model and reasoning in the phase notes during implementation.
 
-## Test Call Checklist
+## Staging Test Call Checklist
 Run at least these scenarios:
 - normal booking for two tonight.
 - normal booking for four this weekend.

@@ -3,7 +3,7 @@
 
   "product_summary": "VoxTable answers a restaurant's phone with a voice AI (Bella), takes the booking or pickup order, writes it to the database, and shows it live on the dashboard and kitchen display. Built by BitePerk Pty Ltd. First venue: Natalia's Bistro (Sydney) — her line has not answered since the legacy Twilio account was suspended on 5 Aug 2026, so no venue is taking live calls today. Second install: Cuban Corner (staging).",
 
-  "where_we_are": "Staging runs end-to-end on Cloud Run with its own Twilio number and Retell workspace, and every merge to integration deploys there automatically once CI passes. Production still runs on the original VM and is deployed by hand — moving it onto Cloud Run is the cutover that go-live planning revolves around. The board's Production Go Live milestone (23 Aug) tracks exactly what stands between here and there.",
+  "where_we_are": "Staging and production use separate Cloud Run, Cloud SQL, Firebase and vendor resources. CI-green integration deploys staging; CI-green main deploys production. The original VM is sandbox-only and is not a production host, rollback target or data source.",
   "executive_summary_curated": {
     "win": "Staging is a real environment now — own phone number, own Retell workspace, auto-deployed on every merge, rehearsable end to end.",
     "risk": "Telephony compliance is the long pole: sender-ID registration binds to one Twilio account, and the account-architecture decision (#166) gates it.",
@@ -130,15 +130,15 @@
     },
     {
       "date": "2026-09",
-      "title": "Cloud Run production cutover",
-      "detail": "Retire the VM; production joins staging on Cloud Run (bp-voxtable-prod).",
-      "upcoming": true
+      "title": "Cloud Run production foundation",
+      "detail": "Production is established directly in bp-voxtable-prod; no VM cutover or VM data migration.",
+      "upcoming": false
     },
     {
       "date": "2026-Q4",
-      "title": "Sydney data residency",
-      "detail": "Move compute and database from Iowa to australia-southeast1.",
-      "upcoming": true
+      "title": "Sydney production region",
+      "detail": "Production compute and Cloud SQL are provisioned directly in australia-southeast1.",
+      "upcoming": false
     }
   ],
   "decisions": [
@@ -175,7 +175,7 @@
     {
       "date": "2026-08-13",
       "title": "Fresh vendor estate under BitePerk",
-      "rationale": "New Retell workspace and Twilio accounts under biteperk.com.au identities; the legacy Algorythmos accounts stay funded as rollback until cutover completes."
+      "rationale": "Production uses BitePerk-owned Retell and Twilio resources. Sandbox or legacy accounts are not production rollback paths."
     }
   ],
   "curated_risks": [
@@ -193,7 +193,7 @@
     },
     {
       "severity": "warning",
-      "risk": "Legacy Algorythmos vendor accounts still carry pieces of production (recordings, rollback path) until the estate migration completes",
+      "risk": "Legacy and sandbox vendor resources must remain isolated so they cannot be mistaken for production",
       "owner": "Sam",
       "link": ""
     }
@@ -205,7 +205,7 @@
     },
     {
       "idea": "Promotion-by-digest: production runs the exact image staging tested",
-      "status": "raise as issue when prod Cloud Run exists"
+      "status": "raise as issue if production does not run the exact digest proven in staging"
     },
     {
       "idea": "Per-venue analytics page for restaurant owners (calls answered vs missed, busiest hours)",
@@ -229,7 +229,7 @@
         "surface": "Backend API",
         "new": "api.biteperk.com.au",
         "old": "vocotable.algorythmos.com.au",
-        "status": "Live on both names since 3 Aug; Stripe repointed; Cal.com → Retell → Twilio cut over one at a time"
+        "status": "Production Cloud Run API; legacy name may redirect but never routes to the sandbox VM"
       },
       {
         "surface": "Kitchen display",
@@ -250,7 +250,7 @@
         "name": "bp-voxtable-stg"
       },
       {
-        "thing": "Production GCP project (created at cutover)",
+        "thing": "Production GCP project",
         "name": "bp-voxtable-prod — always -prod, never -prd (Terraform enforces it)"
       },
       {
@@ -266,7 +266,7 @@
         "name": "voxtable-stg-api · voxtable-stg-worker · voxtable-stg-migrate · Cloud SQL voxtable-stg-postgres"
       },
       {
-        "thing": "Cloud Run — production (at cutover)",
+        "thing": "Cloud Run — production",
         "name": "voxtable-prod-api · voxtable-prod-worker · voxtable-prod-migrate · voxtable-prod-postgres"
       },
       {
@@ -288,8 +288,8 @@
     ],
     "never_rename": [
       "bookings.vocotable.algorythmos.com.au — the synthetic-email domain baked into existing Cal.com bookings; must never change",
-      "vocotable_number API field, event/storage keys, and Firebase project ids vocotable / vocotable-497209 — retained until their own migration tier",
-      "Old hostnames keep serving — the migration is additive; nothing is torn down until every vendor webhook is verified on the new name with a live test call",
+      "vocotable_number API field and persisted event/storage keys remain compatibility identities; project vocotable / vocotable-497209 is sandbox-only",
+      "Legacy hostnames may redirect, but no production application traffic may route to the sandbox VM",
       "API A records stay DNS-only (gray cloud) in Cloudflare, and every new hostname must be added to Firebase Auth authorized domains or Google sign-in breaks on it"
     ]
   },

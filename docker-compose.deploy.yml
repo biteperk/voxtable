@@ -1,11 +1,11 @@
 # Manual-ops override — points api/worker at the prebuilt images in Artifact
-# Registry instead of building from source on the VM. Used for hand deploys:
+# Registry instead of building from source in the sandbox. Never used for production:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml pull api worker
 #
 # The CI deploy (.github/workflows/deploy-backend.yml) does NOT use this file —
 # it generates its own /tmp override pinned to the exact commit tag. This file
-# exists so a human on the VM pulls the same registry CI publishes to, not a
-# stale one. It lives on the VM at /opt/vocotable/docker-compose.deploy.yml.
+# exists so a sandbox operator can pull the same registry CI publishes. It may
+# live on core-central-vm at /opt/vocotable/docker-compose.deploy.yml.
 #
 # TAGS: this registry has NO `latest`. CI pushes every commit as its full git
 # SHA, and production releases from `main` additionally as the package.json

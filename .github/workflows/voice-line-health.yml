@@ -1,8 +1,8 @@
 name: Voice line health
 
-# Asserts that EVERY line declared in deploy/voice-lines.json still routes end to end:
-# number imported in the right Retell workspace -> webhook -> the backend resolves the
-# declared agent -> that agent exists -> its name passes the bind guard -> golden config.
+# Staging asserts the complete declared route, including the signed synthetic
+# inbound probe. Production performs read-only Retell/Twilio configuration
+# read-backs only; it never emits a synthetic webhook, call, booking or order.
 #
 # The numbers are read from the declaration at run time, not listed here. They were listed
 # here once, and Cuban Corner's line — the newest, on a trunk configuration nothing else in
@@ -104,12 +104,10 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # Production's credentials do NOT live in Secret Manager — the production backend is
-      # still the VM, and its .env is the only copy. Until they are mirrored into repo
-      # secrets this job cannot check the production line, and it FAILS rather than passing
-      # quietly: an unchecked line reported green is the exact failure this workflow exists
-      # to prevent.
-      - name: Assert every declared production line
+      # The workflow uses environment-scoped GitHub secrets for the external Retell probe.
+      # The running application receives the corresponding values from bp-voxtable-prod
+      # Secret Manager. The sandbox VM is not a credential source.
+      - name: Read back every declared production line
         env:
           RETELL_API_KEY: ${{ secrets.RETELL_PROD_API_KEY }}
           RETELL_WEBHOOK_SECRET: ${{ secrets.RETELL_PROD_WEBHOOK_SECRET }}
@@ -118,18 +116,21 @@ jobs:
           if [ -z "${RETELL_API_KEY:-}" ] || [ -z "${RETELL_WEBHOOK_SECRET:-}" ]; then
             echo "::error::Cannot check the production voice line — RETELL_PROD_API_KEY and/or"
             echo "::error::RETELL_PROD_WEBHOOK_SECRET are not set as repository secrets."
-            echo "Both live only in /opt/vocotable/.env on core-central-vm today. Copy them into"
-            echo "repository secrets (they are the same two values the VM already uses), or this"
-            echo "line stays unmonitored."
+            echo "Mirror the bp-voxtable-prod Retell values into the production GitHub environment"
+            echo "secrets used by this read-only monitor, or this line stays unmonitored."
             exit 1
           fi
+          # Production policy prohibits the synthetic /retell/inbound layer. assert-line
+          # automatically skips it for production and performs vendor configuration
+          # read-backs only.
+          #
           # No AU1 API key exists for the production Twilio account, so the trunk layer is
           # unverifiable. Deliberately not --strict here: the run would fail every hour on a
           # known, tracked gap and teach everyone to ignore it. assert-line still prints the
           # skip. Add --strict once voxtable-prod-twilio-au1-key-{sid,secret} exist.
           #
-          # --use-env because production's credentials live in the VM's .env and a GitHub
-          # runner cannot SSH there. The script preflights the key against the declared agent
+          # --use-env consumes the environment-scoped monitoring secrets. The script preflights
+          # the key against the declared agent
           # first, so a secret pointing at the wrong workspace fails as a credential error
           # instead of reporting a healthy line as broken.
           #

@@ -29,7 +29,9 @@ import {
 } from "../src/services/legalDocuments";
 import { agreementSchema } from "../src/http/schemas";
 import { isValidAbn } from "../src/utils/abn";
+import { assertSafeSmokeDatabase } from "./lib/smokeTarget";
 
+assertSafeSmokeDatabase();
 let failures = 0;
 function assert(label: string, ok: boolean, detail?: unknown): void {
   const tag = ok ? "PASS" : "FAIL";

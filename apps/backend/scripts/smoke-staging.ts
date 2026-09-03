@@ -21,9 +21,11 @@
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertSafeSmokeTarget } from "./lib/smokeTarget";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
 
 const SUITES: Array<{ name: string; script: string }> = [
   { name: "retell signed (inbound + booking + negative control)", script: "smoke-retell-signed.ts" },

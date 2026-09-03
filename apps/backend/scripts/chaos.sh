@@ -2,9 +2,8 @@
 #
 # Chaos / failure-injection scripts for VocoTable.
 #
-# Each scenario tests ONE defence we believe we have. Run on STAGING only,
-# never on production — most scenarios involve dropping iptables rules or
-# killing containers that staff and callers rely on.
+# Each scenario tests ONE defence on the sandbox VM only, never staging or
+# production — scenarios drop iptables rules or kill containers.
 #
 # Usage:
 #   ./chaos.sh <scenario-name>
@@ -23,7 +22,7 @@
 set -u
 set -o pipefail
 
-API_BASE="${PUBLIC_API_BASE_URL:-https://vocotable.algorythmos.com.au}"
+API_BASE="${PUBLIC_API_BASE_URL:-http://localhost:3050}"
 VM_ZONE="${VM_ZONE:-us-central1-a}"
 VM_NAME="${VM_NAME:-core-central-vm}"
 PG_CONTAINER="${PG_CONTAINER:-vocotable-postgres-1}"
@@ -38,12 +37,10 @@ ssh_vm() {
   gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --command="$*"
 }
 
-# Verify we're not aimed at production by accident.
-assert_staging() {
-  if [[ "$API_BASE" == *"vocotable.algorythmos.com.au"* ]]; then
-    read -r -p "API_BASE looks like PRODUCTION ($API_BASE). Type STAGING-CONFIRMED to continue: " confirm
-    [[ "$confirm" == "STAGING-CONFIRMED" ]] || fail "Aborted — refusing to run chaos against production without explicit confirmation."
-  fi
+# Verify the operator intends to mutate the sandbox VM.
+assert_sandbox() {
+  read -r -p "This mutates sandbox VM ${VM_NAME}. Type SANDBOX-CONFIRMED to continue: " confirm
+  [[ "$confirm" == "SANDBOX-CONFIRMED" ]] || fail "Aborted — chaos is sandbox-only."
 }
 
 # ---------------------------------------------------------------------------
@@ -223,11 +220,11 @@ main() {
   local cmd="${1:-help}"
   case "$cmd" in
     list|--list|-l)               list_scenarios ;;
-    calcom_offline)               assert_staging; scenario_calcom_offline ;;
-    calcom_slow)                  assert_staging; scenario_calcom_slow ;;
-    db_terminate_mid_tx)          assert_staging; scenario_db_terminate_mid_tx ;;
-    api_sigkill_mid_push)         assert_staging; scenario_api_sigkill_mid_push ;;
-    disk_full)                    assert_staging; scenario_disk_full ;;
+    calcom_offline)               assert_sandbox; scenario_calcom_offline ;;
+    calcom_slow)                  assert_sandbox; scenario_calcom_slow ;;
+    db_terminate_mid_tx)          assert_sandbox; scenario_db_terminate_mid_tx ;;
+    api_sigkill_mid_push)         assert_sandbox; scenario_api_sigkill_mid_push ;;
+    disk_full)                    assert_sandbox; scenario_disk_full ;;
     stale_signature)              scenario_stale_signature ;;
     schema_drift)                 scenario_schema_drift ;;
     all)

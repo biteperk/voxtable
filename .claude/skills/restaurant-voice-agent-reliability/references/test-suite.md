@@ -1,4 +1,4 @@
-# Production Test Suite
+# Staging Test Suite for Production Behaviour
 
 ## Contents
 - [Doctrine](#doctrine)
@@ -23,7 +23,8 @@ that has only ever passed is indistinguishable from one that always passes.
 > A store's own tests passed while the code using it was broken — a property read that did not
 > exist. Two live calls looked healthy. **The unit was right and the wiring was wrong.**
 
-Test through the boundary the production code actually crosses.
+In staging, test through the same boundary the production code crosses. Never run this
+suite against production.
 
 ### 4 · Test the wiring, not the arithmetic
 Pure functions get unit tests. What is rarely covered — and where incidents live — is whether the
@@ -75,8 +76,8 @@ See [menu-and-pricing](menu-and-pricing.md#required-tests) — 12 tests. Non-neg
 refused not swapped, unavailable not offered, nonsense rejected, near-miss kept, prices speakable.
 
 ### 6 · Hallucination
-See [anti-hallucination](anti-hallucination.md#required-tests) — 11 tests. Mostly **live-call
-tests**; they cannot be automated, so they belong in the pre-launch battery.
+See [anti-hallucination](anti-hallucination.md#required-tests) — 11 tests. Mostly **staging-call
+tests**; they cannot be automated, so they belong in the staging pre-launch battery.
 
 Two exceptions that **are** automatable from a transcript, and should run on every call rather than
 once before launch:

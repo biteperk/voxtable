@@ -1,5 +1,8 @@
 # 20260629 — seating preference stopgap (Option A)
 
+> Historical snapshot only. VM commands below apply only to the sandbox and must never be used as
+> a production deployment, rollback or data-migration procedure.
+
 Applied live to the **Natalia's Bistro** Retell agent on 2026-06-29.
 
 - **agent_id:** `agent_7b7a5f6c21c9968ee88afd3bac`

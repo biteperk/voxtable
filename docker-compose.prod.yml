@@ -1,3 +1,5 @@
+# Sandbox production-posture override only. Production runs on Cloud Run and
+# does not use Docker Compose.
 services:
   api:
     environment:

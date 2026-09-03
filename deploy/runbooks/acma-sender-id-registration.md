@@ -366,7 +366,8 @@ NOTIFICATIONS_MESSAGING_SERVICE_SID=MG… \
 npm run smoke:sms-sender --workspace=@voxtable/backend
 ```
 
-Send mode costs money and texts a real handset, so it is behind an explicit flag. It does **not**
+Send mode is staging-only. It costs money and texts a real handset, so it is behind an explicit
+flag and must use staging credentials and a staging Messaging Service. It does **not**
 stop at `messages.create` resolving — that returns `queued`, which proves only that Twilio accepted
 the request. It polls the Message resource until a terminal status and asserts `delivered`:
 
@@ -377,15 +378,11 @@ SMS_SEND_TEST=true SMS_TEST_TO=+61… npm run smoke:sms-sender --workspace=@voxt
 - [ ] Run read-only against production **before** the console step — confirms the service/account
       binding and the number in the pool while nothing is branded yet.
 - [ ] Run read-only **after** the console step — now expecting `BitePerk` *and* the number.
-- [ ] Send one real SMS and **look at the header** — it must read `BitePerk`. No API assertion can
-      see this; the status is `delivered` either way. **Two distinct failure modes, neither of which
-      the script can catch:** the message reads `Unverified` (registration or account-wide toggle
-      wrong), or it arrives from `+61 468 202 846` with no stamp at all (sender not in the pool, or
-      sticky sender reusing a previously-bound number — see the log below).
-- [ ] ⚠️ **Test on production, not staging** — staging's Account SID is still not on the
-      registration (§5), so a staging send **silently delivers from the number**, not as `BitePerk`
-      and not stamped `Unverified`. Proven at 13:50Z below. It proves the delivery path, never the
-      branding.
+- [ ] Exercise SMS delivery and copy only in staging. If the staging account cannot select the
+      registered alpha sender, record that limitation; it does not authorise a production test.
+- [ ] In production, stop after the two read-only checks above. Monitor the sender shown on the
+      first genuine customer message and alert on `Unverified` or numeric fallback. Do not send
+      a test message or create a dummy recipient interaction.
 
 #### Delivery test log
 
@@ -419,15 +416,13 @@ what the script requested.
   Service. If leg 6 should measure plain delivery rather than sender selection, either reuse a
   recipient already bound to the number or remove `BitePerk` from the staging pool first.
 
-  ⚠️ **Sticky-sender caveat for the production test:** send-mode reuses a recipient's existing
-  bound sender. `+61450011140` has never received from the *production* service, so the first prod
-  send should pick the registered `BitePerk` cleanly — but if you re-test a number that already got
-  a number-sourced message from the prod service, sticky sender may keep using the number. Test with
-  a fresh recipient, or expect this.
+  **Production monitoring caveat:** sender selection is sticky per recipient. Observe the first
+  genuine customer delivery without manufacturing a production test. If an existing recipient is
+  already bound to a numeric sender, that observation may continue to show the number.
 
-**Production — branded delivery: NOT yet tested (open).** Expected: from `BitePerk`, no
-`Unverified` stamp, arrives as a *new* thread (not the "Bella"/number thread). Needs the prod token
-and the run in §6.4 with `EXPECTED_ALPHA_SENDER=BitePerk`.
+**Production — no test send is permitted.** Expected genuine delivery: from `BitePerk`, no
+`Unverified` stamp. Validate configuration by read-back and validate delivery through monitoring
+of genuine customer traffic only.
 
 #### Error codes, and what each actually means
 

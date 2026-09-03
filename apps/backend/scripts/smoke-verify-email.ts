@@ -17,8 +17,11 @@
  * Usage:  npm run smoke:verify-email
  */
 import { pool } from "../src/db/pool";
+import { assertSafeSmokeDatabase, assertSafeSmokeTarget } from "./lib/smokeTarget";
 
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
+assertSafeSmokeDatabase();
 const DEV_UID = "dev-local-user";
 
 let failures = 0;

@@ -12,13 +12,16 @@
  * (Sweep B) correctly rejects past/too-far dates.
  *
  * For LLM-side regression coverage (does Bella correctly resolve "the 12th"?)
- * the only reliable approach is a real test call — placed by hand per the
- * pre-prod gate. This smoke covers the BACKEND defence-in-depth.
+ * the only reliable approach is a real staging test call, placed by hand per
+ * the pre-production gate. This smoke covers the BACKEND defence-in-depth.
  *
  * Run:  npm run smoke:retell-dates
  */
 
+import { assertSafeSmokeTarget } from "./lib/smokeTarget";
+
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
 
 interface SmokeCase {
   name: string;

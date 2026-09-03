@@ -5,7 +5,7 @@
 | Environment | Retell key | Where |
 |---|---|---|
 | Staging (Staging workspace) | `voxtable-stg-retell-api-key` | GCP Secret Manager, project `bp-voxtable-stg` — `gcloud secrets versions access latest --secret voxtable-stg-retell-api-key --project bp-voxtable-stg` |
-| Production (Biteperk workspace) | `RETELL_API_KEY` in the production env | The VM env / prod Terraform map — one key per environment, atomic cutover |
+| Production (Biteperk workspace) | `voxtable-prod-retell-api-key` | GCP Secret Manager, project `bp-voxtable-prod` — one key per environment |
 
 The workspace's single API key doubles as its webhook secret (badged "Webhook key") — both
 env values take the same string. Twilio-side keys (incl. the AU1 regional pair) are in
@@ -32,7 +32,8 @@ env values take the same string. Twilio-side keys (incl. the AU1 regional pair) 
    response; a 200 with silently-dropped fields has happened.
 4. Post-snapshot + a README saying what changed, why, the measured evidence, and the
    rollback line ("re-apply the pre snapshot: one PATCH per object"). Commit.
-5. A test call (the ear battery, or at minimum `review-call.mjs latest` on the next real call).
+5. A staging test call and ear battery. Production changes receive only configuration
+   read-back and monitoring of the next genuine customer call.
 
 ## Signed probes (exercise the production-grade signature path, no phone needed)
 

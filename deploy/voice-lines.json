@@ -21,14 +21,11 @@
       "api_base": "https://api.biteperk.com.au",
       "retell_workspace": "Biteperk",
       "retell_credentials": {
-        "via": "vm-ssh",
-        "instance": "core-central-vm",
-        "zone": "us-central1-a",
-        "gcp_project": "vocotable-497209",
-        "env_file": "/opt/vocotable/.env",
-        "api_key_var": "RETELL_API_KEY",
-        "webhook_secret_var": "RETELL_WEBHOOK_SECRET",
-        "note": "The repo's local .env holds a DIFFERENT workspace's key (the legacy Algorythmos one). Never use it for this line."
+        "via": "secret-manager",
+        "gcp_project": "bp-voxtable-prod",
+        "api_key_secret": "voxtable-prod-retell-api-key",
+        "webhook_secret_is_api_key": true,
+        "note": "Production credentials come only from bp-voxtable-prod Secret Manager. Never use the repository .env or sandbox VM credentials for this line."
       },
       "restaurant_id": "44444444-4444-4444-8444-444444444444",
       "venue_name": "Mazcina Resto-Bar",
@@ -62,11 +59,8 @@
       ],
       "twilio_au1_key_secret": "voxtable-prod-twilio-us1-key",
       "db": {
-        "via": "vm-ssh",
-        "instance": "core-central-vm",
-        "zone": "us-central1-a",
-        "gcp_project": "vocotable-497209",
-        "container": "vocotable-postgres-1"
+        "via": "unreachable",
+        "note": "Production Cloud SQL is private. Change and verify venue bindings through the production admin API; never query or copy the sandbox VM database."
       },
       "customer_facing": false,
       "notes": "Not customer-facing: the fixed ~7.6s drop is UNRESOLVED and reproduced on US1 on 31 Aug 2026 (1 in 4 calls). Chain otherwise proven end to end that day — a real call booked Johnson, 3 people, 19:30, and the row landed in Postgres.",
@@ -107,7 +101,7 @@
         "gcp_project": "bp-voxtable-stg",
         "api_key_secret": "voxtable-stg-retell-api-key",
         "webhook_secret_is_api_key": true,
-        "note": "The Staging workspace's single API key is badged as its webhook key, so both take the same string. Verified 3 Sep 2026 that the Biteperk (production) workspace is the SAME: one key badged Webhook, and the VM's RETELL_API_KEY and RETELL_WEBHOOK_SECRET hash identical to it. An earlier version of this note claimed production differed; it did not."
+        "note": "The Staging workspace's single API key is badged as its webhook key, so both take the same string. Production follows the same Secret Manager pattern in its own project."
       },
       "restaurant_id": "33333333-3333-4333-8333-333333333333",
       "venue_name": "Mazcina Resto-Bar",
@@ -157,14 +151,11 @@
       "api_base": "https://api.biteperk.com.au",
       "retell_workspace": "Biteperk",
       "retell_credentials": {
-        "via": "vm-ssh",
-        "instance": "core-central-vm",
-        "zone": "us-central1-a",
-        "gcp_project": "vocotable-497209",
-        "env_file": "/opt/vocotable/.env",
-        "api_key_var": "RETELL_API_KEY",
-        "webhook_secret_var": "RETELL_WEBHOOK_SECRET",
-        "note": "Same workspace as +61468202846. The repo's local .env holds the LEGACY Algorythmos key — never use it for this line."
+        "via": "secret-manager",
+        "gcp_project": "bp-voxtable-prod",
+        "api_key_secret": "voxtable-prod-retell-api-key",
+        "webhook_secret_is_api_key": true,
+        "note": "Same production workspace as +61468202846. Credentials come only from bp-voxtable-prod Secret Manager."
       },
       "restaurant_id": "22222222-2222-4222-8222-222222222222",
       "venue_name": "Cuban Corner Parramatta",
@@ -202,14 +193,11 @@
         "account and 401 — do not reach for them."
       ],
       "db": {
-        "via": "vm-ssh",
-        "instance": "core-central-vm",
-        "zone": "us-central1-a",
-        "gcp_project": "vocotable-497209",
-        "container": "vocotable-postgres-1"
+        "via": "unreachable",
+        "note": "Production Cloud SQL is private. Change and verify venue bindings through the production admin API; never query or copy the sandbox VM database."
       },
       "customer_facing": false,
-      "notes": "Not customer-facing yet: the venue keeps its own line until a dress-rehearsal call passes. Imported to Retell and fully bound as of 31 Aug 2026 — assert-line passes all 17 applicable checks including the Twilio trunk layer; the earlier 'not imported, not bound' note here was stale and misread as a blocker. Still no Disaster Recovery URL on trunk TK50f2a0cc6c4906a1b946867489716548 (verified null, 31 Aug), so a Retell outage gives callers dead air."
+      "notes": "Not customer-facing yet: activation requires the equivalent venue twin to pass the full staging rehearsal. Do not test this production line. Imported to Retell and fully bound as of 31 Aug 2026 — assert-line passes all 17 read-only configuration checks including the Twilio trunk layer. Still no Disaster Recovery URL on trunk TK50f2a0cc6c4906a1b946867489716548 (verified null, 31 Aug), so a Retell outage gives callers dead air."
     }
   }
 }

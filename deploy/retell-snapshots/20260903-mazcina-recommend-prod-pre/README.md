@@ -1,5 +1,8 @@
 # Mazcina production — pre-snapshot before the recommend / menu-status / party-cap prompt
 
+> Historical snapshot only. The VM credential provenance below is obsolete and is not a current
+> production procedure. Production credentials come from `bp-voxtable-prod` Secret Manager.
+
 **Date:** 3 September 2026
 **Agent:** `agent_b6b6488af08b82d80e8f4d270a` (Mazcina Resto-Bar (production))
 **LLM:** `llm_5f642f051bb83c28d02cea4e1cbc` — prompt 11,889 chars at snapshot time

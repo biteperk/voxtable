@@ -83,10 +83,10 @@ Deliberate, atomic, never partial:
   DB rows, the no-disclosure greeting.
 - **One Retell account per environment** — `RETELL_API_KEY`/`RETELL_WEBHOOK_SECRET` are an
   atomic env cutover; there is no gradual migration.
-- Run the FULL battery on the production line before calling it live, and know the pilot-line
-  history: the live pilot LLM (`llm_2cad4da6…`, Algorythmos workspace) still carries
-  `speak_after_execution: false` everywhere — fix at cutover, not before (another company's
-  workspace).
+- Do not repeat the battery on the production line. The full machine and ear battery must
+  pass on the venue's staging twin before promotion. In production, read the promoted
+  configuration back without mutation and monitor genuine customer calls. Never create
+  a test booking, order, call log or other dummy row in production.
 
 ## Scale notes (many venues)
 

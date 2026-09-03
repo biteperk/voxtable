@@ -25,10 +25,9 @@ for number in ${=lines}; do
   tw=$(node -e "console.log(require('./deploy/voice-lines.json').lines['$number'].twilio_au1_key_secret || '')")
   sid="" secret=""
   if [ -n "$tw" ]; then
-    # NOT always the Retell project: a line can hold its Retell key on the VM while its
-    # Twilio key lives in a GCP project (Cuban Corner does). Deriving one from the other
-    # finds nothing, passes empty credentials, and the trunk layer quietly reports itself
-    # unverified — which is the one thing this checker exists to prevent.
+    # Keep the Twilio project explicit. Sandbox declarations may use a different credential
+    # source, while production credentials must remain in bp-voxtable-prod Secret Manager.
+    # Guessing the project can pass empty credentials and leave the trunk unverified.
     proj=$(node -e "const l=require('./deploy/voice-lines.json').lines['$number']; console.log(l.twilio_key_project || l.retell_credentials.gcp_project || 'bp-voxtable-stg')")
     sid=$(gcloud secrets versions access latest --secret="${tw}-sid" --project="$proj" 2>/dev/null)
     secret=$(gcloud secrets versions access latest --secret="${tw}-secret" --project="$proj" 2>/dev/null)
