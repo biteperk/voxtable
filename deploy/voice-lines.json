@@ -107,7 +107,7 @@
         "gcp_project": "bp-voxtable-stg",
         "api_key_secret": "voxtable-stg-retell-api-key",
         "webhook_secret_is_api_key": true,
-        "note": "The Staging workspace's single API key is badged as its webhook key, so both take the same string. Production does NOT work this way."
+        "note": "The Staging workspace's single API key is badged as its webhook key, so both take the same string. Verified 3 Sep 2026 that the Biteperk (production) workspace is the SAME: one key badged Webhook, and the VM's RETELL_API_KEY and RETELL_WEBHOOK_SECRET hash identical to it. An earlier version of this note claimed production differed; it did not."
       },
       "restaurant_id": "33333333-3333-4333-8333-333333333333",
       "venue_name": "Mazcina Resto-Bar",
