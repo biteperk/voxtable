@@ -50,9 +50,10 @@ reached the real backend.
 0c. **Terraform parity before the flip** (`[abhi]` applies): `SELF_SERVE_SIGNUP_ENABLED=true`
    (the fix), `EMAIL_VERIFICATION_CODE_ENABLED=true`, `ORDER_FIRE_AT_ENABLED=true`,
    `KITCHEN_LEAD_MINUTES=25`, `VOICE_AUTOBOOK_MAX_PARTY=4`, `STRIPE_CONNECT_ENABLED=true`,
-   `STRIPE_TRIAL_DAYS=7`, and the **`RETELL_WEBHOOK_SECRET`** managed secret — **merged as
-   platform PR #68 and the secret set in the production environment on 3 Sep; apply still
-   pending.** Verified the same day by hash: the Biteperk workspace has one key badged
+   `STRIPE_TRIAL_DAYS=7`, and the **`RETELL_WEBHOOK_SECRET`** managed secret — **✅ applied
+   3 Sep 2026** (platform PRs #68 + #69, apply run `33734906112`: 4 added, 4 changed, 1
+   destroyed — the destroy being the secret-version nonce helper; api and worker rolled new
+   revisions on the unchanged 1.1.0 images). Verified the same day by hash: the Biteperk workspace has one key badged
    Webhook, and the VM's `RETELL_API_KEY` and `RETELL_WEBHOOK_SECRET` are that same string
    (an earlier note claiming production differed from Staging was wrong). `env.ts` would fall
    back to the API key anyway, so the explicit secret is belt-and-braces, not a fix. Gate:
