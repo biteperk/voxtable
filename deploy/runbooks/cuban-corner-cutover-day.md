@@ -107,26 +107,30 @@ reached the real backend.
    credentials per `domain-migration.md`; Cloud Run should hold Biteperk-production's — confirm
    the SID is `ACd423bd09…`). Stripe and OCR must be settled before step 7: if Cloud Run's Stripe
    key is not the **live** key the VM bills with, every checkout after the flip is wrong.
-0o. **The missing verification code, 3 Sep — read from the ZeptoMail Biteperk dashboard
-   (org 7007381411, `agent_1`), the same account both the VM and Cloud Run send through
-   (token hash identical).** TWO separate faults:
-   - **The worker is not dispatching queued emails.** Last-24h counters: 0 sent, 0 delivered,
-     0 soft/hard bounces, **0 process failed** — i.e. the worker made zero send requests today,
-     even though the api returned a 429 resend-cooldown (a code row WAS queued). Egress is fine
-     (`vpc_egress = PRIVATE_RANGES_ONLY`, so public traffic to ZeptoMail bypasses the VPC; no
-     Cloud NAT is needed and none exists), `NOTIFICATIONS_ENABLED=true`, `EMAIL_PROVIDER=zeptomail`,
-     token present. So the fault is the worker itself. **Needs `[abhi]` to read
-     `voxtable-prod-worker` logs** (Sam's account is denied `logging.read` on the project) for
-     the `notificationWorker` tick — is it running, is it claiming email rows, is the ZeptoMail
-     call erroring. This is the blocker for even one signup.
-   - **The ZeptoMail account is unvalidated.** "Validation form yet to be submitted",
-     **0 / 10000 credits**, interim **daily limit of 100** emails. Even after the worker is fixed,
-     100/day caps how many venues can verify per day and unvalidated accounts are throttled.
-     `[sam]`: ZeptoMail dashboard → the **Customer Validation** card → **Complete**, submit the
-     form. Hard go-live blocker for "anyone can sign up".
-   VoxTable codes DID deliver before the move (real codes in `vocotable@biteperk.com.au` on
-   Aug 7 and Aug 12), so the template and the send path are sound — this regressed with the
-   Cloud Run worker, not the code.
+0o. **The missing verification code, 3 Sep — ROOT CAUSE: the ZeptoMail account ran out of
+   credits.** Worker log (`voxtable-prod-worker`, readable once platform #71 granted
+   `roles/viewer`) shows every send failing identically, retried with backoff, then marked
+   failed:
+   `notification_failed  ZeptoMail 429 {"code":"TM_5001","details":[{"code":"LE_102","message":"Credit exhausted"}]}`.
+   ZeptoMail `Subscription` (Biteperk org `7007381411`, `agent_1`): **Credits Available 0,
+   Emails left 0, Auto Top-up DISABLED**; one credit (= 10,000 emails) bought **30 Jul 2026** and
+   spent. That credit powered every send since (the Aug 7/12/28 codes); when it hit 0 every
+   send began returning 429. **Trap for the next person:** the ZeptoMail *dashboard* showed
+   "0 sent / 0 failed" for the day because a request rejected at the API never becomes an email
+   in its counters — two rounds of diagnosis blamed the worker on that evidence, wrongly.
+   Everything else was healthy and never the fault: worker ticking and claiming, api writing
+   the row, domain verified, token identical to the VM's by hash, egress fine
+   (`vpc_egress = PRIVATE_RANGES_ONLY`, public traffic bypasses the VPC).
+   **Fix `[sam]`, three clicks, no code:** ZeptoMail → Subscription → **Buy credits**; toggle
+   **Auto Top-up ON** (the durable half — the credit ran out silently); left-rail **Customer
+   Validation → Complete** (unvalidated accounts are throttled; needed at volume). Pending rows
+   send on the next tick; rows that hit 5 attempts stay `failed` and that is fine — codes expire
+   in 10 min and the user just presses "Send a new code".
+   **Guardrail gap this exposed:** the health alerter is `health_alerter_not_started` on Cloud
+   Run prod because `OPS_SLACK_WEBHOOK_URL` is absent from both Terraform roots, so the
+   `failed > 0` notifications alert that would have fired never could. Wire the webhook, and add
+   an `oldest_pending_at > 10 min` rule beside `failed > 0` (the rows sat `pending` through the
+   backoff ladder before failing). Both are in the same-day follow-up.
 0n. **The worker's CPU allocation was inherited, not declared.** Every outbox tick —
    verification codes, booking SMS, Cal.com mirror, reapers — is a `setInterval` that only runs
    while the instance has CPU. The module never set `cpu_idle`; the staging worker's live
