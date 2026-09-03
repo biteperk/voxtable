@@ -1,0 +1,13 @@
+{
+  "hosting": [
+    {
+      "target": "app",
+      "public": "deploy/legacy-redirect",
+      "ignore": ["firebase.json", "README.md"],
+      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "headers": [
+        { "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
+      ]
+    }
+  ]
+}

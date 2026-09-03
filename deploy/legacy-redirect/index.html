@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>VoxTable has moved</title>
+<script>
+  // Path-preserving hop to the canonical dashboard host. This page is deployed to
+  // the legacy `vocotable` Firebase Hosting site (vocotable.web.app,
+  // vocotable.biteperk.com.au) once the API runs on Cloud Run: the bundle that used
+  // to live here signed users in against the `vocotable` Firebase project, which the
+  // new backend no longer accepts, so a stale bookmark must land on the new host
+  // rather than on a login that silently fails.
+  (function () {
+    var target = "https://voxtable.biteperk.com.au" + location.pathname + location.search + location.hash;
+    location.replace(target);
+  })();
+</script>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 16px/1.5 system-ui, sans-serif; background: #0b0b0c; color: #f5f5f4; }
+  main { max-width: 32rem; padding: 2rem; text-align: center; }
+  a { color: #f5c418; }
+</style>
+</head>
+<body>
+<main>
+  <h1>VoxTable has moved</h1>
+  <p>The dashboard now lives at <a href="https://voxtable.biteperk.com.au">voxtable.biteperk.com.au</a>. You are being sent there now — update your bookmark.</p>
+</main>
+</body>
+</html>

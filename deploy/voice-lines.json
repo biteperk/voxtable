@@ -48,9 +48,18 @@
         "Mazcina Resto-Bar"
       ],
       "twilio_account_sid": "ACd423bd09e9649e552a0b6d19a9eed338",
-      "twilio_trunk_sid": "TK3140735e33b7b22007a88f00f15e0e9a",
+      "twilio_trunk_sid": "TK50f2a0cc6c4906a1b946867489716548",
       "twilio_region": "us1",
-      "termination_uri": "voxtable-prod-us1-mazcina.pstn.twilio.com",
+      "termination_uri": "voxtable-prod-us1.pstn.twilio.com",
+      "$trunk_declaration_comment": [
+        "3 Sep 2026: the number was read from the Twilio API sitting on the SHARED US1 trunk",
+        "voxtable-prod-us1 (TK50f2a0cc…), alongside Cuban Corner — not on the empty",
+        "voxtable-prod-us1-mazcina trunk (TK3140735e…) this file declared since 31 Aug. Both",
+        "trunks originate to sip.retellai.com over TLS with Secure Trunking on, so calls were never",
+        "at risk; check [16] was declaration drift. The declaration was corrected to reality rather",
+        "than moving a live number that already drops 1 in 4 calls. TK3140735e… is retained, empty,",
+        "as the artefact of the 31 Aug region experiment."
+      ],
       "twilio_au1_key_secret": "voxtable-prod-twilio-us1-key",
       "db": {
         "via": "vm-ssh",

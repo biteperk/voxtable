@@ -4,11 +4,14 @@ name: Deploy frontend to Firebase
 # workflow only downloads that artifact and deploys it:
 # - integration -> staging Firebase environment
 # - main -> production Firebase environment
+#
+# It is started by CI's `dispatch-deploys` job (`gh workflow run … --ref <branch>`)
+# or by hand. It used to chain on `workflow_run`, but such runs are attributed to
+# the default branch, so the production environment's main-only branch policy
+# rejected every main promotion before a step ran (issue #357). The
+# `workflow_run.*` fallbacks in the expressions below are kept only so an
+# historical run re-run from the UI still resolves.
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [integration, main]
   workflow_dispatch:
     inputs:
       environment:

@@ -4,11 +4,13 @@ name: Deploy backend to Cloud Run
 # image tag produced by the successful CI run:
 # - integration -> staging, tagged with the commit SHA
 # - main -> production, tagged with package.json semver
+#
+# Started by CI's `dispatch-deploys` job (`gh workflow run … --ref <branch>`) or
+# by hand. The former `workflow_run` chain was attributed to the default branch
+# and so failed the production environment's main-only policy on every
+# promotion (issue #357); the `workflow_run.*` fallbacks below remain only for
+# re-running historical runs from the UI.
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [integration, main]
   workflow_dispatch:
     inputs:
       environment:
