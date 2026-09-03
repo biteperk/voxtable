@@ -1,6 +1,6 @@
 ---
 name: retell-agent-quality
-description: Building, tuning, verifying and diagnosing VoxTable's Retell voice agents — the agent half of the telephony stack (numbers/trunks/SIP are the sibling skill twilio-au-number-provisioning). Use whenever someone is building or cloning a venue agent, polishing or editing a prompt or greeting, choosing or switching a voice, asking about Expressive Mode, complaining the agent "sounds robotic", "takes time to respond", talks over callers, monologues, doesn't know the opening hours or "thinks about" whether the venue is open, gives dead air after checking something, names the wrong venue or owner, speaks a wrong date, mishandles a withheld caller ID, or when a call needs reviewing ("analyse this call", "why did it hang up", "she was confused"), latency needs measuring or cutting, an agent is being promoted from Staging to the Biteperk (production) workspace, or Retell/Twilio call APIs need querying. Also whenever a Retell dashboard draft exists, before ANY dashboard publish — a published draft can erase API-applied fixes. Even for one small prompt edit: the change discipline here (snapshot, PATCH, read-back, test call) is the point.
+description: Building, tuning, verifying and diagnosing VoxTable's Retell voice agents — the agent half of the telephony stack (numbers/trunks/SIP are the sibling skill twilio-au-number-provisioning). Use whenever someone is building or cloning a venue agent, polishing or editing a prompt or greeting, choosing or switching a voice, asking about Expressive Mode, complaining the agent "sounds robotic", "takes time to respond", talks over callers, monologues, doesn't know the opening hours or "thinks about" whether the venue is open, gives dead air after checking something, names the wrong venue or owner, speaks a wrong date, mishandles a withheld caller ID, or when a call needs reviewing ("analyse this call", "why did it hang up", "she was confused"), latency needs measuring or cutting, an agent is being promoted from Staging to the Biteperk (production) workspace, or Retell/Twilio call APIs need querying. Also whenever a Retell dashboard draft exists, before ANY dashboard publish — a published draft can erase API-applied fixes. Even for one small prompt edit: the change discipline here (snapshot, PATCH, read-back, staging test call) is the point.
 ---
 
 # Retell agent quality — build, tune, verify, diagnose
@@ -18,12 +18,12 @@ experience of VoxTable is whether Bella sounds human, knows the venue, and never
 2. **Every change goes through the API**: fresh pre-snapshot → PATCH → **read the config back
    and assert it** (never trust the write response) → post-snapshot with README → commit.
    Rollback is always "re-apply the pre snapshot", one PATCH per object.
-3. **The dashboard is for ear-tests and voice auditions ONLY.** Dashboard edits create drafts;
+3. **The staging dashboard is for ear-tests and voice auditions ONLY.** Dashboard edits create drafts;
    **publishing a stale draft erases every API-applied fix since the draft was opened** —
    this nearly reverted a full day of fixes twice on 19 Aug. If a draft exists, discard it.
-4. **One lever per change**, so the next test call attributes cleanly. **Never claim a win
-   without a measured call** — config that "should" be faster or more natural counts for
-   nothing until `latency-report.mjs` and an ear say so.
+4. **One lever per change**, so the next staging test call attributes cleanly. **Never claim a win
+   without a measured staging call** — config that "should" be faster or more natural counts for
+   nothing until `latency-report.mjs` and an ear say so. Never test changes on production.
 5. **A document may only claim what a read-back printed.** On 20 Aug 2026 a snapshot README
    recorded a rename + pronunciation fix as applied to *both* Mazcina agents. It had reached
    staging only; production sat untouched for a day while the file said otherwise — and the
@@ -33,15 +33,14 @@ experience of VoxTable is whether Bella sounds human, knows the venue, and never
    → the `restaurants` row. A perfect agent answers nothing if any other link is wrong, and
    three of the four were broken at once on production on 20 Aug. Declared state lives in
    [`deploy/voice-lines.json`](../../../deploy/voice-lines.json); **run
-   `npm run check:voice-lines` before and after any routing change**, including raw SQL —
-   which is the only path on production, since it sits at migration 024 and the admin bind
-   route (the one place that verifies an agent exists) does not exist there.
+   `npm run check:voice-lines` before and after any routing change**. Production bindings are
+   changed through the Cloud Run admin API; never use sandbox SQL as a production path.
 7. **A number lives in exactly one Retell workspace, account-wide.** Importing it elsewhere
    silently evicts it from yours, and the symptom is a number that 404s locally while the
    import API says it already exists.
 8. **Check WHICH WORKSPACE your key opens before believing anything it tells you.** The repo's
-   local `.env` holds the **legacy Algorythmos** key; production's lives only in the VM's
-   `/opt/vocotable/.env`. A wrong key never errors — it returns clean 404s, so a healthy line
+   local `.env` may hold a sandbox or legacy key; production's lives in `bp-voxtable-prod`
+   Secret Manager. A wrong key never errors — it returns clean 404s, so a healthy line
    reads as broken and the "repair" breaks it for real. That is exactly what happened on
    20 Aug 2026: a two-hour production outage caused by a diagnosis, not a fault. Never pass a
    key by hand; `assert-line.mjs`/`apply-line.mjs` load `retell_credentials` from

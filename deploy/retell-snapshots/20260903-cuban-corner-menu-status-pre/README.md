@@ -1,5 +1,8 @@
 # Cuban Corner production — pre-snapshot before adding `{{menu_status}}`
 
+> Historical snapshot only. The VM credential provenance below is obsolete and is not a current
+> production procedure. Production credentials come from `bp-voxtable-prod` Secret Manager.
+
 **Date:** 3 September 2026
 **Agent:** `agent_2892d65ceace4e68d8a3f3e80c` (Cuban Corner Parramatta (VoxTable))
 **LLM:** `llm_53c6e9de9aac3b60270ffdd6bcba` — prompt 19,369 chars at snapshot time

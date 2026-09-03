@@ -6,9 +6,9 @@
 //   tsx scripts/import-recommendations.ts \
 //     --restaurant-id <uuid> --file <ranked.json> --emit-sql out.sql
 //
-// --emit-sql needs NO database and writes a file to apply with psql, for hosts
-// only psql reaches — which is the production VM. It is the same path
-// import-menu.ts offers and the one every venue's data has actually taken.
+// --emit-sql needs NO database and writes a file for review or application to
+// a sandbox through psql. Production imports use a reviewed Cloud SQL/admin
+// path; sandbox data never promotes.
 //
 // Input shape is the owner's own, NOT the menu-import shape:
 //   { restaurant, categories: [ { category, items: [ { priority, name, tags } ] } ] }
@@ -54,8 +54,8 @@ function lit(value: string): string {
  * database.
  *
  * Each dish is its own DO block that RAISEs when nothing matched, because the
- * hard-failure rule has to survive the trip: on the VM there is no script left
- * to refuse the file, so the SQL must refuse itself. One transaction, so a
+ * hard-failure rule has to survive the trip to any controlled database session,
+ * so the SQL must refuse itself. One transaction means a
  * single bad name rolls the whole thing back exactly as the live path does.
  */
 function buildSql(restaurantId: string, categories: SourceCategory[]): string {

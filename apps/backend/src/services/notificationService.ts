@@ -113,7 +113,7 @@ const TEMPLATES: Record<NotificationKind, (v: Vars) => { subject: string; body: 
   }),
   number_ready: (v) => ({
     subject: `Your VoxTable number is ready`,
-    body: `Your dedicated number ${v.number ?? ""} is live. Log in and follow the "Connect your phone" step to forward your calls and run a quick test.`
+    body: `Your dedicated number ${v.number ?? ""} is live. Log in and follow the "Connect your phone" step to forward your calls and activate the reviewed configuration.`
   }),
   live: (v) => ({
     subject: `🎉 ${v.restaurant ?? "Your restaurant"} is live on VoxTable`,

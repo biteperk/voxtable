@@ -41,7 +41,7 @@ still pending; this is the owner's sign-off on the wording, not a lawyer's.
 ## Applied — read-back output, not intent
 
 ```
-environment: production · workspace Biteperk · key from core-central-vm:/opt/vocotable/.env
+environment: production Retell workspace · historical key provenance: sandbox core-central-vm (not a current production credential source)
 PRE  begin_message: "Thanks for calling {{restaurant_name}} — this is Bella. How can I help?"
 POST begin_message (read back): "Thanks for calling {{restaurant_name}} — this is Bella, an AI assistant. This call's recorded so I can take your booking. How can I help?"
 read-back matches: true

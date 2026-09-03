@@ -66,7 +66,7 @@ Rules it burned into this skill:
   ambient-sound self-interruption for half a day because the greeting "died at 7.6 s".
 - One surviving call proves nothing at ~50% intermittency (the CLIR "clue" was retracted the
   same hour a withheld-ID call died on schedule).
-- Discriminating tests, cheapest first: calls from a DIFFERENT handset/carrier; the
+- Discriminating tests run only on the staging line, cheapest first: calls from a DIFFERENT handset/carrier; the
   **synthetic self-call** (Twilio REST outbound, `From`=`To`=the DID, TwiML `<Pause>` — a
   Twilio-originated caller on a completely different ingress path); then the Twilio ticket —
   only Twilio can read the SIP/Q.850 release cause on the dead legs.
@@ -75,6 +75,6 @@ Rules it burned into this skill:
 
 ## Continuous watching
 
-`list-calls` with a timestamp watermark, polled every 30–45 s, catches every test call the
-moment it ends (the pattern behind the 19 Aug live watches). For anything longer than a test
+`list-calls` with a timestamp watermark, polled every 30–45 s, catches every staging test call the
+moment it ends. Production call review is monitoring of genuine customer traffic only. For anything longer than a test
 session, wire the `call_analyzed` webhook data already in `call_logs` instead of polling.

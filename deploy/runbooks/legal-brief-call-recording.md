@@ -42,7 +42,7 @@ guessed at.
 | Data | Where it is stored |
 |---|---|
 | Full call audio recording | Retell AI's storage; we retain the URL |
-| Full verbatim transcript, both sides | Our database (self-hosted Postgres, Sydney) |
+| Full verbatim transcript, both sides | Our production Cloud SQL database in Sydney |
 | Caller phone number | Our database; also held by Twilio as carrier records |
 | Caller name | Our database — collected conversationally by the agent |
 | AI-generated call summary | Our database |
@@ -59,7 +59,7 @@ names, phone numbers, and incidental personal or health information.
 |---|---|---|
 | **Retell AI** | Voice agent platform | Audio, recordings, transcripts, LLM prompts and outputs. Their own LLM subprocessors see transcript content |
 | **Twilio** | Telephony / SIP | Calling and called numbers, call metadata, media in transit |
-| **Self-hosted Postgres** (Google Cloud VM) | Primary store | Transcripts, summaries, phone numbers, names, bookings |
+| **Cloud SQL** (`voxtable-prod-postgres`) | Primary production store | Transcripts, summaries, phone numbers, names, bookings |
 | **Google Cloud Storage** (Sydney) | Nightly database backups | Full copies of the above, ~30-day rolling window |
 | **Cal.com** | Booking mirror | Customer name, booking time |
 | **Google / Firebase** | Dashboard sign-in only | Staff identities — not caller data |

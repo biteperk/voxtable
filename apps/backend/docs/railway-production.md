@@ -1,7 +1,7 @@
 # Railway Production Setup
 
-> Historical alternative. Current production runs on the GCP VM with Docker
-> Compose, nginx, and Firebase Hosting. Use [`gcp-deployment.md`](./gcp-deployment.md)
+> Historical alternative. Current production runs on GCP Cloud Run with Cloud SQL
+> and Firebase Hosting. Use [`gcp-deployment.md`](./gcp-deployment.md)
 > for the active deployment path. Keep this file only as a reference if Railway
 > is reconsidered later.
 
@@ -102,15 +102,14 @@ For the preferred production path, route the Twilio Australian number into Retel
 
 ## Production Verification
 
-Run these checks after deployment:
+This document is retained for history; the same production-safety rule applies
+to Cloud Run. After deployment, only:
 
 1. `GET https://<your-railway-domain>/health` returns `status: ok` and `database: ok`.
 2. Railway deploy logs show migrations completed before the app starts.
-3. Production restaurant, menu, and membership data has been provisioned
-   intentionally for that deployment.
-4. RetellAI custom function smoke call can check availability.
-5. RetellAI custom function smoke call can create a booking.
-6. Twilio status callback writes a `call_logs` row.
-7. A real phone call creates one confirmed reservation in Postgres.
+3. The effective configuration is read back without mutation.
+4. Monitoring is receiving normal signals from genuine customer traffic.
 
-Do not declare a Railway deployment production-ready until checks 1-7 pass.
+Run custom-function smoke calls, Twilio callbacks, bookings and real-call
+batteries in staging only. Never create dummy, fixture, synthetic, rehearsal or
+seed data in production.

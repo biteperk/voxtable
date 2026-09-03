@@ -1,5 +1,10 @@
 # Call briefing — Sam ↔ Abhishek, Mon 18 Aug 2026
 
+> Historical meeting record. References to a "production VM" describe an abandoned assumption.
+> `core-central-vm` is sandbox-only; current production is Cloud Run/Cloud SQL and receives no VM data.
+> Any production test, rehearsal, dummy-data or seed instruction below is also superseded:
+> all testing runs in staging, and production verification is non-mutating only.
+
 Context: Abhishek's messages of 16–17 Aug — Stripe key + legal docs fixed on staging (PR #195),
 onboarding a new restaurant now sticks at "provisioning in progress", and "what is the admin
 dashboard and how is it deployed on staging".
@@ -90,9 +95,8 @@ Sign-in is Google-only (`signInWithPopup`), the match is exact-string, and `bite
 resolves to Microsoft 365 mail — so the mailbox existing is not the same as a Google account
 existing. If `/admin` still refuses him, that is the reason, not the deploy.
 
-⚠️ **Production is untouched** — deliberately. `DASHBOARD_ADMIN_EMAILS` is unset in the
-platform repo's `production` environment, and production is still the VM, which is not on a
-build carrying `/admin` at all.
+⚠️ **Historical status only.** The current production environment is `bp-voxtable-prod` on
+Cloud Run/Cloud SQL; the VM discussed in this dated briefing is sandbox-only.
 
 ### How to finish a STAGING TEST tenant (the apply has landed — this works now)
 

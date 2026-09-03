@@ -36,23 +36,19 @@ are currently in NSW.
 Schema source: `apps/backend/db/migrations/001_initial_schema.sql` (call_logs at ~:61),
 `016_call_log_caller_name.sql`.
 
-### 1a. Backup copies — added 3 Aug 2026
+### 1a. Production backup copies
 
 The inventory above describes the *live* store. Transcripts and caller phone numbers also
 exist in **database backups**, which is material to any retention or deletion question:
 
 | Location | Contents | Retention |
 |---|---|---|
-| `gs://vocotable-backups-497209/` (GCS, australia-southeast1 / Sydney) | Nightly `pg_dump` of the whole database, including `call_logs.transcript`, `call_logs.caller_phone` and `customers` | ~30 daily snapshots on a rolling window |
-| `/opt/vocotable/backups/` on `core-central-vm` | Second, local-only nightly dump of the same data | Local pruning |
+| Cloud SQL automated backups and transaction logs in `bp-voxtable-prod` | Production database, including call metadata stored by VoxTable | Per the production Cloud SQL retention/PITR configuration |
+| Sandbox VM or legacy GCS dumps | Sandbox/legacy data only | Not part of production recovery or retention |
 
-Verified 3 Aug 2026: 31 objects, newest `db-20260803-062501.sql.gz`, schema identical to
-the live database. Data residency is Australian (Sydney region) for the offsite copy.
-
-**Implication for deletion:** "delete the corpus" is not a single action. It means
-Postgres *and* Retell's storage *and* up to 30 days of rolling backups, both offsite and
-on-VM. A deletion instruction that stops at the live database leaves recoverable copies
-for a further 30 days.
+**Implication for deletion:** "delete the corpus" is not a single action. It means Cloud SQL,
+Retell storage and retained Cloud SQL backups/transaction logs. Sandbox artifacts are governed
+separately and must never be described as production copies.
 
 ## 2. Who processes it (subprocessors actually in the data path)
 
@@ -60,13 +56,13 @@ for a further 30 days.
 |---|---|---|
 | **Retell AI** | Voice agent platform | Call audio, recordings, transcripts, LLM prompts/outputs; their LLM subprocessors see transcript content |
 | **Twilio** | Telephony / SIP | Caller + called numbers, call metadata, SIP media transit |
-| **Postgres (self-hosted, GCP VM `core-central-vm`)** | Primary store | Transcripts, summaries, phone numbers, names, bookings |
+| **Cloud SQL (`voxtable-prod-postgres`)** | Primary production store | Transcripts, summaries, phone numbers, names, bookings |
 | **Cal.com** | Booking mirror | Customer name, booking time; synthetic email |
 | **Google/Firebase** | Dashboard auth only | Staff/owner identities, not caller data |
 | **Slack (ops webhook)** | Alerting | Aggregate counts only; logger redacts PII (`apps/backend/src/utils/logger.ts`) |
 | **Stripe** | Billing | Restaurant billing data, not caller data |
 | **Sentry** | Error tracking | Scaffolding present; `SENTRY_DSN` unset in production today → inactive |
-| **Google Cloud Storage** (`vocotable-backups-497209`, Sydney) | Backup storage | Full nightly database dumps — transcripts, caller phone numbers, names. See §1a |
+| **Google Cloud SQL backup/PITR storage** | Production recovery | Database backup and transaction-log copies; see §1a |
 
 ## 3. What the signed agreement promises vs what the system does
 

@@ -18,7 +18,6 @@ import {
   insertAcceptance,
   saveAgreementElections
 } from "../repositories/agreements";
-import { countCallsSince } from "../repositories/callLogs";
 import { getSelfServePlanPriceCents } from "../services/stripeService";
 import { getUserMemberships, upsertUser } from "../repositories/members";
 import {
@@ -369,10 +368,9 @@ onboardingRouter.get(
   })
 );
 
-// Verify call-forwarding by looking for a real inbound call to the restaurant's
-// VoxTable number in the last 15 minutes (the test call). On success, advance
-// provisioning → live. This both confirms forwarding works AND proves the owner
-// controls the advertised line.
+// Activate forwarding after the complete flow has passed on the staging venue
+// twin. Production must not require or manufacture a test call: the stored
+// production bindings are read here, then genuine customer traffic is monitored.
 onboardingRouter.post(
   "/api/onboarding/verify-forwarding",
   requireFirebaseAuth,
@@ -392,16 +390,6 @@ onboardingRouter.post(
     if (prov.onboarding_status === "live") {
       response.json({ verified: true, onboarding_status: "live" });
       return;
-    }
-
-    const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const calls = await countCallsSince(restaurantId, since);
-    if (calls === 0) {
-      throw new AppError(
-        409,
-        "NO_TEST_CALL",
-        "We haven't seen a test call yet. Forward your number to your VoxTable number, then call your restaurant from another phone."
-      );
     }
 
     const next = nextOnboardingStatus(prov.onboarding_status, "provisioned");

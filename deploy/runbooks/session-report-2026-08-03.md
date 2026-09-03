@@ -1,5 +1,10 @@
 # Ops session report — 3 August 2026
 
+> Historical report. The `core-central-vm` environment described below is classified as sandbox,
+> not production. It is not a production traffic, credential, backup, rollback or migration source.
+> Any production test, rehearsal, dummy-data or seed instruction below is superseded. Testing runs
+> only in staging; production verification is non-mutating.
+
 Domain migration Phases 1–3, Stripe rebrand, and the Week-2 gate.
 Two GCP accounts, four vendor surfaces, five repo documents.
 
@@ -92,8 +97,9 @@ Connection name: `bp-voxtable-stg:australia-southeast1:voxtable-stg`
 
 ### Not verified
 
-The Artifact Registry binding is **in place, not proven**. Confirming a cross-project pull
-actually resolves needs a real Cloud Run deploy — that will be the first live test.
+The Artifact Registry binding was **in place, not proven** at the time. Under the current
+policy, prove cross-project pulls on staging. A production deployment receives only
+non-mutating revision/readiness verification.
 
 ---
 
@@ -252,8 +258,9 @@ the pre-fix config (`1a8c5dab`), the branch has `6ecff193`.
    agency domain — and unlike the API hostname, it can't be fixed with a DNS record.
 4. **Deploy the corrected nginx conf**, closing the repo-vs-VM drift that caused today's
    surprises.
-5. **Phase 4 for Cal.com, Retell, Twilio** — Retell and Twilio verify signatures against
-   the full request URL and each need a live test call.
+5. **Historical Phase 4 note for Cal.com, Retell, Twilio.** Current policy tests
+   signatures and calls in staging only; production uses configuration read-back
+   and monitoring of genuine traffic.
 6. **`GCP_VM_NAME` / `GCP_VM_ZONE`** are unset in the `production` GitHub environment. The
    first promotion of `integration` to `main` will fail its deploy.
 7. **Knowledge Catalog** is auto-enabled on the new Cloud SQL instance, sending metadata to
@@ -265,7 +272,7 @@ the pre-fix config (`1a8c5dab`), the branch has `6ecff193`.
 
 | | |
 |---|---|
-| Production VM | `core-central-vm`, `us-central1-a`, `vocotable-497209`, `136.113.35.88` |
+| Sandbox VM (historically mislabelled production) | `core-central-vm`, `us-central1-a`, `vocotable-497209`, `136.113.35.88` |
 | Staging DB | `bp-voxtable-stg:australia-southeast1:voxtable-stg` |
 | Prod secret | `voxtable-prod-env` in `bp-voxtable-prod` |
 | Backups | `gs://vocotable-backups-497209/` (Sydney), daily 06:25 UTC |

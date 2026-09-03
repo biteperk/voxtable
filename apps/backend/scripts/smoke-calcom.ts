@@ -18,8 +18,10 @@
  */
 
 import crypto from "node:crypto";
+import { assertSafeSmokeTarget } from "./lib/smokeTarget";
 
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
 const webhookSecret = process.env.CALCOM_WEBHOOK_SECRET ?? "";
 
 function signBody(body: string): string {

@@ -247,19 +247,6 @@ export async function getCallerPhoneByCallLogId(
   return result.rows[0]?.caller_phone ?? null;
 }
 
-/**
- * How many calls landed for a restaurant since `sinceIso`. Used to verify
- * call-forwarding during onboarding: a test call forwarded to the restaurant's
- * VoxTable number resolves the tenant by dialed number and writes a call_log,
- * so a non-zero count proves forwarding works.
- */
-export async function countCallsSince(restaurantId: string, sinceIso: string): Promise<number> {
-  const result = await pool.query<{ n: string }>(
-    "SELECT COUNT(*)::text AS n FROM call_logs WHERE restaurant_id = $1 AND created_at >= $2",
-    [restaurantId, sinceIso]
-  );
-  return Number(result.rows[0]?.n ?? "0");
-}
 
 /**
  * Resolve the restaurant_id for an in-progress call from its provider call id.

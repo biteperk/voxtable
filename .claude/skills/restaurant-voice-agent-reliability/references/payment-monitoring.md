@@ -169,6 +169,10 @@ the retry loop is the tool for "ours, but not ready yet".
 
 ## Required tests
 
+Run every integration and behaviour test below in staging. Pure, credential-free
+unit checks may run in CI. Never use Stripe live mode or production orders,
+calls, payments, fixtures or webhooks.
+
 | # | Objective | Setup | Execution | Expected | Failure signal |
 |---|---|---|---|---|---|
 | 1 | No stale read | Order marked settled on the primary | Read state immediately | Settled | "Not paid" right after payment |

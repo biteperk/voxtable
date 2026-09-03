@@ -78,9 +78,9 @@ good" from "not actually checking".
 
 ---
 
-## Acceptance checklist
+## Staging acceptance checklist
 
-Per environment, before it is trusted:
+Run every item below in staging before promotion:
 - [ ] Every automated suite green
 - [ ] Every identifier resolves in this environment ([rule 1](#1--every-identifier-belongs-to-its-own-environment))
 - [ ] No production hostname anywhere in a non-production config
@@ -105,14 +105,16 @@ After any change to agent behaviour, prompt, or tool contracts:
 
 ## Launch checklist
 
-- [ ] Acceptance passed in the production environment specifically
+- [ ] The complete acceptance and regression checklists passed in staging
+- [ ] Production health/readiness is green and configuration was read back without mutation
+- [ ] No dummy, fixture, synthetic, rehearsal or seed data exists in production
 - [ ] Refund path implemented **or** a written manual procedure that reverses both legs
 - [ ] Legal review where money or recording is involved — jurisdictional, needs long lead time
-- [ ] Required disclosures present in the greeting, verified **by listening**
-- [ ] Rollback rehearsed, with a known duration
-- [ ] Alerting live and **proven to fire**
+- [ ] Required disclosures present in the greeting, verified **by listening on staging**
+- [ ] Rollback rehearsed on staging, with a known duration
+- [ ] Alerting proven on staging and confirmed configured in production by read-back
 - [ ] Someone owns the first day, by name
-- [ ] Payment limits and fees confirmed against a real transaction
+- [ ] Payment limits and fees confirmed with a staging/test-mode transaction
 
 ---
 
@@ -124,9 +126,9 @@ cheapest information you will ever get.
 **First week, daily:** unresolved payment watchers · amount mismatches · refused-as-unavailable rate
 (a spike means the menu is stale) · no-match rate on item search · latency trend · abandoned calls.
 
-**Ongoing, automated and off-laptop:** end-to-end configuration checks on a schedule; identity and
-environment assertions; a synthetic call if your platform allows it; alerts routed where someone
-reads them.
+**Ongoing, automated and off-laptop:** production uses non-mutating configuration checks,
+health/readiness and monitoring. Synthetic calls and any checks that create state run only in
+staging; alerts are routed where someone reads them.
 
 > A check that runs only when someone remembers is a check that finds the problem after the customer
 > does.

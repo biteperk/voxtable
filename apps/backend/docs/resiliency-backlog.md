@@ -1,7 +1,7 @@
 # Resiliency backlog — fallback mechanisms per service
 
 **Status: BACKLOG. Nothing here is scheduled until the happy path is ready** (staging
-end-to-end green and the production promotion done) — per review on PR #105. This document
+end-to-end green and the Cloud Run production promotion done) — per review on PR #105. This document
 answers "what is the fallback mechanism for each of the services", records which fallbacks
 already exist, and parks the designs for the gaps.
 
@@ -16,7 +16,7 @@ already exist, and parks the designs for the gaps.
 | **Provisioning** (Twilio buy + Retell agent create) | Vendor 429/5xx, worker crash mid-step | Idempotent step saga with per-step payload, transient-vs-permanent classification, 10-min stuck-job reaper, paid-customer alert | Admin re-enqueue UI (backlog, low — direct SQL works) |
 | **Stripe webhooks** | Delivery failure, out-of-order events | Stripe retries; idempotent event log; unattributed-event alert | — |
 | **KDS** | Tablet offline / wifi down | Poll-based (no push dependency); DB-backed heartbeats + staleness alert (PR #104) | — |
-| **Database** | Data loss / corruption | Cloud SQL native automated backups + PITR (staging now, prod at cutover) — the decided mechanism (review on PR #103: GCP-native, nothing repo-side). VM interim: nightly pg_dump + restore runbook until the cutover | Post-cutover: retire the VM chain; run a timed PITR drill |
+| **Database** | Data loss / corruption | Cloud SQL native automated backups + PITR in staging and production — the decided mechanism (review on PR #103: GCP-native, nothing repo-side) | Run a timed PITR drill; sandbox VM backups are not production recovery |
 | **Deploy** | Bad revision reaches traffic | Cloud Run refuses boot-crashed revisions; recovery is a revision traffic rollback, and production deploys come from `main` only (review on PR #100 — no extra pipeline tooling needed) | Rehearse a revision rollback on staging once it boots; record the exact commands in `deploy/runbooks/rollback.md` |
 | **Whole worker process** | The process that alerts is dead | `OPS_HEARTBEAT_URL` dead-man's switch (PR #104) — external service alerts when pings stop | Point it at a real healthchecks.io check |
 

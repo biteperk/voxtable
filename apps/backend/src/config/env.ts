@@ -562,9 +562,9 @@ const envSchema = z
     // only a log line. Self-serve is not what makes the evidence matter — a
     // manually onboarded venue signs the same agreement.
     //
-    // NOTE for deploys: add LEGAL_DOCUMENTS_MANIFEST_URL to the Terraform env
-    // map (and the VM's .env) BEFORE promoting this code to production, or it
-    // dies on this gate at startup.
+    // NOTE for deploys: add LEGAL_DOCUMENTS_MANIFEST_URL to the production
+    // Terraform env map BEFORE promoting this code, or Cloud Run fails this
+    // startup gate.
     requireInProd(
       "LEGAL_DOCUMENTS_MANIFEST_URL",
       "LEGAL_DOCUMENTS_MANIFEST_URL is required in production (agreement acceptances are verified against the published manifest, not trusted from the browser)."

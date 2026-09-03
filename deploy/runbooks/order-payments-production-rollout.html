@@ -179,14 +179,12 @@ go in the same push.</p>
 </div>
 
 <div class="card warn">
-<h3 style="margin-top:0;color:var(--danger)">2. Production is still the VM. Merging to <code>main</code> deploys nothing.</h3>
-<p>Per <code>CLAUDE.md</code> and <code>NAMES.md</code>: <strong><code>bp-voxtable-prod</code> does not
-exist yet.</strong> <code>deploy-backend.yml</code> targets Cloud Run production services
-(<code>voxtable-prod-*</code>) that have never been created, so a <code>main</code> merge skips cleanly
-with a notice rather than failing red. Production today is the VM <code>core-central-vm</code> in
-<code>vocotable-497209</code>, deployed by hand.</p>
-<p style="margin-bottom:0">So "ship to production" is not one decision, it is two: <em>which
-production</em>, and <em>then</em> the feature. Gate 3 forces that choice before anything else can land.</p>
+<h3 style="margin-top:0;color:var(--danger)">2. Environment correction</h3>
+<p><strong>This is a historical rollout plan.</strong> Production is Cloud Run and Cloud SQL in
+<code>bp-voxtable-prod</code>. <code>core-central-vm</code> is sandbox-only; none of its code,
+configuration or data may be deployed or migrated to production.</p>
+<p style="margin-bottom:0">A CI-green promotion to <code>main</code> deploys the Cloud Run production
+services and runs the production migration job before the services roll.</p>
 </div>
 
 <div class="card">
@@ -374,12 +372,12 @@ drafted venue-agreement amendment covering chargeback liability and refund autho
 <div class="gate" id="g3">
 <div class="gate-id"><div class="g">3</div><div class="lbl">Infra</div></div>
 <div class="gate-body">
-<h3>Decide where production actually runs</h3>
+<h3>Verify Cloud Run production readiness</h3>
 <div class="gate-meta"><span class="pill you">Sam</span><span class="pill eng">Engineering</span><span class="pill block">Hard block</span></div>
-<p><code>bp-voxtable-prod</code> does not exist. Production is the VM, deployed by hand, with no
-automated path from <code>main</code>. Two options and they are not close.</p>
+<p>Production has one supported target: Cloud Run and Cloud SQL in
+<code>bp-voxtable-prod</code>. The sandbox VM is not an option or fallback.</p>
 
-<h4>Option A — Cut over to Cloud Run production first <span class="pill">recommended</span></h4>
+<h4>Cloud Run production <span class="pill">required</span></h4>
 <p>Provision <code>bp-voxtable-prod</code> (that exact spelling — Terraform validates it; older notes
 said <code>-prd</code>), then ship payments into it. The prod Terraform root already exists, so this is
 "add the project to the org root and apply", plus the two pieces no automation creates: the
@@ -389,24 +387,11 @@ domain mapping.</p>
 <li>Payments arrive on infrastructure with real deploys, Cloud Logging, and a one-command revision
 rollback — which is the entire rollback story in §Rollback.</li>
 <li>The migration job runs before services roll, so schema and code can't skew.</li>
-<li>Cost: the cutover is its own project with its own risk, and payments waits behind it.</li>
+<li>The sandbox VM is explicitly out of scope.</li>
 </ul>
 
-<h4>Option B — Ship payments to the VM</h4>
-<ul>
-<li>Faster to first revenue.</li>
-<li>But: rollback is manual image-tag surgery over SSH. No log shipping — a deliberate Won't-Fix while the
-VM lives, which means <strong>your only view of a payment incident is <code>docker compose logs</code>
-over SSH</strong>. For a booking bug that is survivable. For money it is not.</li>
-<li>The VM's git checkout has no GitHub credentials, so compose and env changes go up by
-<code>gcloud compute scp</code>. More hands, more room for a mistyped env var — and a mistyped env var
-here is a fail-closed boot, or worse, a wrong <code>STRIPE_SECRET_KEY</code>.</li>
-</ul>
-
-<div class="callout"><strong>Recommendation:</strong> Option A. Not because the VM can't run the code —
-it can — but because the first time you need to answer "did this guest get charged twice?" you will want
-Cloud Logging and a revision rollback, and you will want them at 7pm on a Friday. If the timeline forces
-Option B, treat log shipping off the VM as a prerequisite rather than a Won't-Fix, for this feature only.</div>
+<div class="callout"><strong>Required:</strong> ship payments only to Cloud Run production, with
+Cloud Logging, Cloud SQL and revision rollback available before live money is enabled.</div>
 
 <div class="exit"><strong>Exit criteria</strong>
 A production environment where a deploy is one command, a rollback is one command, and logs are queryable
@@ -536,12 +521,12 @@ This is the rollback for a bad prompt.</li>
     disabled all end with "you can pay when you arrive." No dead air.</li>
   </ul>
 </li>
-<li>Ten scripted test calls before the pilot: happy path, decline, withheld number, caller changes the
+<li>Ten scripted calls on staging before the pilot: happy path, decline, withheld number, caller changes the
 order after the link is sent, caller asks Bella to read the link aloud (she must refuse), caller asks to
 resend.</li>
 </ul>
 <div class="exit"><strong>Exit criteria</strong>
-Ten scripted calls pass, including the refusals. Snapshot committed. A colleague who has not seen the
+Ten scripted staging calls pass, including the refusals. Snapshot committed. A colleague who has not seen the
 prompt cannot get Bella to read a URL out loud.
 </div>
 </div>
@@ -672,8 +657,8 @@ tells you whether to keep building.</p>
 <ol>
 <li><strong>Flag flip</strong> — <code>ORDER_PAYMENTS_ENABLED=false</code>. Seconds. Stops new links,
 lets outstanding ones settle. <strong>This is the rollback for almost everything.</strong></li>
-<li><strong>Revision rollback</strong> — Cloud Run traffic to the previous revision. Minutes. For a code
-bug. Only exists if Gate 3 chose Option A; on the VM this is manual image-tag surgery over SSH.</li>
+<li><strong>Revision rollback</strong> — move Cloud Run traffic to the previous healthy revision. Minutes.
+Use this for a code regression; the sandbox VM is never a production rollback target.</li>
 <li><strong>Schema rollback</strong> — there is no down migration for 030 and you almost certainly don't
 want one. The table is additive; leaving it is harmless. If you truly must, the ordering is
 <code>order_payments</code> → the <code>restaurants</code> columns, and the <code>ON DELETE RESTRICT</code>
@@ -715,7 +700,7 @@ check, and being able to answer is the difference between a trusted product and 
 <tbody>
 <tr><td>Commit <code>logger.ts</code> + docs, merge PR #154</td><td>Eng</td><td><strong>Today</strong></td></tr>
 <tr><td>Brief a financial-services lawyer</td><td>Sam</td><td><strong>This week</strong></td></tr>
-<tr><td>Decide VM vs Cloud Run production</td><td>Sam + Abhishek</td><td>This week</td></tr>
+<tr><td>Verify Cloud Run/Cloud SQL production readiness</td><td>Sam + Abhishek</td><td>This week</td></tr>
 <tr><td>Resolve which Twilio account carries production voice</td><td>Sam</td><td>This week</td></tr>
 <tr><td>Refund path with <code>reverse_transfer</code></td><td>Eng</td><td>After Gate 0</td></tr>
 <tr><td>Retell tool registration + prompt</td><td>Eng</td><td>After Gate 0</td></tr>

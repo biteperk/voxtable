@@ -206,20 +206,21 @@ Automatic telephony provisioning is behind `PROVISIONING_AUTO_ENABLED`. When it 
 
 ## Deployment
 
-Production backend runs on the GCP VM with Docker Compose, fronted by nginx and certbot. See:
+Production backend runs on Cloud Run in `bp-voxtable-prod`, backed by Cloud SQL. The VM is a
+sandbox only and is never a production deployment or data source. See:
 
 - [`docs/gcp-deployment.md`](./docs/gcp-deployment.md)
 - [`docs/provisioning-runbook.md`](./docs/provisioning-runbook.md)
 - [`../../deploy/runbooks`](../../deploy/runbooks)
 
-Production start command:
+Local/sandbox start command:
 
 ```bash
 npm run build:backend
 npm run start:backend
 ```
 
-Production migration command:
+Local/sandbox migration command (production migrations run through the Cloud Run migration job):
 
 ```bash
 npm run db:migrate:prod
