@@ -8,7 +8,7 @@ telephony layer when calls route through a Twilio number or SIP trunk.
 Use the deployed API URL for RetellAI configuration:
 
 ```text
-https://vocotable.algorythmos.com.au
+https://api.biteperk.com.au
 ```
 
 Local testing can use:
@@ -206,14 +206,19 @@ RETELL_VERIFY_SIGNATURE=true
 webhook signing secret from Retell. The backend verifies the raw request body
 using `retell-sdk`.
 
-## Smoke Test
+## Staging Smoke Test
 
-1. Run backend migrations. Provision production data intentionally; seed data is local-only.
-2. Deploy the backend to the GCP VM (see [GCP Deployment Guide](./gcp-deployment.md)).
-3. Configure Twilio number/SIP routing if using Twilio telephony.
-4. Configure RetellAI webhook URL.
-5. Configure RetellAI inbound webhook URL if using dynamic variables.
-6. Add `check_availability` and `create_booking` custom functions.
+Run this sequence only in staging:
+
+1. Run staging migrations and provision staging test data.
+2. Deploy the backend to staging Cloud Run through the CI-gated workflow (see [GCP Deployment Guide](./gcp-deployment.md)).
+3. Configure the staging Twilio number/SIP routing if using Twilio telephony.
+4. Configure the staging RetellAI webhook URL.
+5. Configure the staging RetellAI inbound webhook URL if using dynamic variables.
+6. Add `check_availability` and `create_booking` custom functions to the staging agent.
+
+Production receives only genuine customer data. After promotion, use health/readiness,
+configuration read-back and monitoring; do not repeat this smoke test.
 7. Bind the RetellAI inbound agent to the Twilio-connected or RetellAI-managed number.
 8. Call the number.
 9. Complete a fake booking.

@@ -137,7 +137,7 @@ Stopping new mirroring and abandoning existing bookings are different things.
 it takes every venue's online bookings offline.
 
 On Cloud Run that is a Terraform env change plus a redeploy, not a `sed` on a VM;
-`rollback.md`'s Cal.com section describes the VM path, which is production today.
+`rollback.md` describes the Cloud Run production rollback and integration kill-switch path.
 
 ## Dead letters
 

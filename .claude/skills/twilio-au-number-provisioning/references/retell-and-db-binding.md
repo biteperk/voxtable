@@ -63,12 +63,13 @@ goes nowhere. That's the system working, not a bug to route around.
 
 ## Verify before declaring it live
 
-1. Twilio number Traffic Status shows **Voice enabled**.
-2. Place a real call to the number and confirm the agent answers.
-3. Check the call appears in `call_logs` with the expected `restaurant_id`.
+1. On staging, Twilio number Traffic Status shows **Voice enabled**.
+2. Place a real call to the staging number and confirm the staging agent answers.
+3. Check the call appears in staging `call_logs` with the expected `restaurant_id`.
+4. Read back production configuration without mutation and monitor genuine calls after activation.
 
-A test call is the only check that exercises every hop. Console green ticks confirm configuration,
-not connectivity.
+A staging test call is the only permitted check that exercises every hop. Never place a test call
+or create a dummy restaurant row in production.
 
 ## Cutover caution
 

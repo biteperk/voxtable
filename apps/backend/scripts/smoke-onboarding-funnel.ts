@@ -30,7 +30,9 @@ import {
   nextOnboardingStatus,
   type OnboardingEvent
 } from "../src/services/onboardingService";
+import { assertSafeSmokeDatabase } from "./lib/smokeTarget";
 
+assertSafeSmokeDatabase();
 let failures = 0;
 function assert(label: string, ok: boolean, detail?: unknown): void {
   const tag = ok ? "PASS" : "FAIL";

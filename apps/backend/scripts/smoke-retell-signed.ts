@@ -20,16 +20,17 @@
  *   RETELL_API_KEY=smoke-test-key npm run smoke:retell-signed
  *
  * The key is only a shared secret for the local round-trip — it does NOT need
- * to be a real Retell key. (Validating that the *production* .env key matches
- * Retell's account key is Layer 2: a real test call. Only Retell can produce a
- * signature with the real account key.)
+ * to be a real Retell key. Validate the real integration with a staging call.
+ * Production credentials are checked by non-mutating read-back only.
  */
 
 import { Retell } from "retell-sdk";
 
 import { mintSmokeIdToken } from "./lib/firebaseToken";
+import { assertSafeSmokeTarget } from "./lib/smokeTarget";
 
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
 const restaurantId =
   process.env.SMOKE_RESTAURANT_ID ??
   process.env.DEFAULT_RESTAURANT_ID ??

@@ -1,7 +1,7 @@
-# Phase 4: Live Integration + Soft Launch
+# Phase 4: Staging Integration + Soft Launch
 
 ## Goal
-Connect the dashboard and voice system into a soft-launch workflow where friends and family can call the number, simulate realistic bookings, and expose the top operational bugs before production cutover.
+Connect the staging dashboard and voice system into a soft-launch workflow where friends and family call the staging number, simulate realistic bookings in staging, and expose the top operational bugs before production activation.
 
 ## Timeline
 Week 3, Days 1-5.
@@ -13,7 +13,7 @@ Target milestone by Day 5: top five soft-launch issues are fixed and prompts are
 - Add transcript visibility.
 - Support booking edits, cancellations, and no-show marking.
 - Add polling for live updates.
-- Run soft launch with Natalia's trusted callers.
+- Run the soft launch with Natalia's trusted callers on the staging number.
 - Triage and fix the highest-impact bugs only.
 
 ## Integration Behavior
@@ -48,8 +48,8 @@ Store:
 Dashboard should show transcript text progressively only if provider support is straightforward. Otherwise, show final transcript after call completion for v1.
 
 ## Soft Launch Plan
-Before calls:
-- Seed realistic restaurant hours and tables.
+Before staging calls:
+- Seed realistic restaurant hours and tables in staging only.
 - Confirm transfer phone works.
 - Confirm Natalia knows which scenarios to test.
 - Freeze non-critical feature requests until after soft launch.
@@ -63,6 +63,9 @@ Call scenarios:
 - large group transfer.
 - caller asks for staff.
 - noisy or unclear caller.
+
+Do not repeat these scenarios in production. Production receives no soft-launch,
+dummy, fixture, synthetic, rehearsal or seed data.
 
 After calls:
 - Review call log and reservation data.

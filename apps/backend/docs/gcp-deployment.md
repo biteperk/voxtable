@@ -1,239 +1,103 @@
-# VocoTable GCP VM Deployment
+# VoxTable GCP deployment
 
-This is the current deployment guide for the backend stack. The older generic `api.vocotable.com` / `vocotable-api` VM instructions have been removed because production now runs on the `core-central-vm` VM and the public API URL used by the app is `https://vocotable.algorythmos.com.au`.
+## Environment model
 
-## Current Production Shape
+Production runs only in `bp-voxtable-prod`:
 
-- GCP project: `vocotable-497209`.
-- VM: `core-central-vm`.
-- Backend runtime: Docker Compose.
-- Backend port inside host: `3050`.
-- Reverse proxy: nginx + certbot.
-- API URL: `https://vocotable.algorythmos.com.au`.
-- Database: PostgreSQL container from `docker-compose.yml`.
-- Frontend: Firebase Hosting target `app`.
-- KDS: Firebase Hosting target `kds`.
-- Production Firebase Admin credentials: mounted read-only into the backend container.
+- Cloud Run service `voxtable-prod-api`
+- Cloud Run service `voxtable-prod-worker`
+- Cloud Run job `voxtable-prod-migrate`
+- Cloud SQL instance `voxtable-prod-postgres`
+- Secret Manager for runtime credentials
+- Firebase Hosting/Auth/Storage in the production project
 
-## Files That Matter
+Staging mirrors that shape in `bp-voxtable-stg` with `voxtable-stg-*` resources.
 
-- `Dockerfile`: builds the backend image.
-- `docker-compose.yml`: postgres and API services.
-- `docker-compose.prod.yml`: production-only Firebase Admin credential mount.
-- `.env.example`: complete env reference.
-- `deploy/nginx/vocotable.conf`: nginx reverse proxy template.
-- `firebase.json`: Firebase Hosting targets for app and KDS.
-- `deploy/runbooks/rollback.md`: rollback procedures.
-- `deploy/runbooks/backup-restore.md`: database backup/restore.
-- `deploy/runbooks/onboarding-rollout.md`: onboarding rollout checklist.
-- `deploy/runbooks/kds-kiosk.md`: KDS deployment and kiosk setup.
+`core-central-vm` in `vocotable-497209` is a sandbox. Its Docker Compose stack,
+Postgres data, credentials, nginx configuration and IP address are not
+production. Never route production traffic to it or copy its data into Cloud SQL.
 
-## First-Time Host Setup
+Infrastructure is managed in `biteperk/biteperk-cloud-platform`. Do not create or
+repair production infrastructure from this repository.
 
-Install Docker, Docker Compose plugin, nginx, and certbot on the VM.
+## Application deployment
 
-```bash
-gcloud compute ssh core-central-vm --zone us-central1-a
+The deployment workflow is `.github/workflows/deploy-backend.yml`:
 
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg nginx certbot python3-certbot-nginx
+- a CI-green push to `integration` deploys staging;
+- a CI-green promotion to `main` deploys production;
+- images come from the shared Artifact Registry project;
+- the workflow updates the migration job to the new API image;
+- the migration job must succeed before the API and worker roll forward.
 
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-  sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
+Do not hand-deploy production with Docker Compose. `docker-compose*.yml` and
+`docker-compose.deploy.yml` are local/sandbox tooling only.
 
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+## Database schema
 
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-```
+Production schema changes use `voxtable-prod-migrate`, connecting as
+`voxtable_owner`. The application services connect as `voxtable_app`.
 
-Create the app directory:
+The migration ledger is `schema_migrations`. Migrations are append-only and must
+remain compatible with the previously serving Cloud Run revision so revision
+rollback remains possible.
+
+Production data is created only by genuine customer activity or an explicitly
+authorised operational workflow for a real customer. Dummy, fixture, synthetic,
+rehearsal and seed data are prohibited. Data from staging or the sandbox VM does
+not promote and must not be restored into production.
+
+## Verification
+
+After a production deployment, verify:
 
 ```bash
-sudo mkdir -p /opt/vocotable
-sudo chown "$USER:$USER" /opt/vocotable
+gcloud run jobs executions list \
+  --job voxtable-prod-migrate \
+  --project bp-voxtable-prod \
+  --region australia-southeast1 \
+  --limit 3
+
+gcloud run services describe voxtable-prod-api \
+  --project bp-voxtable-prod \
+  --region australia-southeast1 \
+  --format='value(status.latestReadyRevisionName,status.url)'
+
+gcloud run services describe voxtable-prod-worker \
+  --project bp-voxtable-prod \
+  --region australia-southeast1 \
+  --format='value(status.latestReadyRevisionName)'
 ```
 
-## Production Environment
+Then call `/health` and `/readyz` on the production Cloud Run URL, read back
+the deployed configuration, and confirm monitoring is receiving normal signals.
+Do not run smoke, functional, integration or synthetic tests against production.
+All behavioural testing belongs in staging, and production verification must not
+create or mutate application data.
 
-Copy `.env.example` to `.env` on the VM and fill real production values.
+## Rollback
 
-Required production posture:
-
-- `APP_ENV=production`
-- `PUBLIC_API_BASE_URL=https://vocotable.algorythmos.com.au`
-- `DASHBOARD_VERIFY_AUTH=true`
-- `DASHBOARD_ALLOWED_EMAILS` non-empty
-- `RETELL_VERIFY_SIGNATURE=true`
-- `TWILIO_VALIDATE_SIGNATURE=true`
-- `DATABASE_URL` points at the compose postgres service when running in Docker
-- `GOOGLE_APPLICATION_CREDENTIALS=/secrets/firebase-admin.json`
-
-Feature flags stay off until their credentials and runbooks are ready:
-
-- `CALCOM_SYNC_ENABLED`
-- `STRIPE_BILLING_ENABLED`
-- `MENU_OCR_ENABLED`
-- `NOTIFICATIONS_ENABLED`
-- `PROVISIONING_AUTO_ENABLED`
-
-(`MULTITENANCY_LEGACY_FALLBACK` was removed on 2 Aug 2026 by migration 027. Dashboard access is `restaurant_members` and nothing else.)
-
-When a flag is enabled in production, `config/env.ts` enforces the matching credentials.
-
-## Firebase Admin Credential
-
-Production compose mounts Firebase Admin credentials read-only:
-
-```yaml
-GOOGLE_APPLICATION_CREDENTIALS: /secrets/firebase-admin.json
-volumes:
-  - ./firebase-admin.json:/secrets/firebase-admin.json:ro
-```
-
-Keep `firebase-admin.json` out of git.
-
-## Build and Start Backend
-
-On the VM:
+Application rollback is a Cloud Run traffic change to the last known-good
+revision. Print the restore-to-latest command before moving traffic:
 
 ```bash
-cd /opt/vocotable
+gcloud run services update-traffic voxtable-prod-api \
+  --to-revisions <known-good-revision>=100 \
+  --project bp-voxtable-prod \
+  --region australia-southeast1
 
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api
+gcloud run services update-traffic voxtable-prod-api \
+  --to-latest \
+  --project bp-voxtable-prod \
+  --region australia-southeast1
 ```
 
-Run migrations:
+Do not use the sandbox VM as rollback. Database recovery uses Cloud SQL backups
+and point-in-time recovery; see `deploy/runbooks/backup-restore.md`.
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api node apps/backend/dist/db/migrate.js
-```
+## Frontend and KDS
 
-Do not run seed data in production. Production restaurants, menu items, users,
-and memberships should be created through the application/admin flow or targeted
-operational SQL reviewed for that deployment.
-
-## nginx and TLS
-
-Install the nginx site config:
-
-```bash
-sudo cp deploy/nginx/vocotable.conf /etc/nginx/sites-available/vocotable
-sudo ln -sf /etc/nginx/sites-available/vocotable /etc/nginx/sites-enabled/vocotable
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Issue or renew TLS with certbot for `vocotable.algorythmos.com.au`.
-
-Cloudflare DNS must allow Let's Encrypt HTTP-01 challenges. If proxying causes certificate or webhook issues, set the record to DNS-only while issuing/renewing.
-
-## Verify Backend
-
-```bash
-curl -fsS https://vocotable.algorythmos.com.au/health
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail 100 api
-```
-
-For local or staging smoke checks against a running backend:
-
-```bash
-PUBLIC_API_BASE_URL=https://vocotable.algorythmos.com.au npm run smoke:backend
-```
-
-Only run provider-specific smoke scripts against production when you understand the side effects.
-
-## Frontend Deploy
-
-Build the main app with the production API URL baked into the Vite bundle:
-
-```bash
-VITE_API_BASE_URL=https://vocotable.algorythmos.com.au npm run build:frontend
-firebase deploy --only hosting:app
-```
-
-Build and deploy KDS:
-
-```bash
-VITE_API_BASE_URL=https://vocotable.algorythmos.com.au npm run build:kds
-firebase deploy --only hosting:kds
-```
-
-`firebase.json` defines both hosting targets and cache headers.
-
-## Webhook URLs
-
-Configure providers to use the production API URL:
-
-Retell:
-
-```text
-https://vocotable.algorythmos.com.au/retell/webhook
-https://vocotable.algorythmos.com.au/retell/inbound
-https://vocotable.algorythmos.com.au/retell/tools/check-availability
-https://vocotable.algorythmos.com.au/retell/tools/create-booking
-```
-
-Twilio:
-
-```text
-https://vocotable.algorythmos.com.au/twilio/voice
-https://vocotable.algorythmos.com.au/twilio/status
-```
-
-Cal.com:
-
-```text
-https://vocotable.algorythmos.com.au/cal/webhook
-```
-
-Stripe:
-
-```text
-https://vocotable.algorythmos.com.au/stripe/webhook
-```
-
-## Common Operations
-
-Restart API:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart api
-```
-
-View logs:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api
-```
-
-Check containers:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-```
-
-Stop stack:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down
-```
-
-Do not use `down -v` in production unless you intentionally want to destroy the database volume.
-
-## Rollback and Backups
-
-Use the active runbooks:
-
-- [`../../../deploy/runbooks/rollback.md`](../../../deploy/runbooks/rollback.md)
-- [`../../../deploy/runbooks/backup-restore.md`](../../../deploy/runbooks/backup-restore.md)
-
-Before risky deploys, tag the previous good image as described in the rollback runbook.
+The frontend workflow deploys the dashboard and KDS to Firebase Hosting for the
+same environment. Production bundles must reference the production Cloud Run API
+and the `bp-voxtable-prod` Firebase project. Never build production assets with
+staging or sandbox identifiers.

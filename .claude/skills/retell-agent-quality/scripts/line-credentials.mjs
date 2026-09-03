@@ -34,8 +34,8 @@ export function resolveCredentials(declared) {
     ]);
     return {
       apiKey,
-      // Staging's single key is badged as its webhook key too. Production is NOT like this,
-      // which is why this is declared per line rather than assumed.
+      // Whether the API key is also the webhook secret is declared per line rather than
+      // inferred from the environment.
       webhookSecret: c.webhook_secret_is_api_key ? apiKey : run("gcloud", [
         "secrets", "versions", "access", "latest",
         `--secret=${c.webhook_secret_secret}`, `--project=${c.gcp_project}`

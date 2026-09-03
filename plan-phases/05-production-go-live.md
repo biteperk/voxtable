@@ -13,18 +13,19 @@ Target milestone: production cutover on Day 3, followed by active monitoring thr
 - Add production monitoring and error tracking.
 - Confirm call recording policy.
 - Send daily summary email.
-- Run production smoke tests.
+- Confirm the full smoke suite passed in staging; do not run smoke tests in production.
 - Prepare rollback path.
 - Monitor real calls.
 
 ## Production Readiness
 Before cutover:
+- Every functional, integration, call, dashboard and destructive check has passed in staging.
 - Railway backend is stable and has production env vars.
 - Vercel frontend is deployed and protected by owner login.
 - Database backups or Railway recovery path are understood.
 - Sentry is configured for backend and frontend.
 - Structured logs include request ID, provider call ID, restaurant ID, and booking ID where available.
-- Twilio number, SIP trunk/forwarding path, and RetellAI agent path are tested end to end.
+- The staging Twilio number, SIP trunk and RetellAI agent path are tested end to end.
 - Staff transfer phone is confirmed.
 - Natalia has the dashboard URL and login.
 
@@ -75,9 +76,9 @@ Rollback must be executable without code changes.
 ## Launch Checklist
 - Health endpoint green.
 - Database connected.
-- One test booking can be created from phone call.
-- One dashboard edit succeeds.
-- One cancellation succeeds.
+- Staging evidence records a successful call booking, dashboard edit and cancellation.
+- Production health/readiness checks are green and configuration read-back is correct.
+- No dummy, fixture, synthetic, rehearsal or seed data exists in production.
 - Staff transfer succeeds.
 - Natalia confirms call forwarding behavior.
 - Sentry receives a test event.

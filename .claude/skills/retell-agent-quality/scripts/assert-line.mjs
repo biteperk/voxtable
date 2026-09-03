@@ -131,35 +131,42 @@ if (numberPresent) {
   skip(2, "webhook URL + inbound mode", "the number is not imported, so there is nothing to inspect.");
 }
 
-// ─── 3. The backend answers, and resolves the right venue ─────────────────────
-// This probe also proves the restaurants row TRANSITIVELY: override_agent_id and
-// restaurant_name come from that row, so no database credentials are needed here.
-const body = JSON.stringify({
-  event: "call_inbound",
-  call_inbound: { from_number: "+61400000000", to_number: number }
-});
-const sig = await Retell.sign(body, WEBHOOK_SECRET);
-const probe = await json(`${declared.api_base}/retell/inbound`, {
-  method: "POST",
-  headers: { "content-type": "application/json", "x-retell-signature": sig },
-  body
-});
-const probeOk = check(4, probe.status === 200,
-  "signed /retell/inbound returns 200",
-  `got ${probe.status}. 401 usually means RETELL_WEBHOOK_SECRET is wrong — production signs with the webhook secret, NOT the API key.`);
-
-const dv = probe.body?.call_inbound?.dynamic_variables ?? {};
+// ─── 3. The staging backend answers and resolves the right venue ──────────────
+// This POST is a synthetic inbound event. It is permitted in staging only.
+// Production policy allows non-mutating health/readiness, configuration
+// read-backs and monitoring, so production lines deliberately skip this layer.
+let dv = {};
 let resolvedAgentId = null;
-if (probeOk) {
-  // The base set every backend serves. venue_faq / owner_name / today_status arrive only on
-  // newer backends — production sits at migration 024 and cannot serve them, and requiring
-  // them outright would fail a correctly-adapted agent. Report, don't fail.
+if (declared.environment === "production") {
+  skip(4, "signed /retell/inbound probe", "production synthetic probes are prohibited; run this layer on the staging twin");
+  skip(5, "backend dynamic variables", "production is read-back and monitoring only");
+  skip(6, "backend agent resolution", "production is read-back and monitoring only");
+  skip(7, "backend venue resolution", "production is read-back and monitoring only");
+} else {
+  const body = JSON.stringify({
+    event: "call_inbound",
+    call_inbound: { from_number: "+61400000000", to_number: number }
+  });
+  const sig = await Retell.sign(body, WEBHOOK_SECRET);
+  const probe = await json(`${declared.api_base}/retell/inbound`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-retell-signature": sig },
+    body
+  });
+  const probeOk = check(4, probe.status === 200,
+    "signed /retell/inbound returns 200",
+    `got ${probe.status}. 401 usually means RETELL_WEBHOOK_SECRET is wrong.`);
+
+  dv = probe.body?.call_inbound?.dynamic_variables ?? {};
+  if (probeOk) {
+  // The base set every backend serves. Richer variables depend on the deployed API version;
+  // report their presence separately so a deliberately compatible agent remains checkable.
   const base = ["restaurant_id", "restaurant_name", "restaurant_timezone", "today", "tomorrow", "caller_phone"];
   const missing = base.filter((k) => !(k in dv));
   check(5, missing.length === 0, "every base dynamic variable is served", `missing: ${missing.join(", ")}`);
 
   const richer = ["owner_name", "venue_faq", "today_status", "weekday_local"].filter((k) => k in dv);
-  if (!asJson) console.log(`     serves richer variables: ${richer.length ? richer.join(", ") : "none (older backend — expected on production at migration 024)"}`);
+  if (!asJson) console.log(`     serves richer variables: ${richer.length ? richer.join(", ") : "none"}`);
 
   resolvedAgentId = probe.body?.call_inbound?.override_agent_id ?? null;
 
@@ -172,6 +179,7 @@ if (probeOk) {
   check(7, dv.restaurant_name === declared.venue_name,
     `backend resolves the venue as "${declared.venue_name}"`,
     `resolved "${dv.restaurant_name}" — restaurants.name differs from the declaration.`);
+  }
 }
 
 // ─── 4. The agent the backend hands out actually exists ───────────────────────
@@ -360,7 +368,7 @@ if (asJson) {
   if (skipped.length && !strict) console.log(`${skipped.length} layer(s) unverified — re-run with --strict to treat that as failure.`);
   // NUMBERS.md §6: "The number is configured, so it works" is the standing mistake. This
   // script proves configuration. Only a real call that lands in call_logs proves the line.
-  if (!failed.length) console.log("Configuration is proven. A real test call is still the only proof the line WORKS.");
+  if (!failed.length) console.log("Configuration is proven. Exercise the full call path only on staging; production gets read-back and monitoring.");
 }
 
 process.exit(failed.length || (strict && skipped.length) ? 1 : 0);

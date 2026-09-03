@@ -1,34 +1,30 @@
 # Phase 1: Foundation + Voice Skeleton
 
 ## Goal
-Build the smallest end-to-end system that proves the product works: a test phone call reaches the AI, checks availability, creates a fake reservation through our backend API, and persists the booking plus call log in Postgres.
+Build the smallest end-to-end staging system that proves the product works: a staging test phone call reaches the AI, checks availability, creates a fake reservation through the staging backend API, and persists the booking plus call log in staging Postgres.
 
 This is the most important phase. If this is late, the 4-week launch plan is already at risk.
 
 ## Timeline
 Week 1, Days 1-5.
 
-Target milestone by Day 5: call the number, complete a fake booking, and see the reservation in Postgres.
+Target milestone by Day 5: call the staging number, complete a fake booking, and see the reservation in staging Postgres.
 
 ## Scope
 - Create the backend project structure with Node.js and TypeScript.
 - Define Postgres schema and migrations for the v1 data model.
-- Deploy backend and Postgres to a Google Cloud VM using Docker Compose.
+- Deploy the backend to Cloud Run and Postgres to Cloud SQL.
 - Add health check and core reservation APIs.
-- Configure Twilio telephony and RetellAI enough for a real inbound test call.
+- Configure staging Twilio telephony and RetellAI enough for a real inbound staging test call.
 - Log inbound call metadata and final transcript/state.
 
-## Deployment Architecture (Google Cloud VM + Docker Compose)
-- A single Compute Engine VM (e.g. `e2-small` or `e2-medium`) hosts both the backend and Postgres.
-- Docker Compose orchestrates two services:
-  - `api` – Node.js backend container built from project Dockerfile.
-  - `postgres` – Official `postgres:16-alpine` image with a named volume for persistence.
-- Nginx runs on the VM as a reverse proxy with Let's Encrypt SSL (Certbot).
-- Public traffic → Nginx :443 → `api` container :3050.
-- Postgres is not exposed externally; the `api` container reaches it through the Docker bridge network.
-- Firewall rules: allow TCP 80 and 443 only. SSH via IAP or allowlisted IP.
-- `docker compose up -d` starts the stack; `docker compose down` stops it.
-- Migration runs as a one-shot Docker Compose service or via `docker compose exec api npm run db:migrate:prod`.
+## Deployment Architecture (Cloud Run + Cloud SQL)
+- Cloud Run hosts separate API, worker and one-shot migration workloads.
+- Cloud SQL for PostgreSQL stores application data on private connectivity.
+- Public traffic reaches the API through the managed Cloud Run HTTPS endpoint and production domain mapping.
+- CI builds immutable images; the migration job succeeds before API and worker revisions receive traffic.
+- Production resources live in `bp-voxtable-prod`; staging has an isolated equivalent in `bp-voxtable-stg`.
+- `core-central-vm` and Docker Compose are sandbox-only. They never serve production and their data is never promoted to Cloud SQL.
 
 ## Backend Architecture
 - Keep the service as a single deployable API for v1.
@@ -264,7 +260,7 @@ Document these in the backend README or env example during implementation:
 ## Verification
 - `GET /health` returns `status: ok` locally and on the Google Cloud VM via HTTPS.
 - A local API smoke test can create a reservation.
-- A deployed API smoke test can create a reservation against the VM's public URL.
+- A deployed API smoke test can create a reservation against the staging Cloud Run URL.
 - `docker compose ps` shows both `api` and `postgres` containers healthy.
 - Postgres data survives a `docker compose down && docker compose up -d` cycle (volume persistence).
 - Twilio can route inbound calls to RetellAI or the fallback `/twilio/voice` endpoint returns valid SIP TwiML.

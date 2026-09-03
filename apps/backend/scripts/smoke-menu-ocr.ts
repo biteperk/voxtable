@@ -14,8 +14,8 @@
  *   npm run smoke:menu-ocr -- --json             # machine-readable
  *
  * NOT part of `npm run check`: it costs money and needs a provider key.
- * Requires MENU_OCR_API_KEY (+ PROVIDER/BASE_URL/MODEL) in your .env — copy the
- * MENU_OCR_* lines from the production env if you don't have your own key.
+ * Requires staging MENU_OCR_API_KEY (+ PROVIDER/BASE_URL/MODEL). Never copy or
+ * use production credentials for this test.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";

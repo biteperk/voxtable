@@ -1,5 +1,11 @@
 # Session handoff — 27 Aug 2026
 
+> Historical handoff. Any statement below treating `core-central-vm` as production has been
+> superseded: it is sandbox-only, production is Cloud Run/Cloud SQL in `bp-voxtable-prod`, and no
+> VM data or credentials migrate into production.
+> Production test/rehearsal instructions are also superseded. All testing and synthetic data belong
+> in staging; production receives only non-mutating health/readiness, read-back and monitoring.
+
 Written to be pasted into, or pointed at from, a fresh chat. Everything here is either verified
 today or explicitly flagged as unverified. Branch: **`pipeline-environment-checks`** (pushed).
 

@@ -21,7 +21,9 @@
 import { pool } from "../src/db/pool";
 import { recordAdminAction } from "../src/repositories/adminActions";
 import { listSupportRequests, setSupportRequestStatus } from "../src/repositories/supportRequests";
+import { assertSafeSmokeDatabase } from "./lib/smokeTarget";
 
+assertSafeSmokeDatabase();
 let failures = 0;
 function assert(label: string, ok: boolean, detail?: unknown): void {
   const tag = ok ? "PASS" : "FAIL";

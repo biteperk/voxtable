@@ -83,25 +83,35 @@ npm run smoke:isolation     # multi-tenant onboarding isolation
 
 ## Deployment (summary)
 
-- **Backend**: GCP VM `core-central-vm` (project `vocotable-497209`) via `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`, fronted by nginx + certbot at `https://api.biteperk.com.au` (migrating from `vocotable.algorythmos.com.au` — see `deploy/runbooks/domain-migration.md`).
-- **Frontend**: Firebase Hosting target `app` (`vocotable.web.app`, branded production URLs allowed by CORS). Build with `VITE_API_BASE_URL` pointing at the API before `firebase deploy --only hosting:app`.
-- **KDS**: Firebase Hosting target `kds`, deployed separately with `npm run build:kds && firebase deploy --only hosting:kds`.
-- Production builds: `npm run build:backend` / `build:frontend` / `build:kds`; run with `start:backend`; migrate with `db:migrate:prod`.
+- **Backend**: Cloud Run services `voxtable-prod-api` and `voxtable-prod-worker` in `bp-voxtable-prod`, backed by Cloud SQL `voxtable-prod-postgres`. A successful CI run on `main` deploys production and runs the migration job before rolling services.
+- **Frontend**: Firebase Hosting in `bp-voxtable-prod`. Build with `VITE_API_BASE_URL` pointing at the production Cloud Run API.
+- **KDS**: Firebase Hosting in `bp-voxtable-prod`, deployed by the frontend workflow alongside the dashboard.
+- **Sandbox**: `core-central-vm` and its local Postgres data are non-production. They are not a production fallback or migration source.
+- Local build commands: `npm run build:backend` / `build:frontend` / `build:kds`. Production execution and migrations are owned by the deployment workflows.
 
 ## Environments — staging first, always
 
-Everything is proven in staging before the same change is made in production. That covers code
-(`integration` → staging, promoted to `main` → production) and equally the vendor consoles,
-where no pipeline can enforce it.
+Every test is run in staging before the same change is made in production. This includes
+functional, integration, smoke, end-to-end, call-battery, onboarding, KDS, payment,
+rehearsal and destructive tests. It covers code (`integration` → staging, promoted to
+`main` → production) and vendor configuration where no pipeline can enforce it.
+
+Production is never a test environment. After deployment, only non-mutating `/health` and
+`/readyz` checks, configuration read-backs and monitoring are allowed. Do not place test
+calls, create test bookings or orders, send test messages, exercise test payments, or run
+synthetic probes that write production state.
+
+Dummy, fixture, synthetic, rehearsal and seed data must never enter production. Production
+data is created only by genuine customer activity or an explicitly authorised operational
+workflow for a real customer.
 
 **The full doctrine lives in [`CLAUDE.md` → Environments and promotion](CLAUDE.md#environments-and-promotion)**
 — what "promote" means for each plane (only one is automatic), which environment owns which
-account, the register of things that genuinely *cannot* be rehearsed in staging, and what is
-mechanically enforced. Telephony specifics are in [`NUMBERS.md`](NUMBERS.md).
+account, how capabilities unavailable in staging are activated without production testing,
+and what is mechanically enforced. Telephony specifics are in [`NUMBERS.md`](NUMBERS.md).
 
-Two things that catch people out: **data never promotes** (a venue seeded in staging does not
-exist in production), and **production is still the VM** — a `main` merge does not deploy the
-backend.
+Two things that catch people out: **data never promotes** (a venue seeded in staging or the VM
+does not exist in production), and a CI-green `main` promotion deploys the Cloud Run backend.
 
 ### Branded SMS (ACMA sender ID) — registered, not yet switched on
 

@@ -8,6 +8,9 @@
  * removed afterwards, so no smoke depends on seed data or leaves residue.
  */
 import { pool } from "../../src/db/pool";
+import { assertSafeSmokeDatabase } from "./smokeTarget";
+
+assertSafeSmokeDatabase();
 
 let failures = 0;
 

@@ -1,12 +1,15 @@
-# Cuban Corner dress-rehearsal call script — the go/no-go gate
+# Cuban Corner staging dress-rehearsal call script — the go/no-go gate
 
-**Dial `+61 485 071 140` directly** (the venue has NOT forwarded its line yet — that happens
-only after this battery passes). Each leg is a **fresh call**: hang up between legs so no
+Run this battery against the Cuban Corner staging twin, the declared staging
+number `+61 468 203 234`, staging Retell workspace, staging Cloud Run API,
+staging Cloud SQL, staging dashboard and staging KDS. Never dial the production
+number or write production state.
+
+Each leg is a **fresh call**: hang up between legs so no
 conversation state bleeds across. Have two screens open before the first call:
 
-- Dashboard: **https://voxtable.biteperk.com.au** (the NEW site — if a booking doesn't appear,
-  confirm you're not on the legacy vocotable.web.app before blaming the backend)
-- KDS: **https://kds.biteperk.com.au**
+- Dashboard: the `bp-voxtable-stg` Firebase Hosting dashboard
+- KDS: the `bp-voxtable-stg` Firebase Hosting KDS
 
 If ANY call drops near the **7.6-second mark**: write down the time and stop the battery — that
 is the US1+TLS trunk question answering itself. Fix: PATCH origination to `tcp` and the trunk to
@@ -70,7 +73,7 @@ unless the line itself is broken.
 ## After the battery (machine half)
 
 ```bash
-export RETELL_API_KEY=<from the VM env — never the repo .env>
+export RETELL_API_KEY=<from bp-voxtable-stg Secret Manager>
 node .claude/skills/retell-agent-quality/scripts/latency-report.mjs 10
 node .claude/skills/retell-agent-quality/scripts/review-call.mjs latest
 ```
@@ -79,7 +82,7 @@ what a command printed or an ear heard.
 
 ## Cleanup (do not skip)
 
-The test booking (leg 3/8) and pickup order (leg 5) are fake covers on a real board:
+The test booking (leg 3/8) and pickup order (leg 5) are staging-only records:
 - Dashboard → Booking Log → cancel both test bookings (reason: "rehearsal test").
 - KDS → cancel the test order (reason: "rehearsal test").
 
@@ -89,5 +92,6 @@ The test booking (leg 3/8) and pickup order (leg 5) are fake covers on a real bo
 |---|---|---|---|
 |  |  |  |  |
 
-*(Empty until run. Go-live — `POST /api/admin/restaurants/22222222-…/go-live` and the venue
-forwarding `02 8606 6277` — only after every leg has a pass in this table.)*
+*(Empty until run. Production activation may be approved only after every leg has
+a pass here. Do not repeat the battery in production and do not copy these staging
+records into production.)*

@@ -29,7 +29,7 @@
 //
 // --dry-run runs the whole import inside one transaction and rolls it back.
 // --emit-sql writes a fresh-install SQL file instead of touching a database
-// (for hosts where only psql reaches the DB, e.g. the production VM); the
+// (for controlled review or sandbox hosts where only psql reaches the DB); the
 // SQL is insert-if-absent, so re-applying skips rather than duplicates, but
 // it does not UPDATE existing rows — use the direct mode for that.
 

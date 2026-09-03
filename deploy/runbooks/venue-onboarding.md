@@ -135,8 +135,12 @@ installs on site, and turning the forward off restores the old world.
 
 ## 3. The database row (the registry entry)
 
-Template: `deploy/seeds/synthetic_test_restaurants.sql` (fixed UUID,
-`ON CONFLICT DO NOTHING`, prod-safe). Insert:
+For staging tests only, use `deploy/seeds/synthetic_test_restaurants.sql`
+(fixed UUID, `ON CONFLICT DO NOTHING`). It is prohibited in production.
+
+Create the real production venue only through the authorised production
+onboarding/admin workflow after the staging twin has passed the complete
+rehearsal. Never seed, clone or copy the staging row. Configure:
 
 - `restaurants`: name, `timezone`, the venue's existing public number as
   profile phone, `onboarding_status = 'provisioning'` (direct SQL legitimately
@@ -160,9 +164,9 @@ psql reaches. Re-running is safe: upserts, never delete-and-recreate.
 Windows (`available_from/until`) and `is_restricted` come from the import;
 Bella enforces both on the voice path only.
 
-## 5. Bindings → rehearsal → go-live
+## 5. Staging bindings → rehearsal → production activation
 
-1. `PATCH /api/admin/restaurants/:id/provisioning` with `twilio_phone_number`
+1. In staging, `PATCH /api/admin/restaurants/:id/provisioning` with `twilio_phone_number`
    (the trusted dialled-number key, E.164-normalised) and `retell_agent_id`.
    **Both together — the endpoint now rejects one without the other**, because
    the UPDATE is COALESCE-only and a lone number kept the *previous* venue's
@@ -180,15 +184,17 @@ Bella enforces both on the voice path only.
    so there are exactly two acceptable outcomes: the other system is switched
    off, or the venue accepts the double-booking risk **in writing**. Check this
    before the rehearsal call, not after.
-3. **Dress-rehearsal call** — the go/no-go gate: **Bella names THIS venue**,
+3. **Staging dress-rehearsal call** — the go/no-go gate: **Bella names THIS venue**,
    disclosure heard, booking lands on the dashboard mid-call, menu question
    answered, pickup order hits the KDS, a licensed drink is refused with the
    licensing line. The venue name is first on that list deliberately: every
    other item can pass while the caller is told they have reached somewhere
    else.
-4. `POST /api/admin/restaurants/:id/go-live`.
-5. Backfill `contact_email`; Stripe checkout with the owner (trial days per
-   `STRIPE_TRIAL_DAYS`; checkout is safe from `provisioning`/`live` status).
+4. Record the staging evidence and remove/cancel its test bookings and orders.
+5. Create and activate the real production venue through the reviewed operational workflow.
+   Production verification is limited to health/readiness, configuration read-back and
+   monitoring of genuine customer activity. Do not repeat the rehearsal, create a test call,
+   or copy any staging data into production.
 
 ## 5b. If the venue already uses another booking platform
 

@@ -1,5 +1,8 @@
 # Cuban Corner Parramatta — production agent prepared for `+61485071140`
 
+> Historical snapshot only. Any VM credential or database paths below are obsolete and must not
+> be used for production. Production uses `bp-voxtable-prod` Secret Manager, Cloud Run and Cloud SQL.
+
 **27 Aug 2026.** Preparation only. **This agent answers no number yet** — the Twilio trunk
 does not exist, the number is not imported to Retell, and `restaurants.twilio_phone_number`
 is still NULL. Nothing here is customer-facing.

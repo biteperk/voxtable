@@ -17,8 +17,10 @@
  * TWILIO_PHONE_NUMBER=+61468203234 (the staging venue's bound number).
  */
 import crypto from "node:crypto";
+import { assertSafeSmokeTarget } from "./lib/smokeTarget";
 
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const toNumber = process.env.TWILIO_PHONE_NUMBER ?? "+61200000000";
 

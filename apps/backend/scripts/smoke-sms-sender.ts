@@ -31,6 +31,7 @@ const serviceSid = process.env.NOTIFICATIONS_MESSAGING_SERVICE_SID;
 const expectedAlphaSender = process.env.EXPECTED_ALPHA_SENDER ?? "BitePerk";
 const sendTest = process.env.SMS_SEND_TEST === "true";
 const testTo = process.env.SMS_TEST_TO;
+const STAGING_ACCOUNT_SID = "AC8116857da2064ef3251533f3ade56f32";
 
 const DELIVERY_POLL_TIMEOUT_MS = 60_000;
 const DELIVERY_POLL_INTERVAL_MS = 2_000;
@@ -66,6 +67,10 @@ function requireEnv(): void {
   }
   if (sendTest && !testTo) {
     console.error("SMS_SEND_TEST=true requires SMS_TEST_TO (E.164, e.g. +61400000000)");
+    process.exit(2);
+  }
+  if (sendTest && accountSid !== STAGING_ACCOUNT_SID) {
+    console.error("SMS send mode is staging-only; production permits read-back mode only.");
     process.exit(2);
   }
 }

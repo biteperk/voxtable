@@ -47,15 +47,16 @@ per-agent cron needed.
 Numbers are normalized to E.164 server-side. `twilio_phone_number` is the trusted
 dialed-number key used to route inbound calls to this tenant.
 
-## 4. Owner forwards + verifies (self-serve)
+## 4. Owner forwards + activates (self-serve)
 The owner's wizard "Connect your phone" step now shows their VocoTable number
-and forwarding instructions. They forward their advertised line and place a test
-call; `POST /api/onboarding/verify-forwarding` confirms a real inbound call
-landed (proving forwarding works AND that they control the line) and advances
-`provisioning → live`.
+and forwarding instructions. After the equivalent staging venue has passed the
+complete call battery, they forward their advertised line and use
+`POST /api/onboarding/verify-forwarding` to activate the already-reviewed
+bindings and advance `provisioning → live`. The endpoint does not require or
+create a production test call.
 
 ## 5. Go live (admin override)
-If verification needs to be forced (e.g. the owner can't self-test),
+If activation needs an admin override,
 `POST /api/admin/restaurants/:id/go-live` flips the restaurant live once the
 subscription gate passes and the Twilio number + Retell agent are bound.
 
