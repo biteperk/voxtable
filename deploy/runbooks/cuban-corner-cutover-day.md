@@ -107,12 +107,15 @@ reached the real backend.
    credentials per `domain-migration.md`; Cloud Run should hold Biteperk-production's — confirm
    the SID is `ACd423bd09…`). Stripe and OCR must be settled before step 7: if Cloud Run's Stripe
    key is not the **live** key the VM bills with, every checkout after the flip is wrong.
-0n. **The worker's CPU is throttled between requests** (the Cloud Run module sets no
-   `cpu_idle`, so the provider default applies) on BOTH roots. Every outbox tick — verification
-   codes, booking SMS, Cal.com mirror, reapers — is a `setInterval` that only runs while the
-   instance has CPU. `min_instance_count = 1` keeps the process alive but not scheduled. First
-   sign-up on Cloud Run (3 Sep) queued a code that never left. Fix: `cpu_idle = false` on the
-   worker (platform PR), staging first.
+0n. **The worker's CPU allocation was inherited, not declared.** Every outbox tick —
+   verification codes, booking SMS, Cal.com mirror, reapers — is a `setInterval` that only runs
+   while the instance has CPU. The module never set `cpu_idle`; the staging worker's live
+   revision reads `run.googleapis.com/cpu-throttling=false` (always allocated) by provider
+   default only. Pinned explicitly (`cpu_idle = false`) in a platform PR so a default change
+   cannot silently stall the worker. **Not** the cause of the 3 Sep missing code: that test used
+   made-up `@biteperk.com.au` addresses; re-test with a mailbox that exists before blaming the
+   worker (the admin `/api/admin/ops-summary` shows notification outbox counts once an admin
+   account exists in `bp-voxtable-prod`).
 0i. **Proof that sign-up is open** (after step 7): a brand-new, non-allowlisted email signs up at
    `voxtable.biteperk.com.au` → code email from `hello@biteperk.com.au` → restaurant created →
    listed in `/admin/venues`. Rehearse the identical walk on `bp-voxtable-stg.web.app` first.
