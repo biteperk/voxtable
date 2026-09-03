@@ -113,6 +113,7 @@ jobs:
         env:
           FIREBASE_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT || vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
           FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           FRONTEND_ARTIFACT_BUCKET: ${{ vars.FRONTEND_ARTIFACT_BUCKET }}
           GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT || vars.PLATFORM_PROJECT_ID }}
           WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -123,6 +124,7 @@ jobs:
           : "${FIREBASE_DEPLOY_SERVICE_ACCOUNT:?Set GCP_FRONTEND_DEPLOY_SERVICE_ACCOUNT or GCP_DEPLOY_SERVICE_ACCOUNT in the GitHub environment}"
           : "${FRONTEND_ARTIFACT_BUCKET:?Set FRONTEND_ARTIFACT_BUCKET in the GitHub environment}"
           : "${FIREBASE_PROJECT:?Set FIREBASE_PROJECT or VOXTABLE_PROJECT_ID in the GitHub environment}"
+          : "${FIREBASE_STORAGE_BUCKET:?Set VITE_FIREBASE_STORAGE_BUCKET in the GitHub environment}"
           : "${GOOGLE_CLOUD_QUOTA_PROJECT:?Set GOOGLE_CLOUD_QUOTA_PROJECT or PLATFORM_PROJECT_ID in the GitHub environment}"
 
       - uses: google-github-actions/auth@v3
@@ -147,12 +149,13 @@ jobs:
           gcloud storage cp "gs://${FRONTEND_ARTIFACT_BUCKET}/firebase-hosting/${ARTIFACT_TAG}.tgz" /tmp/frontend-hosting.tgz
           tar -xzf /tmp/frontend-hosting.tgz
 
-      - name: Deploy to Firebase Hosting
+      - name: Deploy to Firebase
         env:
           FIREBASE_APP_SITE: ${{ vars.FIREBASE_APP_SITE || vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
           FIREBASE_KDS_SITE: ${{ vars.FIREBASE_KDS_SITE }}
           FIREBASE_ONLY: ${{ vars.FIREBASE_ONLY || 'hosting:app' }}
           FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GOOGLE_CLOUD_QUOTA_PROJECT || vars.PLATFORM_PROJECT_ID }}
         run: |
           set -euo pipefail
@@ -171,6 +174,10 @@ jobs:
                 hosting: {
                   ...((rc.targets && rc.targets[project] && rc.targets[project].hosting) || {}),
                   app: [process.env.FIREBASE_APP_SITE],
+                },
+                storage: {
+                  ...((rc.targets && rc.targets[project] && rc.targets[project].storage) || {}),
+                  'menu-imports': [process.env.FIREBASE_STORAGE_BUCKET],
                 },
               },
             };
