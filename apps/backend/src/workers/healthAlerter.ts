@@ -63,6 +63,11 @@ const OUTBOX_DEAD_LETTER_THRESHOLD = 0;
 // KDS thresholds. A pending order in the kitchen > 10 min is a service
 // emergency on a busy night — the cook lost track or the printer/display died.
 const KDS_OLDEST_PENDING_SECONDS = 10 * 60;
+
+// Notifications outbox: a row waiting to send for longer than this means the
+// channel is down for everyone, not one unlucky recipient. Ten minutes is the
+// verification-code TTL — by then the customer has already given up.
+const NOTIFICATIONS_PENDING_MAX_SECONDS = 10 * 60;
 // Tablets ping at 60s. Five minutes of silence = either the tablet is offline
 // or the wifi is down. Either way, the kitchen is flying blind.
 const KDS_TABLET_SILENCE_MS = 5 * 60 * 1000;
@@ -105,6 +110,12 @@ interface AlertState {
   // invisible until they emailed us.
   provisioningStuckAlerted: boolean;
   notificationsStuckAlerted: boolean;
+  // A notification that has sat `pending` too long. `failed` only trips after
+  // the whole retry ladder (5 attempts, backoff 60s·2ⁿ), so on 3 Sep 2026 the
+  // verification codes were "pending" for many minutes while ZeptoMail
+  // rejected every attempt with 429 "Credit exhausted" — and nobody knew until
+  // a founder read the worker log by hand. This fires on age, not on outcome.
+  notificationsPendingAlerted: boolean;
   stripeUnprocessedAlerted: boolean;
   menuImportsFailedAlerted: boolean;
   // UTC day the Cal.com quota alert last fired for — once per day, and the
@@ -137,6 +148,7 @@ const DEFAULT_STATE: AlertState = {
   funnelSummaryDayKey: null,
   provisioningStuckAlerted: false,
   notificationsStuckAlerted: false,
+  notificationsPendingAlerted: false,
   stripeUnprocessedAlerted: false,
   menuImportsFailedAlerted: false,
   quotaAlertedDayKey: null,
@@ -486,6 +498,7 @@ async function checkPaidCustomerQueues(): Promise<void> {
     const { rows } = await pool.query<{
       provisioning_stuck: string;
       notifications_failed: string;
+      notifications_oldest_pending_seconds: string | null;
       stripe_unprocessed: string;
       menu_imports_failed: string;
     }>(
@@ -497,6 +510,12 @@ async function checkPaidCustomerQueues(): Promise<void> {
          (SELECT count(*) FROM notifications_outbox
            WHERE status = 'failed' AND created_at > now() - interval '24 hours'
          ) AS notifications_failed,
+         -- Age of the oldest row still waiting to send. A row retrying through
+         -- the backoff ladder stays 'pending' for a long time before it ever
+         -- becomes 'failed'; this catches the outage while it is happening.
+         (SELECT EXTRACT(EPOCH FROM (now() - MIN(created_at)))::text
+            FROM notifications_outbox WHERE status = 'pending'
+         ) AS notifications_oldest_pending_seconds,
          -- Uses idx_stripe_webhook_events_unprocessed (010_billing_webhook.sql),
          -- which was created for exactly this query and had no reader until now.
          (SELECT count(*) FROM stripe_webhook_events
@@ -513,6 +532,10 @@ async function checkPaidCustomerQueues(): Promise<void> {
 
     const provisioningStuck = Number(counts.provisioning_stuck);
     const notificationsFailed = Number(counts.notifications_failed);
+    const notificationsOldestPendingSeconds =
+      counts.notifications_oldest_pending_seconds === null
+        ? 0
+        : Number(counts.notifications_oldest_pending_seconds);
     const stripeUnprocessed = Number(counts.stripe_unprocessed);
     const menuImportsFailed = Number(counts.menu_imports_failed);
 
@@ -544,6 +567,28 @@ async function checkPaidCustomerQueues(): Promise<void> {
     } else if (menuImportsFailed === 0 && state.menuImportsFailedAlerted) {
       await postToSlack(`:white_check_mark: Menu imports clear — none failed in the last 24h.`);
       state.menuImportsFailedAlerted = false;
+    }
+
+    // Age-based, so it fires DURING the outage rather than after the retry
+    // ladder has given up. On 3 Sep 2026 every verification code sat pending
+    // while ZeptoMail returned 429 "Credit exhausted"; `failed > 0` below would
+    // only have spoken once the last retry died, long after the first customer
+    // gave up on the sign-up screen.
+    if (
+      notificationsOldestPendingSeconds > NOTIFICATIONS_PENDING_MAX_SECONDS &&
+      !state.notificationsPendingAlerted
+    ) {
+      const mins = Math.floor(notificationsOldestPendingSeconds / 60);
+      await postToSlack(
+        `:rotating_light: A notification has been waiting to send for ${mins} min. Signup verification codes ride this queue, so new signups are blocked RIGHT NOW. Check the worker log for \`notification_failed\` and the provider's credit balance (ZeptoMail ran dry on 3 Sep 2026); see \`notifications_outbox.last_error\`.`
+      );
+      state.notificationsPendingAlerted = true;
+    } else if (
+      notificationsOldestPendingSeconds <= NOTIFICATIONS_PENDING_MAX_SECONDS &&
+      state.notificationsPendingAlerted
+    ) {
+      await postToSlack(`:white_check_mark: Notification queue draining again — nothing waiting longer than ${Math.floor(NOTIFICATIONS_PENDING_MAX_SECONDS / 60)} min.`);
+      state.notificationsPendingAlerted = false;
     }
 
     if (notificationsFailed > 0 && !state.notificationsStuckAlerted) {
