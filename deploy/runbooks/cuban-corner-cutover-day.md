@@ -100,6 +100,19 @@ reached the real backend.
 0l. **Order inside the wizard on the new stack:** the menu step's upload is refused until §0e
    (storage rules) is deployed, and the trial step runs **live** Stripe checkout — do not click
    through it on a test account.
+0m. **Secret parity, read by hash on 3 Sep 2026 (prod Secret Manager vs VM `.env`):** equal —
+   `ZEPTOMAIL_TOKEN`, `RETELL_API_KEY`, `RETELL_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET`.
+   **Different** — `STRIPE_SECRET_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+   `MENU_OCR_API_KEY`. Twilio is expected (the VM still carries the legacy Algorythmos
+   credentials per `domain-migration.md`; Cloud Run should hold Biteperk-production's — confirm
+   the SID is `ACd423bd09…`). Stripe and OCR must be settled before step 7: if Cloud Run's Stripe
+   key is not the **live** key the VM bills with, every checkout after the flip is wrong.
+0n. **The worker's CPU is throttled between requests** (the Cloud Run module sets no
+   `cpu_idle`, so the provider default applies) on BOTH roots. Every outbox tick — verification
+   codes, booking SMS, Cal.com mirror, reapers — is a `setInterval` that only runs while the
+   instance has CPU. `min_instance_count = 1` keeps the process alive but not scheduled. First
+   sign-up on Cloud Run (3 Sep) queued a code that never left. Fix: `cpu_idle = false` on the
+   worker (platform PR), staging first.
 0i. **Proof that sign-up is open** (after step 7): a brand-new, non-allowlisted email signs up at
    `voxtable.biteperk.com.au` → code email from `hello@biteperk.com.au` → restaurant created →
    listed in `/admin/venues`. Rehearse the identical walk on `bp-voxtable-stg.web.app` first.
