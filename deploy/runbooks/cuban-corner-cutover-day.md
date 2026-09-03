@@ -50,10 +50,12 @@ reached the real backend.
 0c. **Terraform parity before the flip** (`[abhi]` applies): `SELF_SERVE_SIGNUP_ENABLED=true`
    (the fix), `EMAIL_VERIFICATION_CODE_ENABLED=true`, `ORDER_FIRE_AT_ENABLED=true`,
    `KITCHEN_LEAD_MINUTES=25`, `VOICE_AUTOBOOK_MAX_PARTY=4`, `STRIPE_CONNECT_ENABLED=true`,
-   `STRIPE_TRIAL_DAYS=7`, and the **`RETELL_WEBHOOK_SECRET`** managed secret. The Biteperk
-   workspace's webhook secret is **not** its API key (Staging's is), and `env.ts` falls back to
-   the API key when the secret is unset — so without it every `/retell/webhook` event is
-   rejected after the flip and no call is ever persisted. Gate:
+   `STRIPE_TRIAL_DAYS=7`, and the **`RETELL_WEBHOOK_SECRET`** managed secret — **merged as
+   platform PR #68 and the secret set in the production environment on 3 Sep; apply still
+   pending.** Verified the same day by hash: the Biteperk workspace has one key badged
+   Webhook, and the VM's `RETELL_API_KEY` and `RETELL_WEBHOOK_SECRET` are that same string
+   (an earlier note claiming production differed from Staging was wrong). `env.ts` would fall
+   back to the API key anyway, so the explicit secret is belt-and-braces, not a fix. Gate:
    `latestCreatedRevision == latestReadyRevision` and `/health` still `database: ok`.
 0d. **Move the people, not just the rows** `[sam]`. Firebase users do not travel with the
    database and `restaurant_members.user_id` is the Firebase uid. 22 accounts exist in project
