@@ -213,6 +213,12 @@ tickets sit invisible until their hour and then arrive already red:
 
 ## 7. The prompt — last, and only once §4–6 are true
 
+> ✅ **Done 3 Sep 2026.** §4 (10/10 dishes ranked, read back from `menu_items`), §5
+> (`owner_phone` set), §6 (three flags live, containers healthy) all landed during the 1.1.0
+> promotion; the prompt PATCH followed the same day — pre/post snapshots and the printed
+> read-back in `deploy/retell-snapshots/20260903-mazcina-recommend-prod-{pre,post}/`.
+> `npm run check:voice-lines`: all three lines green. **§9's real call is still owed.**
+
 Until this step Bella cannot say any of it. The backend serves **13** dynamic variables; the
 production prompt references **10**. `menu_highlights`, `menu_status` and `owner_name` are
 computed on every call and never spoken.
