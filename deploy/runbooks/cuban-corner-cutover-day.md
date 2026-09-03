@@ -84,6 +84,21 @@ reached the real backend.
    dashboard is then split-brain (users hold `bp-voxtable-prod` tokens the VM rejects) and any
    sign-up made on Cloud Run in the gap exists only there. Rollback is clean for the first
    hours; after that, fix forward.
+0j. **Sign-ups made on Cloud Run BEFORE the restore are wiped by step 3.** The public address
+   already fronts Cloud Run, so once the parity apply lands, real venues can sign up there
+   ahead of the data move. Rule: **restore the VM data before inviting anyone.** If a real venue
+   has signed up on Cloud Run by restore day, step 3 becomes a merge, not a drop — dump only the
+   Cloud Run rows created after the VM cut-off (`users`, `restaurants`, `restaurant_members`,
+   `agreement_acceptances`, `menu_*`, `support_requests` — by `created_at`) and re-insert them
+   after the VM restore. Test accounts (e.g. `jj@biteperk.com.au`, 3 Sep) are disposable.
+0k. **Sam's account has no Auth or Rules admin on `bp-voxtable-prod`** (`auth:export` →
+   `INSUFFICIENT_PERMISSION`; `getIamPolicy` denied). §0d (user import) and §0e (storage rules)
+   therefore need a one-time grant of `roles/firebaseauth.admin` + `roles/firebaserules.admin`
+   to `skalaliya@gmail.com` on that project by whoever owns it — the platform root grants no
+   human roles. Until then, both steps are `[abhi]`.
+0l. **Order inside the wizard on the new stack:** the menu step's upload is refused until §0e
+   (storage rules) is deployed, and the trial step runs **live** Stripe checkout — do not click
+   through it on a test account.
 0i. **Proof that sign-up is open** (after step 7): a brand-new, non-allowlisted email signs up at
    `voxtable.biteperk.com.au` → code email from `hello@biteperk.com.au` → restaurant created →
    listed in `/admin/venues`. Rehearse the identical walk on `bp-voxtable-stg.web.app` first.
