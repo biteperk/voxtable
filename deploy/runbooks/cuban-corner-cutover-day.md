@@ -19,6 +19,78 @@ exercise Cloud Run **only after the DNS flip** (step 7). Steps 1–6 prove the s
 
 ---
 
+## ⚠️ What changed since this was written — read first (3 Sep 2026)
+
+**Why this is now urgent, not optional.** `voxtable.biteperk.com.au` CNAMEs to
+`bp-voxtable-prod.web.app`, and the 1.1.0 promotion on 3 Sep deployed a bundle there that
+authenticates against Firebase project `bp-voxtable-prod` and calls the Cloud Run API. That
+API is up (`/health` → `database: ok`) but its Terraform carries **no
+`SELF_SERVE_SIGNUP_ENABLED`**, so every new account is refused with `403 EMAIL_NOT_ALLOWLISTED`,
+and its database holds no venues. Nobody can sign a restaurant up at the public address until
+this cutover completes. The VM logs show zero auth events in 7 days — no sign-up has ever
+reached the real backend.
+
+0. **Cloud SQL prod is NOT empty any more.** The 3 Sep `deploy-backend` run on `main` executed
+   `voxtable-prod-migrate` (schema at `042_restaurant_owner_phone.sql`) and rolled
+   `voxtable-prod-api-00009-pkw` / `voxtable-prod-worker-00006-lbk`. Step 3's "target DB must be
+   EMPTY" gate is stale. `[abhi]`: check for rows first (`users`, `restaurants`,
+   `support_requests` — `/api/me/contact` lead capture runs *without* the allowlist, so a stray
+   lead row is possible; keep any you find), then restore after
+   `DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION vocotable_app;`, still
+   connecting as `vocotable_app`. Step 4's migrate then no-ops at 042 — that is success.
+0a. **Row counts to reconcile (read from the VM 3 Sep 2026):** `restaurants` **15** (Mazcina,
+   Cuban Corner, Natalia's Bistro `live`; twelve test/cancelled), `reservations` 22,
+   `call_logs` 220, `agreement_acceptances` 7, `users` 18, `restaurant_members` 16,
+   Mazcina `menu_items` 31 with 10 `recommend_rank`. Not 6 as step 2 says.
+0b. **Platform PR #63 was closed unmerged, but its content is on `main`** (commit "Give the Cloud
+   Run prod api the env it needs to boot and keep SMS working", applied 2 Sep; the one failed
+   run that day was a state-lock collision). The parity that is still missing is in
+   [biteperk-cloud-platform PR — voxtable prod parity, 3 Sep](#) (see §0c). Platform #62 is
+   still open; treat it as a gate only if the 038 demotion WARNING appears in the migrate log.
+0c. **Terraform parity before the flip** (`[abhi]` applies): `SELF_SERVE_SIGNUP_ENABLED=true`
+   (the fix), `EMAIL_VERIFICATION_CODE_ENABLED=true`, `ORDER_FIRE_AT_ENABLED=true`,
+   `KITCHEN_LEAD_MINUTES=25`, `VOICE_AUTOBOOK_MAX_PARTY=4`, `STRIPE_CONNECT_ENABLED=true`,
+   `STRIPE_TRIAL_DAYS=7`, and the **`RETELL_WEBHOOK_SECRET`** managed secret. The Biteperk
+   workspace's webhook secret is **not** its API key (Staging's is), and `env.ts` falls back to
+   the API key when the secret is unset — so without it every `/retell/webhook` event is
+   rejected after the flip and no call is ever persisted. Gate:
+   `latestCreatedRevision == latestReadyRevision` and `/health` still `database: ok`.
+0d. **Move the people, not just the rows** `[sam]`. Firebase users do not travel with the
+   database and `restaurant_members.user_id` is the Firebase uid. 22 accounts exist in project
+   `vocotable` (Google + email/password). Enable Email/Password and Google providers on
+   `bp-voxtable-prod`; `firebase auth:export users.json --project vocotable`;
+   `firebase auth:import users.json --project bp-voxtable-prod --hash-algo SCRYPT …` with the
+   scrypt parameters from the `vocotable` project's Auth settings (import preserves `localId`,
+   so memberships and passwords survive); set the branded Auth email sender/templates; delete
+   `users.json` (it holds password hashes). Gate: sign in at `bp-voxtable-prod.web.app` as
+   `skalaliya@gmail.com` → `/api/me` on the `.run.app` URL returns `is_admin: true`.
+0e. **Storage rules** `[sam]`: `firebase deploy --only storage --project bp-voxtable-prod`. The
+   wizard's menu upload writes to `bp-voxtable-prod.firebasestorage.app`; rules deploy by hand
+   and forgetting them broke uploads on 31 Jul. Old menu images keep their `vocotable` bucket
+   URLs, which stay readable via their tokens.
+0f. **Domain mapping days BEFORE the flip** `[abhi]`:
+   `gcloud beta run domain-mappings create --service voxtable-prod-api --domain api.biteperk.com.au --region australia-southeast1`
+   (domain verified to the executing identity). The region currently lists zero mappings, so
+   this path is untested here; if it is refused, the fallback is an HTTPS load balancer with a
+   serverless NEG. Gate: the mapping reports a served certificate before step 7 touches DNS.
+0g. **Legacy dashboard hosts after the flip** `[sam]`: `vocotable.web.app` /
+   `vocotable.biteperk.com.au` carry a bundle that authenticates against `vocotable`, which the
+   Cloud Run backend rejects. Deploy the redirect page in `deploy/legacy-redirect/` to the
+   `vocotable` hosting site (`firebase deploy --only hosting:app --project vocotable` with
+   `public` pointed at that folder). Tell Camilo's kitchen to open `kds.biteperk.com.au`.
+0h. **Rollback honesty.** DNS back to `136.113.35.88` restores calls in under a minute, but the
+   dashboard is then split-brain (users hold `bp-voxtable-prod` tokens the VM rejects) and any
+   sign-up made on Cloud Run in the gap exists only there. Rollback is clean for the first
+   hours; after that, fix forward.
+0i. **Proof that sign-up is open** (after step 7): a brand-new, non-allowlisted email signs up at
+   `voxtable.biteperk.com.au` → code email from `hello@biteperk.com.au` → restaurant created →
+   listed in `/admin/venues`. Rehearse the identical walk on `bp-voxtable-stg.web.app` first.
+   Then update `deploy/voice-lines.json`'s production block to `retell_credentials.via:
+   "secret-manager"` (`bp-voxtable-prod`, `voxtable-prod-retell-api-key`) and `db.via:
+   "unreachable"`, mirroring staging, and run `npm run check:voice-lines`.
+
+---
+
 ### 1. Legal manifest resolves `[agent]`
 ```bash
 curl -sf https://storage.googleapis.com/bp-voxtable-prod-legal-documents/current/manifest.json | head -c 400
