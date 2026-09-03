@@ -122,6 +122,20 @@
       "twilio_region": "au1",
       "termination_uri": "voxtable-staging-au1.pstn.twilio.com",
       "twilio_au1_key_secret": "voxtable-stg-twilio-au1-key",
+      "origination_transport": "tcp",
+      "trunk_secure": false,
+      "$trunk_posture_comment": [
+        "Read back from the AU1 Trunking API on 2 Sep 2026 — NOT the tls + secure=true that NUMBERS.md",
+        "and this file's neighbours described. This is the posture set by the reversible experiment in",
+        "deploy/runbooks/incident-7600ms-call-drops.md §6 (Secure=false first, then origination",
+        "tls -> tcp) to test whether transport caused the ~7.6s drops. It did not: two more staging",
+        "drops on 30 Aug exonerated transport, production moved to US1 instead, and staging was never",
+        "reverted. Declared as-is so assert-line [19]/[20] guard the real trunk instead of skipping",
+        "under --strict — which is what turned Voice line health red from #359 onward.",
+        "Reverting to tls + secure=true is the §6 rollback and an OPEN decision: §6 requires 6 real",
+        "test calls to +61 468 203 234 to validate any trunk change, so it is not a repo-only action.",
+        "Change the trunk and this declaration in the SAME change, never one without the other."
+      ],
       "db": {
         "via": "unreachable",
         "note": "Cloud SQL on a private VPC — not reachable from a laptop. Change the row through the admin API, which verifies the agent before storing it, then re-run assert-line."

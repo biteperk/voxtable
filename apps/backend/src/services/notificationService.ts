@@ -28,9 +28,11 @@ export function isSmsEnabled(): boolean {
  * Never returns both. Twilio reads `{messagingServiceSid, from}` together as
  * "keep the service's features but pin this From", which switches OFF automatic
  * sender selection — so the alphanumeric `BitePerk` sender would be ignored even
- * once it is in the pool, and the failure is silent. Production has
- * NOTIFICATIONS_SMS_FROM set today, so that is the live configuration, not a
- * corner case.
+ * once it is in the pool, and the failure is silent. Read off the VM on 1 Sep
+ * 2026, production sets NEITHER variable, so nothing sends at all — and its
+ * TWILIO_ACCOUNT_SID is the legacy Algorythmos account, which owns neither the
+ * Messaging Service nor the number. Correct the credentials before setting a
+ * sender; no sender value works until then.
  *
  * With the service alone, Twilio picks the alphanumeric sender where the
  * destination supports it and falls back to a number from the same pool where it

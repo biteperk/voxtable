@@ -11,7 +11,7 @@
  *
  *   TWILIO_ACCOUNT_SID=AC… TWILIO_AUTH_TOKEN=… \
  *   NOTIFICATIONS_MESSAGING_SERVICE_SID=MG… \
- *   npm run smoke:sms-sender --workspace=@vocotable/backend
+ *   npm run smoke:sms-sender --workspace=@voxtable/backend
  *
  * Send mode costs money and texts a real handset, so it is behind an explicit
  * flag rather than a bare argument:

@@ -50,6 +50,43 @@ experience of VoxTable is whether Bella sounds human, knows the venue, and never
    not usually vanish together. And a *false verification* is worse than no check: an unverified
    claim invites doubt, while one "confirmed" against the wrong estate ends the conversation.
 
+> 🧊 **PROMPT FREEZE — in force from 27 Aug 2026. Read before editing any prompt.**
+>
+> The staging prompt is frozen until the simulation-test suite exists (plan Phase 1). This is
+> not caution; it is the finding of an audit of every change made since 13 Aug:
+>
+> - **58 phone calls have ever been placed.** The latency gate has been met on three days
+>   (13, 16, 25 Aug) and never since 20 Aug. Best-ever 865 ms → 2,475 ms today.
+> - **The prompt is a one-way ratchet.** 10,574 → 15,334 chars, +45% on 26 Aug alone across
+>   nine patches, **five of which recorded no measurement at all**. The regression was visible
+>   that night (2473/2525/2617 ms) and the response was to tune a voice knob.
+> - **The same four complaints** — filler "hmm", too fast, repeated confirmations, no booking
+>   SMS — were re-reported in **twelve separate sessions**, each promising to fix them via the
+>   API. They are still open.
+> - `interruption_sensitivity` has been set **six times**, `voice_id` **five times**. The
+>   assertion script was *widened* to accept a band rather than the question being settled.
+>
+> This skill's own eval rubric already stated the rule that was broken: *"Expect the prompt to
+> get shorter. That is the tell that you fixed the cause and not the symptom."*
+>
+> **If a fix makes the prompt longer, it is a symptom patch.** Find the instructions already in
+> the prompt that cause the behaviour and delete them. And one lever, then a **graded suite
+> run** — an intention to place a call is not verification. Fourteen "verification still owed"
+> items were never done.
+>
+> **Update, 1 Sep 2026:** that suite now exists and runs in CI (`deploy/voice-tests/cases.json`, `voice-agent-behaviour.yml`). The freeze's precondition is met; the discipline it describes is not thereby cancelled.
+
+**Measured decomposition, 27 Aug 2026** (`scripts/turn-latency.mjs`, 37 healthy calls,
+21 sub-15 s drops excluded). Stop quoting a blended e2e p50 — it hides the dominant term:
+
+| Term | p50 | Paid on |
+|---|---|---|
+| Endpointing | **~581 ms** | every turn |
+| LLM generation | 655 ms | every turn |
+| TTS | 193 ms | every turn |
+| **Tool overhead** | **~1,082 ms** | every TOOL turn |
+| — our own API | **67 ms** (n=180, Cloud Run logs) | — |
+
 ## Definition of done for an agent
 
 Machine-checkable half (`scripts/assert-agent.mjs` runs all of these):
