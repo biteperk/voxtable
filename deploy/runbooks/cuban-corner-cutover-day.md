@@ -58,6 +58,9 @@ reached the real backend.
    (an earlier note claiming production differed from Staging was wrong). `env.ts` would fall
    back to the API key anyway, so the explicit secret is belt-and-braces, not a fix. Gate:
    `latestCreatedRevision == latestReadyRevision` and `/health` still `database: ok`.
+   ⚠️ **`EMAIL_VERIFICATION_CODE_ENABLED=true` is being reversed — see §0p.** Sign-up is moving
+   onto Firebase's native verification link, so this flag flips back to `false`; the rest of the
+   parity list stands.
 0d. **Move the people, not just the rows** `[sam]`. Firebase users do not travel with the
    database and `restaurant_members.user_id` is the Firebase uid. 22 accounts exist in project
    `vocotable` (Google + email/password). Enable Email/Password and Google providers on
@@ -126,6 +129,11 @@ reached the real backend.
    Validation → Complete** (unvalidated accounts are throttled; needed at volume). Pending rows
    send on the next tick; rows that hit 5 attempts stay `failed` and that is fine — codes expire
    in 10 min and the user just presses "Send a new code".
+   ⚠️ **Superseded for sign-up by §0p:** switching sign-up to Firebase's native link takes
+   ZeptoMail off the verification critical path entirely, so this credit-exhaustion fault no
+   longer blocks sign-up. Credits + Auto Top-up still matter for the **other** outbox emails
+   (booking/order notifications) whenever `EMAIL_PROVIDER=zeptomail` and those features are on —
+   so still worth doing, just no longer the go-live gate.
    **Guardrail gap this exposed:** the health alerter is `health_alerter_not_started` on Cloud
    Run prod because `OPS_SLACK_WEBHOOK_URL` is absent from both Terraform roots, so the
    `failed > 0` notifications alert that would have fired never could. Wire the webhook, and add
@@ -140,12 +148,42 @@ reached the real backend.
    made-up `@biteperk.com.au` addresses; re-test with a mailbox that exists before blaming the
    worker (the admin `/api/admin/ops-summary` shows notification outbox counts once an admin
    account exists in `bp-voxtable-prod`).
-0i. **Proof that sign-up is open** (after step 7): a brand-new, non-allowlisted email signs up at
-   `voxtable.biteperk.com.au` → code email from `hello@biteperk.com.au` → restaurant created →
-   listed in `/admin/venues`. Rehearse the identical walk on `bp-voxtable-stg.web.app` first.
+0i. **Proof that sign-up is open** (after step 7, with §0p applied): a brand-new, non-allowlisted
+   email+password account signs up at `voxtable.biteperk.com.au` → `/verify-email` falls to the
+   Firebase-native link flow → **native verification link** arrives (from
+   `noreply@bp-voxtable-prod.firebaseapp.com`, check spam) → clicked → account verified →
+   onboarding proceeds → restaurant created → listed in `/admin/venues`. No ZeptoMail send is
+   involved. Rehearse the identical walk on `bp-voxtable-stg.web.app` first.
    Then update `deploy/voice-lines.json`'s production block to `retell_credentials.via:
    "secret-manager"` (`bp-voxtable-prod`, `voxtable-prod-retell-api-key`) and `db.via:
    "unreachable"`, mirroring staging, and run `npm run check:voice-lines`.
+0p. **Sign-up verification moves to Firebase's native link (decision 3 Sep 2026).** Rather than
+   wait on the ZeptoMail credit/KYC fix (§0o), flip `EMAIL_VERIFICATION_CODE_ENABLED` back to
+   **`false`**. When off, the backend 404s `/api/auth/verify-email/*` and the frontend already
+   falls back to `LegacyVerifyEmail`, which sends Firebase's own verification **link** (Google's
+   infra — no ZeptoMail, no worker outbox, no Cloud NAT). Accepted tradeoff: the native link is
+   more spam-prone than the branded 6-digit code (the reason the code flow was built) — this is a
+   "get sign-up open now" move; revisit once ZeptoMail has credits + Auto Top-up + validation.
+   - **No code change.** Verified in the frontend: fallback fires on a clean 404
+     (`VerifyEmailScreen.jsx:57-71`); legacy mode auto-sends on mount plus a manual button
+     (`:359-367`); post-verify it runs `user.reload()` → `getIdToken(true)` before any backend
+     call (`:292-302`), with an `api.js:93-98` 403-`EMAIL_NOT_VERIFIED` retry backstop — so no
+     stale-token 403 loop. The boot gate (`env.ts:779-787`) is one-directional and never fires
+     when the flag is off. Google-SSO users bypass the screen entirely (already `emailVerified`).
+   - **The one fragility:** fallback is **404-only**. A non-404 failure (500, network, or an
+     unhealthy api revision) strands the user on the OTP screen instead of falling back. So the
+     flip must land a clean 404 on a **healthy api revision** — confirm `readyz` 200 after the
+     roll before declaring done.
+   - **Prerequisite (Gate 0):** Firebase Auth → authorized domains on **`bp-voxtable-prod`**
+     (not legacy `vocotable`) must include `voxtable.biteperk.com.au` — the native link's action
+     handler + continue URL `${origin}/verify-email` live there (`firebase.js:216-245`). Almost
+     certainly already present (Google sign-in works there and shares the gate), but confirm.
+   - **Sequence:** rehearse the flip + full E2E (§0i walk) on staging first, then `[abhi]`
+     applies to the prod Terraform root (`voxtable-prod-api` + `-worker`), leaving
+     `NOTIFICATIONS_ENABLED=true` (booking/order SMS + order-payments still need it,
+     `env.ts:689-769`).
+   - **Rollback:** flip back to `true` and re-apply — but that returns to the broken ZeptoMail
+     path, so it is only a real revert once §0o's credits are bought. Config-only, no migration.
 
 ---
 
