@@ -62,8 +62,8 @@ PROD_VITE_API_BASE_URL="https://api.biteperk.com.au"
 PROD_VITE_FIREBASE_API_KEY="" # REQUIRED: Firebase web app config.
 # Mirrors what the GitHub `production` environment has held since 20 Aug 2026:
 # the NEW bp-voxtable-prod Firebase project — the future Cloud Run stack, not
-# the estate serving customers today (legacy project `vocotable`, VM API). The
-# legacy vocotable Hosting site is deployed by hand with the legacy config.
+# the Cloud Run production estate in `bp-voxtable-prod`. The legacy `vocotable`
+# project and VM are sandbox-only and must not supply production configuration.
 # authDomain being a different origin from the serving page broke Google
 # sign-in under Chrome's storage partitioning ("Database is closing/hidden",
 # 25 Aug 2026); resolveAuthDomain() in apps/frontend/src/lib/firebaseConfig.js

@@ -140,13 +140,13 @@ export function PhoneStep({ onRefresh }) {
           </ul>
           (Exact steps vary by carrier — Telstra, Optus and Vodafone all support these GSM codes.)
         </li>
-        <li>From a different phone, call your restaurant's normal number to test it.</li>
-        <li>Tap verify below — we'll confirm the call reached Bella.</li>
+        <li>Confirm the forwarding details shown by your carrier.</li>
+        <li>Tap activate below. We will validate the configured VoxTable bindings without placing a test call.</li>
       </ol>
       {error && <p className="onboarding-error">{error}</p>}
       <div className="onboarding-actions">
         <button type="button" className="primary-button" onClick={verify} disabled={verifying}>
-          {verifying ? "Checking for your test call…" : "I've forwarded my number — verify"}
+          {verifying ? "Activating forwarding…" : "I've forwarded my number — activate"}
           <Icon name="arrow_forward" />
         </button>
       </div>

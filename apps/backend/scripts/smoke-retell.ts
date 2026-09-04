@@ -1,4 +1,7 @@
+import { assertSafeSmokeTarget } from "./lib/smokeTarget";
+
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
 const restaurantId =
   process.env.DEFAULT_RESTAURANT_ID ?? "11111111-1111-4111-8111-111111111111";
 

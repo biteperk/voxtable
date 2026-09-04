@@ -21,8 +21,10 @@
 //   7. Replay same call_id → SAME order_id (idempotency)
 
 import { Retell } from "retell-sdk";
+import { assertSafeSmokeTarget } from "./lib/smokeTarget";
 
 const baseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:3050";
+assertSafeSmokeTarget(baseUrl);
 const restaurantId =
   process.env.SMOKE_RESTAURANT_ID ??
   process.env.DEFAULT_RESTAURANT_ID ??

@@ -1,5 +1,8 @@
 # Mazcina in PRODUCTION — Biteperk workspace, 19 Aug 2026
 
+> Historical snapshot only. Its VM-based production description records an abandoned assumption.
+> Current production runs on Cloud Run and Cloud SQL; no VM data or credentials are promoted.
+
 The first BitePerk-owned production voice line. Promoted from the Sam/Abhishek-verified
 staging pair (`agent_7b67073710604d306443cc569c` / `llm_c1d40dbe180e737dd2ce1309ed3f`).
 
@@ -8,13 +11,13 @@ staging pair (`agent_7b67073710604d306443cc569c` / `llm_c1d40dbe180e737dd2ce1309
 | Production agent | `agent_3bedcbdd77017136e5b4ade412` — "Mazcina (production)" |
 | Production LLM | `llm_5774e05076475b2b0cdba5329ad5` (11,573 chars) |
 | Number | `+61 468 202 846`, imported webhook-mode → `https://api.biteperk.com.au/retell/inbound` |
-| Venue row | `44444444-4444-4444-8444-444444444444` (production DB on the VM) |
+| Venue row | `44444444-4444-4444-8444-444444444444` (sandbox DB, historically mislabelled production) |
 | Voice / knobs | `retell-Cimo`, `stt_mode fast`, interruption 0.6, expressive off, 30-day retention |
 
 ## Why this prompt differs from staging's (and it MUST)
 
-Production runs `main` on the VM — 25 commits behind `integration`, with its **database at
-migration 024**. Verified before building: its `/retell/inbound` serves only
+At snapshot time, the VM sandbox was incorrectly treated as production. It ran `main` 25 commits
+behind `integration`, with its database at migration 024. Its `/retell/inbound` served only
 `restaurant_id, restaurant_name, restaurant_timezone, caller_phone, today, tomorrow,
 now_local, weekday_local`. It has **no `venue_faq`, no `owner_name`, no `today_status`**;
 its availability tool **cannot return `reason: "closed"`**; `menu_lookup` **ignores

@@ -975,7 +975,8 @@ no-op worker.</p>
 <h2 id="testing">14. Testing</h2>
 
 <p>House rule: product behaviour is smoke-tested, not unit-tested. DB-free <code>node:test</code> units
-are allowed for pure plumbing. No Jest.</p>
+are allowed for pure plumbing. No Jest. Every smoke, fixture, payment and call test in this section
+runs only in staging. Production receives no dummy/seed data and no state-changing test.</p>
 
 <h4>Unit — DB-free, runs in <code>npm run check</code></h4>
 <ul>

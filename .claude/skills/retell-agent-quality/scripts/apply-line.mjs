@@ -126,9 +126,8 @@ if (Object.keys(patch).length === 0) {
 }
 
 // ─── 2. Database row ──────────────────────────────────────────────────────────
-// The one layer with no vendor API. Production is at migration 024, so the admin bind route
-// (which verifies the agent before storing it) does not exist there — raw SQL is the only path,
-// and it checks nothing. That is why assert-line runs immediately afterwards.
+// The database binding must use the environment's declared access path. Production Cloud SQL is
+// private and production bindings go through the admin API; vm-ssh remains sandbox compatibility.
 const sql = `UPDATE restaurants SET retell_agent_id = '${d.retell_agent_id}', twilio_phone_number = '${number}' `
   + `WHERE id = '${d.restaurant_id}' AND (retell_agent_id IS DISTINCT FROM '${d.retell_agent_id}' OR twilio_phone_number IS DISTINCT FROM '${number}');`;
 

@@ -33,7 +33,7 @@ The backend also exposes Twilio-compatible webhook endpoints. These are useful f
 Production API base URL:
 
 ```text
-https://vocotable.algorythmos.com.au
+https://api.biteperk.com.au
 ```
 
 ### Incoming Voice URL
@@ -105,9 +105,10 @@ RetellAI lifecycle webhooks still point to:
 {PUBLIC_API_BASE_URL}/retell/webhook
 ```
 
-## Local Smoke Test
+## Staging Smoke Test
 
-With the backend running and `TWILIO_VALIDATE_SIGNATURE=false`:
+Run against the staging Cloud Run API with signature validation enabled and the
+staging Twilio credentials:
 
 ```bash
 npm run smoke:twilio
@@ -118,4 +119,7 @@ This verifies that the backend can:
 1. Accept a Twilio-style incoming voice webhook.
 2. Return TwiML with a SIP dial target.
 3. Accept a Twilio-style status callback.
+
+Never run this smoke against the production API. Production is limited to
+health/readiness, configuration read-back and monitoring.
 4. Store/update `call_logs` for the Twilio call SID.

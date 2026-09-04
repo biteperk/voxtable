@@ -1,167 +1,57 @@
-# Backup + restore runbook — VocoTable Postgres
+# Production backup and restore — Cloud SQL
 
-We pg_dump nightly to a GCS bucket (provisioned 2026-05-25, see observation 6987). This runbook covers two things:
+Production data lives only in Cloud SQL instance `voxtable-prod-postgres` in
+project `bp-voxtable-prod`. Cloud SQL automated backups and point-in-time
+recovery are the production recovery mechanisms.
 
-1. **Verify the backup chain is actually working** — periodic drill so we discover the failure before we need the backup.
-2. **Restore from backup** — the actual disaster step.
+`core-central-vm` and its local Postgres database are sandbox resources. Their
+dumps, cron jobs and GCS objects are not production backups and must never be
+restored or merged into production.
 
----
+## Routine verification
 
-## Daily verification (5 minutes once a week)
+At least quarterly, verify in the infrastructure configuration and Cloud SQL:
 
-```bash
-# 1. Confirm the cron ran and a fresh file landed in GCS
-gcloud storage ls gs://vocotable-backups-497209/ --recursive | tail -5
+- automated backups are enabled;
+- point-in-time recovery is enabled;
+- transaction-log retention satisfies the recovery objective;
+- the newest backup completed successfully;
+- deletion protection and the intended retention settings remain enabled.
 
-# 2. Spot-check the most recent dump — list its tables without restoring
-gcloud storage cp gs://vocotable-backups-497209/<latest>.sql.gz /tmp/
-gunzip -c /tmp/<latest>.sql.gz | head -200 | grep -E "^(--|CREATE TABLE|COPY)"
+Use a non-production restored instance for drills. A backup listing is not proof
+that the data can be restored and read.
 
-# Should see: schema_migrations, restaurants, customers, reservations, tables,
-# call_logs, outbox_calcom, inbox_calcom_events
-```
+## Restore drill
 
-If anything's missing, the cron is silently broken — fix before you need it.
+1. Select a production backup or timestamp.
+2. Restore it to a new, isolated Cloud SQL instance in the production region.
+3. Connect using the Cloud SQL Auth Proxy and a dedicated drill credential.
+4. Compare schema migration head and representative table counts with the source.
+5. Run read-only application checks against the restored instance.
+6. Destroy the drill instance after recording results.
 
----
+Do not point a serving Cloud Run revision at a drill database.
 
-## Full restore drill (do once before launch, then quarterly)
+## Production recovery
 
-Goal: prove the dump actually restores to a working DB, and that the restored row counts roughly match prod (±whatever was written since the snapshot).
+For accidental deletion or corruption:
 
-```bash
-# On any workstation (or staging VM if you have one):
+1. Stop or disable the writer responsible for the damage.
+2. Record the incident timestamp and choose a recovery point immediately before it.
+3. Preserve the current database as evidence; do not overwrite it in place.
+4. Restore to a new Cloud SQL instance using point-in-time recovery.
+5. Reconcile row counts, `schema_migrations`, tenant memberships, reservations,
+   call logs, orders and integration outboxes.
+6. Have the database switch reviewed before changing the production secret or
+   connection target.
+7. Roll Cloud Run services and verify `/health`, `/readyz`, authentication and a
+   representative venue flow.
 
-# 1. Pull yesterday's backup
-gcloud storage cp gs://vocotable-backups-497209/$(date -v-1d +%Y%m%d).sql.gz /tmp/
+Application rollback and database recovery are separate operations. See
+`rollback.md` for Cloud Run revision rollback.
 
-# 2. Spin up a throwaway Postgres
-docker run -d --rm --name pg-restore-test \
-  -e POSTGRES_PASSWORD=test -p 5433:5432 postgres:16
+## Sandbox backups
 
-# 3. Restore into it
-gunzip -c /tmp/$(date -v-1d +%Y%m%d).sql.gz | \
-  docker exec -i pg-restore-test psql -U postgres
-
-# 4. Compare row counts against prod (read-only)
-echo "RESTORED:"
-docker exec pg-restore-test psql -U postgres -d vocotable -c \
-  "SELECT 'reservations' AS t, count(*) FROM reservations
-   UNION ALL SELECT 'customers', count(*) FROM customers
-   UNION ALL SELECT 'call_logs', count(*) FROM call_logs
-   UNION ALL SELECT 'outbox_calcom', count(*) FROM outbox_calcom;"
-
-echo "PROD:"
-gcloud compute ssh core-central-vm --zone us-central1-a --command='
-  sudo docker exec vocotable-postgres-1 psql -U vocotable -d vocotable -c "
-    SELECT '"'"'reservations'"'"' AS t, count(*) FROM reservations
-    UNION ALL SELECT '"'"'customers'"'"', count(*) FROM customers
-    UNION ALL SELECT '"'"'call_logs'"'"', count(*) FROM call_logs
-    UNION ALL SELECT '"'"'outbox_calcom'"'"', count(*) FROM outbox_calcom;"
-'
-
-# 5. Tear down
-docker rm -f pg-restore-test
-```
-
-Expected: restored counts ≤ prod counts (only new rows since the backup window). If restored > prod, something's wrong with the backup pipeline.
-
----
-
-## Actual disaster restore
-
-This is the procedure when prod is gone — DB corruption, accidental DELETE FROM, accidental DROP DATABASE.
-
-**Before you start:** TAKE A SNAPSHOT OF THE CURRENT STATE. Even broken data is evidence + a restore option if the backup also fails.
-
-```bash
-# 1. SSH the VM
-gcloud compute ssh core-central-vm --zone us-central1-a
-
-# 2. Stop the api so it can't write more
-cd /opt/vocotable && sudo docker compose stop api
-
-# 3. Snapshot the current (broken) DB
-sudo docker exec vocotable-postgres-1 pg_dump -U vocotable vocotable | \
-  gzip > /tmp/pre-restore-snapshot-$(date +%Y%m%d-%H%M%S).sql.gz
-
-# 4. Pull the backup to restore from. Pick which day — usually yesterday.
-gcloud storage cp gs://vocotable-backups-497209/<filename>.sql.gz /tmp/
-
-# 5. Drop and recreate the DB
-sudo docker exec vocotable-postgres-1 psql -U vocotable -d postgres -c \
-  "DROP DATABASE vocotable; CREATE DATABASE vocotable;"
-
-# 6. Restore
-gunzip -c /tmp/<filename>.sql.gz | \
-  sudo docker exec -i vocotable-postgres-1 psql -U vocotable -d vocotable
-
-# 7. Verify
-sudo docker exec vocotable-postgres-1 psql -U vocotable -d vocotable -c \
-  "SELECT count(*) FROM reservations; SELECT max(applied_at) FROM schema_migrations;"
-
-# 8. Restart api
-sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-  up -d --no-deps api
-
-# 9. Smoke
-curl -sf https://vocotable.algorythmos.com.au/health
-```
-
-**After the restore:** any reservations between the backup snapshot and the incident are lost. Check the Retell call history for that window and manually re-enter any that resulted in confirmed bookings. Coordinate with Ali.
-
----
-
-## Backup gaps we know about
-
-- **No point-in-time recovery (PITR).** A daily pg_dump can lose up to 24h of bookings. For ≤ 10 calls/day this is acceptable; revisit when traffic grows.
-- **GCS bucket lifecycle is 30 days** (per observation 6987). Older backups auto-delete. If you need long retention, copy to a different bucket before day 30.
-- **No automated restore verification.** The "Daily verification" section above is manual. Cron-ify after launch.
-
-
----
-
-## What actually runs the backups (verified 2026-08-03)
-
-There are **two independent backup mechanisms**. Know which one you are relying on.
-
-| | Offsite chain (the real one) | Local script |
-|---|---|---|
-| Bucket / path | `gs://vocotable-backups-497209/` — australia-southeast1 (Sydney) | `/opt/vocotable/backups/` on the VM only |
-| Filename | `db-YYYYMMDD-062501.sql.gz` | `vocotable_YYYYMMDD_030001.sql.gz` |
-| Runs at | 06:25 UTC daily | 03:00 UTC daily, root cron |
-| Driven by | service account `vocotable-backups@vocotable-497209.iam.gserviceaccount.com` ("VocoTable daily DB backups"), **from a machine outside GCP** | `deploy/scripts/backup-postgres.sh` |
-| Offsite? | Yes | **No** |
-
-Verified 2026-08-03: 31 objects, newest `db-20260803-062501.sql.gz`, schema
-identical to the local dump of the same day (`call_logs`, `customers`,
-`agreement_acceptances`, `legal_notices`, `menu_*`, …).
-
-### Two things to know before you change anything
-
-1. **`core-central-vm` cannot write to GCS.** Its OAuth scopes are
-   `devstorage.read_only`, `logging.write`, `monitoring.write`,
-   `service.management.readonly`, `servicecontrol`, `trace.append`. Adding a
-   `gcloud storage cp` to `backup-postgres.sh` will fail no matter what IAM you
-   grant. Changing instance scopes requires stopping the VM.
-
-2. **The 06:25 job does not run on this VM, and its host is not yet
-   identified.** It is not root cron, not a GitHub Actions schedule, not Cloud
-   Scheduler (that API is disabled), and there is no VM in any Sydney zone. The
-   service account holds a user-managed key created 2026-05-25 and never
-   rotated, so some machine outside GCP is holding that JSON key, reaching
-   production Postgres, and uploading the dump.
-
-   That key currently has **`roles/storage.objectAdmin`**, which means the
-   holder can *delete* every backup, not merely add new ones. Downgrade to
-   `objectCreator` once the host is identified — but **do not delete the key
-   before then**, because it is the only offsite chain you have.
-
-### Open actions
-
-- [ ] Identify the machine running the 06:25 dump.
-- [ ] Downgrade the backup SA from `objectAdmin` to `objectCreator`.
-- [ ] Rotate the 2026-05-25 key and record where the replacement lives.
-- [ ] Enable object versioning or a retention policy on the bucket.
-- [ ] Decide the fate of the redundant 03:00 local-only script — retire it, or
-      give the VM write scope and make it the documented chain.
+Sandbox data may be backed up for experiment reproducibility, but every such
+artifact must be labelled sandbox. It has no production retention guarantee and
+is not part of disaster recovery.

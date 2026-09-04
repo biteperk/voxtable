@@ -27,11 +27,12 @@ A number is not "ready" because it was purchased. It is ready when all of these 
 - [ ] Messaging Service exists with the number as sender; SMS geo permission for AU enabled
 - [ ] Retell agent bound to the number as `inbound_agent_id`
 - [ ] `restaurants` row exists with `twilio_phone_number` in E.164
-- [ ] **A real test call answered and landed in `call_logs` with the right `restaurant_id`**
+- [ ] **A staging test call answered and landed in staging `call_logs` with the right `restaurant_id`**
 - [ ] Account has a non-zero balance and **auto-recharge enabled**
 - [ ] SIDs recorded in the runbooks
 
-Console green ticks confirm configuration, not connectivity. Only the test call proves the chain.
+The complete chain is proven on the staging equivalent. Production is verified only by
+non-mutating configuration read-back, health/readiness and monitoring of genuine calls.
 
 **Realistic timing:** ~30 minutes when compliance already exists, *plus* one retry for a number
 lost mid-purchase. Budget for the retry — it is the norm, not the exception.
@@ -320,14 +321,16 @@ working, not a bug to route around.
 
 ## Phase 8 — Verify
 
-1. Traffic Status shows **Voice enabled**.
-2. **Place a real call.** Confirm the agent answers and completes a booking.
-3. Check `call_logs` for the row with the expected `restaurant_id`.
-4. Open the **Console Debugger** (`Monitor → Logs → Errors`) — signature failures, unreachable
+1. On staging, Traffic Status shows **Voice enabled**.
+2. **Place a real staging call.** Confirm the staging agent answers and completes a booking.
+3. Check staging `call_logs` for the row with the expected `restaurant_id`.
+4. Open the staging **Console Debugger** (`Monitor → Logs → Errors`) — signature failures, unreachable
    webhooks and TLS problems land here rather than anywhere you'd naturally look.
-5. Send one test SMS if messaging is in scope.
+5. Send one staging test SMS if messaging is in scope.
+6. For production, read back the number, trunk, Retell and endpoint configuration, then monitor
+   genuine traffic. Do not place a test call or send a test SMS.
 
-Only the test call exercises every hop.
+Only the staging test call exercises every hop without contaminating production.
 
 ---
 

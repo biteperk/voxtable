@@ -530,3 +530,36 @@ jobs:
 
           tar -czf /tmp/frontend-hosting.tgz apps/frontend/dist apps/kds/dist
           gcloud storage cp /tmp/frontend-hosting.tgz "gs://${FRONTEND_ARTIFACT_BUCKET}/firebase-hosting/${ARTIFACT_TAG}.tgz"
+
+  # Deploys are dispatched from here rather than chained with `workflow_run`.
+  # A `workflow_run` run is attributed to the DEFAULT branch (integration), so
+  # the production environment's branch policy (main only) rejected every
+  # main-triggered deploy before a single step ran — four releases shipped no
+  # dashboard or KDS and the runs list showed a three-second failure that looked
+  # like nothing (issue #357). A `workflow_dispatch` carries the ref it is
+  # dispatched from, so `--ref main` satisfies the policy and the deploy
+  # workflows' own branch guard. GITHUB_TOKEN may start workflow_dispatch runs
+  # (one of the two events exempt from the no-recursion rule). The deploy
+  # workflows keep their own no-cancel concurrency groups, so a later CI run
+  # cancelling this one cannot interrupt a deploy mid-upload.
+  dispatch-deploys:
+    name: Dispatch deploys
+    runs-on: ubuntu-latest
+    needs: [docker-images, frontend-artifacts]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/integration' || github.ref == 'refs/heads/main')
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
+      - name: Dispatch backend and frontend deploys for this branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+          DEPLOY_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+        run: |
+          set -euo pipefail
+          for wf in deploy-backend.yml deploy-frontend.yml; do
+            gh workflow run "$wf" --repo "$GITHUB_REPOSITORY" --ref "$REF_NAME" -f "environment=$DEPLOY_ENV"
+            echo "dispatched $wf from $REF_NAME -> $DEPLOY_ENV"
+          done

@@ -14,10 +14,12 @@
 >    identifiers appear nowhere in the result — do not trust the rewrite.
 > 3. **Data does not promote.** Seeding staging changes nothing in production.
 > 4. Read config back from the API after writing it; never trust the write response.
-> 5. **"Enabled" is not "works."** Only a real call or a delivered message proves a path.
-> 6. Some things **cannot** be rehearsed in staging (buying a number, branded SMS, Stripe
->    live mode, the venue cutover). That register is in CLAUDE.md §C — check it before
->    assuming a staging test is available.
+> 5. **All testing happens in staging.** Functional, integration, smoke, call-battery,
+>    onboarding, KDS, payment and destructive checks must never target production.
+> 6. Production receives only non-mutating health/readiness checks, configuration
+>    read-backs and monitoring. If a vendor capability cannot be reproduced in staging,
+>    activate it conservatively and observe it; do not create a production test.
+> 7. **No dummy, fixture, synthetic, rehearsal or seed data may enter production.**
 
 Guidance for AI coding agents and other automated assistants working in this repository.
 
@@ -109,7 +111,6 @@ Most risky integrations are behind kill switches that default off:
 - `PROVISIONING_AUTO_ENABLED`
 - `CALCOM_SYNC_ENABLED`
 - `SELF_SERVE_SIGNUP_ENABLED`
-- `EMAIL_VERIFICATION_CODE_ENABLED`
 - `ORDER_PAYMENTS_ENABLED`
 - `STRIPE_CONNECT_ENABLED`
 - `SERVICES_VOXCONCIERGE_ENABLED`
@@ -136,7 +137,11 @@ Dates for reservations are restaurant-local wall-clock `DATE` and `TIME`; lifecy
 
 Read `CLAUDE.md` and `deploy/runbooks/` before production changes.
 
-Backend production runs on the GCP VM behind nginx. Frontend runs on Firebase Hosting. Build the frontend with `VITE_API_BASE_URL` pointing at the production API before deploy.
+Backend production runs on Cloud Run in `bp-voxtable-prod` with Cloud SQL. The
+`core-central-vm` host is a sandbox only: never deploy production there, route
+production traffic to it, or migrate its data into production. Frontend runs on
+Firebase Hosting. Build the frontend with `VITE_API_BASE_URL` pointing at the
+production Cloud Run API before deploy.
 
 ## Working Style
 

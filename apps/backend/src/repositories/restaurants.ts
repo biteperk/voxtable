@@ -1050,8 +1050,9 @@ export async function setProvisioningBindings(
  * Find an existing restaurant that likely matches a new signup, for the
  * duplicate guard: same advertised phone, or same name+postcode. Only
  * COMMITTED tenants (trial and beyond) reserve a number — a half-finished
- * wizard signup must never block a real one, and possession is ultimately
- * proven at the verify-forwarding step. Returns the first match's id + name,
+ * wizard signup must never block a real one. Ownership is confirmed through
+ * the authorised onboarding workflow; production never uses a test call.
+ * Returns the first match's id + name,
  * or null.
  */
 export async function findDuplicateRestaurant(input: {

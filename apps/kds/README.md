@@ -5,8 +5,8 @@ every 2 s for the authenticated active tenant, shows orders in three lanes
 (Pending → Preparing → Ready), and lets line cooks advance status with a single
 tap.
 
-Lives in the same monorepo as the backend and manager dashboard. Shares the
-backend on `core-central-vm` and the Firebase project. The kiosk account should
+Lives in the same monorepo as the backend and manager dashboard. Production uses
+the `bp-voxtable-prod` Cloud Run backend and Firebase project. The kiosk account should
 be allowlisted as a kitchen user through `DASHBOARD_KITCHEN_EMAILS` or an
 equivalent restaurant membership.
 
