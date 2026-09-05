@@ -11,6 +11,7 @@ import { test } from "node:test";
 import {
   buildLineItems,
   buildPaymentSms,
+  buildReceiptSms,
   checkoutIdempotencyKey,
   platformFeeCents
 } from "./orderPaymentService";
@@ -178,4 +179,31 @@ test("different orders never collide", () => {
     checkoutIdempotencyKey("order-1", 4200, 0),
     checkoutIdempotencyKey("order-2", 4200, 0)
   );
+});
+
+// --- buildReceiptSms ---------------------------------------------------------
+
+const GSM7 = /^[A-Za-z0-9 @£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ!"#¤%&'()*+,\-./:;<=>?¡ÄÖÑÜ§¿äöñüà]*$/;
+
+test("receipt SMS: venue, order, amount, the Stripe receipt link, and no invitation to reply", () => {
+  const sms = buildReceiptSms({
+    venueName: "Mazcina Resto-Bar",
+    orderNumber: 3,
+    totalCents: 10250,
+    receiptUrl: "https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVHlyemlMeFRMbzdtNDFWKKfJ7cUGMgZyZWNlaXB0NpA_abcdefghijklmnopqrstuvwxyz0123456789"
+  });
+  assert.ok(sms.startsWith("Mazcina Resto-Bar: order #3 paid, $102.50."));
+  const link = sms.match(/https:\/\/\S+/)?.[0] ?? "";
+  assert.equal(new URL(link).origin, "https://pay.stripe.com");
+  assert.ok(sms.endsWith("Do not reply to this message."));
+  assert.ok(!/reply (to us|back)|text us|call us/i.test(sms.replace("Do not reply to this message.", "")));
+  assert.ok(GSM7.test(sms), "GSM-7 only: one stray character halves every segment");
+  assert.ok(sms.length <= 306, `two GSM segments at most, got ${sms.length}`);
+});
+
+test("receipt SMS without a receipt link still confirms the payment once", () => {
+  const sms = buildReceiptSms({ venueName: "Cuban Corner", orderNumber: null, totalCents: 1850, receiptUrl: null });
+  assert.equal(sms, "Cuban Corner: order #? paid, $18.50. Thank you.\nDo not reply to this message.");
+  assert.ok(GSM7.test(sms));
+  assert.ok(sms.length <= 160, "unlinked form fits one segment");
 });

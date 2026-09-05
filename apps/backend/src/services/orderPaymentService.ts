@@ -133,6 +133,26 @@ export function buildPaymentSms(input: {
   );
 }
 
+/**
+ * The receipt text sent once the guest has paid. Stripe's own "Successful
+ * payments" email is switched off for this account (read from the dashboard
+ * 6 Sep 2026) and Stripe has no SMS receipt, so without this the guest hears
+ * nothing after paying. GSM-7 only, same reason as buildPaymentSms. Stripe
+ * receipt URLs run ~90-110 chars, so the linked form is two segments by design.
+ * One-way: the branded sender cannot receive replies, so never invite one.
+ */
+export function buildReceiptSms(input: {
+  venueName: string;
+  orderNumber: number | null;
+  totalCents: number;
+  receiptUrl: string | null;
+}): string {
+  const total = `$${(input.totalCents / 100).toFixed(2)}`;
+  const head = `${input.venueName}: order #${input.orderNumber ?? "?"} paid, ${total}.`;
+  const tail = "Do not reply to this message.";
+  return input.receiptUrl ? `${head} Receipt: ${input.receiptUrl}\n${tail}` : `${head} Thank you.\n${tail}`;
+}
+
 // ---------------------------------------------------------------------------
 // Checkout gateway — injectable seam. CI has no Stripe credentials; the smoke
 // script swaps in a fixture gateway so the transaction/replay/webhook logic is
@@ -167,6 +187,8 @@ export interface CheckoutGateway {
   }): Promise<CreatedCheckoutSession>;
   expireSession(sessionId: string): Promise<void>;
   retrieveSession(sessionId: string): Promise<RetrievedCheckoutSession>;
+  /** The charge's hosted receipt page, or null when Stripe has none yet. */
+  retrieveReceiptUrl(paymentIntentId: string): Promise<string | null>;
 }
 
 function returnBaseUrl(): string {
@@ -289,6 +311,15 @@ const stripeGateway: CheckoutGateway = {
       amount_total: session.amount_total,
       payment_intent: typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null)
     };
+  },
+
+  async retrieveReceiptUrl(paymentIntentId) {
+    const stripe = getStripe();
+    const intent = await withStripeErrors("retrieve_order_payment_intent", () =>
+      stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] })
+    );
+    const charge = intent.latest_charge;
+    return charge && typeof charge !== "string" ? (charge.receipt_url ?? null) : null;
   }
 };
 
@@ -707,6 +738,21 @@ async function applySessionOutcome(session: Stripe.Checkout.Session): Promise<vo
 
   const amountReceived = session.amount_total ?? row.amount_cents;
 
+  // Receipt link for the guest's SMS. Fetched BEFORE the transaction (no
+  // network inside a txn) and never fatal: a failure here must not 500 the
+  // webhook, or Stripe would redeliver a payment we already hold. The text
+  // then goes without a link. Skipped when the row already carries a
+  // receipt — a redelivery has nothing to fetch.
+  let receiptUrl: string | null = null;
+  if (intentId && !row.receipt_notification_id && row.recipient_phone) {
+    try {
+      receiptUrl = await gateway.retrieveReceiptUrl(intentId);
+    } catch (error) {
+      logger.warn({ evt: "order_receipt_url_unavailable", order_id: row.order_id, payment_id: row.id, error });
+    }
+  }
+  const venueName = row.recipient_phone ? await getRestaurantName(row.restaurant_id) : "";
+
   await withTransaction(async (db) => {
     // Row-lock the order first so this serialises against staff PATCHes.
     const order = await getOrderCoreForUpdate(row.order_id, row.restaurant_id, db);
@@ -784,7 +830,41 @@ async function applySessionOutcome(session: Stripe.Checkout.Session): Promise<vo
     // guard makes this monotonic: a replayed `completed` after a refund
     // matches zero rows and becomes a recorded no-op.
     const paidOrder = await markOrderPaidIfUnpaid(row.order_id, row.restaurant_id, db);
-    await transitionOrderPayment(row.id, [...ACTIVE_PAYMENT_STATUSES], "paid", paidPatch, db);
+
+    // One receipt SMS per payment. paidOrder is already the once-only gate
+    // (WHERE payment_status = 'unpaid' matches zero rows on any replay); the
+    // NULL check on receipt_notification_id is the second belt, and both the
+    // outbox row and the pointer to it commit in this transaction.
+    let receiptNotificationId: string | null = null;
+    if (paidOrder && !row.receipt_notification_id) {
+      if (row.recipient_phone) {
+        receiptNotificationId = await enqueueNotification(
+          {
+            restaurantId: row.restaurant_id,
+            channel: "sms",
+            recipient: row.recipient_phone,
+            kind: "order_payment_receipt",
+            body: buildReceiptSms({
+              venueName,
+              orderNumber: paidOrder.order_number,
+              totalCents: amountReceived,
+              receiptUrl
+            })
+          },
+          db
+        );
+      } else {
+        logger.info({ evt: "order_receipt_skipped_no_recipient", order_id: row.order_id, payment_id: row.id });
+      }
+    }
+
+    await transitionOrderPayment(
+      row.id,
+      [...ACTIVE_PAYMENT_STATUSES],
+      "paid",
+      { ...paidPatch, receiptNotificationId },
+      db
+    );
     if (paidOrder) {
       await insertOrderEvent(
         {

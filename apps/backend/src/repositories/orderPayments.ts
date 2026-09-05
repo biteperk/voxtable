@@ -51,6 +51,7 @@ export interface OrderPaymentRow {
   checkout_url: string | null;
   recipient_phone: string | null;
   notification_id: string | null;
+  receipt_notification_id: string | null;
   expires_at: string | null;
   created_at: string;
   updated_at: string;
@@ -156,6 +157,8 @@ export async function transitionOrderPayment(
     amountReceivedCents?: number | null;
     lastError?: string | null;
     paidAt?: Date | null;
+    /** Set once, in the same txn as the receipt SMS enqueue (migration 043). */
+    receiptNotificationId?: string | null;
   } = {},
   db: DbClient = pool
 ): Promise<OrderPaymentRow | null> {
@@ -165,7 +168,8 @@ export async function transitionOrderPayment(
          stripe_payment_intent_id = COALESCE($4, stripe_payment_intent_id),
          amount_received_cents = COALESCE($5, amount_received_cents),
          last_error = COALESCE($6, last_error),
-         paid_at = COALESCE($7, paid_at)
+         paid_at = COALESCE($7, paid_at),
+         receipt_notification_id = COALESCE($8, receipt_notification_id)
      WHERE id = $1 AND status = ANY($2)
      RETURNING *`,
     [
@@ -175,7 +179,8 @@ export async function transitionOrderPayment(
       patch.stripePaymentIntentId ?? null,
       patch.amountReceivedCents ?? null,
       patch.lastError ?? null,
-      patch.paidAt ? patch.paidAt.toISOString() : null
+      patch.paidAt ? patch.paidAt.toISOString() : null,
+      patch.receiptNotificationId ?? null
     ]
   );
   return result.rows[0] ?? null;

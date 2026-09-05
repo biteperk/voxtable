@@ -700,6 +700,19 @@ Retell tool handler would put a third-party network call on the voice path's cri
 Five seconds is fine. Bella says "it's on its way", not "it's arrived".</p>
 
 <!-- ═══════════════════════════════════════════ -->
+<h3 id="receipt">Fourth change (shipped 6 Sep 2026): a receipt text once the payment lands</h3>
+<p>Stripe's own <em>Customer emails &rarr; Successful payments</em> is <strong>switched off</strong> for the
+Biteperk account (read from the dashboard 6 Sep 2026) and Stripe has no SMS receipt, so before this the guest
+heard nothing after paying. On the paid webhook the backend fetches the charge's hosted
+<code>receipt_url</code> and texts it to the number the link went to, kind <code>order_payment_receipt</code>,
+one-way copy. Once-only is structural: <code>markOrderPaidIfUnpaid</code> gates every redelivery and
+<code>order_payments.receipt_notification_id</code> (migration 043) is the second belt, written in the same
+transaction. A failed receipt look-up is never fatal &mdash; the text goes without a link &mdash; because a 500
+would make Stripe redeliver a payment we already hold. Nothing is sent on amount mismatch, paid-after-cancel or
+async-pending.</p>
+<p style="margin-bottom:0"><strong>Leave Stripe's email receipt OFF.</strong> Turning it on double-notifies
+anyone who typed an email at Checkout. Refund texts are a separate follow-up.</p>
+
 <h2 id="webhook">10. Webhooks and reconciliation</h2>
 
 <div class="card warn">
