@@ -119,7 +119,7 @@
           "input_match_rule": {
             "type": "any"
           },
-          "output": "{\"booking_id\":\"8e05f4ec\",\"status\":\"confirmed\",\"confirmation_message\":\"Confirmed. Priya has a table for 4 on 2026-09-04 at 19:00.\"}"
+          "output": "{\"booking_id\":\"8e05f4ec\",\"status\":\"confirmed\",\"confirmation_message\":\"All set, Priya.\",\"customer_name\":\"Priya\",\"date\":\"2026-09-04\",\"time\":\"19:00\",\"party_size\":4}"
         },
         {
           "tool_name": "menu_lookup",
@@ -188,7 +188,7 @@
           "input_match_rule": {
             "type": "any"
           },
-          "output": "{\"booking_id\":\"aa11bb22\",\"status\":\"confirmed\",\"confirmation_message\":\"Confirmed. Sam has a table for 2 on 2026-09-03 at 19:00.\"}"
+          "output": "{\"booking_id\":\"aa11bb22\",\"status\":\"confirmed\",\"confirmation_message\":\"All set, Sam.\",\"customer_name\":\"Sam\",\"date\":\"2026-09-03\",\"time\":\"19:00\",\"party_size\":2}"
         },
         {
           "tool_name": "create_order",
@@ -474,13 +474,14 @@
     },
     {
       "name": "one-recap-not-five",
-      "$why": "26 Aug, caller verbatim: \"you don not have to repeat again and again\" -- details were restated five times. Graded on the two objective halves: confirm before committing, never restate after. Counting recaps was tried first and flaked 2/3 on an unchanged config.",
+      "$why": "26 Aug, caller verbatim: \"you don not have to repeat again and again\" -- details were restated five times. Graded on the two objective halves: confirm before committing, never restate after. Counting recaps was tried first and flaked 2/3 on an unchanged config. 5 Sep: seven restatements in a 56 s production call (call_bc863edd, Megan) -- the goodbye and end_call's own farewell both carried the time, so the goodbye is graded too.",
       "user_prompt": "You are Nina, booking a table for six on Friday at 7:30pm under the name Nina. Answer each question with only the detail asked for. If the agent repeats details you have already given more than once, say 'you already said that'.",
       "metrics": [
         "Before calling create_booking the agent asks the caller to confirm, and that confirmation includes the party size and the time.",
         "After create_booking succeeds the agent does not state the date, time and party size again -- not in the acknowledgement, not in the pre-order offer, not in the goodbye.",
         "Each of the agent turns asks at most one question.",
-        "No turn from the agent is a long checklist of everything gathered so far."
+        "No turn from the agent is a long checklist of everything gathered so far.",
+        "The agent's goodbye contains no date, time or party size."
       ],
       "tool_mocks": [
         {
@@ -488,14 +489,14 @@
           "input_match_rule": {
             "type": "any"
           },
-          "output": "{\"available\":true,\"date\":\"2026-09-04\",\"time\":\"19:30\",\"party_size\":6}"
+          "output": "{\"available\":true,\"date\":\"2026-09-04\",\"time\":\"19:30\",\"party_size\":6,\"next_step\":\"Do NOT call create_booking in this turn. First read the booking back to the caller once — party, time, date and name — ending with 'shall I lock it in?', then WAIT for their yes.\"}"
         },
         {
           "tool_name": "create_booking",
           "input_match_rule": {
             "type": "any"
           },
-          "output": "{\"booking_id\":\"dd77ee88\",\"status\":\"confirmed\",\"confirmation_message\":\"Confirmed. Nina has a table for 6 on 2026-09-04 at 19:30.\"}"
+          "output": "{\"booking_id\":\"dd77ee88\",\"status\":\"confirmed\",\"confirmation_message\":\"All set, Nina.\",\"customer_name\":\"Nina\",\"date\":\"2026-09-04\",\"time\":\"19:30\",\"party_size\":6}"
         },
         {
           "tool_name": "menu_lookup",
@@ -621,7 +622,7 @@
           "input_match_rule": {
             "type": "any"
           },
-          "output": "{\"booking_id\":\"ee66ff77\",\"status\":\"confirmed\",\"confirmation_message\":\"Confirmed. Rita has a table for 2 on 2026-09-04 at 18:00.\"}"
+          "output": "{\"booking_id\":\"ee66ff77\",\"status\":\"confirmed\",\"confirmation_message\":\"All set, Rita.\",\"customer_name\":\"Rita\",\"date\":\"2026-09-04\",\"time\":\"18:00\",\"party_size\":2}"
         },
         {
           "tool_name": "menu_lookup",
