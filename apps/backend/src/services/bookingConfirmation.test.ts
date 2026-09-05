@@ -26,6 +26,10 @@ test("an available slot tells the agent to confirm once and wait before booking"
   const step = availabilityNextStep({ available: true });
   assert.match(step ?? "", /Do NOT call create_booking in this turn/);
   assert.match(step ?? "", /shall I lock it in\?/);
+  // 5 Sep 2026 staging call_709d1248…: the recap fired before the name was collected, then again
+  // with it. The step must send the agent for the name first and forbid restating details now.
+  assert.match(step ?? "", /do not repeat the date, time or party size now/);
+  assert.match(step ?? "", /ask for it — nothing else\. Once you have the name, read the booking back ONCE/);
 });
 
 test("an unavailable slot with alternatives still routes through the single confirm", () => {

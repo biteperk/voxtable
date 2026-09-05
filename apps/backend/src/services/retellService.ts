@@ -383,15 +383,17 @@ export function availabilityNextStep(result: {
   }
   if (result.available) {
     return (
-      "Do NOT call create_booking in this turn. First read the booking back to the caller once — " +
-      "party, time, date and name — ending with 'shall I lock it in?', then WAIT for their yes."
+      "Do NOT call create_booking in this turn, and do not repeat the date, time or party size now. " +
+      "If you do not have the booking name yet, ask for it — nothing else. Once you have the name, " +
+      "read the booking back ONCE — party, time, date and name — ending with 'shall I lock it in?', " +
+      "then WAIT for their yes."
     );
   }
   if (result.suggestedTimes && result.suggestedTimes.length > 0) {
     return (
-      "Offer the suggested times. Once the caller picks one, read the booking back once — " +
-      "party, time, date and name — ending with 'shall I lock it in?', and WAIT for their yes " +
-      "before create_booking."
+      "Offer the suggested times without repeating the party size or date. Once the caller picks one, " +
+      "ask for the booking name if you do not have it, then read the booking back ONCE — party, time, " +
+      "date and name — ending with 'shall I lock it in?', and WAIT for their yes before create_booking."
     );
   }
   return undefined;

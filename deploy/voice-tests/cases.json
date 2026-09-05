@@ -489,7 +489,7 @@
           "input_match_rule": {
             "type": "any"
           },
-          "output": "{\"available\":true,\"date\":\"2026-09-04\",\"time\":\"19:30\",\"party_size\":6,\"next_step\":\"Do NOT call create_booking in this turn. First read the booking back to the caller once — party, time, date and name — ending with 'shall I lock it in?', then WAIT for their yes.\"}"
+          "output": "{\"available\":true,\"date\":\"2026-09-04\",\"time\":\"19:30\",\"party_size\":6,\"next_step\":\"Do NOT call create_booking in this turn, and do not repeat the date, time or party size now. If you do not have the booking name yet, ask for it — nothing else. Once you have the name, read the booking back ONCE — party, time, date and name — ending with 'shall I lock it in?', then WAIT for their yes.\"}"
         },
         {
           "tool_name": "create_booking",
