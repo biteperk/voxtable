@@ -11,12 +11,34 @@ export function OrderReturnPage({ outcome }) {
     // Stripe appends ?session_id=… to the success URL. Scrub it immediately so
     // the session id (a live payment-page capability while unexpired) never
     // lingers in the address bar, browser history, or Sentry breadcrumbs.
-    if (window.location.search) {
+    if (window.location.search.includes("session_id=")) {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
 
   const paid = outcome === "paid";
+  const expired = outcome === "expired";
+  // /order/expired?receipt=1 is the receipt link's "nothing to show" variant.
+  const receiptMissing = expired && new URLSearchParams(window.location.search).get("receipt") === "1";
+  if (expired) {
+    return (
+      <div className="error-boundary-shell order-return-shell" role="status" aria-live="polite">
+        <div className="error-boundary-card">
+          <h1>{receiptMissing ? "Receipt not available" : "Payment link expired"}</h1>
+          <p>
+            {receiptMissing
+              ? "That receipt link is not available. Your card statement shows the charge, and the restaurant can give you a printed receipt when you arrive."
+              : "This payment link is no longer active. Payment links last 45 minutes."}
+          </p>
+          <p className="order-return-note">
+            {receiptMissing
+              ? "Questions? Just call the restaurant back."
+              : "Call the restaurant for a fresh link, or simply pay when you arrive."}
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="error-boundary-shell order-return-shell" role="status" aria-live="polite">
       <div className="error-boundary-card">

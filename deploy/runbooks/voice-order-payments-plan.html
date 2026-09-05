@@ -715,6 +715,21 @@ the <code>/order/paid</code> page promises both. The sandbox account has its own
 enabling <code>ORDER_PAYMENTS_ENABLED</code> in production, read the live toggle back in the dashboard &mdash;
 the page copy must never promise an email that live mode will not send. Refund texts are a separate follow-up.</p>
 
+<h3 id="short-links">Fifth change (6 Sep 2026): short branded links in both texts</h3>
+<p>The link text carried a ~400-character Stripe Checkout URL and the receipt text a ~110-character receipt URL
+&mdash; unreadable, three and two SMS segments. Each payment row now mints an unguessable <code>public_token</code>
+(16 random bytes, base64url, migration 044) and the texts carry <code>/pay/&lt;token&gt;</code> and
+<code>/receipt/&lt;token&gt;</code> on <code>PUBLIC_ORDER_RETURN_BASE_URL</code>. Firebase Hosting rewrites those two
+paths to the environment's Cloud Run API (injected by <code>deploy-frontend.yml</code>, never committed, with a
+stg/prod mismatch guard), and the API answers 302: to Checkout while the row is live, to <code>/order/paid</code>
+once paid, otherwise to <code>/order/expired</code>. Unknown, malformed and expired tokens all land on the same page,
+so a response never says whether a token exists. Rate-limited per IP; the token and the Stripe URL are never
+logged. <strong>The token is deliberately not the order id</strong>: order ids show in the KDS, the dashboard and
+Retell transcripts, while a checkout URL is a live pay capability and the receipt shows card last-4 and items.
+Both texts now fit one GSM segment.</p>
+<p style="margin-bottom:0">Production needs <code>PUBLIC_ORDER_RETURN_BASE_URL=https://voxtable.biteperk.com.au</code>
+in the prod Terraform map before payments are enabled there (see the rollout checklist).</p>
+
 <h2 id="webhook">10. Webhooks and reconciliation</h2>
 
 <div class="card warn">

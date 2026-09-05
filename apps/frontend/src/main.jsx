@@ -135,6 +135,7 @@ function App() {
       "/admin/support": "Admin · VoxTable",
       "/order/paid": "Payment received",
       "/order/cancelled": "Payment not completed",
+      "/order/expired": "Payment link expired",
     };
     if (/^\/live-feed\/[^/]+$/.test(path)) {
       document.title = "Call detail · VoxTable";
@@ -339,7 +340,7 @@ function AppRouter({ path, navigate, isDashboard }) {
   const isAdminPath = path === "/admin" || path.startsWith("/admin/");
   // Stripe Checkout return pages for guest order payments. Fully public (the
   // guest has no account) — must render before any auth/onboarding gate.
-  const isOrderReturn = path === "/order/paid" || path === "/order/cancelled";
+  const isOrderReturn = path === "/order/paid" || path === "/order/cancelled" || path === "/order/expired";
   const gate = useOnboardingGate();
 
   // Gate redirects — only after auth + gate are resolved, and only ever toward
@@ -405,7 +406,9 @@ function AppRouter({ path, navigate, isDashboard }) {
   }, [roleRedirect, navigate]);
 
   if (isOrderReturn) {
-    return <OrderReturnPage outcome={path === "/order/paid" ? "paid" : "cancelled"} />;
+    return (
+      <OrderReturnPage outcome={path === "/order/paid" ? "paid" : path === "/order/expired" ? "expired" : "cancelled"} />
+    );
   }
 
   // /invite?token=xxx is outside dashboard/onboarding gates so new staff can join first.

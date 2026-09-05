@@ -52,6 +52,8 @@ export interface OrderPaymentRow {
   recipient_phone: string | null;
   notification_id: string | null;
   receipt_notification_id: string | null;
+  public_token: string | null;
+  receipt_url: string | null;
   expires_at: string | null;
   created_at: string;
   updated_at: string;
@@ -73,6 +75,8 @@ export async function insertOrderPayment(
     notificationId?: string | null;
     expiresAt: Date;
     status?: OrderPaymentStatus;
+    /** Unguessable path segment for /pay/<token> and /receipt/<token> (migration 044). */
+    publicToken?: string | null;
   },
   db: DbClient = pool
 ): Promise<OrderPaymentRow> {
@@ -80,9 +84,9 @@ export async function insertOrderPayment(
     `INSERT INTO order_payments
        (order_id, restaurant_id, stripe_checkout_session_id, stripe_connect_account_id,
         status, amount_cents, application_fee_cents, checkout_url, recipient_phone,
-        notification_id, expires_at, sent_at)
+        notification_id, expires_at, sent_at, public_token)
      VALUES ($1, $2, $3, $4, $5::order_payment_status, $6, $7, $8, $9, $10, $11,
-             CASE WHEN $5::text = 'sent' THEN now() ELSE NULL END)
+             CASE WHEN $5::text = 'sent' THEN now() ELSE NULL END, $12)
      RETURNING *`,
     [
       input.orderId,
@@ -95,10 +99,23 @@ export async function insertOrderPayment(
       input.checkoutUrl,
       input.recipientPhone,
       input.notificationId ?? null,
-      input.expiresAt.toISOString()
+      input.expiresAt.toISOString(),
+      input.publicToken ?? null
     ]
   );
   return result.rows[0]!;
+}
+
+/** Public short-link lookup. Callers validate the token shape before this runs. */
+export async function getOrderPaymentByToken(
+  token: string,
+  db: DbClient = pool
+): Promise<OrderPaymentRow | null> {
+  const result = await db.query<OrderPaymentRow>(
+    `SELECT * FROM order_payments WHERE public_token = $1`,
+    [token]
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function getActiveOrderPayment(
@@ -159,6 +176,8 @@ export async function transitionOrderPayment(
     paidAt?: Date | null;
     /** Set once, in the same txn as the receipt SMS enqueue (migration 043). */
     receiptNotificationId?: string | null;
+    /** Stripe's hosted receipt page, stored so /receipt/<token> can resolve it later. */
+    receiptUrl?: string | null;
   } = {},
   db: DbClient = pool
 ): Promise<OrderPaymentRow | null> {
@@ -169,7 +188,8 @@ export async function transitionOrderPayment(
          amount_received_cents = COALESCE($5, amount_received_cents),
          last_error = COALESCE($6, last_error),
          paid_at = COALESCE($7, paid_at),
-         receipt_notification_id = COALESCE($8, receipt_notification_id)
+         receipt_notification_id = COALESCE($8, receipt_notification_id),
+         receipt_url = COALESCE($9, receipt_url)
      WHERE id = $1 AND status = ANY($2)
      RETURNING *`,
     [
@@ -180,7 +200,8 @@ export async function transitionOrderPayment(
       patch.amountReceivedCents ?? null,
       patch.lastError ?? null,
       patch.paidAt ? patch.paidAt.toISOString() : null,
-      patch.receiptNotificationId ?? null
+      patch.receiptNotificationId ?? null,
+      patch.receiptUrl ?? null
     ]
   );
   return result.rows[0] ?? null;

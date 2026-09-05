@@ -17,6 +17,7 @@ import { meRouter } from "./routes/me";
 import { menuRouter } from "./routes/menu";
 import { onboardingRouter } from "./routes/onboarding";
 import { ordersRouter } from "./routes/orders";
+import { publicLinksRouter } from "./routes/publicLinks";
 import { restaurantRouter } from "./routes/restaurant";
 import { staffRouter } from "./routes/staff";
 import { retellRouter } from "./routes/retell";
@@ -154,6 +155,7 @@ export function createApp() {
   app.use(calRouter);
   app.use(menuRouter);
   app.use(ordersRouter);
+  app.use(publicLinksRouter);
   app.use(dashboardRouter);
   app.use(billingRouter);
   app.use(homeRouter);
