@@ -24,6 +24,7 @@
  * for a call that ended twenty minutes ago.
  */
 
+import { randomBytes } from "node:crypto";
 import type Stripe from "stripe";
 
 import { env } from "../config/env";
@@ -42,7 +43,8 @@ import {
   insertOrderPayment,
   listStaleActivePayments,
   OrderPaymentRow,
-  transitionOrderPayment
+  transitionOrderPayment,
+  getOrderPaymentByToken
 } from "../repositories/orderPayments";
 import {
   getOrderById,
@@ -129,7 +131,7 @@ export function buildPaymentSms(input: {
   return (
     `${input.venueName}: order #${input.orderNumber ?? "?"}, ${total}.\n` +
     `Pay here: ${input.url}\n` +
-    `Link expires in ${input.expiryMinutes} minutes. Do not reply to this message.`
+    `Expires in ${input.expiryMinutes} min. Do not reply.`
   );
 }
 
@@ -138,7 +140,7 @@ export function buildPaymentSms(input: {
  * payments" email is switched off for this account (read from the dashboard
  * 6 Sep 2026) and Stripe has no SMS receipt, so without this the guest hears
  * nothing after paying. GSM-7 only, same reason as buildPaymentSms. Stripe
- * receipt URLs run ~90-110 chars, so the linked form is two segments by design.
+ * With the short /receipt/<token> link (migration 044) the text fits one segment.
  * One-way: the branded sender cannot receive replies, so never invite one.
  */
 export function buildReceiptSms(input: {
@@ -149,7 +151,7 @@ export function buildReceiptSms(input: {
 }): string {
   const total = `$${(input.totalCents / 100).toFixed(2)}`;
   const head = `${input.venueName}: order #${input.orderNumber ?? "?"} paid, ${total}.`;
-  const tail = "Do not reply to this message.";
+  const tail = "Do not reply.";
   return input.receiptUrl ? `${head} Receipt: ${input.receiptUrl}\n${tail}` : `${head} Thank you.\n${tail}`;
 }
 
@@ -197,6 +199,57 @@ function returnBaseUrl(): string {
     throw new AppError(503, "PAYMENTS_NOT_CONFIGURED", "Order payments are not configured.");
   }
   return base.replace(/\/+$/, "");
+}
+
+// ---------------------------------------------------------------------------
+// Short branded links (migration 044). The texts carry /pay/<token> and
+// /receipt/<token> on the dashboard host; Firebase Hosting rewrites those paths
+// to this API, which answers 302. The token is 16 random bytes (base64url,
+// 22 chars) minted per payment row - never the order id, which is visible in
+// the KDS, dashboards and transcripts while a checkout URL is a live pay
+// capability and the receipt shows card last-4 and items.
+// ---------------------------------------------------------------------------
+
+export const PUBLIC_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+
+export function mintPublicToken(): string {
+  return randomBytes(16).toString("base64url");
+}
+
+export function publicLinkUrl(kind: "pay" | "receipt", token: string): string {
+  return `${returnBaseUrl()}/${kind}/${token}`;
+}
+
+export type PublicLinkResolution =
+  | { outcome: "checkout" | "receipt"; location: string }
+  | { outcome: "paid" | "expired" | "unknown" | "no_receipt"; location: string };
+
+/**
+ * Where /pay/<token> sends the guest. Every non-pay outcome lands on the same
+ * branded page so the response never reveals whether a token exists.
+ */
+export async function resolvePayLink(token: string): Promise<PublicLinkResolution> {
+  const expiredPage = `${returnBaseUrl()}/order/expired`;
+  if (!PUBLIC_TOKEN_PATTERN.test(token)) return { outcome: "unknown", location: expiredPage };
+  const row = await getOrderPaymentByToken(token);
+  if (!row) return { outcome: "unknown", location: expiredPage };
+  if (row.status === "paid") return { outcome: "paid", location: `${returnBaseUrl()}/order/paid` };
+  const live =
+    (row.status === "created" || row.status === "sent") &&
+    row.checkout_url &&
+    (!row.expires_at || new Date(row.expires_at).getTime() > Date.now());
+  if (live) return { outcome: "checkout", location: row.checkout_url as string };
+  return { outcome: "expired", location: expiredPage };
+}
+
+/** Where /receipt/<token> sends the guest. */
+export async function resolveReceiptLink(token: string): Promise<PublicLinkResolution> {
+  const missingPage = `${returnBaseUrl()}/order/expired?receipt=1`;
+  if (!PUBLIC_TOKEN_PATTERN.test(token)) return { outcome: "unknown", location: missingPage };
+  const row = await getOrderPaymentByToken(token);
+  if (!row) return { outcome: "unknown", location: missingPage };
+  if (row.status === "paid" && row.receipt_url) return { outcome: "receipt", location: row.receipt_url };
+  return { outcome: "no_receipt", location: missingPage };
 }
 
 /**
@@ -479,11 +532,12 @@ export async function createOrderPaymentLink(
   });
 
   const venueName = await getRestaurantName(input.restaurantId);
+  const publicToken = mintPublicToken();
   const smsBody = buildPaymentSms({
     venueName,
     orderNumber: order.order_number,
     totalCents: order.total_cents,
-    url: session.url,
+    url: publicLinkUrl("pay", publicToken),
     expiryMinutes
   });
 
@@ -533,7 +587,8 @@ export async function createOrderPaymentLink(
           checkoutUrl: session.url,
           recipientPhone: phone,
           notificationId,
-          expiresAt
+          expiresAt,
+          publicToken
         },
         db
       );
@@ -848,7 +903,9 @@ async function applySessionOutcome(session: Stripe.Checkout.Session): Promise<vo
               venueName,
               orderNumber: paidOrder.order_number,
               totalCents: amountReceived,
-              receiptUrl
+              // Short link when the row has a token and Stripe gave us a receipt;
+              // rows minted before migration 044 fall back to the raw URL.
+              receiptUrl: receiptUrl && row.public_token ? publicLinkUrl("receipt", row.public_token) : receiptUrl
             })
           },
           db
@@ -862,7 +919,7 @@ async function applySessionOutcome(session: Stripe.Checkout.Session): Promise<vo
       row.id,
       [...ACTIVE_PAYMENT_STATUSES],
       "paid",
-      { ...paidPatch, receiptNotificationId },
+      { ...paidPatch, receiptNotificationId, receiptUrl },
       db
     );
     if (paidOrder) {

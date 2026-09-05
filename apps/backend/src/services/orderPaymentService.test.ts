@@ -12,6 +12,8 @@ import {
   buildLineItems,
   buildPaymentSms,
   buildReceiptSms,
+  mintPublicToken,
+  PUBLIC_TOKEN_PATTERN,
   checkoutIdempotencyKey,
   platformFeeCents
 } from "./orderPaymentService";
@@ -88,7 +90,7 @@ test("SMS copy: venue first, total, url, expiry, and no invitation to reply", ()
   const link = sms.match(/https:\/\/\S+/)?.[0] ?? "";
   assert.equal(new URL(link).origin, "https://checkout.stripe.com");
   assert.equal(new URL(link).pathname, "/c/pay/cs_test_abc");
-  assert.ok(sms.includes("45 minutes"));
+  assert.ok(sms.includes("45 min"));
   assert.ok(sms.includes("Do not reply"));
   // Alphanumeric sender IDs are one-way; nothing may invite a response. The
   // `BitePerk` sender ID is ACMA-approved as of 18 Aug 2026, so this is now a
@@ -96,7 +98,7 @@ test("SMS copy: venue first, total, url, expiry, and no invitation to reply", ()
   // mention of "reply" first, then assert nothing else asks for one — the
   // earlier /reply (yes|now|to confirm)/ form would have waved through
   // "reply STOP to opt out" or "text us back".
-  const withoutDisclaimer = sms.replace("Do not reply to this message.", "");
+  const withoutDisclaimer = sms.replace("Do not reply.", "");
   assert.ok(!/\b(reply|respond|text (us|back)|sms us)\b/i.test(withoutDisclaimer));
   // STOP can never be processed on a one-way sender, so offering it is a lie.
   assert.ok(!/\bSTOP\b/.test(sms));
@@ -195,15 +197,51 @@ test("receipt SMS: venue, order, amount, the Stripe receipt link, and no invitat
   assert.ok(sms.startsWith("Mazcina Resto-Bar: order #3 paid, $102.50."));
   const link = sms.match(/https:\/\/\S+/)?.[0] ?? "";
   assert.equal(new URL(link).origin, "https://pay.stripe.com");
-  assert.ok(sms.endsWith("Do not reply to this message."));
-  assert.ok(!/reply (to us|back)|text us|call us/i.test(sms.replace("Do not reply to this message.", "")));
+  assert.ok(sms.endsWith("Do not reply."));
+  assert.ok(!/reply (to us|back)|text us|call us/i.test(sms.replace("Do not reply.", "")));
   assert.ok(GSM7.test(sms), "GSM-7 only: one stray character halves every segment");
   assert.ok(sms.length <= 306, `two GSM segments at most, got ${sms.length}`);
 });
 
 test("receipt SMS without a receipt link still confirms the payment once", () => {
   const sms = buildReceiptSms({ venueName: "Cuban Corner", orderNumber: null, totalCents: 1850, receiptUrl: null });
-  assert.equal(sms, "Cuban Corner: order #? paid, $18.50. Thank you.\nDo not reply to this message.");
+  assert.equal(sms, "Cuban Corner: order #? paid, $18.50. Thank you.\nDo not reply.");
   assert.ok(GSM7.test(sms));
   assert.ok(sms.length <= 160, "unlinked form fits one segment");
+});
+
+// --- short links (migration 044) ---------------------------------------------
+
+test("public tokens are 22 base64url chars, unguessable, never the order id", () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 500; i += 1) {
+    const t = mintPublicToken();
+    assert.match(t, PUBLIC_TOKEN_PATTERN);
+    assert.ok(!seen.has(t), "token collided");
+    seen.add(t);
+  }
+  assert.ok(!PUBLIC_TOKEN_PATTERN.test("c0151b93-813b-4163-a901-e191b3aae605"), "a UUID must not pass as a token");
+  assert.ok(!PUBLIC_TOKEN_PATTERN.test("../../admin"), "path characters must not pass");
+});
+
+test("with short links both texts fit one GSM segment and carry no Stripe URL", () => {
+  const token = mintPublicToken();
+  const pay = buildPaymentSms({
+    venueName: "Cuban Corner Parramatta",
+    orderNumber: 12,
+    totalCents: 10250,
+    url: `https://voxtable.biteperk.com.au/pay/${token}`,
+    expiryMinutes: 45
+  });
+  const receipt = buildReceiptSms({
+    venueName: "Cuban Corner Parramatta",
+    orderNumber: 12,
+    totalCents: 10250,
+    receiptUrl: `https://voxtable.biteperk.com.au/receipt/${token}`
+  });
+  for (const sms of [pay, receipt]) {
+    assert.ok(sms.length <= 160, `one segment, got ${sms.length}`);
+    assert.ok(!sms.includes("stripe.com"), "raw Stripe URLs never enter a text again");
+    assert.ok(GSM7.test(sms));
+  }
 });

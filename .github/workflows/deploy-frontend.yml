@@ -151,6 +151,8 @@ jobs:
 
       - name: Deploy to Firebase
         env:
+          CLOUD_RUN_API_SERVICE: ${{ vars.CLOUD_RUN_API_SERVICE }}
+          GCP_DEFAULT_REGION: ${{ vars.GCP_DEFAULT_REGION }}
           FIREBASE_APP_SITE: ${{ vars.FIREBASE_APP_SITE || vars.FIREBASE_PROJECT || vars.VOXTABLE_PROJECT_ID }}
           FIREBASE_KDS_SITE: ${{ vars.FIREBASE_KDS_SITE }}
           FIREBASE_ONLY: ${{ vars.FIREBASE_ONLY || 'hosting:app' }}
@@ -185,6 +187,33 @@ jobs:
               rc.targets[project].hosting.kds = [process.env.FIREBASE_KDS_SITE];
             }
             fs.writeFileSync('.firebaserc', JSON.stringify(rc, null, 2) + '\n');
+          "
+
+          # Short payment/receipt links: /pay/** and /receipt/** on the dashboard host are
+          # rewritten to the environment's own Cloud Run API (same project, same region),
+          # which answers 302 to Stripe. Injected here, not committed, so the committed
+          # firebase.json stays environment-free and the SPA catch-all never swallows them.
+          # Fail closed on any cross-environment mismatch: the service id must carry the
+          # same stg/prod marker as the Firebase project.
+          node -e "
+            const fs = require('fs');
+            const project = process.env.FIREBASE_PROJECT;
+            const env = project.endsWith('-stg') ? 'stg' : project.endsWith('-prod') ? 'prod' : null;
+            if (!env) throw new Error('FIREBASE_PROJECT ' + project + ' carries no stg/prod marker; refusing to wire /pay and /receipt rewrites');
+            const service = process.env.CLOUD_RUN_API_SERVICE || (project.replace(/^bp-/, '') + '-api');
+            if (!service.includes('-' + env + '-')) throw new Error('API service ' + service + ' does not match environment ' + env);
+            const region = process.env.GCP_DEFAULT_REGION || 'australia-southeast1';
+            const cfg = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
+            const app = cfg.hosting.find((h) => h.target === 'app');
+            if (!app) throw new Error('firebase.json has no hosting target app');
+            const run = { serviceId: service, region };
+            app.rewrites = [
+              { source: '/pay/**', run },
+              { source: '/receipt/**', run },
+              ...app.rewrites.filter((r) => !['/pay/**', '/receipt/**'].includes(r.source)),
+            ];
+            fs.writeFileSync('firebase.json', JSON.stringify(cfg, null, 2) + '\n');
+            console.log('hosting rewrites -> ' + service + ' (' + region + ') for /pay/** and /receipt/**');
           "
 
           npx --yes --package firebase-tools@15 firebase deploy --only "$FIREBASE_ONLY" --project "$FIREBASE_PROJECT" --non-interactive

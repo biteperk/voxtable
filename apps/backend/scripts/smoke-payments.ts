@@ -33,7 +33,9 @@ async function main(): Promise<void> {
   const {
     __setCheckoutGatewayForTesting,
     createOrderPaymentLink,
-    handleOrderPaymentWebhook
+    handleOrderPaymentWebhook,
+    resolvePayLink,
+    resolveReceiptLink
   } = await import("../src/services/orderPaymentService");
   const { handleBillingWebhook } = await import("../src/services/stripeService");
   const { createOrder, updateOrderStatus } = await import("../src/services/orderService");
@@ -181,10 +183,12 @@ async function main(): Promise<void> {
     let sms = await smsRows(PHONE);
     assert(sms.length === 1, `expected 1 sms outbox row, got ${sms.length}`);
     const smsBody = String(sms[0].body);
-    const linkStart = smsBody.indexOf("https://");
+    const linkStart = smsBody.indexOf("http");
     assert(linkStart >= 0, "sms body carries a link");
     const smsLink = smsBody.slice(linkStart).split("\n")[0].split(" ")[0];
-    assert(new URL(smsLink).origin === "https://checkout.stripe.com", "sms link is a checkout.stripe.com URL");
+    // Short branded link on the return host, never the raw Stripe URL (migration 044).
+    assert(smsLink === `${env.PUBLIC_ORDER_RETURN_BASE_URL.replace(/\/+$/, "")}/pay/${rows[0].public_token}`, "sms link is the short /pay/<token> link");
+    assert(!smsBody.includes("stripe.com"), "no Stripe URL in the text");
     assert(sessionCounter === 1, "exactly one Stripe session created");
     console.log("✓ 1. link created: 1 payment row, 1 sms, 1 session");
 
@@ -212,6 +216,27 @@ async function main(): Promise<void> {
       actor: "smoke:payments"
     });
     assert(regen.sent === true && regen.isReplay === false, "amount change must mint a fresh link");
+    {
+      // Short links: the text carries /pay/<token>, never the Stripe URL; the token resolves to
+      // the live checkout URL while active.
+      const rowsNow = await paymentRows(orderA.id);
+      const fresh = rowsNow[rowsNow.length - 1];
+      assert(typeof fresh.public_token === "string" && /^[A-Za-z0-9_-]{22}$/.test(fresh.public_token), "row carries a 22-char public token");
+      assert(rowsNow[0].public_token !== fresh.public_token, "each payment row mints its own token");
+      const linkSms = (await smsRows(PHONE)).slice(-1)[0];
+      assert(linkSms.body.includes(`/pay/${fresh.public_token}`), "link SMS carries the short /pay link");
+      assert(!linkSms.body.includes("stripe.com") && linkSms.body.length <= 160, "link SMS is one segment with no Stripe URL");
+      const live = await resolvePayLink(fresh.public_token);
+      assert(live.outcome === "checkout" && live.location === fresh.checkout_url, "active token resolves to the checkout URL");
+      const stale = await resolvePayLink(rowsNow[0].public_token);
+      assert(stale.outcome === "expired" && stale.location.endsWith("/order/expired"), "cancelled row's token lands on the expired page");
+      const unknown = await resolvePayLink("AAAAAAAAAAAAAAAAAAAAAA");
+      assert(unknown.outcome === "unknown" && unknown.location === stale.location, "unknown token is indistinguishable from expired");
+      const malformed = await resolvePayLink("../etc/passwd");
+      assert(malformed.outcome === "unknown", "malformed token never reaches the database");
+      const noReceiptYet = await resolveReceiptLink(fresh.public_token);
+      assert(noReceiptYet.outcome === "no_receipt", "receipt link before payment has nothing to show");
+    }
     rows = await paymentRows(orderA.id);
     assert(rows.length === 2, "expected old + new payment rows");
     assert(rows[0].status === "cancelled", "stale row must be cancelled");
@@ -234,7 +259,16 @@ async function main(): Promise<void> {
     assert(paidEvents.length === 1, `expected 1 paid event, got ${paidEvents.length}`);
     let receipts = await receiptRows(PHONE);
     assert(receipts.length === 1, `expected 1 receipt SMS, got ${receipts.length}`);
-    assert(receipts[0].body.includes(`${RECEIPT_URL}_pi_smoke_a`), "receipt SMS carries the Stripe receipt link");
+    assert(receipts[0].body.includes(`/receipt/${(await paymentRows(orderA.id))[1].public_token}`), "receipt SMS carries the short /receipt link");
+    assert(!receipts[0].body.includes("stripe.com") && receipts[0].body.length <= 160, "receipt SMS is one segment with no Stripe URL");
+    {
+      const paidRow = (await paymentRows(orderA.id))[1];
+      assert(paidRow.receipt_url === `${RECEIPT_URL}_pi_smoke_a`, "receipt_url stored on the paid row");
+      const r = await resolveReceiptLink(paidRow.public_token);
+      assert(r.outcome === "receipt" && r.location === `${RECEIPT_URL}_pi_smoke_a`, "receipt token resolves to Stripe's receipt page");
+      const p = await resolvePayLink(paidRow.public_token);
+      assert(p.outcome === "paid" && p.location.endsWith("/order/paid"), "pay link after payment lands on the paid page");
+    }
     assert(receipts[0].body.includes("Do not reply"), "receipt SMS is one-way");
     const paidRowA = (await paymentRows(orderA.id))[1];
     assert(paidRowA.receipt_notification_id === receipts[0].id, "payment row points at its receipt SMS");
