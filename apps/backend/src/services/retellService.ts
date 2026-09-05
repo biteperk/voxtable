@@ -367,6 +367,36 @@ export function partyTooLargeResponse(
   };
 }
 
+/**
+ * What the agent should do after an availability result. Kept out of the prompt
+ * because a tool result is read at decision time and prompt prose is not: the
+ * agent must confirm the booking with the caller exactly once and wait for a
+ * yes before it commits, even when the caller gave every detail up front.
+ */
+export function availabilityNextStep(result: {
+  available: boolean;
+  reason?: string;
+  suggestedTimes?: string[];
+}): string | undefined {
+  if (result.reason === "party_too_large" || result.reason === "party_needs_venue") {
+    return undefined;
+  }
+  if (result.available) {
+    return (
+      "Do NOT call create_booking in this turn. First read the booking back to the caller once — " +
+      "party, time, date and name — ending with 'shall I lock it in?', then WAIT for their yes."
+    );
+  }
+  if (result.suggestedTimes && result.suggestedTimes.length > 0) {
+    return (
+      "Offer the suggested times. Once the caller picks one, read the booking back once — " +
+      "party, time, date and name — ending with 'shall I lock it in?', and WAIT for their yes " +
+      "before create_booking."
+    );
+  }
+  return undefined;
+}
+
 /** Is this party above the venue's auto-book ceiling? 0 disables the cap. */
 export function exceedsAutoBookCap(partySize: number | undefined, cap: number): boolean {
   if (!cap || cap <= 0) return false;
@@ -458,7 +488,13 @@ export async function handleRetellFunction(
       suggested_times: result.suggestedTimes,
       table_label: result.tableLabel,
       message: result.message,
-      natural_alternatives_message: result.naturalAlternativesMessage
+      natural_alternatives_message: result.naturalAlternativesMessage,
+      // Read by the model at the exact moment it decides what to do next, which
+      // is where prompt prose kept losing: with everything front-loaded the
+      // agent chained check_availability → create_booking in one turn and never
+      // asked the caller (issue #389, F2). One mishearing of "eight" for "three"
+      // then books the wrong table. The instruction rides on the result instead.
+      next_step: availabilityNextStep(result)
     };
   }
 
@@ -475,7 +511,14 @@ export async function handleRetellFunction(
     return {
       booking_id: result.bookingId,
       status: result.status,
-      confirmation_message: result.confirmationMessage
+      // Short and detail-free: the agent reads it verbatim and moves on. The
+      // facts travel as fields so a mismatch with what the caller agreed to
+      // can be spoken as a difference, not as a recap.
+      confirmation_message: result.confirmationMessage,
+      customer_name: result.customerName,
+      date: result.date,
+      time: result.time,
+      party_size: result.partySize
     };
   }
 
@@ -918,7 +961,11 @@ export async function handleRetellFunction(
     return {
       booking_id: result.bookingId,
       status: result.status,
-      confirmation_message: result.confirmationMessage
+      confirmation_message: result.confirmationMessage,
+      customer_name: result.customerName,
+      date: result.date,
+      time: result.time,
+      party_size: result.partySize
     };
   }
 

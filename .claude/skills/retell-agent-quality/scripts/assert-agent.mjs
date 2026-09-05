@@ -124,6 +124,20 @@ if (process.env.REQUIRE_MENU_STATUS === "1") {
   check(llm.general_prompt.includes("{{menu_status}}"),
     "can answer which menu is on right now (via {{menu_status}})");
 }
+// Issue #389 (5 Sep 2026): booking details were spoken 4-7x per call. Two of the
+// three causes live on the tools, not in the prompt, so they are asserted here.
+// Gated until both production agents have been promoted (the hourly line check
+// would otherwise go red on a known, scheduled gap); assert-line passes
+// REQUIRE_CONFIRM_ONCE=1 once a line's declaration says so.
+if (process.env.REQUIRE_CONFIRM_ONCE === "1") {
+  check(functional.every((t) => !t.speak_during_execution || /three to six words/.test(t.execution_message_description ?? "")),
+    "every functional tool's aside is constrained to a contentless 3-6 words (execution_message_description)");
+  const endCall = (llm.general_tools ?? []).find((t) => t.type === "end_call");
+  check(endCall && endCall.speak_after_execution === false,
+    "end_call does not speak after the goodbye (speak_after_execution = false)");
+  check(!/see you \[day\]/.test(llm.general_prompt) && /shall I lock it in\?/.test(llm.general_prompt),
+    "prompt confirms once ('shall I lock it in?') and the goodbye template carries no day");
+}
 if (venueSection && !llm.general_prompt.includes("{{venue_faq}}")) {
   console.log("  note: venue facts are in the PROMPT, not per-call data — this agent must never be cloned for another venue; delete the section once the backend serves venue_faq.");
 }

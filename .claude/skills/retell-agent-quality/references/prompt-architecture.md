@@ -63,8 +63,11 @@ static ones.
    **NEVER call a tool to learn whether the venue is open**.
 5. **Taking a booking** — collect date/time/party; **closed-day gate before the tool**: a
    closed date gets an instant refusal + nearest open day, no `check_availability`; ask the
-   booking name explicitly (a mentioned name may be a friend); confirm once; `create_booking`
-   with `{{caller_phone}}` (if `""`, ask digit-by-digit FIRST); read the confirmation back;
+   booking name explicitly (a mentioned name may be a friend); **the ONE full recap of the
+   call** ("…shall I lock it in?") and `create_booking` only in the turn after the yes — the
+   availability result's `next_step` says so at decision time; `create_booking` with
+   `{{caller_phone}}` (if `""`, ask digit-by-digit FIRST); read the tool's short
+   `confirmation_message` ("All set, Megan.") verbatim, **never restate the details after**;
    pre-order offer once.
 6. **Seating preferences** — acknowledge, never promise, pass `seating_preference`, don't ask
    proactively.
@@ -85,7 +88,9 @@ static ones.
 11. **Edge cases** — party ≥7 (largest table seats 6) → warm callback via `{{owner_name}}`;
     hours/parking/venue facts ONLY from `{{venue_faq}}`; the Aria-rename one-time correction;
     never invent a booking ID.
-12. **Ending the call** — one goodbye then `end_call` immediately; pre-confirmation goodbyes
+12. **Ending the call** — one goodbye with no date or time in it, `end_call` in the same turn
+    (its `speak_after_execution` is `false`, so nothing is spoken after); a goodbye after an
+    agreed-but-uncommitted booking
     get pulled back once.
 13. **Venue questions** — `{{venue_faq}}` block + the boundary: not covered → take a message,
     never guess (wheelchair/dietary wrong answers cause real harm).
