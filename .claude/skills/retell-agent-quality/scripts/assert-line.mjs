@@ -217,6 +217,18 @@ if (numberPresent && retellMode === "static") {
   check(3, agents.length === 1 && agents[0]?.agent_id === profile.retell_agent_id,
     `inbound_agents pins ${profile.retell_agent_id} for profile "${router.holder}"`,
     `found ${JSON.stringify(agents)}.`);
+} else if (numberPresent && declared.inbound_mode === "paused") {
+  // A DECLARED pause (Mazcina, 5 Sep 2026): the webhook is deliberately cleared so the agent
+  // does not answer, while number, agent and LLM stay bound for an instant resume. Without the
+  // declaration this read as "broken layer [2]" on every scheduled run, and a check that is red
+  // for a known reason is a check nobody reads. A webhook that reappears is a real finding:
+  // someone re-hooked the line without flipping the declaration.
+  const wh = num.body?.inbound_webhook_url ?? "";
+  check(2, !wh, "inbound webhook cleared — line declared PAUSED (inbound_mode)",
+    `found ${wh} — the declaration says paused. Either the line was re-hooked by hand (flip inbound_mode to "webhook-only" in the same change) or the pause was never applied.`);
+  check(3, !num.body?.inbound_agents?.length,
+    "no static inbound_agents while paused (a static agent would answer the 'paused' line)",
+    `found ${JSON.stringify(num.body?.inbound_agents)}.`);
 } else if (numberPresent) {
   const wh = num.body?.inbound_webhook_url ?? "";
   check(2, host(wh) === host(declared.api_base) && wh.endsWith("/retell/inbound"),

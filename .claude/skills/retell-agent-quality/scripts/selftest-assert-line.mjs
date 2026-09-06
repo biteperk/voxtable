@@ -28,6 +28,9 @@ const cases = [
   { name: "wrong agent id", expect: 6, mutate: (l) => { l.retell_agent_id = "agent_deadbeefdeadbeefdeadbeef"; } },
   { name: "wrong venue name", expect: 7, mutate: (l) => { l.venue_name = "Some Other Venue"; } },
   { name: "wrong llm id", expect: 11, mutate: (l) => { l.retell_llm_id = "llm_deadbeefdeadbeefdeadbeef"; } },
+  // A pause is a declared state, not a broken layer (Mazcina, 5 Sep 2026). Declaring it on a
+  // line whose webhook is live must fail [2]: that is the "re-hooked by hand" finding.
+  { name: "declared paused while the webhook is live", expect: 2, mutate: (l) => { l.inbound_mode = "paused"; } },
   { name: "wrong pronunciation", expect: 12, mutate: (l) => { l.pronunciation_dictionary = [{ word: "Mazcina", alphabet: "ipa", phoneme: "zzz" }]; } },
   // [19]/[20] guard against a hand change at the vendor going unrecorded. The bug they exist to
   // catch is silent by construction — the line keeps answering — so the only way to know they

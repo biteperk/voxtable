@@ -32,7 +32,15 @@
       "retell_agent_id": "agent_b6b6488af08b82d80e8f4d270a",
       "retell_agent_name": "Mazcina Resto-Bar (production)",
       "retell_llm_id": "llm_5f642f051bb83c28d02cea4e1cbc",
-      "inbound_mode": "webhook-only",
+      "inbound_mode": "paused",
+      "$inbound_mode_comment": [
+        "PAUSED since 5 Sep 2026: the inbound webhook on the Retell number was unchecked by hand so",
+        "Bella does not answer this line while the ~7.6s drop is unresolved and Phase 1 was promoted.",
+        "The number, agent and LLM stay bound; only the webhook is cleared. Declared so the checker",
+        "asserts the pause instead of reporting it as a broken layer, and so apply-line cannot",
+        "silently re-hook it. To resume: re-check the webhook in Retell (or apply-line --apply after",
+        "flipping this to \"webhook-only\"), then run assert-line and commit both in the same change."
+      ],
       "pronunciation_dictionary": [
         {
           "word": "Mazcina",
