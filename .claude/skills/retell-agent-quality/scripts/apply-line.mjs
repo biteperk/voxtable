@@ -159,7 +159,9 @@ if (d.db?.via === "vm-ssh") {
 // Webhook-only, never inbound_agents: a static entry is a FALLBACK that answers with stale
 // default_dynamic_variables when the webhook fails — the wrong venue's name and old dates.
 // NUMBERS.md §6. Importing is also the one step with no clean undo, so it goes last.
-const wantWebhook = `${d.api_base}/retell/inbound`;
+// A line declared PAUSED wants its webhook CLEARED: the reconcile must never re-hook a venue
+// that was deliberately silenced (Mazcina, 5 Sep 2026). Resuming is a declaration change first.
+const wantWebhook = d.inbound_mode === "paused" ? "" : `${d.api_base}/retell/inbound`;
 const num = await json(`https://api.retellai.com/get-phone-number/${number}`, { headers: { Authorization: H.Authorization } });
 
 if (num.status === 404 && isRouter) {
@@ -205,14 +207,14 @@ if (num.status === 404 && isRouter) {
       process.exit(1);
     }
     const back = await json(`https://api.retellai.com/get-phone-number/${number}`, { headers: { Authorization: H.Authorization } });
-    const ok = back.status === 200 && back.body.inbound_webhook_url === wantWebhook && !back.body.inbound_agents?.length;
+    const ok = back.status === 200 && (back.body.inbound_webhook_url ?? "") === wantWebhook && !back.body.inbound_agents?.length;
     say(ok ? "  ✓ imported, webhook-only, read back and confirmed" : `  ✗ READ-BACK MISMATCH: ${JSON.stringify(back.body)}`);
     if (!ok) process.exit(1);
     changes.push("retell number import");
   }
 } else if (num.status === 200) {
   const fixes = {};
-  if (num.body.inbound_webhook_url !== wantWebhook) fixes.inbound_webhook_url = wantWebhook;
+  if ((num.body.inbound_webhook_url ?? "") !== wantWebhook) fixes.inbound_webhook_url = wantWebhook;
   if (d.inbound_mode === "webhook-only" && num.body.inbound_agents?.length) fixes.inbound_agents = [];
   if (Object.keys(fixes).length === 0) {
     say("\n✓ number already imported and pointing at the right place");
