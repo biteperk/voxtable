@@ -7,6 +7,13 @@
 **Status: OPEN. Region has now been tested and EXONERATED along with transport.
 The surviving candidate is the NUMBER itself (or its carrier range), not the trunk. 31 Aug 2026.**
 
+> **6 Sep 2026 — a different fault, do not file it here.** Three staging calls (23:37–23:53Z, 5 Sep)
+> ended `no-answer` at **0 s** with SIP **487**: Retell accepted the INVITE, our webhook answered in
+> under 400 ms, and Retell never sent 200 OK, so Twilio cancelled at its 30 s dial timeout. That is
+> not this incident (no greeting, no 7.6 s). Also note the staging number has **not been on any
+> trunk since 30 Aug 2026** — it sits on the voxstay number router (NUMBERS.md §3), so §6 below is
+> history, and the "revert staging to TLS" decision is closed as moot.
+
 ## 0. RETRACTION — the region verdict below was wrong, and a real call disproved it
 
 Earlier on 31 Aug this file was marked RESOLVED, concluding that the trunk's **region** caused

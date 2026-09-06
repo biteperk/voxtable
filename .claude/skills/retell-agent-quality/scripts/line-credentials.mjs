@@ -64,3 +64,13 @@ export function resolveCredentials(declared) {
 
   throw new Error(`Unknown retell_credentials.via: ${c.via}`);
 }
+
+/**
+ * Resolve one named secret from Secret Manager. Used for the Twilio pair a router line declares
+ * under routing.twilio_auth — the same rule as above: the source of the credential is part of the
+ * declaration, so a shell holding the wrong account's token cannot be read by accident.
+ */
+export function resolveSecret(name, gcpProject) {
+  if (!name || !gcpProject) throw new Error("resolveSecret needs a secret name and a GCP project");
+  return run("gcloud", ["secrets", "versions", "access", "latest", `--secret=${name}`, `--project=${gcpProject}`]);
+}

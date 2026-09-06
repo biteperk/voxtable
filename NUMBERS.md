@@ -136,17 +136,26 @@ route around. It becomes BitePerk's production line — and Natalia's line — a
 | Resource | Identifier |
 |---|---|
 | Phone number SID | `PN5a99b73b6f6a9e9a1cc40f7eb7feba42` |
-| Elastic SIP Trunk | `TKdebe2aa1a4287ca4b2f22da0e9d10ed7` — `voxtable-staging-au1`, region **AU1** |
-| Trunk origination | `sip:sip.retellai.com;transport=tcp` · priority 10 · weight 10 · enabled — **§6 experiment, not reverted** (`incident-7600ms-call-drops.md`) |
+| **Voice routing** | **Twilio Function router** `biteperk-number-router` (`https://biteperk-number-router-8451-prod.twil.io/router`), voice region **US1**, **no trunk attached** — since 30 Aug 2026. Owned by the sibling repo `~/voxstay` (`docs/number-routing.md` there). Which agent answers is the router Variable `ACTIVE_APP_61468203234`; VoxTable's declaration of the profiles and the checker live in `deploy/voice-lines.json` (`routing`) |
+| Elastic SIP Trunk | `TKdebe2aa1a4287ca4b2f22da0e9d10ed7` — `voxtable-staging-au1`, AU1 — **detached and inert since 30 Aug 2026.** Carried the number 13–30 Aug; still holds the §6 experiment posture (`transport=tcp`, Secure off), which no longer matters |
 | Messaging Service | `MG692c54a793f914c2e43c7d691f4cb41e` — `voxtable-staging-notifications`, region **US1** |
 | Regulatory bundle | `BUd5fe40c147a21757f04616a1180cdd89` (approved 13 Aug, ~1 day from documents) |
 | Compliance address | `AD0b3b71dc0a972ac2e678cb633e3a2c3d` |
 | Customer profile | **None** — staging has never had one |
 | Alphanumeric sender ID | **None.** `BitePerk` is approved against the *production* Account SID only |
 
-Same **Twilio** wiring as production, verified item-for-item: origination
-`sip:sip.retellai.com;transport=tcp` (pri 10, wt 10, enabled — **diverged from production at the §6 experiment in `incident-7600ms-call-drops.md`, never reverted**), Traffic Status **Voice enabled** and
-**Messaging enabled**, sender attached to `voxtable-staging-notifications`, no Disaster Recovery URL.
+**Not the same Twilio wiring as production, and this file said otherwise until 6 Sep 2026.** The
+number's `voice_url` points at the router; the router `<Dial>`s `sip:+61468203234@sip.retellai.com;transport=tcp`
+when the holder is `voxtable`, `<Redirect>`s to the VoxStay webhook when it is `voxstay`, and
+rescues any SIP leg that fails or collapses to the desk number (`+61 450 011 140`). Trunk-era
+checks [15]–[20] read the detached AU1 trunk as a ghost record for a week and passed while three
+real calls failed (5 Sep 2026, SIP 487 — Retell accepted each INVITE, our webhook answered in
+under 400 ms, Retell never sent 200 OK). `assert-line.mjs` now reads the router and prints the live
+holder as `HOLDER: <profile>`; switch it with
+`node .claude/skills/retell-agent-quality/scripts/switch-line.mjs +61468203234 --to <voxtable|voxstay> --apply`,
+which drives voxstay's `twilio-route.py`, sets the Retell inbound shape, reads everything back and
+appends to `deploy/voice-line-switches.log`. Messaging is unchanged: **Messaging enabled**, sender
+attached to `voxtable-staging-notifications`.
 
 Beyond Twilio, staging has since gone **further than production**: the number was imported to the
 Retell **Staging** workspace in webhook mode on 13 Aug and a `restaurants` row (`VoxTable Staging
@@ -162,7 +171,7 @@ read from the console, not assumed.
 | Setting | `voxtable-prod-au1` | `voxtable-staging-au1` | Wanted |
 |---|---|---|---|
 | Region | AU1 | AU1 | ✅ |
-| Origination URI | `sip:sip.retellai.com;transport=tls` · 10 · 10 · enabled | `…transport=tcp` — §6 experiment, not reverted | ⚠️ decide: revert or keep |
+| Origination URI | `sip:sip.retellai.com;transport=tls` · 10 · 10 · enabled | `…transport=tcp` — §6 experiment; **trunk carries no number since 30 Aug 2026**, so the revert decision is moot | ✅ closed — staging is router-routed (§3) |
 | Termination | unconfigured | unconfigured | ✅ deliberate — inbound only |
 | Call Recording | Disabled | Disabled | ✅ |
 | Call Transfer (SIP REFER) | Disabled | Disabled | ✅ |
