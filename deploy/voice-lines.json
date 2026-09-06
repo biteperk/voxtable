@@ -121,23 +121,57 @@
         "Mazcina Resto-Bar"
       ],
       "twilio_account_sid": "AC8116857da2064ef3251533f3ade56f32",
-      "twilio_trunk_sid": "TKdebe2aa1a4287ca4b2f22da0e9d10ed7",
-      "twilio_region": "au1",
-      "termination_uri": "voxtable-staging-au1.pstn.twilio.com",
-      "twilio_au1_key_secret": "voxtable-stg-twilio-au1-key",
-      "origination_transport": "tcp",
-      "trunk_secure": false,
-      "$trunk_posture_comment": [
-        "Read back from the AU1 Trunking API on 2 Sep 2026 — NOT the tls + secure=true that NUMBERS.md",
-        "and this file's neighbours described. This is the posture set by the reversible experiment in",
-        "deploy/runbooks/incident-7600ms-call-drops.md §6 (Secure=false first, then origination",
-        "tls -> tcp) to test whether transport caused the ~7.6s drops. It did not: two more staging",
-        "drops on 30 Aug exonerated transport, production moved to US1 instead, and staging was never",
-        "reverted. Declared as-is so assert-line [19]/[20] guard the real trunk instead of skipping",
-        "under --strict — which is what turned Voice line health red from #359 onward.",
-        "Reverting to tls + secure=true is the §6 rollback and an OPEN decision: §6 requires 6 real",
-        "test calls to +61 468 203 234 to validate any trunk change, so it is not a repo-only action.",
-        "Change the trunk and this declaration in the SAME change, never one without the other."
+      "twilio_phone_number_sid": "PN5a99b73b6f6a9e9a1cc40f7eb7feba42",
+      "routing": {
+        "mode": "router",
+        "twilio_voice_region": "us1",
+        "router_service": "biteperk-number-router",
+        "voice_url": "https://biteperk-number-router-8451-prod.twil.io/router",
+        "voice_fallback_url": "https://biteperk-number-router-8451-prod.twil.io/fallback",
+        "desk_number": "+61450011140",
+        "profiles": {
+          "voxtable": {
+            "retell": "webhook",
+            "router_target": "sip:{To}@sip.retellai.com;transport=tcp"
+          },
+          "voxstay": {
+            "retell": "untouched",
+            "router_target": "https://voxstay.biteperk.com.au/twiml"
+          }
+        },
+        "twilio_auth": {
+          "account_sid_secret": "voxtable-stg-twilio-account-sid",
+          "auth_token_secret": "voxtable-stg-twilio-auth-token",
+          "gcp_project": "bp-voxtable-stg"
+        }
+      },
+      "$routing_comment": [
+        "Read back from Twilio, the Serverless API and Retell on 6 Sep 2026: this number is NOT on a SIP",
+        "trunk. Since 30 Aug 2026 its voice_url points at the Twilio Function router owned by the",
+        "sibling repo ~/voxstay (docs/number-routing.md there), which is how one paid test number is",
+        "shared between VoxTable staging, the VoxStay hotel agent and any other experiment. Which",
+        "agent answers is the router Variable ACTIVE_APP_61468203234 (falling back to the global",
+        "ACTIVE_APP), switched by hand with voxstay's twilio-route.py — or from this repo with",
+        "switch-line.mjs, which drives that CLI and then re-asserts the whole chain.",
+        "",
+        "There is deliberately NO declared holder here. Sam switches the number several times a day;",
+        "a declared holder would turn the scheduled check red after every switch until a commit landed.",
+        "assert-line reads the live holder, prints it as HOLDER: <profile>, and asserts that the live",
+        "state is COHERENT with that profile (router target, desk, Retell mode). `--expect <profile>`",
+        "adds the equality check for a human who needs to know before dialling.",
+        "",
+        "profiles.<slug>.retell: 'webhook' = the Retell number stays in webhook mode and /retell/inbound",
+        "picks the agent; 'untouched' = Retell never sees the call (router sends it to an https target);",
+        "'static' = Retell inbound_agents pinned to profiles.<slug>.retell_agent_id with the webhook",
+        "cleared, for any other Retell agent that must share this number (it must live in the Staging",
+        "workspace — a number lives in exactly one workspace, skill rule 7).",
+        "",
+        "The AU1 trunk TKdebe2aa1a4287ca4b2f22da0e9d10ed7 (voxtable-staging-au1) this entry used to",
+        "declare has carried no number since 30 Aug and is inert. Checks [15]-[20] read it as a ghost",
+        "record until 6 Sep 2026 and passed while three real calls failed (SIP 487, Retell never",
+        "answered). The 'revert staging to tls + secure=true' decision is therefore closed as moot.",
+        "The Retell number object still names that trunk in sip_outbound_trunk_config.termination_uri —",
+        "outbound only, never used, recorded here rather than 'fixed'."
       ],
       "db": {
         "via": "unreachable",
@@ -180,7 +214,7 @@
         "calls, and US1+tls was the one untested cell. A clean run here exonerates TLS and convicts",
         "the region; drops at ~7.6s convict TLS, and the fix is in place (PATCH origination to tcp",
         "and the trunk to secure=false) — only REGION is immutable after creation.",
-        "See deploy/runbooks/incident-7600ms-call-drops.md §10."
+        "See deploy/runbooks/incident-7600ms-call-drops.md §0a (there is no §10)."
       ],
       "twilio_voice_region_sid": "QQa3d289f958ecaf75e6b79f3369a092cd",
       "twilio_au1_key_secret": "voxtable-prod-twilio-us1-key",

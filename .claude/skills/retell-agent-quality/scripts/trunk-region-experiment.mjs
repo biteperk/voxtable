@@ -1,5 +1,5 @@
 // trunk-region-experiment.mjs — the AU1-vs-US1 test for the fixed ~7.6s call drop.
-// See deploy/runbooks/incident-7600ms-call-drops.md §10 item 1.
+// See deploy/runbooks/incident-7600ms-call-drops.md §0a and §6 (there is no §10).
 //
 // WHY THIS IS THE REMAINING EXPERIMENT
 // Transport was exonerated on 27 Aug: the staging trunk has been TCP since 20 Aug and calls
