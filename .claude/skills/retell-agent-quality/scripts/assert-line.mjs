@@ -1,4 +1,4 @@
-// assert-line.mjs <number> [--strict] [--config path] [--json]
+// assert-line.mjs <number> [--strict] [--config path] [--json] [--expect <profile>] [--calls <hours>]
 //
 // Asserts the WHOLE inbound chain for one phone number against its declared state
 // in deploy/voice-lines.json, and exits non-zero on any drift.
@@ -9,6 +9,22 @@
 // way we found out was Sam placing a call. Each check below is named for the break it
 // would have caught.
 //
+// Two shapes of Twilio layer, chosen by the declaration's routing.mode:
+//   trunk  (absent = trunk) — the number sits on an Elastic SIP Trunk; checks [15]-[20] read the
+//            trunk. Production lines.
+//   router — the number's voice_url points at the Twilio Function switchboard in ~/voxstay, and
+//            WHICH agent answers is a router Variable. Checks [15]-[21] read the number, its voice
+//            region and the live Variables, print the live holder as HOLDER: <profile>, and assert
+//            the state is COHERENT with that profile. Until 6 Sep 2026 this script read the AU1
+//            trunk the staging number had been detached from since 30 Aug, found the ghost record,
+//            and passed while three real calls failed. A checker that reads the wrong layer is worse
+//            than none: it ends the conversation.
+//   --expect <profile>  additionally fail unless the live holder IS that profile (for a human about
+//            to dial, and for switch-line.mjs). Never on a schedule — the holder is switched by hand.
+//   --calls <hours>     (router, staging) the most recent SIP leg to Retell in the window must have
+//            connected. Configuration read-backs stayed green all night on 5 Sep 2026 while Retell
+//            answered nothing; only the outcome of real legs sees that.
+//
 // Env: RETELL_API_KEY (required, the workspace key for THIS number's environment)
 //      RETELL_WEBHOOK_SECRET (optional — production signs /retell/inbound with a DIFFERENT
 //        string from the API key; signing with the API key 401s. Defaults to RETELL_API_KEY,
@@ -17,13 +33,15 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { Retell } from "retell-sdk";
-import { resolveCredentials } from "./line-credentials.mjs";
+import { resolveCredentials, resolveSecret } from "./line-credentials.mjs";
 
 const args = process.argv.slice(2);
 const strict = args.includes("--strict");
 const asJson = args.includes("--json");
-const configIdx = args.indexOf("--config");
-const configPath = configIdx >= 0 ? args[configIdx + 1] : "deploy/voice-lines.json";
+const at = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : undefined; };
+const configPath = at("--config") ?? "deploy/voice-lines.json";
+const expectProfile = at("--expect");
+const callsHours = args.includes("--calls") ? (Number(at("--calls")) || 24) : null;
 const number = args.find((a) => a.startsWith("+"));
 
 if (!number) {
@@ -102,6 +120,82 @@ if (!asJson) {
   console.log(`workspace ${declared.retell_workspace} · credentials from ${CRED_SOURCE}\n`);
 }
 
+// ─── 0. Router-mode lines: read the live switchboard before judging anything ──
+// The Retell checks below depend on WHO holds the number (a lent-out number legitimately has a
+// different Retell shape), so the router is read first. All reads; nothing here writes, and
+// nothing here runs voxstay's `status` command — that command auto-releases a stale claim on
+// read, and a checker must never change what it checks.
+const routing = declared.routing ?? { mode: "trunk" };
+const isRouter = routing.mode === "router";
+const digits = number.replace(/^\+/, "");
+// Mirrors lookup() in ~/voxstay/scripts/router-function.js exactly: the per-number key wins,
+// an empty string counts as unset, the un-suffixed global is the fallback, values are trimmed.
+const lookup = (vars, base) => {
+  const v = vars[`${base}_${digits}`];
+  return ((v !== undefined && v !== "" ? v : vars[base]) || "").trim();
+};
+const acct = declared.twilio_account_sid;
+let twBasic = null;   // account-token auth for a router line
+let router = null;    // { rec, voiceRegion, vars, varsError, holder, target, desk, profile, svcSid, envSid }
+if (isRouter) {
+  try {
+    const sid = resolveSecret(routing.twilio_auth?.account_sid_secret, routing.twilio_auth?.gcp_project);
+    const tok = resolveSecret(routing.twilio_auth?.auth_token_secret, routing.twilio_auth?.gcp_project);
+    twBasic = { Authorization: `Basic ${Buffer.from(`${sid}:${tok}`).toString("base64")}` };
+  } catch (error) {
+    router = { error: `could not resolve routing.twilio_auth: ${error.message}` };
+  }
+  if (twBasic) {
+    const list = await json(
+      `https://api.twilio.com/2010-04-01/Accounts/${acct}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(number)}`,
+      { headers: twBasic });
+    const region = await json(`https://routes.twilio.com/v2/PhoneNumbers/${encodeURIComponent(number)}`, { headers: twBasic });
+    const vars = {};
+    let varsError = null;
+    let svcSid = null, envSid = null;
+    // Self-test hook: a JSON file of Variables stands in for the live switchboard, so the
+    // holder/target/desk checks can be watched failing without touching the router.
+    const fixture = process.env.ASSERT_LINE_ROUTER_VARIABLES;
+    if (fixture) {
+      Object.assign(vars, JSON.parse(readFileSync(fixture, "utf8")));
+    } else {
+      const services = await json("https://serverless.twilio.com/v1/Services?PageSize=100", { headers: twBasic });
+      const svc = (services.body?.services ?? []).find((x) => x.unique_name === routing.router_service);
+      if (!svc) {
+        varsError = `Serverless service "${routing.router_service}" not found on ${acct} (HTTP ${services.status})`;
+      } else {
+        const envs = await json(`https://serverless.twilio.com/v1/Services/${svc.sid}/Environments?PageSize=50`, { headers: twBasic });
+        const env = (envs.body?.environments ?? []).find((e) => e.domain_name === host(routing.voice_url))
+          ?? envs.body?.environments?.[0];
+        if (!env) {
+          varsError = "router service has no deployed environment";
+        } else {
+          svcSid = svc.sid; envSid = env.sid;
+          const vs = await json(`https://serverless.twilio.com/v1/Services/${svc.sid}/Environments/${env.sid}/Variables?PageSize=100`, { headers: twBasic });
+          for (const v of vs.body?.variables ?? []) vars[v.key] = v.value;
+          if (vs.status !== 200) varsError = `Variables read returned HTTP ${vs.status}`;
+        }
+      }
+    }
+    const holder = lookup(vars, "ACTIVE_APP").toLowerCase();
+    router = {
+      rec: list.body?.incoming_phone_numbers?.[0] ?? null,
+      listStatus: list.status,
+      voiceRegion: region.body?.voice_region ?? null,
+      vars, varsError, svcSid, envSid,
+      holder,
+      target: holder ? lookup(vars, `TARGET_${holder.toUpperCase()}`) : "",
+      desk: lookup(vars, "DESK_NUMBER"),
+      profile: routing.profiles?.[holder] ?? null
+    };
+  }
+  if (!asJson) console.log(`router: ${router?.error ?? router?.varsError ?? `holder "${router.holder || "(unset)"}"`}\n`);
+}
+const profile = router?.profile ?? null;
+// What shape the Retell number must be in. A lent-out number ("untouched") keeps VoxTable's
+// webhook shape — Retell simply never sees the call while the router sends it elsewhere.
+const retellMode = profile?.retell === "static" ? "static" : "webhook";
+
 // ─── 1. The number exists in this Retell workspace ────────────────────────────
 // BREAK 1 (20 Aug 2026): absent. Twilio offered the call to sip.retellai.com, Retell did
 // not recognise the DID and rejected it. The caller heard a couple of seconds and a hangup;
@@ -112,7 +206,18 @@ const numberPresent = check(1, num.status === 200,
   `get-phone-number returned ${num.status}. Nothing routes to this number — a call to it reaches Retell and is rejected.`);
 
 // ─── 2. It points at THIS environment, webhook-only ───────────────────────────
-if (numberPresent) {
+if (numberPresent && retellMode === "static") {
+  // The live holder pins another Retell agent on this number. Then the webhook MUST be cleared:
+  // with both set, the static agent is the fallback that fires when the webhook fails
+  // (NUMBERS.md §6), and the number answers as one agent on good days and the other on bad ones.
+  const wh = num.body?.inbound_webhook_url ?? "";
+  const agents = num.body?.inbound_agents ?? [];
+  check(2, !wh, `inbound webhook cleared while profile "${router.holder}" pins a static agent`,
+    `found ${wh} alongside inbound_agents — the dual-binding fallback trap, in the other direction.`);
+  check(3, agents.length === 1 && agents[0]?.agent_id === profile.retell_agent_id,
+    `inbound_agents pins ${profile.retell_agent_id} for profile "${router.holder}"`,
+    `found ${JSON.stringify(agents)}.`);
+} else if (numberPresent) {
   const wh = num.body?.inbound_webhook_url ?? "";
   check(2, host(wh) === host(declared.api_base) && wh.endsWith("/retell/inbound"),
     `inbound_webhook_url is ${declared.api_base}/retell/inbound`,
@@ -271,7 +376,50 @@ if (agentExists) {
   skip(14, "golden agent config", "the agent does not exist, so there is nothing to assert.");
 }
 
-// ─── 6. Twilio: the number still points at our trunk ──────────────────────────
+// ─── 6r. Twilio, router mode: the number points at the switchboard and the switchboard is coherent
+if (isRouter) {
+  if (!twBasic) {
+    skip(15, "Twilio number → router", router?.error ?? "no credentials");
+  } else {
+    const rec = router.rec;
+    const found = check(15, !!rec, `Twilio account ${acct} still owns the number`,
+      `lookup returned ${router.listStatus} with no match.`);
+    if (found) {
+      check(16, rec.voice_url === routing.voice_url && rec.voice_fallback_url === routing.voice_fallback_url && !rec.trunk_sid,
+        "number's voice_url and voice_fallback_url point at the router, and no trunk is attached",
+        `voice_url=${rec.voice_url || "(none)"} fallback=${rec.voice_fallback_url || "(none)"} trunk_sid=${rec.trunk_sid ?? "(none)"} — ` +
+        "a trunk bypasses the router entirely, and a moved voice_url means the number was edited by hand (voxstay docs/number-routing.md rule 1).");
+      check(17, router.voiceRegion === routing.twilio_voice_region,
+        `voice region is ${routing.twilio_voice_region}`,
+        `routes API says ${router.voiceRegion ?? "(unreadable)"} — in au1 this number received NO inbound at all for 18 days in Aug 2026, with no error anywhere.`);
+    }
+    if (router.varsError) {
+      skip(19, "router holder", router.varsError);
+      skip(20, "router target", router.varsError);
+      skip(21, "desk fallback", router.varsError);
+    } else {
+      const declaredProfiles = Object.keys(routing.profiles ?? {});
+      check(19, !!profile,
+        `router holder "${router.holder || "(unset)"}" is a declared profile (${declaredProfiles.join(", ")})`,
+        `ACTIVE_APP resolves to "${router.holder || "(unset)"}" — every call goes to a target this declaration knows nothing about, or to the desk. Declare the profile, or switch back with switch-line.mjs.`);
+      if (profile) {
+        // The Variable holds the TEMPLATE — "{To}" is substituted by the router per call — so the
+        // comparison is template to template. Well-formedness is judged after substitution, the way
+        // the router itself does it, because that is the string a call actually dials.
+        const dialed = router.target.split("{To}").join(number);
+        const wellFormed = /^https:\/\/[^\s"'<>]+$/.test(dialed) || /^sip:[^\s"'<>]+$/.test(dialed);
+        check(20, router.target === profile.router_target && wellFormed,
+          `router target for "${router.holder}" is ${profile.router_target} (dials ${dialed})`,
+          `live TARGET is "${router.target || "(unset)"}" — a wrong transport, host or user-part reaches nothing, and a malformed one is silently routed to the desk.`);
+      }
+      check(21, router.desk === routing.desk_number,
+        `desk fallback is ${routing.desk_number}`,
+        `DESK_NUMBER resolves to "${router.desk || "(unset)"}" — a failed SIP leg rings this, or hangs up if unset.`);
+    }
+  }
+}
+
+// ─── 6. Twilio, trunk mode: the number still points at our trunk ──────────────
 // AU1 resources answer ONLY at {product}.sydney.au1.twilio.com and need AU1-scoped
 // credentials; the US1 endpoints return empty lists that look exactly like a deleted estate.
 // The reverse is equally true and was hardcoded here: a US1 line checked against the AU1 host
@@ -284,13 +432,14 @@ const tw = process.env.TWILIO_AU1_KEY_SID && process.env.TWILIO_AU1_KEY_SECRET
   ? { Authorization: `Basic ${Buffer.from(`${process.env.TWILIO_AU1_KEY_SID}:${process.env.TWILIO_AU1_KEY_SECRET}`).toString("base64")}` }
   : null;
 
-if (!tw) {
+if (isRouter) {
+  // handled in 6r above
+} else if (!tw) {
   skip(15, "Twilio number → trunk → origination",
     declared.twilio_au1_key_secret
       ? `no AU1 credentials in env. Load them: TWILIO_AU1_KEY_SID/SECRET from Secret Manager (${declared.twilio_au1_key_secret}-sid / -secret).`
       : "no AU1 API key exists for this account. Create one (Console → Account → API keys, Region = AU1); until then this layer is unverifiable and --strict fails.");
 } else {
-  const acct = declared.twilio_account_sid;
   const list = await json(
     `${twHost("api")}/2010-04-01/Accounts/${acct}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(number)}`,
     { headers: tw });
@@ -341,6 +490,55 @@ if (!tw) {
   }
 }
 
+// ─── 7. --expect: the holder a human is about to rely on ──────────────────────
+if (expectProfile) {
+  if (!isRouter) skip(23, `holder is "${expectProfile}"`, "only a router-mode line has a switchable holder.");
+  else if (!router?.holder && router?.varsError) skip(23, `holder is "${expectProfile}"`, router.varsError);
+  else check(23, router.holder === expectProfile,
+    `holder is "${expectProfile}"`,
+    `holder is "${router.holder || "(unset)"}". Do not dial expecting ${expectProfile}. Switch with: node ${new URL("./switch-line.mjs", import.meta.url).pathname} ${number} --to ${expectProfile} --apply`);
+}
+
+// ─── 8. --calls: did the last real leg to Retell actually connect? ────────────
+// Judged on the MOST RECENT leg only. "Any failure in the window" would keep this red for a day
+// after one transient stall and teach everyone to scroll past it.
+if (callsHours !== null) {
+  const label = `most recent SIP leg to Retell in ${callsHours} h connected`;
+  if (!isRouter) skip(24, label, "trunk-routed legs never appear in the Calls API; only a router line can be judged on outcomes.");
+  else if (declared.environment === "production") skip(24, label, "production is read-back and monitoring only.");
+  else if (!twBasic) skip(24, label, router?.error ?? "no Twilio credentials");
+  else {
+    const since = new Date(Date.now() - callsHours * 3600e3);
+    const when = (c) => new Date(c.start_time ?? c.date_created);
+    const calls = await json(
+      `https://api.twilio.com/2010-04-01/Accounts/${acct}/Calls.json?StartTime%3E=${since.toISOString().slice(0, 10)}&PageSize=1000`,
+      { headers: twBasic });
+    const legs = (calls.body?.calls ?? [])
+      .filter((c) => c.direction === "outbound-dial" && /sip\.retellai\.com/.test(c.to ?? "") && when(c) >= since)
+      .sort((a, b) => when(a) - when(b));
+    // Same threshold the router's /sip-failed uses: a "completed" leg shorter than this collapsed.
+    const minOk = Number(lookup(router.vars ?? {}, "SIP_MIN_OK_SECONDS")) || 5;
+    const bad = (c) => c.status !== "completed" || Number(c.duration) < minOk;
+    const nBad = legs.filter(bad).length;
+    let rescueNote = "";
+    if (router.svcSid) {
+      const logs = await json(`https://serverless.twilio.com/v1/Services/${router.svcSid}/Environments/${router.envSid}/Logs?PageSize=100`, { headers: twBasic });
+      const rescues = (logs.body?.logs ?? [])
+        .filter((l) => /sip-failed → desk/.test(l.message ?? "") && new Date(l.date_created) >= since)
+        .sort((a, b) => new Date(a.date_created) - new Date(b.date_created));
+      const lastRescue = rescues.at(-1);
+      if (lastRescue) rescueNote = `; last rescue ${lastRescue.date_created} ${lastRescue.message.match(/sip=\S+/)?.[0] ?? ""}`;
+    }
+    const summary = `${legs.length} leg(s): ok ${legs.length - nBad} / rescued ${nBad}${rescueNote}`;
+    const last = legs.at(-1);
+    if (!last) check(24, true, `${label} (no SIP legs to Retell in the window — nothing to judge)`);
+    else check(24, !bad(last), `${label} (${summary})`,
+      `last leg ${last.sid} at ${last.start_time ?? last.date_created}: ${last.status}, ${last.duration ?? 0}s (${summary}). ` +
+      "Configuration can be perfect and this still red: Retell accepted the INVITE and did not answer (5 Sep 2026, SIP 487 ×3). " +
+      "Retry once; if it repeats, Retell support with the call ids — and run the ear battery as web calls meanwhile.");
+  }
+}
+
 // ─── Verdict ──────────────────────────────────────────────────────────────────
 const failed = results.filter((r) => r.state === "fail");
 const skipped = results.filter((r) => r.state === "skip");
@@ -360,9 +558,16 @@ if (numberMissing && agentMissing && !asJson) {
 }
 
 if (asJson) {
-  console.log(JSON.stringify({ number, environment: declared.environment, results, failed: failed.length, skipped: skipped.length }, null, 2));
+  // router_targets: the live Variable for every DECLARED profile (template form), so switch-line
+  // can skip a set-target that would write the value already there.
+  const routerTargets = isRouter && router?.vars
+    ? Object.fromEntries(Object.keys(routing.profiles ?? {}).map((slug) => [slug, lookup(router.vars, `TARGET_${slug.toUpperCase()}`)]))
+    : null;
+  console.log(JSON.stringify({ number, environment: declared.environment, routing_mode: routing.mode, holder: isRouter ? (router?.holder ?? null) : null, router_targets: routerTargets, results, failed: failed.length, skipped: skipped.length }, null, 2));
 } else {
   console.log("");
+  // Who answers, stated on every run — the one line a person about to dial actually needs.
+  if (isRouter) console.log(`HOLDER: ${router?.holder || "(unset)"}${profile ? ` (${profile.retell === "untouched" ? "Retell never sees the call" : `Retell ${profile.retell}`})` : " — NOT A DECLARED PROFILE"}`);
   if (failed.length) console.log(`FAILED: ${failed.length} broken layer(s) — ${failed.map((f) => `[${f.id}]`).join(" ")}`);
   else console.log(`All checks passed${skipped.length ? ` (${skipped.length} skipped)` : ""}.`);
   if (skipped.length && !strict) console.log(`${skipped.length} layer(s) unverified — re-run with --strict to treat that as failure.`);

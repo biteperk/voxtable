@@ -19,9 +19,10 @@ for number in ${=lines}; do
   env=$(node -e "console.log(require('./deploy/voice-lines.json').lines['$number'].environment)")
   echo "\n═══ $number ($env) ═══"
 
-  # Retell credentials are resolved by the script itself. Twilio's AU1 pair is still passed
-  # through the environment, so load it here from the secret names the line declares. An
-  # empty prefix means the trunk layer reports itself unverified rather than silently ticking.
+  # Retell credentials are resolved by the script itself, and so is the account-token pair a
+  # ROUTER-mode line declares under routing.twilio_auth. Only a trunk line's AU1/US1 API-key pair
+  # is still passed through the environment, loaded here from the secret names the line declares.
+  # An empty prefix means the trunk layer reports itself unverified rather than silently ticking.
   tw=$(node -e "console.log(require('./deploy/voice-lines.json').lines['$number'].twilio_au1_key_secret || '')")
   sid="" secret=""
   if [ -n "$tw" ]; then
@@ -33,15 +34,25 @@ for number in ${=lines}; do
     secret=$(gcloud secrets versions access latest --secret="${tw}-secret" --project="$proj" 2>/dev/null)
   fi
 
+  # A router line also gets the call-outcome check: the most recent SIP leg to Retell in the
+  # last 24 h must have connected. That is the check that would have gone red at 23:38Z on
+  # 5 Sep 2026, when the configuration was perfect and Retell simply did not answer.
+  # ${=calls} below: zsh does not word-split an unquoted variable, so "$calls" would arrive as ONE
+  # argument "--calls 24" and the flag would be silently ignored (it was, on the first run).
+  calls=""
+  if [ "$(node -e "console.log((require('./deploy/voice-lines.json').lines['$number'].routing||{}).mode||'trunk')")" = "router" ]; then
+    calls="--calls 24"
+  fi
   TWILIO_AU1_KEY_SID="$sid" TWILIO_AU1_KEY_SECRET="$secret" \
-    node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$number" $STRICT || fail=1
+    node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$number" $STRICT ${=calls} || fail=1
 done
 
 echo ""
 if [ $fail -ne 0 ]; then
   echo "AT LEAST ONE VOICE LINE IS BROKEN — see the failing check ids above."
   echo "If BOTH the number and the agent are missing, suspect the credentials before the line."
-  echo "Repair: node .claude/skills/retell-agent-quality/scripts/apply-line.mjs <number> --apply"
+  echo "Repair (trunk line): node .claude/skills/retell-agent-quality/scripts/apply-line.mjs <number> --apply"
+  echo "Switch (router line): node .claude/skills/retell-agent-quality/scripts/switch-line.mjs <number> --to <profile> --apply"
 else
   echo "All declared voice lines match deploy/voice-lines.json."
 fi

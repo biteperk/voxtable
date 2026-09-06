@@ -27,10 +27,13 @@ wrong breaks multi-tenant routing silently.
 
 | Case | Binding | Why |
 |---|---|---|
-| A single fixed line (BitePerk's own numbers) | static `inbound_agent_id` | One number, one agent, forever |
+| A single fixed line (BitePerk's own numbers) | static `inbound_agents: [{agent_id, weight: 1}]` | One number, one agent, forever |
 | **Any per-venue number** | **`inbound_webhook_url` (webhook mode)** — never a static binding | `NAMES.md` §6. Webhook mode is what makes `/retell/inbound` fire so the backend can resolve the restaurant from `to_number` at call time |
 
-A static `inbound_agent_id` means `/retell/inbound` never fires, so `getRestaurantIdByDialedNumber`
+(`inbound_agent_id` no longer exists — Retell replaced it with the weighted `inbound_agents` list
+on 31 Mar 2026. Every VoxTable line today is webhook mode with `inbound_agents` empty.)
+
+A static `inbound_agents` entry means `/retell/inbound` never fires, so `getRestaurantIdByDialedNumber`
 is never consulted on the Retell side and the venue must be hard-bound at the agent level. That
 does not scale and is the opposite of the fail-closed routing the rest of the system relies on.
 
@@ -120,8 +123,23 @@ Caller → Twilio number → /twilio/voice → TwiML <Dial><Sip> → Retell
 to a default tenant — filing calls under the default tenant is what produced the cross-tenant leak.
 An unmapped number degrades to a missing log entry rather than a wrong one. Do not "fix" this.
 
+### C. Number router — `voice_url` → Twilio Function (staging's shared number)
+
+```
+Caller → Twilio number → Function /router (voxstay repo) → <Dial><Sip> sip:+E164@sip.retellai.com   (Retell)
+                                                         → <Redirect> https://…/twiml                (a webhook agent)
+                                     SIP leg fails/collapses → /sip-failed → <Dial> desk number
+```
+
+Used by **`+61 468 203 234` since 30 Aug 2026**, because one paid test number is shared between
+VoxTable staging, the VoxStay hotel agent and other experiments. Which agent answers is a router
+Variable, switched by hand — from this repo with `switch-line.mjs`, which drives voxstay's
+`twilio-route.py`, sets the Retell inbound shape, reads back and re-asserts. The trunk layer is
+absent; `assert-line` reads the number's `voice_url`, voice region and the live Variables instead
+and prints `HOLDER: <profile>`. Not for production lines.
+
 ### Recommendation
 
-Use **A plus a Disaster Recovery URL** (see `trunk-hardening.md`). That keeps the fast, resilient
+Production: **A plus a Disaster Recovery URL** (see `trunk-hardening.md`). Shared test numbers: **C**. That keeps the fast, resilient
 trunk path while giving callers something to hear when Retell is unreachable — most of B's benefit
 without putting the API in the happy path.

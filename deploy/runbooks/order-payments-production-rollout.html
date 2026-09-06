@@ -553,6 +553,8 @@ guest says they paid but the ticket says UNPAID, and who to ring.</li>
 <li><code>STRIPE_CONNECT_ENABLED=true</code>. Deploy. Onboard Natalia's. Confirm
 <code>charges_enabled</code> syncs by webhook. <strong>Nothing is chargeable yet.</strong></li>
 <li>Wait 24 hours. Watch for <code>connect_account_unmatched</code> warnings.</li>
+<li><strong>Stripe live receipts ON, read back.</strong> In the live Biteperk account, <em>Settings &rarr; Customer emails &rarr; Successful payments</em> must be on (decision 6 Sep 2026: guests get text + email). The <code>/order/paid</code> page promises an email from Stripe; the sandbox toggle is independent and proves nothing about live. Read the toggle back in the dashboard before flipping the flag below.</li>
+<li><strong><code>PUBLIC_ORDER_RETURN_BASE_URL=https://voxtable.biteperk.com.au</code> in the prod Terraform map.</strong> Stripe returns the guest there, and the payment and receipt texts carry <code>/pay/&lt;token&gt;</code> and <code>/receipt/&lt;token&gt;</code> on that host (Hosting rewrites them to the API). After the first frontend deploy, <code>curl -sI https://voxtable.biteperk.com.au/pay/AAAAAAAAAAAAAAAAAAAAAA</code> must answer 302 to <code>/order/expired</code> &mdash; a 200 with the SPA means the rewrite did not land.</li>
 <li><code>ORDER_PAYMENTS_ENABLED=true</code>. Deploy. <strong>Staff-button path only</strong> — the Retell
 tool is registered but the prompt does not yet offer it. A manager sends the first live link, to their own
 phone, for a real order.</li>

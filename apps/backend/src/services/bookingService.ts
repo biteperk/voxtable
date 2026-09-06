@@ -36,6 +36,7 @@ import {
   enqueueRescheduleForReservation
 } from "./calcomService";
 import { formatSmsDate, formatVoiceTime, isWithinOpeningHours, todayInTz } from "../utils/time";
+import { spokenBookingChange, spokenBookingConfirmation } from "./bookingConfirmation";
 import { normalizePhone } from "../utils/phone";
 
 // The DB-level safety net catches double-booking races that bypass application
@@ -65,7 +66,11 @@ function replayResult(existing: ReservationRow, customerName: string): BookingRe
   return {
     bookingId: existing.id,
     status: existing.status,
-    confirmationMessage: `Confirmed. ${customerName} has a table for ${existing.party_size} on ${existing.reservation_date} at ${formatVoiceTime(existing.start_time.slice(0, 5))}.`
+    confirmationMessage: spokenBookingConfirmation(customerName),
+    customerName,
+    date: existing.reservation_date,
+    time: existing.start_time.slice(0, 5),
+    partySize: existing.party_size
   };
 }
 
@@ -475,7 +480,11 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     return {
       bookingId: reservation.id,
       status: reservation.status,
-      confirmationMessage: `Confirmed. ${input.customerName} has a table for ${input.partySize} on ${input.date} at ${formatVoiceTime(input.time)}.`
+      confirmationMessage: spokenBookingConfirmation(input.customerName),
+      customerName: input.customerName,
+      date: input.date,
+      time: input.time,
+      partySize: input.partySize
     };
   } catch (error) {
     // ROLLBACK itself throws on a terminated connection (statement-timeout
@@ -725,9 +734,16 @@ export async function modifyBooking(input: {
       return {
         bookingId: reservation.id,
         status: reservation.status,
-        confirmationMessage: nameChanged
-          ? `Updated. The booking is under ${input.customerName!.trim()} now.`
-          : `Updated. The booking is now ${reservation.status}.`
+        confirmationMessage: spokenBookingChange({
+          name: nameChanged ? input.customerName!.trim() : undefined,
+          time: nextTime !== current.start_time.slice(0, 5) ? formatVoiceTime(nextTime) : undefined,
+          date: nextDate !== current.reservation_date ? formatSmsDate(nextDate) : undefined,
+          partySize: nextPartySize !== current.party_size ? nextPartySize : undefined
+        }),
+        customerName: nameChanged ? input.customerName!.trim() : undefined,
+        date: nextDate,
+        time: nextTime,
+        partySize: nextPartySize
       };
     });
   } catch (error) {

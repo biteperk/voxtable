@@ -18,6 +18,17 @@ First green machine run: **14 Aug 2026** (all six suites, both negative controls
 
 ## Setup
 
+**Step 0 — know who answers before you dial.** The staging number is shared with other projects
+through the voxstay router and is switched by hand. Run
+
+```bash
+node .claude/skills/retell-agent-quality/scripts/assert-line.mjs +61468203234 --expect voxtable
+```
+
+and read the `HOLDER:` line. If it is not `voxtable`, switch with
+`node .claude/skills/retell-agent-quality/scripts/switch-line.mjs +61468203234 --to voxtable --apply`
+and re-run. Dialling on an assumption is how three "final" battery calls reached nothing on 5 Sep.
+
 | Thing | Value |
 |---|---|
 | Dial | **+61 468 203 234** (**Mazcina** — the real Darlinghurst venue, converted 19 Aug 2026; agent `agent_7b67073710604d306443cc569c`) |

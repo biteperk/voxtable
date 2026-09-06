@@ -94,6 +94,11 @@ Machine-checkable half (`scripts/assert-agent.mjs` runs all of these):
       only from `{{restaurant_name}}` / `{{owner_name}}` (venue-onboarding.md §1 trap 3).
 - [ ] Every functional tool has `speak_during_execution: true` AND
       `speak_after_execution: true` (dead-air incident — see triage).
+- [ ] Every functional tool carries `execution_message_description` constraining the aside to
+      three to six words with **no booking or order details**, and `end_call` has
+      `speak_after_execution: false`. The LLM otherwise writes a full-sentence recap as the aside
+      and speaks a second goodbye after yours (issue #389, 5 Sep 2026). `assert-agent.mjs`
+      enforces both under `REQUIRE_CONFIRM_ONCE=1`.
 - [ ] `default_dynamic_variables` carries **no volatile keys** — `today`, `tomorrow`,
       `weekday_local`, `now_local`, `caller_phone`. These are the fallback when
       `/retell/inbound` fails and nothing refreshes them, so the rule (NUMBERS.md §6) is
@@ -131,6 +136,8 @@ pre/post snapshots committed.
 | `voice_temperature` / `voice_speed` / `volume` | 1.1 / 1 / 1 | From the 16 Aug naturalness pass. |
 | `responsiveness` | 1 (+ dynamic responsiveness & speed on) | Already maxed — not a lever. |
 | `begin_message_delay_ms` | 500 | Answers feel deliberate, not robotic-instant. |
+| tool `execution_message_description` | "A tiny aside of three to six words with NO booking or order details — e.g. 'Just checking that now…' for a lookup, 'Locking that in…' for a booking or order." on every functional tool | Without it the aside is a full recap ("Booking in a table for Megan at four thirty tomorrow") spoken 2 s before the result sentence says the same thing. Our API answers in ~67 ms, so the aside covers Retell's own ~1 s tool overhead and nothing else. |
+| `end_call.speak_after_execution` | `false` | With `true` the model's `execution_message` ("Cheers Megan, see you tomorrow!") is spoken after the goodbye it already said — every production call ended with two farewells. |
 | `reminder_trigger_ms` | 18000, max 1 | Restored after a rebuild dropped it. |
 | `denoising_mode` | `noise-and-background-speech-cancellation` | Part of the ambient/echo fix set. |
 | `data_storage_retention_days` | 30 | Legal posture — a rebuild once silently dropped it. |
@@ -167,6 +174,7 @@ Every line below is a real incident, not a hypothetical.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Dead air after "let me check…", caller hangs up | A functional tool has `speak_after_execution: false` — the result arrives and no generation is triggered (18 s of silence holding a 162-char result, 19 Aug) | Assert `true` on every functional tool. Any agent built by copying an old one inherits `false`. |
+| Booking details spoken 4–7 times; two goodbyes (Megan, `call_bc863edd…`, 4 Sep 2026: aside → result → confirm → aside → result → goodbye → end_call message) | Three mechanisms, none of them prose: the LLM authors its own tool aside; the backend's `confirmation_message` was a full recap and the prompt said "read it back"; `end_call` speaks its `execution_message`. Twelve sessions added prompt words against this and it never moved. | Tool-level `execution_message_description` (contentless), `end_call.speak_after_execution=false`, backend returns "All set, Megan." with the facts as fields, `check_availability` returns `next_step` so the ONE recap happens before the commit (the prompt's "confirm once" was skipped whenever the caller front-loaded details — a tool result is read at decision time, prose is not). Graded: `one-recap-not-five`. |
 | Reads a 15+ second monologue | Summary-recite: the tool description or prompt lets her read a whole `speakable_summary` | "Name two or three things, stop, ask" — in both the prompt AND the tool description. |
 | Talks over the caller for seconds | `interruption_sensitivity` too low | 0.6. Only lower it if actual self-interruption is observed AND ambient audio has been ruled out first. |
 | "Yes we're open— actually we're closed" / "thinks about" the hours | Answering before checking; or deriving open/closed by calling `check_availability` | `{{today_status}}` spoken verbatim + the closed-day no-tool gate. See [references/prompt-architecture.md](references/prompt-architecture.md). |
@@ -201,5 +209,6 @@ Every line below is a real incident, not a hypothetical.
 - **Whole-line tooling** (added 20 Aug 2026, after three simultaneous undetected breaks):
   - `assert-line.mjs <+E164> [--strict]` — asserts the entire chain against `deploy/voice-lines.json` and names the layer that broke. `npm run check:voice-lines` runs it over every declared line.
   - `apply-line.mjs <+E164> [--apply]` — idempotent reconcile of live → declared. Dry-run by default; snapshots before writing and reads back after.
+  - `switch-line.mjs <+E164> --to <profile> [--apply]` — for a **router-mode** line (the shared staging number, `routing.mode: "router"` in the declaration): switches the Twilio router (through voxstay's CLI), the Retell inbound shape and nothing else, reads back, logs to `deploy/voice-line-switches.log`, then re-asserts with `--expect`. Added 6 Sep 2026 after the checker spent a week reading a detached trunk as a ghost record while the real path failed. `assert-line --expect <profile>` is the read-only half for a human about to dial; `--calls 24` judges the most recent real SIP leg to Retell.
   - `selftest-assert-line.mjs` — corrupts the declaration one field at a time and requires the checker to fail. A checker nobody has seen fail is a green light, not a check.
   - `.github/workflows/voice-line-health.yml` — hourly off-laptop run, so a break is found by a machine rather than by a customer.

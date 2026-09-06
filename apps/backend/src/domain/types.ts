@@ -88,5 +88,11 @@ export interface CreateBookingInput {
 export interface BookingResult {
   bookingId: string;
   status: ReservationStatus;
+  /** One short spoken sentence with no booking details (see bookingConfirmation.ts). */
   confirmationMessage: string;
+  /** The booked facts, as data, for the agent to compare against what the caller agreed to. */
+  customerName?: string;
+  date?: string;
+  time?: string;
+  partySize?: number;
 }
