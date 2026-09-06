@@ -92,3 +92,16 @@ export const contactLimiter = rateLimit({
   keyGenerator: uidOrIpKey,
   message: { error: { code: "RATE_LIMITED", message: "Too many attempts — please try again later." } }
 });
+
+// Public short links (/pay/<token>, /receipt/<token>): unauthenticated by
+// design, one 302 each. Tokens are 22 random base64url chars, so enumeration is
+// hopeless, but a scripted scan should still hit a wall well before it costs a
+// database read per attempt. Per IP; guests open a link once or twice.
+export const publicLinkLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (request: Request) => ipKeyGenerator(request.ip ?? "unknown"),
+  message: { error: { code: "RATE_LIMITED", message: "Too many requests - please try again shortly." } }
+});

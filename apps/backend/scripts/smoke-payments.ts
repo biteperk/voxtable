@@ -33,7 +33,9 @@ async function main(): Promise<void> {
   const {
     __setCheckoutGatewayForTesting,
     createOrderPaymentLink,
-    handleOrderPaymentWebhook
+    handleOrderPaymentWebhook,
+    resolvePayLink,
+    resolveReceiptLink
   } = await import("../src/services/orderPaymentService");
   const { handleBillingWebhook } = await import("../src/services/stripeService");
   const { createOrder, updateOrderStatus } = await import("../src/services/orderService");
@@ -43,6 +45,9 @@ async function main(): Promise<void> {
 
   let sessionCounter = 0;
   const expired: string[] = [];
+  const RECEIPT_URL = "https://pay.stripe.com/receipts/smoke";
+  let receiptMode: "url" | "null" | "throw" = "url";
+  const receiptLookups: string[] = [];
   const fixtureGateway = {
     async createSession() {
       sessionCounter += 1;
@@ -54,6 +59,13 @@ async function main(): Promise<void> {
     },
     async retrieveSession(): Promise<never> {
       throw new Error("smoke fixture: retrieveSession not expected in this run");
+    },
+    // Receipt look-up: "url" (normal), "null" (Stripe has no charge yet), "throw"
+    // (Stripe down). The paid path must succeed in all three.
+    async retrieveReceiptUrl(paymentIntentId: string): Promise<string | null> {
+      receiptLookups.push(paymentIntentId);
+      if (receiptMode === "throw") throw new Error("smoke fixture: Stripe unavailable");
+      return receiptMode === "null" ? null : `${RECEIPT_URL}_${paymentIntentId}`;
     }
   };
   __setCheckoutGatewayForTesting(fixtureGateway);
@@ -122,6 +134,13 @@ async function main(): Promise<void> {
         [recipient]
       )
       .then((r) => r.rows);
+  const receiptRows = (recipient: string) =>
+    pool
+      .query(
+        "SELECT * FROM notifications_outbox WHERE channel = 'sms' AND recipient = $1 AND kind = 'order_payment_receipt' ORDER BY created_at",
+        [recipient]
+      )
+      .then((r) => r.rows);
   const paymentEvents = (orderId: string) =>
     pool
       .query(
@@ -164,10 +183,12 @@ async function main(): Promise<void> {
     let sms = await smsRows(PHONE);
     assert(sms.length === 1, `expected 1 sms outbox row, got ${sms.length}`);
     const smsBody = String(sms[0].body);
-    const linkStart = smsBody.indexOf("https://");
+    const linkStart = smsBody.indexOf("http");
     assert(linkStart >= 0, "sms body carries a link");
     const smsLink = smsBody.slice(linkStart).split("\n")[0].split(" ")[0];
-    assert(new URL(smsLink).origin === "https://checkout.stripe.com", "sms link is a checkout.stripe.com URL");
+    // Short branded link on the return host, never the raw Stripe URL (migration 044).
+    assert(smsLink === `${env.PUBLIC_ORDER_RETURN_BASE_URL.replace(/\/+$/, "")}/pay/${rows[0].public_token}`, "sms link is the short /pay/<token> link");
+    assert(!smsBody.includes("stripe.com"), "no Stripe URL in the text");
     assert(sessionCounter === 1, "exactly one Stripe session created");
     console.log("✓ 1. link created: 1 payment row, 1 sms, 1 session");
 
@@ -195,6 +216,27 @@ async function main(): Promise<void> {
       actor: "smoke:payments"
     });
     assert(regen.sent === true && regen.isReplay === false, "amount change must mint a fresh link");
+    {
+      // Short links: the text carries /pay/<token>, never the Stripe URL; the token resolves to
+      // the live checkout URL while active.
+      const rowsNow = await paymentRows(orderA.id);
+      const fresh = rowsNow[rowsNow.length - 1];
+      assert(typeof fresh.public_token === "string" && /^[A-Za-z0-9_-]{22}$/.test(fresh.public_token), "row carries a 22-char public token");
+      assert(rowsNow[0].public_token !== fresh.public_token, "each payment row mints its own token");
+      const linkSms = (await smsRows(PHONE)).slice(-1)[0];
+      assert(linkSms.body.includes(`/pay/${fresh.public_token}`), "link SMS carries the short /pay link");
+      assert(!linkSms.body.includes("stripe.com") && linkSms.body.length <= 160, "link SMS is one segment with no Stripe URL");
+      const live = await resolvePayLink(fresh.public_token);
+      assert(live.outcome === "checkout" && live.location === fresh.checkout_url, "active token resolves to the checkout URL");
+      const stale = await resolvePayLink(rowsNow[0].public_token);
+      assert(stale.outcome === "expired" && stale.location.endsWith("/order/expired"), "cancelled row's token lands on the expired page");
+      const unknown = await resolvePayLink("AAAAAAAAAAAAAAAAAAAAAA");
+      assert(unknown.outcome === "unknown" && unknown.location === stale.location, "unknown token is indistinguishable from expired");
+      const malformed = await resolvePayLink("../etc/passwd");
+      assert(malformed.outcome === "unknown", "malformed token never reaches the database");
+      const noReceiptYet = await resolveReceiptLink(fresh.public_token);
+      assert(noReceiptYet.outcome === "no_receipt", "receipt link before payment has nothing to show");
+    }
     rows = await paymentRows(orderA.id);
     assert(rows.length === 2, "expected old + new payment rows");
     assert(rows[0].status === "cancelled", "stale row must be cancelled");
@@ -215,7 +257,23 @@ async function main(): Promise<void> {
     let events = await paymentEvents(orderA.id);
     const paidEvents = events.filter((e) => e.to_value === "paid");
     assert(paidEvents.length === 1, `expected 1 paid event, got ${paidEvents.length}`);
-    console.log("✓ 4. paid webhook flips the order and writes one event");
+    let receipts = await receiptRows(PHONE);
+    assert(receipts.length === 1, `expected 1 receipt SMS, got ${receipts.length}`);
+    assert(receipts[0].body.includes(`/receipt/${(await paymentRows(orderA.id))[1].public_token}`), "receipt SMS carries the short /receipt link");
+    assert(!receipts[0].body.includes("stripe.com") && receipts[0].body.length <= 160, "receipt SMS is one segment with no Stripe URL");
+    {
+      const paidRow = (await paymentRows(orderA.id))[1];
+      assert(paidRow.receipt_url === `${RECEIPT_URL}_pi_smoke_a`, "receipt_url stored on the paid row");
+      const r = await resolveReceiptLink(paidRow.public_token);
+      assert(r.outcome === "receipt" && r.location === `${RECEIPT_URL}_pi_smoke_a`, "receipt token resolves to Stripe's receipt page");
+      const p = await resolvePayLink(paidRow.public_token);
+      assert(p.outcome === "paid" && p.location.endsWith("/order/paid"), "pay link after payment lands on the paid page");
+    }
+    assert(receipts[0].body.includes("Do not reply"), "receipt SMS is one-way");
+    const paidRowA = (await paymentRows(orderA.id))[1];
+    assert(paidRowA.receipt_notification_id === receipts[0].id, "payment row points at its receipt SMS");
+    assert(receiptLookups.length === 1, "receipt looked up exactly once");
+    console.log("✓ 4. paid webhook flips the order, writes one event, texts one receipt");
 
     // --- 5: replayed completed → no dupe ------------------------------------
     await handleOrderPaymentWebhook(
@@ -231,7 +289,55 @@ async function main(): Promise<void> {
       events.filter((e) => e.to_value === "paid").length === 1,
       "replayed webhook must not duplicate the paid event"
     );
-    console.log("✓ 5. webhook replay is a no-op");
+    receipts = await receiptRows(PHONE);
+    assert(receipts.length === 1, "replayed webhook must not text a second receipt");
+    assert(receiptLookups.length === 1, "replay must not re-fetch the receipt (row already carries one)");
+    console.log("✓ 5. webhook replay is a no-op (one event, one receipt)");
+
+    // --- 5b: Stripe has no receipt yet → paid, one unlinked receipt ----------
+    receiptMode = "null";
+    const orderNull = await makeOrder();
+    const sendNull = await createOrderPaymentLink({ restaurantId, orderId: orderNull.id, recipientPhone: PHONE, actor: "smoke:payments" });
+    assert(sendNull.sent, "orderNull send failed");
+    const rowNull = (await paymentRows(orderNull.id))[0];
+    await handleOrderPaymentWebhook(
+      sessionEvent("checkout.session.completed", { id: rowNull.stripe_checkout_session_id, payment_status: "paid", amount_total: rowNull.amount_cents, payment_intent: "pi_smoke_null" })
+    );
+    assert((await orderState(orderNull.id)).payment_status === "paid", "order paid even with no receipt url");
+    receipts = await receiptRows(PHONE);
+    assert(receipts.length === 2 && !receipts[1].body.includes("https://"), "unlinked receipt sent when Stripe has no receipt url");
+    console.log("✓ 5b. no receipt url from Stripe: paid, one unlinked receipt");
+
+    // --- 5c: Stripe down on the receipt look-up → paid, one unlinked receipt --
+    receiptMode = "throw";
+    const orderThrow = await makeOrder();
+    const sendThrow = await createOrderPaymentLink({ restaurantId, orderId: orderThrow.id, recipientPhone: PHONE, actor: "smoke:payments" });
+    assert(sendThrow.sent, "orderThrow send failed");
+    const rowThrow = (await paymentRows(orderThrow.id))[0];
+    await handleOrderPaymentWebhook(
+      sessionEvent("checkout.session.completed", { id: rowThrow.stripe_checkout_session_id, payment_status: "paid", amount_total: rowThrow.amount_cents, payment_intent: "pi_smoke_throw" })
+    );
+    assert((await orderState(orderThrow.id)).payment_status === "paid", "a receipt look-up failure must never block the paid path");
+    receipts = await receiptRows(PHONE);
+    assert(receipts.length === 3 && !receipts[2].body.includes("https://"), "receipt still sent, without a link");
+    receiptMode = "url";
+    console.log("✓ 5c. Stripe down on the receipt look-up: still paid, receipt without a link");
+
+    // --- 5d: no recipient on the row → paid, no receipt, no look-up ----------
+    const orderNoPhone = await makeOrder();
+    const sendNoPhone = await createOrderPaymentLink({ restaurantId, orderId: orderNoPhone.id, recipientPhone: PHONE, actor: "smoke:payments" });
+    assert(sendNoPhone.sent, "orderNoPhone send failed");
+    const rowNoPhone = (await paymentRows(orderNoPhone.id))[0];
+    await pool.query("UPDATE order_payments SET recipient_phone = NULL WHERE id = $1", [rowNoPhone.id]);
+    const lookupsBefore = receiptLookups.length;
+    await handleOrderPaymentWebhook(
+      sessionEvent("checkout.session.completed", { id: rowNoPhone.stripe_checkout_session_id, payment_status: "paid", amount_total: rowNoPhone.amount_cents, payment_intent: "pi_smoke_nophone" })
+    );
+    assert((await orderState(orderNoPhone.id)).payment_status === "paid", "order paid with no recipient");
+    assert((await receiptRows(PHONE)).length === 3, "no recipient: no receipt row");
+    assert(receiptLookups.length === lookupsBefore, "no recipient: no Stripe look-up either");
+    console.log("✓ 5d. no recipient phone: paid, nothing texted, nothing fetched");
+    const receiptsBaseline = 3;
 
     // --- 6: async method pending --------------------------------------------
     const orderB = await makeOrder();
@@ -274,7 +380,8 @@ async function main(): Promise<void> {
       (await orderState(orderB.id)).payment_status === "unpaid",
       "mismatch: ORDER must stay unpaid for staff to resolve"
     );
-    console.log("✓ 7. amount mismatch records the money but never auto-settles the order");
+    assert((await receiptRows(PHONE)).length === receiptsBaseline, "mismatch must not text a receipt");
+    console.log("✓ 7. amount mismatch records the money but never auto-settles the order (no receipt)");
 
     // --- 8: paid after cancel ------------------------------------------------
     const orderC = await makeOrder();
@@ -310,7 +417,8 @@ async function main(): Promise<void> {
     assert(stateC.status === "cancelled" && stateC.payment_status === "unpaid",
       "a cancelled order must never become paid");
     assert((await paymentRows(orderC.id))[0].status === "paid", "the money IS recorded for the refund");
-    console.log("✓ 8. paying a cancelled order records money, alerts, and never cooks");
+    assert((await receiptRows(PHONE)).length === receiptsBaseline, "paid-after-cancel must not text a receipt");
+    console.log("✓ 8. paying a cancelled order records money, alerts, never cooks, texts nothing");
 
     // --- 9: refund is terminal ----------------------------------------------
     await handleOrderPaymentWebhook(
@@ -421,7 +529,7 @@ async function main(): Promise<void> {
       await pool.query("DELETE FROM orders WHERE id = ANY($1)", [createdOrderIds]);
     }
     await pool.query(
-      "DELETE FROM notifications_outbox WHERE restaurant_id = $1 AND kind = 'order_payment_link'",
+      "DELETE FROM notifications_outbox WHERE restaurant_id = $1 AND kind IN ('order_payment_link', 'order_payment_receipt')",
       [restaurantId]
     );
     await pool.query("DELETE FROM menu_items WHERE restaurant_id = $1", [restaurantId]);

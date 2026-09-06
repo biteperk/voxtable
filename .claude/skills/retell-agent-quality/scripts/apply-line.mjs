@@ -59,7 +59,14 @@ const canon = (v) => Array.isArray(v)
     : v;
 const eq = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
 
-say(`\n${number} — reconciling ${d.environment} to ${configPath}`);
+// Router-mode lines (deploy/voice-lines.json routing.mode = "router") have no trunk to reconcile:
+// the Twilio layer is a switchboard Variable owned by voxstay's CLI, and WHICH agent answers is a
+// deliberate hand switch. That is switch-line.mjs. This script still reconciles the agent and the
+// Retell number's webhook shape for such a line, but never imports the number (rule 7 — a number
+// lives in one workspace, and an import here has no undo) and never touches Twilio.
+const isRouter = d.routing?.mode === "router";
+
+say(`\n${number} — reconciling ${d.environment} to ${configPath}${isRouter ? " (router-mode line: Twilio layer is switch-line.mjs / voxstay)" : ""}`);
 say(apply ? "MODE: apply (writes will happen)\n" : "MODE: dry run — nothing will be written. Re-run with --apply.\n");
 
 // ─── 0. Snapshot before touching anything ─────────────────────────────────────
@@ -155,7 +162,13 @@ if (d.db?.via === "vm-ssh") {
 const wantWebhook = `${d.api_base}/retell/inbound`;
 const num = await json(`https://api.retellai.com/get-phone-number/${number}`, { headers: { Authorization: H.Authorization } });
 
-if (num.status === 404) {
+if (num.status === 404 && isRouter) {
+  console.error(`\n✗ ${number} is not in this Retell workspace, and this is a router-mode line with no declared`);
+  console.error("  termination_uri to import against. Find where the number went first (rule 7: it lives in exactly");
+  console.error("  one workspace) — the 5 Sep 2026 'disconnect' was a hand change in the Retell dashboard. Once it is");
+  console.error("  back, switch-line.mjs sets the inbound shape; this script does not import router-mode numbers.");
+  process.exit(1);
+} else if (num.status === 404) {
   say(`\n→ import number into the Retell workspace (webhook-only)`);
   say(`    inbound_webhook_url: ${wantWebhook}`);
   say(`    termination_uri:     ${d.termination_uri}  (required by the API, unused on an inbound-only number)`);

@@ -124,11 +124,14 @@ Proven pattern (same as the first venue): number → Elastic SIP trunk →
 `sip.retellai.com`, then import the number to Retell:
 
 - `termination_uri`: `<trunk>.pstn.twilio.com`
-- `inbound_agents`: `[{agent_id: <venue agent>, weight: 1}]`
 - `inbound_webhook_url`: `<api>/retell/inbound` — **webhook mode, not a static
   agent binding**: one webhook serves every venue (tenant resolved from the
   dialled number, `override_agent_id` + fresh per-call dynamic variables
   returned). A static binding silently reverts to single-tenant defaults.
+- **No `inbound_agents`.** An earlier version of this list put the venue agent there
+  as well; that is the dual-binding fallback trap (NUMBERS.md §6) and `assert-line`
+  check [3] fails on it. (`inbound_agent_id` no longer exists — Retell replaced it
+  with the weighted `inbound_agents` list on 31 Mar 2026.)
 
 The venue itself just forwards its existing line to the new number — nothing
 installs on site, and turning the forward off restores the old world.

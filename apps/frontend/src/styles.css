@@ -8471,6 +8471,25 @@ button {
   font-weight: 600;
 }
 
+/* Guest-facing Stripe return pages (/order/paid, /order/cancelled). They reuse
+   the error-boundary layout but must not read as an error: no pink tint, and
+   the receipt note is a calm aside, not a monospace diagnostic. */
+.order-return-shell {
+  background:
+    radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 60%),
+    var(--surface);
+}
+
+.order-return-note {
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  background: var(--surface-container-low);
+  border-left: 3px solid var(--primary);
+  border-radius: 6px;
+  color: var(--on-surface-variant);
+}
+
 .error-boundary-detail {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 13px;

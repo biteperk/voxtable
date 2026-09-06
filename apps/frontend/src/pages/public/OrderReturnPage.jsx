@@ -11,24 +11,46 @@ export function OrderReturnPage({ outcome }) {
     // Stripe appends ?session_id=… to the success URL. Scrub it immediately so
     // the session id (a live payment-page capability while unexpired) never
     // lingers in the address bar, browser history, or Sentry breadcrumbs.
-    if (window.location.search) {
+    if (window.location.search.includes("session_id=")) {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
 
   const paid = outcome === "paid";
+  const expired = outcome === "expired";
+  // /order/expired?receipt=1 is the receipt link's "nothing to show" variant.
+  const receiptMissing = expired && new URLSearchParams(window.location.search).get("receipt") === "1";
+  if (expired) {
+    return (
+      <div className="error-boundary-shell order-return-shell" role="status" aria-live="polite">
+        <div className="error-boundary-card">
+          <h1>{receiptMissing ? "Receipt not available" : "Payment link expired"}</h1>
+          <p>
+            {receiptMissing
+              ? "That receipt link is not available. Your card statement shows the charge, and the restaurant can give you a printed receipt when you arrive."
+              : "This payment link is no longer active. Payment links last 45 minutes."}
+          </p>
+          <p className="order-return-note">
+            {receiptMissing
+              ? "Questions? Just call the restaurant back."
+              : "Call the restaurant for a fresh link, or simply pay when you arrive."}
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="error-boundary-shell" role="status" aria-live="polite">
+    <div className="error-boundary-shell order-return-shell" role="status" aria-live="polite">
       <div className="error-boundary-card">
         <h1>{paid ? "Payment received" : "Payment not completed"}</h1>
         <p>
           {paid
-            ? "Thanks — the kitchen has your order. See you soon!"
+            ? "Thanks! The kitchen has your order. See you soon."
             : "No payment was taken. You can try the link in your text message again, or simply pay when you arrive."}
         </p>
-        <p className="error-boundary-detail">
+        <p className="order-return-note">
           {paid
-            ? "A receipt will be emailed to you if you entered your email at checkout."
+            ? "A receipt is on its way: a text to the phone your payment link came to, and an email from Stripe to the address you entered at checkout."
             : "Questions? Just call the restaurant back."}
         </p>
       </div>

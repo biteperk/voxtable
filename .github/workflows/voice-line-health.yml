@@ -80,15 +80,19 @@ jobs:
       - name: Assert every declared staging line
         run: |
           set -euo pipefail
-          # The Retell credentials are resolved by the script from deploy/voice-lines.json,
-          # so there is no second place for them to drift out of step with the declaration.
-          # Only the Twilio pair is passed in, since assert-line takes those from the env.
-          export TWILIO_AU1_KEY_SID=$(gcloud secrets versions access latest --secret=voxtable-stg-twilio-au1-key-sid --project=bp-voxtable-stg)
-          export TWILIO_AU1_KEY_SECRET=$(gcloud secrets versions access latest --secret=voxtable-stg-twilio-au1-key-secret --project=bp-voxtable-stg)
+          # Every credential is resolved by the script from deploy/voice-lines.json — the Retell
+          # key and, for a ROUTER-mode line, the Twilio account-token pair under routing.twilio_auth
+          # — so there is no second place for them to drift out of step with the declaration.
+          #
+          # --calls 24: the most recent SIP leg to Retell in the last day must have connected.
+          # Configuration read-backs passed all night on 5 Sep 2026 while Retell answered nothing;
+          # only the call outcome sees that. It is never a synthetic call — it reads the legs real
+          # callers produced. assert-line prints a skip for a trunk line, where the legs are
+          # invisible to the Calls API.
           fail=0
           for number in $(node scripts/voice-lines-by-environment.mjs staging); do
             echo "::group::$number"
-            node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$number" --strict || fail=1
+            node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$number" --strict --calls 24 || fail=1
             echo "::endgroup::"
           done
           exit $fail

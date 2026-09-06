@@ -24,6 +24,7 @@
  * for a call that ended twenty minutes ago.
  */
 
+import { randomBytes } from "node:crypto";
 import type Stripe from "stripe";
 
 import { env } from "../config/env";
@@ -42,7 +43,8 @@ import {
   insertOrderPayment,
   listStaleActivePayments,
   OrderPaymentRow,
-  transitionOrderPayment
+  transitionOrderPayment,
+  getOrderPaymentByToken
 } from "../repositories/orderPayments";
 import {
   getOrderById,
@@ -129,8 +131,28 @@ export function buildPaymentSms(input: {
   return (
     `${input.venueName}: order #${input.orderNumber ?? "?"}, ${total}.\n` +
     `Pay here: ${input.url}\n` +
-    `Link expires in ${input.expiryMinutes} minutes. Do not reply to this message.`
+    `Expires in ${input.expiryMinutes} min. Do not reply.`
   );
+}
+
+/**
+ * The receipt text sent once the guest has paid. Stripe's own "Successful
+ * payments" email is switched off for this account (read from the dashboard
+ * 6 Sep 2026) and Stripe has no SMS receipt, so without this the guest hears
+ * nothing after paying. GSM-7 only, same reason as buildPaymentSms. Stripe
+ * With the short /receipt/<token> link (migration 044) the text fits one segment.
+ * One-way: the branded sender cannot receive replies, so never invite one.
+ */
+export function buildReceiptSms(input: {
+  venueName: string;
+  orderNumber: number | null;
+  totalCents: number;
+  receiptUrl: string | null;
+}): string {
+  const total = `$${(input.totalCents / 100).toFixed(2)}`;
+  const head = `${input.venueName}: order #${input.orderNumber ?? "?"} paid, ${total}.`;
+  const tail = "Do not reply.";
+  return input.receiptUrl ? `${head} Receipt: ${input.receiptUrl}\n${tail}` : `${head} Thank you.\n${tail}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +189,8 @@ export interface CheckoutGateway {
   }): Promise<CreatedCheckoutSession>;
   expireSession(sessionId: string): Promise<void>;
   retrieveSession(sessionId: string): Promise<RetrievedCheckoutSession>;
+  /** The charge's hosted receipt page, or null when Stripe has none yet. */
+  retrieveReceiptUrl(paymentIntentId: string): Promise<string | null>;
 }
 
 function returnBaseUrl(): string {
@@ -175,6 +199,57 @@ function returnBaseUrl(): string {
     throw new AppError(503, "PAYMENTS_NOT_CONFIGURED", "Order payments are not configured.");
   }
   return base.replace(/\/+$/, "");
+}
+
+// ---------------------------------------------------------------------------
+// Short branded links (migration 044). The texts carry /pay/<token> and
+// /receipt/<token> on the dashboard host; Firebase Hosting rewrites those paths
+// to this API, which answers 302. The token is 16 random bytes (base64url,
+// 22 chars) minted per payment row - never the order id, which is visible in
+// the KDS, dashboards and transcripts while a checkout URL is a live pay
+// capability and the receipt shows card last-4 and items.
+// ---------------------------------------------------------------------------
+
+export const PUBLIC_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+
+export function mintPublicToken(): string {
+  return randomBytes(16).toString("base64url");
+}
+
+export function publicLinkUrl(kind: "pay" | "receipt", token: string): string {
+  return `${returnBaseUrl()}/${kind}/${token}`;
+}
+
+export type PublicLinkResolution =
+  | { outcome: "checkout" | "receipt"; location: string }
+  | { outcome: "paid" | "expired" | "unknown" | "no_receipt"; location: string };
+
+/**
+ * Where /pay/<token> sends the guest. Every non-pay outcome lands on the same
+ * branded page so the response never reveals whether a token exists.
+ */
+export async function resolvePayLink(token: string): Promise<PublicLinkResolution> {
+  const expiredPage = `${returnBaseUrl()}/order/expired`;
+  if (!PUBLIC_TOKEN_PATTERN.test(token)) return { outcome: "unknown", location: expiredPage };
+  const row = await getOrderPaymentByToken(token);
+  if (!row) return { outcome: "unknown", location: expiredPage };
+  if (row.status === "paid") return { outcome: "paid", location: `${returnBaseUrl()}/order/paid` };
+  const live =
+    (row.status === "created" || row.status === "sent") &&
+    row.checkout_url &&
+    (!row.expires_at || new Date(row.expires_at).getTime() > Date.now());
+  if (live) return { outcome: "checkout", location: row.checkout_url as string };
+  return { outcome: "expired", location: expiredPage };
+}
+
+/** Where /receipt/<token> sends the guest. */
+export async function resolveReceiptLink(token: string): Promise<PublicLinkResolution> {
+  const missingPage = `${returnBaseUrl()}/order/expired?receipt=1`;
+  if (!PUBLIC_TOKEN_PATTERN.test(token)) return { outcome: "unknown", location: missingPage };
+  const row = await getOrderPaymentByToken(token);
+  if (!row) return { outcome: "unknown", location: missingPage };
+  if (row.status === "paid" && row.receipt_url) return { outcome: "receipt", location: row.receipt_url };
+  return { outcome: "no_receipt", location: missingPage };
 }
 
 /**
@@ -289,6 +364,15 @@ const stripeGateway: CheckoutGateway = {
       amount_total: session.amount_total,
       payment_intent: typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null)
     };
+  },
+
+  async retrieveReceiptUrl(paymentIntentId) {
+    const stripe = getStripe();
+    const intent = await withStripeErrors("retrieve_order_payment_intent", () =>
+      stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] })
+    );
+    const charge = intent.latest_charge;
+    return charge && typeof charge !== "string" ? (charge.receipt_url ?? null) : null;
   }
 };
 
@@ -448,11 +532,12 @@ export async function createOrderPaymentLink(
   });
 
   const venueName = await getRestaurantName(input.restaurantId);
+  const publicToken = mintPublicToken();
   const smsBody = buildPaymentSms({
     venueName,
     orderNumber: order.order_number,
     totalCents: order.total_cents,
-    url: session.url,
+    url: publicLinkUrl("pay", publicToken),
     expiryMinutes
   });
 
@@ -502,7 +587,8 @@ export async function createOrderPaymentLink(
           checkoutUrl: session.url,
           recipientPhone: phone,
           notificationId,
-          expiresAt
+          expiresAt,
+          publicToken
         },
         db
       );
@@ -707,6 +793,21 @@ async function applySessionOutcome(session: Stripe.Checkout.Session): Promise<vo
 
   const amountReceived = session.amount_total ?? row.amount_cents;
 
+  // Receipt link for the guest's SMS. Fetched BEFORE the transaction (no
+  // network inside a txn) and never fatal: a failure here must not 500 the
+  // webhook, or Stripe would redeliver a payment we already hold. The text
+  // then goes without a link. Skipped when the row already carries a
+  // receipt — a redelivery has nothing to fetch.
+  let receiptUrl: string | null = null;
+  if (intentId && !row.receipt_notification_id && row.recipient_phone) {
+    try {
+      receiptUrl = await gateway.retrieveReceiptUrl(intentId);
+    } catch (error) {
+      logger.warn({ evt: "order_receipt_url_unavailable", order_id: row.order_id, payment_id: row.id, error });
+    }
+  }
+  const venueName = row.recipient_phone ? await getRestaurantName(row.restaurant_id) : "";
+
   await withTransaction(async (db) => {
     // Row-lock the order first so this serialises against staff PATCHes.
     const order = await getOrderCoreForUpdate(row.order_id, row.restaurant_id, db);
@@ -784,7 +885,43 @@ async function applySessionOutcome(session: Stripe.Checkout.Session): Promise<vo
     // guard makes this monotonic: a replayed `completed` after a refund
     // matches zero rows and becomes a recorded no-op.
     const paidOrder = await markOrderPaidIfUnpaid(row.order_id, row.restaurant_id, db);
-    await transitionOrderPayment(row.id, [...ACTIVE_PAYMENT_STATUSES], "paid", paidPatch, db);
+
+    // One receipt SMS per payment. paidOrder is already the once-only gate
+    // (WHERE payment_status = 'unpaid' matches zero rows on any replay); the
+    // NULL check on receipt_notification_id is the second belt, and both the
+    // outbox row and the pointer to it commit in this transaction.
+    let receiptNotificationId: string | null = null;
+    if (paidOrder && !row.receipt_notification_id) {
+      if (row.recipient_phone) {
+        receiptNotificationId = await enqueueNotification(
+          {
+            restaurantId: row.restaurant_id,
+            channel: "sms",
+            recipient: row.recipient_phone,
+            kind: "order_payment_receipt",
+            body: buildReceiptSms({
+              venueName,
+              orderNumber: paidOrder.order_number,
+              totalCents: amountReceived,
+              // Short link when the row has a token and Stripe gave us a receipt;
+              // rows minted before migration 044 fall back to the raw URL.
+              receiptUrl: receiptUrl && row.public_token ? publicLinkUrl("receipt", row.public_token) : receiptUrl
+            })
+          },
+          db
+        );
+      } else {
+        logger.info({ evt: "order_receipt_skipped_no_recipient", order_id: row.order_id, payment_id: row.id });
+      }
+    }
+
+    await transitionOrderPayment(
+      row.id,
+      [...ACTIVE_PAYMENT_STATUSES],
+      "paid",
+      { ...paidPatch, receiptNotificationId, receiptUrl },
+      db
+    );
     if (paidOrder) {
       await insertOrderEvent(
         {
