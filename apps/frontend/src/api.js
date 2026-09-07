@@ -686,6 +686,19 @@ export function getAdminSupportRequests(status) {
   return authedFetch(`/api/admin/support-requests${suffix}`);
 }
 
+export function getAdminSupportRequest(id) {
+  return authedFetch(`/api/admin/support-requests/${id}`);
+}
+
+// channel: "email" replies to the venue; "internal" is a note nobody outside
+// this console ever sees.
+export function adminReplyToSupportRequest(id, { channel, body }) {
+  return authedFetch(`/api/admin/support-requests/${id}/replies`, {
+    method: "POST",
+    body: JSON.stringify({ channel, body })
+  });
+}
+
 export function adminSetSupportStatus(id, status) {
   return authedFetch(`/api/admin/support-requests/${id}`, {
     method: "PATCH",
