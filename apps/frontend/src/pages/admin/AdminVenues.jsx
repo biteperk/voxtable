@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   adminBindProvisioning,
   adminGoLive,
+  adminSetVoicePaused,
   adminUnbindProvisioning,
   getAdminRestaurant,
   getAdminRestaurantSubscription,
@@ -174,6 +175,39 @@ function VenueDetail({ venueId, venueName, onChanged }) {
         <BindPanel prov={prov} busy={busy} run={run} venueId={venueId} />
 
         <div className="admin-panel">
+          <h4>
+            Voice line{" "}
+            <span className={`status-pill ${detail.voice_paused_at ? "cancelled" : "confirmed"}`}>
+              {detail.voice_paused_at ? "Paused" : "Live"}
+            </span>
+          </h4>
+          <p className="admin-muted">
+            {detail.voice_paused_at
+              ? "Callers hear that the venue isn't taking phone bookings right now."
+              : "Bella is answering and taking bookings."}
+          </p>
+          {detail.voice_paused_at ? (
+            <button
+              className="ghost-button"
+              type="button"
+              disabled={busy}
+              onClick={() => run("Voice line resumed.", () => adminSetVoicePaused(venueId, false))}
+            >
+              Resume voice
+            </button>
+          ) : (
+            <button
+              className="ghost-button"
+              type="button"
+              disabled={busy}
+              onClick={() => run("Voice line paused.", () => adminSetVoicePaused(venueId, true))}
+            >
+              Pause voice
+            </button>
+          )}
+        </div>
+
+        <div className="admin-panel">
           <h4>Legal</h4>
           <dl className="admin-dl">
             <dt>Terms version</dt>
@@ -274,11 +308,19 @@ function BindPanel({ prov, busy, run, venueId }) {
         : String(prov.calcom_event_type_id)
   });
 
+  // Why a click can be refused is explained HERE, on click, rather than by
+  // graying the button out. A disabled button with a hover tooltip reads as
+  // "already done" — on 7 Sep 2026 an operator believed they had bound a live
+  // venue's line and nothing had been sent at all (no PATCH in the API logs).
+  // Every admin control now either acts or says why.
+  const [hint, setHint] = useState(null);
+
   const willHaveNumber = form.twilio_phone_number.trim() || prov?.twilio_phone_number;
   const willHaveAgent = form.retell_agent_id.trim() || prov?.retell_agent_id;
   const halfBound = (willHaveNumber && !willHaveAgent) || (!willHaveNumber && willHaveAgent);
 
   const submit = () => {
+    setHint(null);
     const payload = {};
     for (const key of [
       "twilio_phone_number",
@@ -288,11 +330,37 @@ function BindPanel({ prov, busy, run, venueId }) {
     ]) {
       if (form[key].trim()) payload[key] = form[key].trim();
     }
-    if (Object.keys(payload).length === 0) return;
+    if (halfBound) {
+      setHint(
+        willHaveNumber
+          ? "Add the Retell agent id as well — a number without its agent would answer in another venue's voice, and the API refuses it."
+          : "Add the Twilio number as well — an agent without its number binds nothing the caller can dial."
+      );
+      return;
+    }
+    if (Object.keys(payload).length === 0) {
+      setHint("Nothing to save — fill in the Twilio number and the Retell agent id first.");
+      return;
+    }
     run("Bindings saved.", () => adminBindProvisioning(venueId, payload));
   };
 
   const canGoLive = prov?.twilio_phone_number && prov?.retell_agent_id && prov?.onboarding_status !== "live";
+
+  const goLive = () => {
+    setHint(null);
+    if (prov?.onboarding_status === "live") {
+      setHint("This venue is already live.");
+      return;
+    }
+    if (!prov?.twilio_phone_number || !prov?.retell_agent_id) {
+      setHint(
+        "Save the Twilio number and the Retell agent id first — going live needs both bindings stored, and the fields above aren't saved yet."
+      );
+      return;
+    }
+    run("Venue is live.", () => adminGoLive(venueId));
+  };
 
   return (
     <div className="admin-panel">
@@ -350,26 +418,29 @@ function BindPanel({ prov, busy, run, venueId }) {
           To remove a binding, use “Clear bindings” below.
         </p>
       ) : null}
+      {hint ? (
+        <p className="admin-warning" role="alert">
+          {hint}
+        </p>
+      ) : null}
       <div className="admin-panel-actions">
-        <button
-          className="primary-button"
-          type="button"
-          disabled={busy || halfBound}
-          title={halfBound ? "Bind the number and the agent together" : ""}
-          onClick={submit}
-        >
+        {/* Enabled unless a request is already in flight. Refusals are explained
+            by submit()/goLive() above, never by a grey button. */}
+        <button className="primary-button" type="button" disabled={busy} onClick={submit}>
           Save bindings
         </button>
-        <button
-          className="ghost-button"
-          type="button"
-          disabled={busy || !canGoLive}
-          title={canGoLive ? "" : "Needs both bindings, and a venue that isn't already live"}
-          onClick={() => run("Venue is live.", () => adminGoLive(venueId))}
-        >
+        <button className="ghost-button" type="button" disabled={busy} onClick={goLive}>
           Go live
         </button>
       </div>
+      {/* The saved state, so "did it actually save?" is answerable at a glance. */}
+      <p className="admin-muted">
+        Saved now:{" "}
+        {prov?.twilio_phone_number ? prov.twilio_phone_number : "no number"} ·{" "}
+        {prov?.retell_agent_id ? prov.retell_agent_id : "no agent"} · status{" "}
+        {prov?.onboarding_status ?? "—"}
+        {canGoLive ? " · ready to go live" : null}
+      </p>
     </div>
   );
 }

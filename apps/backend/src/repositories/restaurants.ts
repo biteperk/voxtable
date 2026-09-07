@@ -1003,6 +1003,48 @@ export async function getRetellAgentId(restaurantId: string): Promise<string | n
 }
 
 /**
+ * When this venue's phone line is paused, or null when it is live (the kill
+ * switch — migration 045).
+ *
+ * Deliberately NOT cached, for the same reason as getRetellAgentId: the inbound
+ * gate and every voice tool call read it, and a pause must land on the very next
+ * call — a caller reaching a "we're not taking bookings" message a minute after
+ * the owner hit pause, or a booking landing a minute after, is exactly the
+ * "overwhelmed" complaint the switch exists to answer. It is one indexed PK
+ * lookup on paths that already do more work than that.
+ */
+export async function getVoicePausedAt(restaurantId: string): Promise<Date | null> {
+  const result = await pool.query<{ voice_paused_at: Date | null }>(
+    "SELECT voice_paused_at FROM restaurants WHERE id = $1",
+    [restaurantId]
+  );
+  return result.rows[0]?.voice_paused_at ?? null;
+}
+
+/**
+ * Pause or resume this venue's phone line (owner/admin kill switch).
+ *
+ * A CASE expression rather than COALESCE: resume has to set the column back to
+ * NULL, and `COALESCE($x, col)` cannot express NULL — routing resume through the
+ * COALESCE-based updateRestaurantProfile would make resume a silent no-op.
+ * Invalidates the cache like every other binding write, though voice_paused_at
+ * itself is read uncached.
+ */
+export async function setVoicePaused(restaurantId: string, paused: boolean): Promise<Date | null> {
+  const result = await pool.query<{ voice_paused_at: Date | null }>(
+    `UPDATE restaurants SET voice_paused_at = CASE WHEN $2 THEN now() ELSE NULL END
+      WHERE id = $1
+      RETURNING voice_paused_at`,
+    [restaurantId, paused]
+  );
+  if (result.rowCount === 0) {
+    throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
+  }
+  invalidateRestaurantCache(restaurantId);
+  return result.rows[0]?.voice_paused_at ?? null;
+}
+
+/**
  * Bind the telephony/provisioning identifiers for a restaurant (admin action).
  * Numbers are stored normalized to E.164 so the dialed-number lookup matches.
  * Invalidates the cache so a rebind takes effect immediately.
