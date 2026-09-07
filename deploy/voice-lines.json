@@ -18,7 +18,16 @@
   "lines": {
     "+61468202846": {
       "environment": "production",
-      "api_base": "https://api.biteperk.com.au",
+      "api_base": "https://voxtable-prod-api-xb2kzbgcgq-ts.a.run.app",
+      "$api_base_comment": [
+        "Cloud Run service URL, NOT api.biteperk.com.au. That host still resolves to the sandbox",
+        "VM (136.113.35.88, served by nginx) and has no Cloud Run front as at 7 Sep 2026, so a",
+        "webhook pointed there writes Mazcina's bookings into the sandbox database instead of",
+        "Cloud SQL production. Both hosts answer /readyz with {\"status\":\"ok\"}, so the mistake is",
+        "invisible from the outside — this line said api.biteperk.com.au until 7 Sep 2026 and the",
+        "pause was the only reason it never did damage. Matches Cuban Corner, which was repointed",
+        "earlier. Change back only once api.biteperk.com.au is genuinely fronted by Cloud Run."
+      ],
       "retell_workspace": "Biteperk",
       "retell_credentials": {
         "via": "secret-manager",
@@ -32,14 +41,17 @@
       "retell_agent_id": "agent_b6b6488af08b82d80e8f4d270a",
       "retell_agent_name": "Mazcina Resto-Bar (production)",
       "retell_llm_id": "llm_5f642f051bb83c28d02cea4e1cbc",
-      "inbound_mode": "paused",
+      "inbound_mode": "webhook-only",
       "$inbound_mode_comment": [
-        "PAUSED since 5 Sep 2026: the inbound webhook on the Retell number was unchecked by hand so",
-        "Bella does not answer this line while the ~7.6s drop is unresolved and Phase 1 was promoted.",
-        "The number, agent and LLM stay bound; only the webhook is cleared. Declared so the checker",
-        "asserts the pause instead of reporting it as a broken layer, and so apply-line cannot",
-        "silently re-hook it. To resume: re-check the webhook in Retell (or apply-line --apply after",
-        "flipping this to \"webhook-only\"), then run assert-line and commit both in the same change."
+        "RESUMED 7 Sep 2026. Paused 5 Sep while Mazcina was overwhelmed by booking volume (the",
+        "inbound webhook on the Retell number was unchecked by hand); re-hooked once the venue was",
+        "ready again. The number, agent and LLM stayed bound throughout — only the webhook moved.",
+        "Two things learned during the resume, both worth keeping:",
+        "  1. Unchecking 'Add an inbound webhook' in the Retell dashboard CLEARS the URL. It is not",
+        "     preserved for a one-click re-hook, so the URL must be pasted back from this file.",
+        "  2. The URL pasted back must be api_base above (Cloud Run), NOT api.biteperk.com.au.",
+        "     See $api_base_comment — that host is the sandbox VM and answers /readyz identically.",
+        "The pause mechanism itself is documented in GitHub issue #391."
       ],
       "pronunciation_dictionary": [
         {
