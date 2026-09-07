@@ -29,6 +29,11 @@
 > below.** It is the SSOT for the staging-only testing rule, how environment-specific
 > capabilities are activated without testing production, and the rules an agent must
 > follow before touching a live account.
+>
+> **Start at §0, "The standard change flow". It is strict.** Every change is made to declared
+> state in this repository and shipped by merging: PR to `integration` deploys and reconciles
+> staging, promoting `integration` → `main` does the same for production. A vendor dashboard is
+> **not** a way to change anything the repo declares — the next deploy silently reverts it.
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -50,6 +55,38 @@ No dummy, fixture, synthetic, rehearsal or seed data may enter production. Produ
 data comes only from genuine customer activity or an explicitly authorised operational
 workflow for a real customer.
 
+### 0. The standard change flow — strict, and it is how every change ships
+
+**Change declared state in the repository. Never change the live system by hand.** Declared state
+is application code, database migrations, and the declaration files under `deploy/` —
+`voice-lines.json` today, more later.
+
+1. **Edit the declaration** on a branch cut from `integration`.
+2. **PR against `integration`.** On merge, CI runs and **staging deploys and reconciles itself**:
+   migrations, both services, then `apply-line` → `assert-line` over every line and agent declared
+   for staging. Staging is where a change is proven.
+3. **Promote `integration` → `main`.** On merge, CI runs and **production migrates, rolls and
+   reconciles itself** the same way. No hand-application, no vendor dashboard, no console.
+
+Three consequences, all of them the point:
+
+- **A vendor dashboard is never the source of truth for anything the repo declares.** An edit made
+  there is reverted by the next deploy, silently — which is worse than failing, because nothing
+  reports it. To change a greeting, an agent webhook or a tool host, edit
+  `deploy/voice-lines.json` and merge. That is the whole procedure.
+- **"I applied it to production" is not a change that survives.** If it is not in the
+  declaration, the next deploy undoes it. If it is in the declaration, you did not need to apply
+  it by hand.
+- **The one exception is an incident** where waiting for CI causes customer harm. Then apply by
+  hand *and* land the matching declaration change in the same PR, so the pipeline finds it
+  already matching. A hand change without the matching declaration is drift, and drift is
+  precisely what `assert-line` exists to catch.
+
+What this flow does **not** cover, and still needs a human: infrastructure (Terraform in
+`biteperk/biteperk-cloud-platform`), per-venue database rows, Twilio purchases and trunk changes,
+Stripe, and everything in §C. When you touch those, say so out loud rather than letting a reader
+assume the pipeline handled it.
+
 ### A. What "promote" means, per plane
 
 Most confusion comes from assuming a merge to `main` moves everything. It moves code.
@@ -61,13 +98,16 @@ Most confusion comes from assuming a merge to `main` moves everything. It moves 
 | Infrastructure | Terraform apply in `biteperk/biteperk-cloud-platform` | ❌ separate repo, manual |
 | Database **schema** | Cloud Run migration job runs before services roll in both environments | ✅ automatic after CI |
 | Database **data** — venues, menus, bindings | inserted separately in each environment | ❌ **never promotes** |
-| Retell / Twilio / Stripe config | repeated by hand in the other account | ❌ no promote exists |
+| **Retell voice-line config** — greeting, agent webhook, tool hosts, number inbound webhook, agent name, boosted keywords, pronunciation | declared in `deploy/voice-lines.json`, applied by `deploy-backend.yml` after the services roll | ✅ automatic, both environments |
+| Everything else vendor-side — Twilio numbers/trunks/messaging, Stripe, Retell **prompt bodies** | repeated by hand in the other account | ❌ no promote exists |
 
-Two consequences worth internalising. **Seeding a venue in staging does not create it in
-production** — every venue is inserted twice, deliberately. And **production runs an image
+Three consequences worth internalising. **Seeding a venue in staging does not create it in
+production** — every venue is inserted twice, deliberately. **Production runs an image
 staging never tested**: staging deploys `api:<sha>`, `main` rebuilds as `api:<version>`. Until
 that is promotion-by-digest, "it passed staging" is a statement about the source, not the
-artifact.
+artifact. And **a declared vendor setting promotes with the code**, so changing one means editing
+the declaration and merging (§0) — not opening the vendor's dashboard, which the next deploy
+would overrule.
 
 ### B. Which environment am I touching?
 
@@ -126,6 +166,12 @@ Each of these is here because it went wrong, not because it might.
    24–48h support ticket if it fails, and no way back.
 8. **Never point a staging agent, webhook or build at a production hostname** — the reverse is
    equally true and less obvious.
+9. **Declared state changes in the repository, never at the vendor.** If a setting appears in
+   `deploy/voice-lines.json`, the only correct way to change it is to edit that file and merge
+   (§0): the deploy applies it and asserts the read-back. Changing it at the Retell dashboard
+   instead is undone by the next deploy with no error anywhere. Worked example, 7 Sep 2026: the
+   Cuban Corner manager asked for "an AI assistant" to be dropped from the greeting; the greeting
+   became a declared field, and the promotion applied it to production on its own.
 
 ### E. What is actually enforced
 
@@ -139,6 +185,11 @@ Convention that only lives in prose gets skipped. Enforced today (GitHub Team, s
   hole: on 1 Aug, `integration` deployed to the production environment via `workflow_dispatch`.
 - **CI refuses to build** if the environment it is running in has not defined its own frontend
   config, and **fails if the built bundle contains the other environment's identifiers.**
+- **Every deploy reconciles the declared voice lines and fails if it cannot.** `deploy-backend.yml`
+  runs `apply-line --apply` then `assert-line` over each line and number-less agent declared for
+  the environment (staging `--strict`), and uploads the before/after snapshots as a run artifact.
+  `voice-line-health.yml` re-checks the same set hourly. So a dashboard edit that contradicts the
+  declaration is reverted at the next deploy and reported red within the hour.
 
 Deliberately **not** enabled: required reviewers on `production`. CI's `frontend-artifacts` job
 declares `environment: production`, so a reviewer rule would pause CI itself — and with
@@ -146,9 +197,12 @@ declares `environment: production`, so a reviewer rule would pause CI itself —
 `cancelled`, and both deploy workflows **skip silently**. Someone would approve a deploy that
 never happened. Fix the concurrency interaction first.
 
-Honest limit: the controls above govern git. Vendor-console changes and explicitly reviewed
-production data operations remain outside the application deployment workflow. For those, §C and
-§D are the controls that exist; the sandbox VM is never part of the production path.
+Honest limit: the controls above govern git, plus the slice of vendor state the declaration
+covers. Everything else vendor-side — Twilio numbers and trunks, Stripe, Retell prompt bodies —
+and explicitly reviewed production data operations remain outside the application deployment
+workflow. For those, §C and §D are the controls that exist; the sandbox VM is never part of the
+production path. The way to bring a setting inside the workflow is to declare it and teach
+`apply-line`/`assert-line` about it, as the greeting was on 7 Sep 2026.
 
 ## Project context
 

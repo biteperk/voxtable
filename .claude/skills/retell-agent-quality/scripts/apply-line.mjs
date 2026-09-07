@@ -272,10 +272,27 @@ if (d.db?.via === "vm-ssh") {
 // NUMBERS.md §6. Importing is also the one step with no clean undo, so it goes last.
 // A line declared PAUSED wants its webhook CLEARED: the reconcile must never re-hook a venue
 // that was deliberately silenced (Mazcina, 5 Sep 2026). Resuming is a declaration change first.
-const wantWebhook = d.inbound_mode === "paused" ? "" : `${d.api_base}/retell/inbound`;
-const num = await json(`https://api.retellai.com/get-phone-number/${number}`, { headers: { Authorization: H.Authorization } });
+// A router-mode line whose declaration offers a "static" profile has an inbound shape that
+// depends on WHICH profile currently holds the number — assert-line reads the live switchboard to
+// judge it, this script does not. Reconciling from the declaration alone would clear a static
+// binding and re-hook the webhook, silently undoing a deliberate hand switch. Harmless while no
+// profile is static (today: voxtable=webhook, voxstay=untouched), but this script now runs
+// unattended on every deploy, so it stops rather than guesses.
+const hasStaticProfile = isRouter
+  && Object.values(d.routing?.profiles ?? {}).some((p) => p.retell === "static");
+if (hasStaticProfile) {
+  say("\n⚠ number step skipped — a declared router profile is \"static\", so the inbound shape");
+  say("  depends on the live holder and belongs to switch-line.mjs, not this reconcile.");
+}
 
-if (num.status === 404 && isRouter) {
+const wantWebhook = d.inbound_mode === "paused" ? "" : `${d.api_base}/retell/inbound`;
+const num = hasStaticProfile
+  ? { status: null, body: null }
+  : await json(`https://api.retellai.com/get-phone-number/${number}`, { headers: { Authorization: H.Authorization } });
+
+if (hasStaticProfile) {
+  // Already explained above — the number layer is switch-line.mjs's to own for this line.
+} else if (num.status === 404 && isRouter) {
   console.error(`\n✗ ${number} is not in this Retell workspace, and this is a router-mode line with no declared`);
   console.error("  termination_uri to import against. Find where the number went first (rule 7: it lives in exactly");
   console.error("  one workspace) — the 5 Sep 2026 'disconnect' was a hand change in the Retell dashboard. Once it is");
