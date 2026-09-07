@@ -29,10 +29,22 @@
 > below.** It is the SSOT for the staging-only testing rule, how environment-specific
 > capabilities are activated without testing production, and the rules an agent must
 > follow before touching a live account.
+>
+> **Start at §0, "The standard change flow". It is strict.** Every change is made to declared
+> state in this repository and shipped by merging: PR to `integration` deploys and reconciles
+> staging, promoting `integration` → `main` does the same for production. A vendor dashboard is
+> **not** a way to change anything the repo declares — the next deploy silently reverts it.
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Environments and promotion
+
+**Production is Cloud Run in `bp-voxtable-prod`, and nothing else.** The sandbox VM
+(`core-central-vm`, project `vocotable-497209`) is for testing and experiments only. It is
+never a production target, never a production data source, never a rollback target, and no
+production line, webhook, dashboard or DNS record may point at it. If a runbook, memory or
+comment still describes the VM as "prod", the VM is not prod — the text is stale (decided by
+Sam, 7 Sep 2026; Cuban Corner moved to Cloud Run the same day).
 
 **The rule: all testing happens in staging. Production is never a test environment.**
 Functional, integration, smoke, end-to-end, call-battery, onboarding, KDS, payment,
@@ -42,6 +54,38 @@ non-mutating health/readiness checks, configuration read-backs and monitoring.
 No dummy, fixture, synthetic, rehearsal or seed data may enter production. Production
 data comes only from genuine customer activity or an explicitly authorised operational
 workflow for a real customer.
+
+### 0. The standard change flow — strict, and it is how every change ships
+
+**Change declared state in the repository. Never change the live system by hand.** Declared state
+is application code, database migrations, and the declaration files under `deploy/` —
+`voice-lines.json` today, more later.
+
+1. **Edit the declaration** on a branch cut from `integration`.
+2. **PR against `integration`.** On merge, CI runs and **staging deploys and reconciles itself**:
+   migrations, both services, then `apply-line` → `assert-line` over every line and agent declared
+   for staging. Staging is where a change is proven.
+3. **Promote `integration` → `main`.** On merge, CI runs and **production migrates, rolls and
+   reconciles itself** the same way. No hand-application, no vendor dashboard, no console.
+
+Three consequences, all of them the point:
+
+- **A vendor dashboard is never the source of truth for anything the repo declares.** An edit made
+  there is reverted by the next deploy, silently — which is worse than failing, because nothing
+  reports it. To change a greeting, an agent webhook or a tool host, edit
+  `deploy/voice-lines.json` and merge. That is the whole procedure.
+- **"I applied it to production" is not a change that survives.** If it is not in the
+  declaration, the next deploy undoes it. If it is in the declaration, you did not need to apply
+  it by hand.
+- **The one exception is an incident** where waiting for CI causes customer harm. Then apply by
+  hand *and* land the matching declaration change in the same PR, so the pipeline finds it
+  already matching. A hand change without the matching declaration is drift, and drift is
+  precisely what `assert-line` exists to catch.
+
+What this flow does **not** cover, and still needs a human: infrastructure (Terraform in
+`biteperk/biteperk-cloud-platform`), per-venue database rows, Twilio purchases and trunk changes,
+Stripe, and everything in §C. When you touch those, say so out loud rather than letting a reader
+assume the pipeline handled it.
 
 ### A. What "promote" means, per plane
 
@@ -54,13 +98,16 @@ Most confusion comes from assuming a merge to `main` moves everything. It moves 
 | Infrastructure | Terraform apply in `biteperk/biteperk-cloud-platform` | ❌ separate repo, manual |
 | Database **schema** | Cloud Run migration job runs before services roll in both environments | ✅ automatic after CI |
 | Database **data** — venues, menus, bindings | inserted separately in each environment | ❌ **never promotes** |
-| Retell / Twilio / Stripe config | repeated by hand in the other account | ❌ no promote exists |
+| **Retell voice-line config** — greeting, agent webhook, tool hosts, number inbound webhook, agent name, boosted keywords, pronunciation | declared in `deploy/voice-lines.json`, applied by `deploy-backend.yml` after the services roll | ✅ automatic, both environments |
+| Everything else vendor-side — Twilio numbers/trunks/messaging, Stripe, Retell **prompt bodies** | repeated by hand in the other account | ❌ no promote exists |
 
-Two consequences worth internalising. **Seeding a venue in staging does not create it in
-production** — every venue is inserted twice, deliberately. And **production runs an image
+Three consequences worth internalising. **Seeding a venue in staging does not create it in
+production** — every venue is inserted twice, deliberately. **Production runs an image
 staging never tested**: staging deploys `api:<sha>`, `main` rebuilds as `api:<version>`. Until
 that is promotion-by-digest, "it passed staging" is a statement about the source, not the
-artifact.
+artifact. And **a declared vendor setting promotes with the code**, so changing one means editing
+the declaration and merging (§0) — not opening the vendor's dashboard, which the next deploy
+would overrule.
 
 ### B. Which environment am I touching?
 
@@ -69,7 +116,7 @@ artifact.
 | Branch | `integration` | `main` |
 | GCP project | `bp-voxtable-stg` | `bp-voxtable-prod` — Cloud Run `voxtable-prod-api`/`-worker`/`-migrate`, Cloud SQL and the production deployer SA |
 | Backend runtime | Cloud Run (`voxtable-stg-api` / `-worker`) | Cloud Run (`voxtable-prod-api` / `-worker`) |
-| API hostname | `voxtable-stg-api-…run.app` | `api.biteperk.com.au` on the production Cloud Run frontend |
+| API hostname | `voxtable-stg-api-…run.app` | `voxtable-prod-api-xb2kzbgcgq-ts.a.run.app` (Cloud Run). ⚠️ `api.biteperk.com.au` still resolves to the sandbox VM and has no Cloud Run front yet (no domain mapping/LB, 7 Sep 2026) — do not point anything production at it until it is fronted by Cloud Run |
 | Database | Cloud SQL `voxtable-stg-postgres`, private VPC | Cloud SQL `voxtable-prod-postgres`, private VPC |
 | Retell workspace | **Staging** | **Biteperk** (production) — see [`NAMES.md`](NAMES.md) §6 |
 | Twilio account | `Biteperk-staging` | `Biteperk-production` — see [`NUMBERS.md`](NUMBERS.md) |
@@ -119,6 +166,12 @@ Each of these is here because it went wrong, not because it might.
    24–48h support ticket if it fails, and no way back.
 8. **Never point a staging agent, webhook or build at a production hostname** — the reverse is
    equally true and less obvious.
+9. **Declared state changes in the repository, never at the vendor.** If a setting appears in
+   `deploy/voice-lines.json`, the only correct way to change it is to edit that file and merge
+   (§0): the deploy applies it and asserts the read-back. Changing it at the Retell dashboard
+   instead is undone by the next deploy with no error anywhere. Worked example, 7 Sep 2026: the
+   Cuban Corner manager asked for "an AI assistant" to be dropped from the greeting; the greeting
+   became a declared field, and the promotion applied it to production on its own.
 
 ### E. What is actually enforced
 
@@ -132,6 +185,11 @@ Convention that only lives in prose gets skipped. Enforced today (GitHub Team, s
   hole: on 1 Aug, `integration` deployed to the production environment via `workflow_dispatch`.
 - **CI refuses to build** if the environment it is running in has not defined its own frontend
   config, and **fails if the built bundle contains the other environment's identifiers.**
+- **Every deploy reconciles the declared voice lines and fails if it cannot.** `deploy-backend.yml`
+  runs `apply-line --apply` then `assert-line` over each line and number-less agent declared for
+  the environment (staging `--strict`), and uploads the before/after snapshots as a run artifact.
+  `voice-line-health.yml` re-checks the same set hourly. So a dashboard edit that contradicts the
+  declaration is reverted at the next deploy and reported red within the hour.
 
 Deliberately **not** enabled: required reviewers on `production`. CI's `frontend-artifacts` job
 declares `environment: production`, so a reviewer rule would pause CI itself — and with
@@ -139,9 +197,12 @@ declares `environment: production`, so a reviewer rule would pause CI itself —
 `cancelled`, and both deploy workflows **skip silently**. Someone would approve a deploy that
 never happened. Fix the concurrency interaction first.
 
-Honest limit: the controls above govern git. Vendor-console changes and explicitly reviewed
-production data operations remain outside the application deployment workflow. For those, §C and
-§D are the controls that exist; the sandbox VM is never part of the production path.
+Honest limit: the controls above govern git, plus the slice of vendor state the declaration
+covers. Everything else vendor-side — Twilio numbers and trunks, Stripe, Retell prompt bodies —
+and explicitly reviewed production data operations remain outside the application deployment
+workflow. For those, §C and §D are the controls that exist; the sandbox VM is never part of the
+production path. The way to bring a setting inside the workflow is to declare it and teach
+`apply-line`/`assert-line` about it, as the greeting was on 7 Sep 2026.
 
 ## Project context
 
@@ -357,7 +418,8 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
   - **New (BitePerk-owned)** — login `biteperk@gmail.com`, workspaces **Biteperk** (production) and **Staging**. The Biteperk workspace holds both venue agents, built 13 Aug from the *live* config: Natalia's `agent_5b5df167525452db98cda2112f` / `llm_18ad6f5adedc865b7ffd02a121e1`, Cuban Corner `agent_2892d65ceace4e68d8a3f3e80c` / `llm_53c6e9de9aac3b60270ffdd6bcba`. The **Staging** workspace carries a parallel pair pointed at the staging API. As at 18 Aug 2026 the wiring is done and the **machine** half is proven — staging key deployed, number imported, venue row resolving, and `npm run smoke:staging` green against the live staging API (first green run 14 Aug). The **human** half is not: the ten-leg phone battery in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md) has an empty results table, and NUMBERS.md §8 item 2c is still open. Treat "a real call has been answered end to end" as **unproven** until that table has rows — leg 6 additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker (issue #185), which are not set today.
   - **Legacy (Algorythmos-owned)** — `retellai@algorythmos.com.au`, org `org_f0DPXgKIQTMJL4je`. **A different company's workspace, out of scope.** Historical pilot resources there are sandbox/legacy only. Do not add BitePerk resources to it or route production through it.
   - **The backend serves exactly one Retell account per environment** — one `RETELL_API_KEY`, one `RETELL_WEBHOOK_SECRET`, checked by router-level middleware before any parsing. There is no gradual move; switching workspaces is an atomic env cutover. The new workspace's single API key is badged as its **Webhook key**, so both env values take the same string.
-  - **Production agents must call only `api.biteperk.com.au`** for webhooks and tools. The voice-line assertions reject cross-environment or legacy URLs.
+  - **Production agents must call only the host declared as their line's `api_base`** in `deploy/voice-lines.json` for webhooks and tools — for Cuban Corner that is the Cloud Run service URL until `api.biteperk.com.au` is fronted by Cloud Run (7 Sep 2026). The voice-line assertions reject any other host, cross-environment or legacy.
+  - **The greeting, agent webhook and tool hosts are declared state** (`greeting`, `api_base` per line, plus number-less staging twins under `agents`) in `deploy/voice-lines.json`. `apply-line.mjs` reconciles Retell to the declaration and `deploy-backend.yml` runs apply → assert after every green deploy, so a greeting change is a PR to `integration` (staging applies itself) followed by the promotion to `main` (production applies itself). Never edit these in the Retell dashboard — the next deploy would revert it.
   - **Build agents from the LIVE config, never from a snapshot.** The live greeting carries the AI + recording disclosure that no committed snapshot had, and the live agent carries `data_storage_retention_days: 30`. Rebuilding from a snapshot silently strips both.
   - Keep `default_dynamic_variables` **empty**: nothing in production refreshes them, and a phone number carrying both `inbound_agents` and `inbound_webhook_url` falls back to the static agent when the webhook 401s — greeting the caller with a stale venue name and months-old dates. Details in [`NUMBERS.md`](NUMBERS.md) §6.
 - **Retell config snapshots** for rollback are kept in `deploy/retell-snapshots/<timestamp>-<reason>/{llm.json,agent.json}`. Re-apply via `PATCH /update-retell-llm/{llm_id}` and `/update-agent/{agent_id}`.

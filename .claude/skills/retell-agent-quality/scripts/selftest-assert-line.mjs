@@ -28,6 +28,9 @@ const cases = [
   { name: "wrong agent id", expect: 6, mutate: (l) => { l.retell_agent_id = "agent_deadbeefdeadbeefdeadbeef"; } },
   { name: "wrong venue name", expect: 7, mutate: (l) => { l.venue_name = "Some Other Venue"; } },
   { name: "wrong llm id", expect: 11, mutate: (l) => { l.retell_llm_id = "llm_deadbeefdeadbeefdeadbeef"; } },
+  // Adding a greeting the live LLM cannot match makes [22] run and fail on any line — no need for
+  // the chosen line to already declare one. Baseline declares none, so [22] does not run there.
+  { name: "declared greeting disagrees with the LLM", expect: 22, mutate: (l) => { l.greeting = "This is a deliberately wrong greeting that the live LLM will not match."; } },
   // A pause is a declared state, not a broken layer (Mazcina, 5 Sep 2026). Declaring it on a
   // line whose webhook is live must fail [2]: that is the "re-hooked by hand" finding.
   { name: "declared paused while the webhook is live", expect: 2, mutate: (l) => { l.inbound_mode = "paused"; } },

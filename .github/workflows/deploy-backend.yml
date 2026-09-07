@@ -262,3 +262,57 @@ jobs:
             --format='value(status.url)')"
 
           curl -fsS "${API_URL}/health"
+
+      # The greeting, agent webhook and tool hosts are declared state in deploy/voice-lines.json.
+      # Merging changes the file; this step makes Retell match it, after the services are healthy.
+      # assert-line imports retell-sdk, so the job needs Node + deps (the deploy steps above only
+      # use gcloud).
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - name: Reconcile Retell voice lines to the declaration
+        env:
+          DEPLOY_ENV: ${{ steps.deploy-meta.outputs.deploy_env }}
+          # Production has no Secret Manager access from CI, so it reconciles with --use-env and
+          # the same repo secrets voice-line-health uses. Staging resolves credentials from the
+          # declaration (the deployer SA already reads bp-voxtable-stg secrets).
+          RETELL_API_KEY: ${{ secrets.RETELL_PROD_API_KEY }}
+          RETELL_WEBHOOK_SECRET: ${{ secrets.RETELL_PROD_WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ "$DEPLOY_ENV" = "production" ]; then
+            CRED_FLAG="--use-env"
+            STRICT=""   # production deliberately skips the synthetic-probe layers [4]-[7]
+            if [ -z "${RETELL_API_KEY:-}" ] || [ -z "${RETELL_WEBHOOK_SECRET:-}" ]; then
+              echo "::error::RETELL_PROD_API_KEY / RETELL_PROD_WEBHOOK_SECRET are not set — cannot reconcile the production voice lines." >&2
+              exit 1
+            fi
+          else
+            CRED_FLAG=""
+            STRICT="--strict"
+          fi
+
+          keys="$(node scripts/voice-lines-by-environment.mjs "$DEPLOY_ENV"; node scripts/voice-lines-by-environment.mjs --agents "$DEPLOY_ENV")"
+          fail=0
+          for key in $keys; do
+            echo "::group::$key"
+            node .claude/skills/retell-agent-quality/scripts/apply-line.mjs "$key" --apply $CRED_FLAG || fail=1
+            node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$key" $STRICT $CRED_FLAG || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
+
+      # The apply step writes a pre/post snapshot per key. CI never commits, so keep them as an
+      # artifact — that is the rollback point if a reconcile turns out wrong.
+      - name: Upload Retell snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retell-snapshots-${{ steps.deploy-meta.outputs.deploy_env }}-${{ github.run_id }}
+          path: deploy/retell-snapshots/
+          if-no-files-found: ignore
+          retention-days: 90
