@@ -211,3 +211,29 @@ export function assertCanGoLive(status: OnboardingStatus): void {
     );
   }
 }
+
+/** Just the two columns that decide whether a venue's phone line can ring. */
+export interface LineBindings {
+  twilio_phone_number: string | null;
+  retell_agent_id: string | null;
+}
+
+const lineIsReady = (b: LineBindings | null | undefined): boolean =>
+  Boolean(b?.twilio_phone_number && b?.retell_agent_id);
+
+/**
+ * Whether an admin bind just made the venue's line ready — i.e. whether to send
+ * the owner the "your number is ready" email.
+ *
+ * It must be a TRANSITION, not a state. The check used to be "does the venue
+ * have both columns now", which is equally true on every later bind, so
+ * correcting a typo in the Cal.com field re-sent the launch email — and
+ * enqueueNotification has no per-kind dedupe, so the owner simply received it
+ * again. Extracted and tested because that bug reached real customers.
+ */
+export function becameLineReady(
+  before: LineBindings | null | undefined,
+  after: LineBindings | null | undefined
+): boolean {
+  return lineIsReady(after) && !lineIsReady(before);
+}
