@@ -187,6 +187,13 @@ jobs:
       - name: Prove the voice kill switch refuses and writes nothing
         run: npm run smoke:voice-kill-switch
 
+      # The per-venue pause is the owner-operable switch. It must refuse every
+      # tool and route inbound to the paused agent for the paused venue ONLY,
+      # while a second live venue in the same process still books — proving the
+      # pause is per-tenant and not the global kill switch.
+      - name: Prove the per-venue voice pause refuses one venue and not another
+        run: npm run smoke:voice-pause
+
       # The notification outbox claim leases the row (next_attempt_at pushed
       # forward), so a second worker replica or a send outliving one tick can
       # never send the same email/SMS twice. Two racing claimers + a late

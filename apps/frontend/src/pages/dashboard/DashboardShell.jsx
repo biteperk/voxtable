@@ -1,4 +1,4 @@
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "../../auth";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useDrawer } from "../../hooks/useDrawer";
@@ -9,8 +9,33 @@ import { SidebarUserButton } from "../../components/dashboard/SidebarUserButton"
 import { BiteperkMark } from "../../components/brand/BiteperkMark";
 
 export function DashboardShell({ active, children, navigate, path }) {
-  const { user, hasMinRole, role, isPlatformAdmin } = useAuth();
+  const { user, hasMinRole, role, isPlatformAdmin, memberships, activeRestaurantId } = useAuth();
   const isPhone = useMediaQuery("(max-width: 767px)");
+
+  // "Bella is paused" banner. Seeded from the active venue's membership (which
+  // carries voice_paused_at from /api/me) and kept live by the event the Profile
+  // toggle dispatches, so pausing in one place updates the banner everywhere
+  // without a refetch.
+  const activeMembership = memberships.find((m) => m.restaurant_id === activeRestaurantId);
+  const [voicePaused, setVoicePaused] = useState(Boolean(activeMembership?.voice_paused_at));
+  useEffect(() => {
+    setVoicePaused(Boolean(activeMembership?.voice_paused_at));
+  }, [activeMembership?.voice_paused_at]);
+  useEffect(() => {
+    const onChange = (e) => setVoicePaused(Boolean(e.detail?.paused));
+    window.addEventListener("voxtable:voice-paused-changed", onChange);
+    return () => window.removeEventListener("voxtable:voice-paused-changed", onChange);
+  }, []);
+  const pauseBanner =
+    voicePaused && hasMinRole("manager") ? (
+      <div className="voice-pause-banner" role="alert">
+        <Icon name="phone_disabled" />
+        <span>
+          <strong>Bella is paused.</strong> Callers hear that you&apos;re not taking phone bookings
+          right now. Resume it on the Profile page.
+        </span>
+      </div>
+    ) : null;
   const burgerRef = useRef(null);
   const drawer = useDrawer({ pathname: path, triggerRef: burgerRef });
   const { scrolled, sentinelRef } = useScrolled();
@@ -132,7 +157,10 @@ export function DashboardShell({ active, children, navigate, path }) {
     return (
       <div className="dashboard-shell">
         {sidebarMarkup}
-        <main className="dashboard-content">{children}</main>
+        <main className="dashboard-content">
+          {pauseBanner}
+          {children}
+        </main>
       </div>
     );
   }
@@ -204,6 +232,7 @@ export function DashboardShell({ active, children, navigate, path }) {
         className="dashboard-content mobile-main"
         inert={drawer.isOpen || undefined}
       >
+        {pauseBanner}
         {children}
       </main>
     </div>

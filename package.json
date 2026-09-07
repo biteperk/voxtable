@@ -48,6 +48,7 @@
     "smoke:ops-state": "npm run smoke:ops-state --workspace=@voxtable/backend",
     "smoke:business-alerts": "npm run smoke:business-alerts --workspace=@voxtable/backend",
     "smoke:voice-kill-switch": "npm run smoke:voice-kill-switch --workspace=@voxtable/backend",
+    "smoke:voice-pause": "npm run smoke:voice-pause --workspace=@voxtable/backend",
     "smoke:notification-lease": "npm run smoke:notification-lease --workspace=@voxtable/backend",
     "smoke:booking-sms": "npm run smoke:booking-sms --workspace=@voxtable/backend",
     "smoke:identity-collision": "npm run smoke:identity-collision --workspace=@voxtable/backend",

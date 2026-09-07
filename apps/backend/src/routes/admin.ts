@@ -39,6 +39,7 @@ import {
   listRestaurantsAdmin,
   setOnboardingStatus,
   setProvisioningBindings,
+  setVoicePaused,
   type OnboardingStatus
 } from "../repositories/restaurants";
 import { listSupportRequests, setSupportRequestStatus } from "../repositories/supportRequests";
@@ -217,11 +218,13 @@ adminRouter.get(
         stripe_customer_id: string | null;
         stripe_connect_charges_enabled: boolean;
         stripe_connect_payouts_enabled: boolean;
+        voice_paused_at: Date | null;
       }>(
         `SELECT client_legal_name, client_abn, services, phone_mode, retention_days,
                 storage_tier, pii_redaction, service_start_date, playback_approved_at,
                 terms_version, stripe_customer_id,
-                stripe_connect_charges_enabled, stripe_connect_payouts_enabled
+                stripe_connect_charges_enabled, stripe_connect_payouts_enabled,
+                voice_paused_at
            FROM restaurants WHERE id = $1`,
         [id]
       ),
@@ -270,7 +273,8 @@ adminRouter.get(
       activity_today: {
         calls: Number(activityRow.rows[0]?.calls_today ?? "0"),
         bookings: Number(activityRow.rows[0]?.bookings_today ?? "0")
-      }
+      },
+      voice_paused_at: e?.voice_paused_at ?? null
     });
   })
 );
@@ -520,6 +524,31 @@ adminRouter.post(
       params: { fields: body.fields, was_live: current.onboarding_status === "live" }
     });
     response.json({ provisioning: updated });
+  })
+);
+
+// Per-venue phone kill switch (platform admin). The owner has the same control
+// in their own dashboard; this is the support-desk equivalent. No typed
+// confirmation — it is reversible in one click, unlike unbind.
+adminRouter.post(
+  "/api/admin/restaurants/:id/voice/pause",
+  adminActionLimiter,
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    const pausedAt = await setVoicePaused(id, true);
+    await audit(request, "voice_pause", { restaurantId: id });
+    response.json({ voice_paused_at: pausedAt });
+  })
+);
+
+adminRouter.post(
+  "/api/admin/restaurants/:id/voice/resume",
+  adminActionLimiter,
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    await setVoicePaused(id, false);
+    await audit(request, "voice_resume", { restaurantId: id });
+    response.json({ voice_paused_at: null });
   })
 );
 
