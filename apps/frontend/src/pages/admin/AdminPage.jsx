@@ -150,9 +150,9 @@ export function AdminPage({ navigate, path }) {
           <AdminOverview flags={flags} goVenues={goVenues} goTab={goTab} />
         ) : null}
         {active === "Venues" ? <AdminVenues /> : null}
-        {active === "Provisioning" ? <AdminJobs /> : null}
+        {active === "Provisioning" ? <AdminJobs goVenues={goVenues} /> : null}
         {active === "Ops" ? <AdminOps /> : null}
-        {active === "Support" ? <AdminSupport /> : null}
+        {active === "Support" ? <AdminSupport goVenues={goVenues} /> : null}
       </main>
     </div>
     </ToastProvider>
