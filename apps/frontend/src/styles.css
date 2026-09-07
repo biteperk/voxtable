@@ -15184,3 +15184,56 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 .analytics-error {
   color: #ff8a80;
 }
+
+/* Per-venue voice kill switch (Profile control, dashboard banner, admin pill) */
+.voice-pause-control {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface, transparent));
+}
+.voice-pause-control.paused {
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+  background: color-mix(in srgb, var(--error) 10%, var(--surface, transparent));
+}
+.voice-pause-copy {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.voice-pause-copy > .material-symbols-outlined {
+  flex: none;
+  font-size: 26px;
+  color: var(--primary);
+}
+.voice-pause-control.paused .voice-pause-copy > .material-symbols-outlined {
+  color: var(--error);
+}
+.voice-pause-copy strong {
+  display: block;
+}
+.voice-pause-copy span {
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+
+.voice-pause-banner {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border: 1px solid color-mix(in srgb, var(--error) 40%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--error) 12%, var(--surface, transparent));
+}
+.voice-pause-banner > .material-symbols-outlined {
+  flex: none;
+  color: var(--error);
+}

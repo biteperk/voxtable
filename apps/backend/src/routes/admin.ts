@@ -218,11 +218,13 @@ adminRouter.get(
         stripe_customer_id: string | null;
         stripe_connect_charges_enabled: boolean;
         stripe_connect_payouts_enabled: boolean;
+        voice_paused_at: Date | null;
       }>(
         `SELECT client_legal_name, client_abn, services, phone_mode, retention_days,
                 storage_tier, pii_redaction, service_start_date, playback_approved_at,
                 terms_version, stripe_customer_id,
-                stripe_connect_charges_enabled, stripe_connect_payouts_enabled
+                stripe_connect_charges_enabled, stripe_connect_payouts_enabled,
+                voice_paused_at
            FROM restaurants WHERE id = $1`,
         [id]
       ),
@@ -271,7 +273,8 @@ adminRouter.get(
       activity_today: {
         calls: Number(activityRow.rows[0]?.calls_today ?? "0"),
         bookings: Number(activityRow.rows[0]?.bookings_today ?? "0")
-      }
+      },
+      voice_paused_at: e?.voice_paused_at ?? null
     });
   })
 );

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   adminBindProvisioning,
   adminGoLive,
+  adminSetVoicePaused,
   adminUnbindProvisioning,
   getAdminRestaurant,
   getAdminRestaurantSubscription,
@@ -172,6 +173,39 @@ function VenueDetail({ venueId, venueName, onChanged }) {
 
       <div className="admin-detail-grid">
         <BindPanel prov={prov} busy={busy} run={run} venueId={venueId} />
+
+        <div className="admin-panel">
+          <h4>
+            Voice line{" "}
+            <span className={`status-pill ${detail.voice_paused_at ? "cancelled" : "confirmed"}`}>
+              {detail.voice_paused_at ? "Paused" : "Live"}
+            </span>
+          </h4>
+          <p className="admin-muted">
+            {detail.voice_paused_at
+              ? "Callers hear that the venue isn't taking phone bookings right now."
+              : "Bella is answering and taking bookings."}
+          </p>
+          {detail.voice_paused_at ? (
+            <button
+              className="ghost-button"
+              type="button"
+              disabled={busy}
+              onClick={() => run("Voice line resumed.", () => adminSetVoicePaused(venueId, false))}
+            >
+              Resume voice
+            </button>
+          ) : (
+            <button
+              className="ghost-button"
+              type="button"
+              disabled={busy}
+              onClick={() => run("Voice line paused.", () => adminSetVoicePaused(venueId, true))}
+            >
+              Pause voice
+            </button>
+          )}
+        </div>
 
         <div className="admin-panel">
           <h4>Legal</h4>
