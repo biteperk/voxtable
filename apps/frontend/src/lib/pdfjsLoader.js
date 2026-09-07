@@ -5,16 +5,33 @@
  * is why they live together behind one function rather than inline at the call
  * site.
  *
- * 1. THE WORKER URL. Vite resolves `new URL(..., import.meta.url)` differently
- *    in dev and in a production build. Get it wrong and menu import works
- *    perfectly on your laptop and 404s for every customer. Always verify
- *    against `npm run build:frontend` + preview, never dev alone.
+ * 1. THE WORKER URL comes from the bundler (`?url`), never from a runtime
+ *    `new URL(..., import.meta.url)`. This is not a style preference — it is
+ *    the bug that took menu import down in production on 7 Sep 2026.
  *
- * 2. iOS. pdf.js 4.x uses `Promise.withResolvers`, which Safari only shipped in
+ *    Vite/Rolldown only rewrites `new URL()` when the first argument is a
+ *    RELATIVE literal. A bare package specifier is left untouched, so
+ *    `new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)`
+ *    resolved against the chunk's own URL and asked Hosting for
+ *    `/assets/pdfjs-dist/build/pdf.worker.min.mjs`. The worker was deployed
+ *    correctly the whole time under its hashed name — nothing requested it.
+ *
+ *    What made it expensive to find: Firebase Hosting's SPA rewrite answers an
+ *    unknown path with `index.html` and **HTTP 200**, not 404. So pdf.js tried
+ *    to start a module worker from 6 KB of HTML, and there was no 404 in any
+ *    log to point at. Dev was fine, because dev resolves bare specifiers.
+ *
+ *    Verify with `npm run build:frontend` and grep the built pdf chunk for the
+ *    worker name — it must be a hashed `/assets/pdf.worker.min-*.mjs`. Never
+ *    trust dev alone here, and never trust a 200 either.
+ *
+ * 2. iOS. pdf.js uses `Promise.withResolvers`, which Safari only shipped in
  *    17.4. Restaurant owners photograph menus on phones, many of them older
  *    iPhones, so without the polyfill below the whole feature throws on the
- *    devices most likely to use it. The version is pinned exactly for the same
- *    reason — a minor bump can raise the browser floor silently.
+ *    devices most likely to use it. ⚠️ This comment used to claim the version
+ *    was "pinned exactly"; it is not — `apps/frontend/package.json` carries
+ *    `pdfjs-dist: ^6.2.108`, so a minor bump can raise the browser floor
+ *    silently. Keep the polyfill above regardless of what the range allows.
  *
  * 3. Rendering needs a VISIBLE page. `page.render()` is driven by
  *    requestAnimationFrame, which does not fire while `document.hidden` is
@@ -24,6 +41,12 @@
  *    means an automated headless check can verify everything here EXCEPT the
  *    paint itself.
  */
+
+// The worker URL must come from the bundler, not from a runtime `new URL()`.
+// `?url` makes Vite emit the worker as a hashed asset and hand back its real
+// built path, and it resolves identically in dev and in a production build.
+// This import costs nothing at load time — it is a string, not the 1 MB worker.
+import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 let pdfjsPromise = null;
 
@@ -50,10 +73,7 @@ export async function loadPdfjs() {
   pdfjsPromise = (async () => {
     ensurePromiseWithResolvers();
     const pdfjs = await import("pdfjs-dist");
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-      "pdfjs-dist/build/pdf.worker.min.mjs",
-      import.meta.url
-    ).href;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
     return pdfjs;
   })().catch((error) => {
     // Don't cache a failure — a flaky chunk load should be retryable.
