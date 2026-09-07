@@ -1,0 +1,98 @@
+{
+  "agent_id": "agent_2892d65ceace4e68d8a3f3e80c",
+  "channel": "voice",
+  "last_modification_timestamp": 1788743685186,
+  "agent_name": "Cuban Corner Parramatta (VoxTable)",
+  "response_engine": {
+    "version": 2,
+    "type": "retell-llm",
+    "llm_id": "llm_53c6e9de9aac3b60270ffdd6bcba"
+  },
+  "webhook_url": "https://voxtable-prod-api-xb2kzbgcgq-ts.a.run.app/retell/webhook",
+  "language": "en-US",
+  "data_storage_setting": "everything",
+  "data_storage_retention_days": 30,
+  "opt_in_signed_url": false,
+  "version": 2,
+  "base_version": 1,
+  "assigned_tags": [],
+  "is_published": false,
+  "post_call_analysis_model": "gpt-4.1",
+  "pii_config": {
+    "categories": [],
+    "mode": "post_call"
+  },
+  "timezone": "Australia/Sydney",
+  "post_call_analysis_data": [
+    {
+      "choices": [
+        "book",
+        "modify",
+        "cancel",
+        "info",
+        "other"
+      ],
+      "name": "intent",
+      "description": "Primary purpose of the call. \"other\" covers misdials, wrong number, prank, abuse.",
+      "type": "enum"
+    },
+    {
+      "description": "Result of any booking attempt. \"confirmed\" if create_booking succeeded. \"no_availability\" if no slot worked. \"declined\" if caller refused alternates. \"transferred\" for parties of 9+ or staff handoff. \"none\" if the call wasn't about booking.",
+      "name": "booking_outcome",
+      "type": "enum",
+      "choices": [
+        "confirmed",
+        "no_availability",
+        "declined",
+        "transferred",
+        "none"
+      ]
+    },
+    {
+      "description": "Allergies, occasions (birthday, anniversary), seating preferences, dietary notes. Empty string if none.",
+      "name": "special_requests",
+      "type": "string"
+    },
+    {
+      "description": "Did the caller sound satisfied at the end? True if happy, false if frustrated.",
+      "type": "boolean",
+      "name": "caller_satisfied"
+    },
+    {
+      "description": "The caller's name as they gave it on the call (first name, plus surname if mentioned). Use the name they introduced themselves with or gave for the booking. Empty string if they never said their name.",
+      "name": "caller_name",
+      "type": "string"
+    }
+  ],
+  "voice_id": "11labs-Grace",
+  "voice_temperature": 1,
+  "voice_speed": 1,
+  "volume": 1,
+  "enable_backchannel": true,
+  "max_call_duration_ms": 600000,
+  "interruption_sensitivity": 0.6,
+  "boosted_keywords": [
+    "Cuban Corner",
+    "Cuban Corner Parramatta",
+    "Parramatta",
+    "Cubano",
+    "empanada",
+    "Havana",
+    "churros",
+    "quesadilla",
+    "chorizo",
+    "haloumi",
+    "benny",
+    "mojito",
+    "chips",
+    "fries",
+    "takeaway",
+    "pickup"
+  ],
+  "responsiveness": 1,
+  "begin_message_delay_ms": 500,
+  "stt_mode": "fast",
+  "allow_user_dtmf": true,
+  "user_dtmf_options": {},
+  "denoising_mode": "noise-and-background-speech-cancellation"
+}

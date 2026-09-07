@@ -36,6 +36,8 @@ on:
     paths:
       - deploy/voice-lines.json
       - .claude/skills/retell-agent-quality/scripts/assert-line.mjs
+      - .claude/skills/retell-agent-quality/scripts/apply-line.mjs
+      - scripts/voice-lines-by-environment.mjs
       - .github/workflows/voice-line-health.yml
 
 concurrency:
@@ -92,6 +94,14 @@ jobs:
           for number in $(node scripts/voice-lines-by-environment.mjs staging); do
             echo "::group::$number"
             node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$number" --strict --calls 24 || fail=1
+            echo "::endgroup::"
+          done
+          # Number-less staging twins (e.g. the Cuban Corner staging agent) carry a declared
+          # greeting the deploy pipeline reconciles; check them here too, or the twin drifts
+          # unnoticed between deploys. --calls is meaningless without a number, so it is omitted.
+          for agent in $(node scripts/voice-lines-by-environment.mjs --agents staging); do
+            echo "::group::$agent"
+            node .claude/skills/retell-agent-quality/scripts/assert-line.mjs "$agent" --strict || fail=1
             echo "::endgroup::"
           done
           exit $fail

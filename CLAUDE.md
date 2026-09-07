@@ -34,6 +34,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Environments and promotion
 
+**Production is Cloud Run in `bp-voxtable-prod`, and nothing else.** The sandbox VM
+(`core-central-vm`, project `vocotable-497209`) is for testing and experiments only. It is
+never a production target, never a production data source, never a rollback target, and no
+production line, webhook, dashboard or DNS record may point at it. If a runbook, memory or
+comment still describes the VM as "prod", the VM is not prod — the text is stale (decided by
+Sam, 7 Sep 2026; Cuban Corner moved to Cloud Run the same day).
+
 **The rule: all testing happens in staging. Production is never a test environment.**
 Functional, integration, smoke, end-to-end, call-battery, onboarding, KDS, payment,
 rehearsal and destructive testing must target staging. Production permits only
@@ -69,7 +76,7 @@ artifact.
 | Branch | `integration` | `main` |
 | GCP project | `bp-voxtable-stg` | `bp-voxtable-prod` — Cloud Run `voxtable-prod-api`/`-worker`/`-migrate`, Cloud SQL and the production deployer SA |
 | Backend runtime | Cloud Run (`voxtable-stg-api` / `-worker`) | Cloud Run (`voxtable-prod-api` / `-worker`) |
-| API hostname | `voxtable-stg-api-…run.app` | `api.biteperk.com.au` on the production Cloud Run frontend |
+| API hostname | `voxtable-stg-api-…run.app` | `voxtable-prod-api-xb2kzbgcgq-ts.a.run.app` (Cloud Run). ⚠️ `api.biteperk.com.au` still resolves to the sandbox VM and has no Cloud Run front yet (no domain mapping/LB, 7 Sep 2026) — do not point anything production at it until it is fronted by Cloud Run |
 | Database | Cloud SQL `voxtable-stg-postgres`, private VPC | Cloud SQL `voxtable-prod-postgres`, private VPC |
 | Retell workspace | **Staging** | **Biteperk** (production) — see [`NAMES.md`](NAMES.md) §6 |
 | Twilio account | `Biteperk-staging` | `Biteperk-production` — see [`NUMBERS.md`](NUMBERS.md) |
@@ -357,7 +364,8 @@ Dates are TZ-naive `DATE` + `TIME` (correct — they're wall-clock at the restau
   - **New (BitePerk-owned)** — login `biteperk@gmail.com`, workspaces **Biteperk** (production) and **Staging**. The Biteperk workspace holds both venue agents, built 13 Aug from the *live* config: Natalia's `agent_5b5df167525452db98cda2112f` / `llm_18ad6f5adedc865b7ffd02a121e1`, Cuban Corner `agent_2892d65ceace4e68d8a3f3e80c` / `llm_53c6e9de9aac3b60270ffdd6bcba`. The **Staging** workspace carries a parallel pair pointed at the staging API. As at 18 Aug 2026 the wiring is done and the **machine** half is proven — staging key deployed, number imported, venue row resolving, and `npm run smoke:staging` green against the live staging API (first green run 14 Aug). The **human** half is not: the ten-leg phone battery in [`deploy/runbooks/staging-call-battery.md`](deploy/runbooks/staging-call-battery.md) has an empty results table, and NUMBERS.md §8 item 2c is still open. Treat "a real call has been answered end to end" as **unproven** until that table has rows — leg 6 additionally needs `NOTIFICATIONS_ENABLED` + `NOTIFICATIONS_SMS_FROM` on the staging worker (issue #185), which are not set today.
   - **Legacy (Algorythmos-owned)** — `retellai@algorythmos.com.au`, org `org_f0DPXgKIQTMJL4je`. **A different company's workspace, out of scope.** Historical pilot resources there are sandbox/legacy only. Do not add BitePerk resources to it or route production through it.
   - **The backend serves exactly one Retell account per environment** — one `RETELL_API_KEY`, one `RETELL_WEBHOOK_SECRET`, checked by router-level middleware before any parsing. There is no gradual move; switching workspaces is an atomic env cutover. The new workspace's single API key is badged as its **Webhook key**, so both env values take the same string.
-  - **Production agents must call only `api.biteperk.com.au`** for webhooks and tools. The voice-line assertions reject cross-environment or legacy URLs.
+  - **Production agents must call only the host declared as their line's `api_base`** in `deploy/voice-lines.json` for webhooks and tools — for Cuban Corner that is the Cloud Run service URL until `api.biteperk.com.au` is fronted by Cloud Run (7 Sep 2026). The voice-line assertions reject any other host, cross-environment or legacy.
+  - **The greeting, agent webhook and tool hosts are declared state** (`greeting`, `api_base` per line, plus number-less staging twins under `agents`) in `deploy/voice-lines.json`. `apply-line.mjs` reconciles Retell to the declaration and `deploy-backend.yml` runs apply → assert after every green deploy, so a greeting change is a PR to `integration` (staging applies itself) followed by the promotion to `main` (production applies itself). Never edit these in the Retell dashboard — the next deploy would revert it.
   - **Build agents from the LIVE config, never from a snapshot.** The live greeting carries the AI + recording disclosure that no committed snapshot had, and the live agent carries `data_storage_retention_days: 30`. Rebuilding from a snapshot silently strips both.
   - Keep `default_dynamic_variables` **empty**: nothing in production refreshes them, and a phone number carrying both `inbound_agents` and `inbound_webhook_url` falls back to the static agent when the webhook 401s — greeting the caller with a stale venue name and months-old dates. Details in [`NUMBERS.md`](NUMBERS.md) §6.
 - **Retell config snapshots** for rollback are kept in `deploy/retell-snapshots/<timestamp>-<reason>/{llm.json,agent.json}`. Re-apply via `PATCH /update-retell-llm/{llm_id}` and `/update-agent/{agent_id}`.

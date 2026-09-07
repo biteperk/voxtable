@@ -42,16 +42,21 @@ const at = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1]
 const configPath = at("--config") ?? "deploy/voice-lines.json";
 const expectProfile = at("--expect");
 const callsHours = args.includes("--calls") ? (Number(at("--calls")) || 24) : null;
-const number = args.find((a) => a.startsWith("+"));
+const cliKey = args.find((a) => a.startsWith("+") || a.startsWith("agent_"));
 
-if (!number) {
-  console.error("usage: RETELL_API_KEY=… node assert-line.mjs <+E164> [--strict] [--config path]");
+if (!cliKey) {
+  console.error("usage: RETELL_API_KEY=… node assert-line.mjs <+E164 | agent_…> [--strict] [--config path]");
   process.exit(2);
 }
 
-const declared = JSON.parse(readFileSync(configPath, "utf8")).lines?.[number];
+// A key beginning "agent_" checks a number-less agent (declared under `agents`): the agent/LLM
+// and greeting layers only. A +E164 key checks a whole line (declared under `lines`).
+const isAgentKey = cliKey.startsWith("agent_");
+const number = isAgentKey ? null : cliKey;
+const configDoc = JSON.parse(readFileSync(configPath, "utf8"));
+const declared = isAgentKey ? configDoc.agents?.[cliKey] : configDoc.lines?.[cliKey];
 if (!declared) {
-  console.error(`${number} is not declared in ${configPath}.`);
+  console.error(`${cliKey} is not declared in ${configPath} (${isAgentKey ? "agents" : "lines"}).`);
   console.error("An undeclared line cannot be checked — add it there first (identifiers only, no secrets).");
   process.exit(2);
 }
@@ -116,7 +121,7 @@ const json = async (url, init) => {
 };
 
 if (!asJson) {
-  console.log(`\n${number} — declared ${declared.environment}, api ${declared.api_base}`);
+  console.log(`\n${cliKey} — declared ${declared.environment}, api ${declared.api_base}`);
   console.log(`workspace ${declared.retell_workspace} · credentials from ${CRED_SOURCE}\n`);
 }
 
@@ -126,8 +131,9 @@ if (!asJson) {
 // nothing here runs voxstay's `status` command — that command auto-releases a stale claim on
 // read, and a checker must never change what it checks.
 const routing = declared.routing ?? { mode: "trunk" };
-const isRouter = routing.mode === "router";
-const digits = number.replace(/^\+/, "");
+// An agent-only key has no number, so no router/trunk layer to read.
+const isRouter = !isAgentKey && routing.mode === "router";
+const digits = number ? number.replace(/^\+/, "") : "";
 // Mirrors lookup() in ~/voxstay/scripts/router-function.js exactly: the per-number key wins,
 // an empty string counts as unset, the un-suffixed global is the fallback, values are trimmed.
 const lookup = (vars, base) => {
@@ -200,13 +206,23 @@ const retellMode = profile?.retell === "static" ? "static" : "webhook";
 // BREAK 1 (20 Aug 2026): absent. Twilio offered the call to sip.retellai.com, Retell did
 // not recognise the DID and rejected it. The caller heard a couple of seconds and a hangup;
 // nothing appeared in list-calls, because from Retell's side there was no call.
-const num = await json(`https://api.retellai.com/get-phone-number/${number}`, { headers: H });
-const numberPresent = check(1, num.status === 200,
-  "number is imported in this Retell workspace",
-  `get-phone-number returned ${num.status}. Nothing routes to this number — a call to it reaches Retell and is rejected.`);
+// An agent-only key (no number) skips §1–§3 and §6–§8 entirely — a printed note, not a skip(),
+// so --strict is not tripped by layers that do not apply to a number-less agent.
+let num = { status: 200, body: {} };
+let numberPresent = false;
+if (isAgentKey) {
+  if (!asJson) console.log("· [1]-[3],[15]-[21] not applicable — agent-only key (no number, trunk or backend probe)");
+} else {
+  num = await json(`https://api.retellai.com/get-phone-number/${number}`, { headers: H });
+  numberPresent = check(1, num.status === 200,
+    "number is imported in this Retell workspace",
+    `get-phone-number returned ${num.status}. Nothing routes to this number — a call to it reaches Retell and is rejected.`);
+}
 
 // ─── 2. It points at THIS environment, webhook-only ───────────────────────────
-if (numberPresent && retellMode === "static") {
+if (isAgentKey) {
+  // no number layer for an agent-only key
+} else if (numberPresent && retellMode === "static") {
   // The live holder pins another Retell agent on this number. Then the webhook MUST be cleared:
   // with both set, the static agent is the fallback that fires when the webhook fails
   // (NUMBERS.md §6), and the number answers as one agent on good days and the other on bad ones.
@@ -254,7 +270,9 @@ if (numberPresent && retellMode === "static") {
 // read-backs and monitoring, so production lines deliberately skip this layer.
 let dv = {};
 let resolvedAgentId = null;
-if (declared.environment === "production") {
+if (isAgentKey) {
+  // agent-only key: no number to probe the backend with. §4-§7 do not run.
+} else if (declared.environment === "production") {
   skip(4, "signed /retell/inbound probe", "production synthetic probes are prohibited; run this layer on the staging twin");
   skip(5, "backend dynamic variables", "production is read-back and monitoring only");
   skip(6, "backend agent resolution", "production is read-back and monitoring only");
@@ -388,6 +406,19 @@ if (agentExists) {
   skip(14, "golden agent config", "the agent does not exist, so there is nothing to assert.");
 }
 
+// ─── 5b. Declared greeting matches the LLM's begin_message ────────────────────
+// The greeting is declared state, applied by apply-line and the deploy pipeline. A dashboard edit
+// or a missed deploy shows up here. Only asserted when `greeting` is declared — a line that leaves
+// it out (Mazcina) keeps whatever the vendor holds and this check does not run.
+if (declared.greeting != null) {
+  const llm = await json(`https://api.retellai.com/get-retell-llm/${declared.retell_llm_id}`, { headers: H });
+  check(22, llm.status === 200 && llm.body?.begin_message === declared.greeting,
+    "LLM begin_message matches the declared greeting",
+    llm.status !== 200
+      ? `get-retell-llm returned ${llm.status}`
+      : `declared "${declared.greeting}"\n     but live is "${llm.body?.begin_message}" — edit the declaration and redeploy, never the dashboard.`);
+}
+
 // ─── 6r. Twilio, router mode: the number points at the switchboard and the switchboard is coherent
 if (isRouter) {
   if (!twBasic) {
@@ -444,7 +475,9 @@ const tw = process.env.TWILIO_AU1_KEY_SID && process.env.TWILIO_AU1_KEY_SECRET
   ? { Authorization: `Basic ${Buffer.from(`${process.env.TWILIO_AU1_KEY_SID}:${process.env.TWILIO_AU1_KEY_SECRET}`).toString("base64")}` }
   : null;
 
-if (isRouter) {
+if (isAgentKey) {
+  // agent-only key: no number, so no trunk to reconcile — not applicable, not a skip.
+} else if (isRouter) {
   // handled in 6r above
 } else if (!tw) {
   skip(15, "Twilio number → trunk → origination",
