@@ -1,14 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { adminReenqueueJob, getAdminProvisioningJobs, getAdminProvisioningQueue } from "../../api";
+import { AdminAction } from "../../components/admin/AdminAction";
+import { Badge } from "../../components/admin/Badge";
+import { DataTable } from "../../components/admin/DataTable";
+import { EmptyState } from "../../components/admin/EmptyState";
+import { SectionCard } from "../../components/admin/SectionCard";
+import { SkeletonLines } from "../../components/admin/Skeleton";
+import { StatTile } from "../../components/admin/StatTile";
+import { useToast } from "../../components/admin/Toast";
+import { Icon } from "../../components/Icon";
+import { relativeTime } from "../../lib/format";
+import { nextAction, pipelineFor, waitingHours } from "../../lib/provisioningPipeline";
 
-export function AdminJobs() {
+export function AdminJobs({ goVenues }) {
   const [queue, setQueue] = useState(null);
   const [jobs, setJobs] = useState(null);
-  const [workerEnabled, setWorkerEnabled] = useState(true);
+  // Not `true`: assuming auto-provisioning is on and correcting a moment later
+  // flashed the warning in after first paint, which reads as a glitch. Null
+  // means "not known yet" and renders nothing.
+  const [workerEnabled, setWorkerEnabled] = useState(null);
   const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
   const [reenqueueTarget, setReenqueueTarget] = useState(null);
+  const toast = useToast();
 
   const refresh = useCallback(async () => {
     try {
@@ -18,7 +32,7 @@ export function AdminJobs() {
       setWorkerEnabled(Boolean(j.worker_enabled));
       setError(null);
     } catch (e) {
-      setError(e.message ?? "Failed to load");
+      setError(e.message ?? "Couldn't load the provisioning queue");
     }
   }, []);
 
@@ -26,104 +40,197 @@ export function AdminJobs() {
     refresh();
   }, [refresh]);
 
+  const failed = (jobs ?? []).filter((j) => j.status === "failed");
+  const oldestWait = (queue ?? []).reduce(
+    (max, r) => Math.max(max, waitingHours(r.created_at) ?? 0),
+    0
+  );
+
   return (
     <div className="admin-stack">
-      {error ? <div className="menu-error" role="alert">{error}</div> : null}
-      {notice ? (
-        <div className="menu-error admin-notice" role="status">
-          {notice}
-        </div>
+      <section className="adm-stat-grid" aria-label="Provisioning at a glance">
+        <StatTile
+          label="Waiting for a line"
+          value={queue?.length ?? "—"}
+          note="venues that have paid"
+          icon="hourglass_top"
+          state={(queue?.length ?? 0) > 0 ? "warn" : "default"}
+        />
+        <StatTile
+          label="Longest wait"
+          value={queue?.length ? `${oldestWait}h` : "—"}
+          note="since the venue reached provisioning"
+          icon="schedule"
+          state={oldestWait >= 4 ? "warn" : "default"}
+        />
+        <StatTile
+          label="Failed jobs"
+          value={failed.length}
+          note="automatic provisioning"
+          icon="error"
+          state={failed.length ? "danger" : "default"}
+        />
+      </section>
+
+      {error ? (
+        <SectionCard title="Couldn't load this tab" tone="danger" icon="error">
+          <p className="admin-muted">{error}</p>
+          <AdminAction onAct={refresh} icon="refresh">
+            Try again
+          </AdminAction>
+        </SectionCard>
       ) : null}
 
-      <section className="onboarding-card admin-card">
-        <h3>Waiting for a phone line</h3>
-        <p className="admin-muted">
-          Venues at the provisioning step. Bind their number and agent from the Venues tab —
-          the wizard shows “Provisioning in progress” until both are set.
-        </p>
-        {!queue ? <p className="admin-muted">Loading…</p> : null}
-        {queue && queue.length === 0 ? <p className="admin-muted">Queue is empty.</p> : null}
-        {queue && queue.length > 0 ? (
-          <div className="booking-table-wrap">
-            <table className="booking-table">
-              <thead>
-                <tr>
-                  <th>Venue</th>
-                  <th>Contact</th>
-                  <th>Twilio number</th>
-                  <th>Retell agent</th>
-                  <th>Waiting since</th>
-                </tr>
-              </thead>
-              <tbody>
-                {queue.map((r) => (
-                  <tr key={r.id}>
-                    <td>{r.name}</td>
-                    <td>{r.contact_email ?? "—"}</td>
-                    <td>{r.twilio_phone_number ?? "—"}</td>
-                    <td>{r.retell_agent_id ?? "—"}</td>
-                    <td>{new Date(r.created_at).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </section>
-
-      <section className="onboarding-card admin-card">
-        <h3>Provisioning jobs</h3>
-        {!workerEnabled ? (
-          <p className="admin-warning" role="alert">
-            Auto-provisioning is switched off — re-enqueued jobs will not run until it's switched
-            on. (Jobs only exist once automatic provisioning is in use.)
+      {workerEnabled === false ? (
+        <SectionCard
+          title="Automatic provisioning is switched off"
+          icon="toggle_off"
+          badge={<Badge state="info">Manual</Badge>}
+        >
+          <p className="admin-muted">
+            Every venue below is bound by hand, and a re-enqueued job will sit until the flag is
+            on. It is <code>PROVISIONING_AUTO_ENABLED</code>, set per environment in the
+            Terraform env map — not something this console can change.
           </p>
-        ) : null}
-        {!jobs ? <p className="admin-muted">Loading…</p> : null}
-        {jobs && jobs.length === 0 ? (
-          <p className="admin-muted">No jobs — all provisioning has been manual so far.</p>
-        ) : null}
-        {jobs && jobs.length > 0 ? (
-          <div className="booking-table-wrap">
-            <table className="booking-table">
-              <thead>
-                <tr>
-                  <th>Venue</th>
-                  <th>Status</th>
-                  <th>Step</th>
-                  <th>Attempts</th>
-                  <th>Last error</th>
-                  <th>Updated</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => (
-                  <tr key={job.id}>
-                    <td>{job.restaurant_name ?? job.restaurant_id}</td>
-                    <td>
-                      <span className={`status-pill ${job.status === "failed" ? "cancelled" : job.status === "done" ? "confirmed" : ""}`}>
-                        {job.status}
-                      </span>
-                    </td>
-                    <td>{job.step.replace(/_/g, " ")}</td>
-                    <td>{job.attempts}</td>
-                    <td className="admin-error-cell">{job.last_error ?? "—"}</td>
-                    <td>{new Date(job.updated_at).toLocaleString()}</td>
-                    <td>
-                      {job.status === "failed" ? (
-                        <button className="ghost-button" type="button" onClick={() => setReenqueueTarget(job)}>
-                          Re-enqueue…
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </section>
+        </SectionCard>
+      ) : null}
+
+      <SectionCard
+        title="Waiting for a phone line"
+        icon="hourglass_top"
+        subtitle="A venue here has paid and cannot take a call yet. The highlighted step is what it is waiting on."
+        actions={
+          <AdminAction onAct={refresh} icon="refresh">
+            Refresh
+          </AdminAction>
+        }
+      >
+        {!queue ? (
+          <SkeletonLines lines={4} label="Loading the provisioning queue" />
+        ) : queue.length === 0 ? (
+          <EmptyState icon="task_alt" title="Nobody is waiting">
+            Every venue that has paid has a phone line bound.
+          </EmptyState>
+        ) : (
+          <ul className="adm-pipeline-list">
+            {queue.map((venue) => (
+              <li key={venue.id} className="adm-pipeline-row">
+                <div className="adm-pipeline-head">
+                  <div>
+                    <strong>{venue.name}</strong>
+                    <span className="admin-muted">
+                      {" "}
+                      · {venue.contact_email ?? "no contact email"}
+                    </span>
+                  </div>
+                  <div className="adm-card-actions">
+                    <Badge state={(waitingHours(venue.created_at) ?? 0) >= 4 ? "warn" : "neutral"} icon="schedule">
+                      waiting {waitingHours(venue.created_at) ?? 0}h
+                    </Badge>
+                    {/* The action is here, rather than "go to the Venues tab". */}
+                    <AdminAction
+                      icon="open_in_new"
+                      blocked={goVenues ? null : "Open the Venues tab to bind this venue."}
+                      onAct={() => goVenues?.(null, venue.id)}
+                    >
+                      Bind now
+                    </AdminAction>
+                  </div>
+                </div>
+
+                <ol className="adm-rail">
+                  {pipelineFor(venue).map((step) => (
+                    <li key={step.key} className={`adm-rail-step is-${step.state}`}>
+                      <Icon
+                        name={
+                          step.state === "done"
+                            ? "check_circle"
+                            : step.state === "pending"
+                              ? "radio_button_checked"
+                              : "radio_button_unchecked"
+                        }
+                      />
+                      <span>{step.label}</span>
+                    </li>
+                  ))}
+                </ol>
+
+                <p className="admin-muted">Next: {nextAction(venue) ?? "nothing — this venue is live."}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Provisioning jobs"
+        icon="pending_actions"
+        subtitle="Only automatic provisioning creates these — a hand-bound venue has no job."
+      >
+        {!jobs ? (
+          <SkeletonLines lines={3} label="Loading provisioning jobs" />
+        ) : (
+          <DataTable
+            caption="Automatic provisioning jobs, newest first"
+            rows={jobs}
+            rowKey={(row) => row.id}
+            initialSort={{ key: "updated_at", direction: "descending" }}
+            columns={[
+              {
+                key: "restaurant_name",
+                label: "Venue",
+                sortable: true,
+                render: (row) => row.restaurant_name ?? row.restaurant_id
+              },
+              {
+                key: "status",
+                label: "Status",
+                sortable: true,
+                render: (row) => (
+                  <Badge
+                    state={row.status === "failed" ? "danger" : row.status === "done" ? "ok" : "info"}
+                  >
+                    {row.status}
+                  </Badge>
+                )
+              },
+              { key: "step", label: "Step", sortable: true, render: (row) => row.step.replace(/_/g, " ") },
+              { key: "attempts", label: "Tries", sortable: true, align: "right" },
+              {
+                key: "last_error",
+                label: "Last error",
+                render: (row) => <span className="adm-error-text">{row.last_error ?? "—"}</span>
+              },
+              {
+                key: "updated_at",
+                label: "Updated",
+                sortable: true,
+                render: (row) => (row.updated_at ? relativeTime(new Date(row.updated_at)) : "—")
+              },
+              {
+                key: "act",
+                label: "",
+                render: (row) => (
+                  <AdminAction
+                    icon="replay"
+                    blocked={
+                      row.status === "failed" ? null : `A ${row.status} job has nothing to re-enqueue.`
+                    }
+                    onAct={() => setReenqueueTarget(row)}
+                  >
+                    Re-enqueue…
+                  </AdminAction>
+                )
+              }
+            ]}
+            empty={
+              <EmptyState icon="pending_actions" title="No jobs yet">
+                Every venue so far has been provisioned by hand, so nothing has queued.
+              </EmptyState>
+            }
+          />
+        )}
+      </SectionCard>
 
       {reenqueueTarget ? (
         <ReenqueueModal
@@ -131,10 +238,13 @@ export function AdminJobs() {
           onClose={() => setReenqueueTarget(null)}
           onDone={(message) => {
             setReenqueueTarget(null);
-            setNotice(message);
+            toast.success(message);
             refresh();
           }}
-          onError={(message) => setError(message)}
+          onError={(message) => {
+            setReenqueueTarget(null);
+            toast.error(message);
+          }}
         />
       ) : null}
     </div>
@@ -153,52 +263,56 @@ function ReenqueueModal({ job, onClose, onDone, onError }) {
       onDone(
         result.warnings?.length
           ? `Job re-enqueued. ${result.warnings.join(" ")}`
-          : "Job re-enqueued — the worker will pick it up on its next tick."
+          : "Job re-enqueued — the worker picks it up on its next tick."
       );
     } catch (e) {
-      onError(e.message ?? "Re-enqueue failed");
-      onClose();
+      onError(e.message ?? "That re-enqueue didn't go through.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Re-enqueue job">
-      <div className="modal-card">
-        <h3 className="modal-title">Re-enqueue this job?</h3>
-        <p className="modal-description">
-          The failed job is reset in place — its progress (numbers already bought, agents already
-          created) is kept, so nothing is purchased twice.
+    <div className="adm-modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="adm-modal" role="dialog" aria-modal="true" aria-labelledby="reenqueue-title">
+        <header className="adm-modal-head">
+          <h3 id="reenqueue-title">
+            <Icon name="replay" /> Re-enqueue this job?
+          </h3>
+          <button type="button" className="ghost-button" onClick={onClose} aria-label="Close">
+            <Icon name="close" />
+          </button>
+        </header>
+        <p className="admin-muted">
+          The failed job is reset in place, so its progress — numbers already bought, agents
+          already created — is kept and nothing is purchased twice.
         </p>
         {hasBuyMarker ? (
           <>
-            <p className="admin-warning" role="alert">
-              This job died inside a number purchase. Until the marker is cleared it will fail
-              again immediately — that's deliberate, so an interrupted purchase can't silently buy
-              a second number.
+            <p className="adm-modal-consequence">
+              This job died inside a number purchase. Until the marker is cleared it fails again
+              immediately — deliberately, so an interrupted purchase cannot quietly buy a second
+              number.
             </p>
-            <label className="admin-check">
+            <label className="adm-check">
               <input
                 type="checkbox"
                 checked={clearMarker}
                 onChange={(e) => setClearMarker(e.target.checked)}
               />
-              <span>
+              <span className="adm-check-label">
                 I checked the Twilio console for an unassigned AU number — clear the purchase
                 marker and retry the buy step.
               </span>
             </label>
           </>
         ) : null}
-        <div className="modal-actions">
-          <button className="modal-button ghost" type="button" disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-          <button className="primary-button" type="button" disabled={busy} onClick={submit}>
+        <footer className="adm-modal-actions">
+          <AdminAction onAct={onClose}>Cancel</AdminAction>
+          <AdminAction tone="primary" icon="replay" busy={busy} onAct={submit} busyLabel="Re-enqueuing…">
             Re-enqueue
-          </button>
-        </div>
+          </AdminAction>
+        </footer>
       </div>
     </div>
   );
