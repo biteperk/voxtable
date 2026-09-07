@@ -39,6 +39,7 @@ import {
   listRestaurantsAdmin,
   setOnboardingStatus,
   setProvisioningBindings,
+  setVoicePaused,
   type OnboardingStatus
 } from "../repositories/restaurants";
 import { listSupportRequests, setSupportRequestStatus } from "../repositories/supportRequests";
@@ -520,6 +521,31 @@ adminRouter.post(
       params: { fields: body.fields, was_live: current.onboarding_status === "live" }
     });
     response.json({ provisioning: updated });
+  })
+);
+
+// Per-venue phone kill switch (platform admin). The owner has the same control
+// in their own dashboard; this is the support-desk equivalent. No typed
+// confirmation — it is reversible in one click, unlike unbind.
+adminRouter.post(
+  "/api/admin/restaurants/:id/voice/pause",
+  adminActionLimiter,
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    const pausedAt = await setVoicePaused(id, true);
+    await audit(request, "voice_pause", { restaurantId: id });
+    response.json({ voice_paused_at: pausedAt });
+  })
+);
+
+adminRouter.post(
+  "/api/admin/restaurants/:id/voice/resume",
+  adminActionLimiter,
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    await setVoicePaused(id, false);
+    await audit(request, "voice_resume", { restaurantId: id });
+    response.json({ voice_paused_at: null });
   })
 );
 

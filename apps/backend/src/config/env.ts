@@ -86,6 +86,13 @@ const envSchema = z
   // (older single-key accounts).
   RETELL_WEBHOOK_SECRET: z.string().optional(),
   RETELL_AGENT_ID: z.string().optional(),
+  // The shared "we're not taking bookings right now" agent a paused venue's
+  // callers are routed to (per-venue kill switch, migration 045). One per Retell
+  // workspace; it MUST live in the same workspace as the venue's real agent or
+  // override_agent_id fails the call. Optional so a missing value never blocks
+  // boot — without it a paused venue simply sends no inbound override (the
+  // server-side tool gate still refuses every booking).
+  RETELL_PAUSED_AGENT_ID: z.string().optional(),
   // The LLM behind the agent. Only needed so the retell-variables worker can
   // keep `today`/`tomorrow` fresh on the LLM's default_dynamic_variables — the
   // values Retell falls back to when a number uses a static inbound_agent_id

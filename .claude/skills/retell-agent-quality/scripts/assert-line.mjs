@@ -378,7 +378,44 @@ if (agentExists) {
 }
 
 // ─── 5. Golden config — delegate, don't restate ───────────────────────────────
-if (agentExists) {
+// A paused agent (kind: "paused") is deliberately minimal — greeting + end_call,
+// no tools — so the golden assert-agent (which requires ≥1 functional tool, the
+// full prompt markers, etc.) would fail it and turn every deploy red. Run a
+// reduced set that pins exactly what a "we're not taking bookings" agent must be.
+if (agentExists && declared.kind === "paused") {
+  const llm = await json(`https://api.retellai.com/get-retell-llm/${declared.retell_llm_id}`, { headers: H });
+  const greeting = String(llm.body?.begin_message ?? "");
+  const tools = llm.body?.general_tools ?? [];
+  const custom = tools.filter((t) => t.type === "custom");
+  const endCalls = tools.filter((t) => t.type === "end_call");
+  const ddv = llm.body?.default_dynamic_variables ?? {};
+  const apiHost = host(declared.api_base) ?? declared.api_base;
+  const urls = [agent.body?.webhook_url, ...tools.map((t) => t.url)].filter(Boolean);
+
+  check(14, llm.status === 200, "paused agent's LLM exists",
+    `get-retell-llm returned ${llm.status}.`);
+  check(14, /\{\{restaurant_name\}\}/.test(greeting),
+    "paused greeting names the venue via {{restaurant_name}}",
+    "the greeting must inject the venue name per call, not bake one in.");
+  check(14, /record/i.test(greeting),
+    "paused greeting keeps the recording disclosure",
+    "the recording disclosure is required on every production greeting.");
+  check(14, custom.length === 0,
+    "paused agent has NO custom tools",
+    `found ${custom.length} — a paused agent must not be able to book or order.`);
+  check(14, endCalls.length === 1,
+    "paused agent has exactly one end_call",
+    `found ${endCalls.length} — it should greet and hang up.`);
+  check(14, Object.keys(ddv).length === 0,
+    "paused agent's default_dynamic_variables is empty",
+    "a populated fallback goes stale (NUMBERS.md §6).");
+  check(14, agent.body?.data_storage_retention_days === 30,
+    "paused agent keeps 30-day retention",
+    `found ${agent.body?.data_storage_retention_days}.`);
+  check(14, urls.every((u) => String(u).includes(apiHost)),
+    `paused agent's URLs point at ${apiHost}`,
+    `off-host URL: ${urls.find((u) => !String(u).includes(apiHost))}`);
+} else if (agentExists) {
   const r = spawnSync(process.execPath,
     [new URL("./assert-agent.mjs", import.meta.url).pathname, agentIdToVerify, declared.retell_llm_id],
     // Pass the RESOLVED key down. assert-agent.mjs reads RETELL_API_KEY from its environment,
