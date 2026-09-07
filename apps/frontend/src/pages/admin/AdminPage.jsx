@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { getAdminFlags } from "../../api";
 import { useAuth } from "../../auth";
+import { ToastProvider } from "../../components/admin/Toast";
 import { BiteperkMark } from "../../components/brand/BiteperkMark";
 import { Icon } from "../../components/Icon";
 import { signOutUser } from "../../firebase";
@@ -44,6 +45,21 @@ export function AdminPage({ navigate, path }) {
       cancelled = true;
     };
   }, []);
+
+  // Deep links keep `path` clean: the router only tracks pathname, so a query
+  // string passed to navigate() would break every `path === "/admin/..."`
+  // comparison. Push the clean path, then rewrite the URL in place — the
+  // destination page reads window.location.search (the same shape as
+  // AcceptInvitePage).
+  const goTab = (route, query) => {
+    navigate(route);
+    if (query) window.history.replaceState({}, "", `${route}?${query}`);
+  };
+  const goVenues = (status, venueId) =>
+    goTab(
+      "/admin/venues",
+      venueId ? `venue=${encodeURIComponent(venueId)}` : status ? `status=${encodeURIComponent(status)}` : null
+    );
 
   const handleSignOut = async () => {
     await signOutUser();
@@ -105,6 +121,7 @@ export function AdminPage({ navigate, path }) {
   const flags = gate.flags;
 
   return (
+    <ToastProvider>
     <div className="admin-shell">
       <AdminHeader
         user={user}
@@ -129,13 +146,16 @@ export function AdminPage({ navigate, path }) {
         ))}
       </nav>
       <main className="admin-main">
-        {active === "Overview" ? <AdminOverview flags={flags} /> : null}
+        {active === "Overview" ? (
+          <AdminOverview flags={flags} goVenues={goVenues} goTab={goTab} />
+        ) : null}
         {active === "Venues" ? <AdminVenues /> : null}
         {active === "Provisioning" ? <AdminJobs /> : null}
         {active === "Ops" ? <AdminOps /> : null}
         {active === "Support" ? <AdminSupport /> : null}
       </main>
     </div>
+    </ToastProvider>
   );
 }
 

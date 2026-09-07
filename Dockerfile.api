@@ -19,6 +19,13 @@ FROM node:24-alpine AS runner
 
 WORKDIR /app
 
+# The release version, baked in at build time from the root package.json (CI
+# already reads it to tag the image). Without this APP_VERSION fell back to its
+# schema default of 0.1.0, so the admin header, the health page and every Sentry
+# release reported 0.1.0 forever while production actually ran 1.2.1.
+ARG APP_VERSION=0.0.0-dev
+ENV APP_VERSION=${APP_VERSION}
+
 # Alpine ships the openssl fix ahead of the node:24-alpine rebuild, so upgrade
 # explicitly — otherwise every image build fails the Trivy HIGH gate on a CVE we
 # cannot fix by waiting. Pinning the base image instead would freeze us on the

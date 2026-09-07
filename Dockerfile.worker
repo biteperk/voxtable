@@ -19,6 +19,12 @@ FROM node:24-alpine AS runner
 
 WORKDIR /app
 
+# See Dockerfile.api — the release version is baked in at build time so the
+# worker's Sentry releases and health surface report the real version rather
+# than APP_VERSION's 0.1.0 schema default.
+ARG APP_VERSION=0.0.0-dev
+ENV APP_VERSION=${APP_VERSION}
+
 # See Dockerfile.api — same openssl CVE, same reason.
 RUN apk upgrade --no-cache libcrypto3 libssl3
 
