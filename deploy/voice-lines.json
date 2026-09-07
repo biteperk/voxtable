@@ -18,15 +18,24 @@
   "lines": {
     "+61468202846": {
       "environment": "production",
-      "api_base": "https://voxtable-prod-api-xb2kzbgcgq-ts.a.run.app",
+      "api_base": "https://api.biteperk.com.au",
       "$api_base_comment": [
-        "Cloud Run service URL, NOT api.biteperk.com.au. That host still resolves to the sandbox",
-        "VM (136.113.35.88, served by nginx) and has no Cloud Run front as at 7 Sep 2026, so a",
-        "webhook pointed there writes Mazcina's bookings into the sandbox database instead of",
-        "Cloud SQL production. Both hosts answer /readyz with {\"status\":\"ok\"}, so the mistake is",
-        "invisible from the outside — this line said api.biteperk.com.au until 7 Sep 2026 and the",
-        "pause was the only reason it never did damage. Matches Cuban Corner, which was repointed",
-        "earlier. Change back only once api.biteperk.com.au is genuinely fronted by Cloud Run."
+        "⚠️ DO NOT 'fix' this to the Cloud Run URL. It looks stale next to Cuban Corner, which",
+        "points at Cloud Run, and it is not. This host resolves to the sandbox VM",
+        "(136.113.35.88, nginx) — and that is deliberate, because MAZCINA'S VENUE ROW ONLY",
+        "EXISTS ON THE VM'S DATABASE. It has never been loaded into Cloud SQL production.",
+        "Cuban Corner was migrated with the migrate-job loader; Mazcina was not.",
+        "",
+        "This was changed to Cloud Run on 7 Sep 2026 on exactly that mistaken reasoning, and it",
+        "broke a live customer line inside minutes: /retell/inbound on Cloud Run cannot resolve",
+        "+61468202846, so it returned 200 with restaurant_unconfigured and no dynamic_variables",
+        "(logged as retell_inbound_unmapped_number), Retell fell back to the statically bound",
+        "agent, and Bella greeted callers with the literal words 'restaurant name'. A 200 from",
+        "this webhook does NOT mean the venue resolved.",
+        "",
+        "The correct order is: load Mazcina into Cloud SQL production, verify",
+        "getRestaurantIdByDialedNumber resolves there, and only THEN repoint this and the Retell",
+        "webhook together. Tracked in issue #415."
       ],
       "retell_workspace": "Biteperk",
       "retell_credentials": {
