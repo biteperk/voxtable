@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { getAdminFlags } from "../../api";
 import { useAuth } from "../../auth";
+import { ToastProvider } from "../../components/admin/Toast";
 import { BiteperkMark } from "../../components/brand/BiteperkMark";
 import { Icon } from "../../components/Icon";
 import { signOutUser } from "../../firebase";
@@ -105,6 +106,7 @@ export function AdminPage({ navigate, path }) {
   const flags = gate.flags;
 
   return (
+    <ToastProvider>
     <div className="admin-shell">
       <AdminHeader
         user={user}
@@ -136,6 +138,7 @@ export function AdminPage({ navigate, path }) {
         {active === "Support" ? <AdminSupport /> : null}
       </main>
     </div>
+    </ToastProvider>
   );
 }
 
