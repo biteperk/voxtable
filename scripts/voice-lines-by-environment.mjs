@@ -23,19 +23,24 @@ import { dirname, join } from "node:path";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const configPath = process.env.VOICE_LINES_CONFIG ?? join(repoRoot, "deploy/voice-lines.json");
 
-let lines;
+let doc;
 try {
-  lines = JSON.parse(readFileSync(configPath, "utf8")).lines;
+  doc = JSON.parse(readFileSync(configPath, "utf8"));
 } catch (error) {
   console.error(`Cannot read ${configPath}: ${error.message}`);
   process.exit(2);
 }
+const lines = doc.lines;
 if (!lines || typeof lines !== "object") {
   console.error(`${configPath} has no "lines" object.`);
   process.exit(2);
 }
+// `agents` is optional — number-less agents (staging twins) whose greeting/hosts the pipeline
+// still reconciles. Each entry carries the same `environment` field a line does.
+const agents = doc.agents && typeof doc.agents === "object" ? doc.agents : {};
 
 const entries = Object.entries(lines);
+const agentEntries = Object.entries(agents);
 const args = process.argv.slice(2);
 
 if (args[0] === "--assert-covered") {
@@ -44,26 +49,41 @@ if (args[0] === "--assert-covered") {
     console.error("usage: --assert-covered <environment...>");
     process.exit(2);
   }
-  const orphans = entries.filter(([, line]) => !covered.has(line.environment));
-  for (const [number, line] of entries) {
-    console.log(`${orphans.some(([n]) => n === number) ? "✗" : "✓"} ${number} (${line.environment})`);
+  // Both lines and agents must name a covered environment, or a declared twin goes unchecked.
+  const all = [...entries.map(([k, v]) => [k, v, "line"]), ...agentEntries.map(([k, v]) => [k, v, "agent"])];
+  const orphans = all.filter(([, v]) => !covered.has(v.environment));
+  for (const [k, v, kind] of all) {
+    console.log(`${orphans.some(([n]) => n === k) ? "✗" : "✓"} ${k} (${v.environment}, ${kind})`);
   }
   if (orphans.length > 0) {
     console.error("");
-    console.error(`::error::${orphans.length} declared line(s) are not asserted by any job:`);
-    for (const [number, line] of orphans) {
-      console.error(`::error::  ${number} declares environment "${line.environment}" — jobs cover: ${[...covered].join(", ")}`);
+    console.error(`::error::${orphans.length} declared line(s)/agent(s) are not asserted by any job:`);
+    for (const [k, v, kind] of orphans) {
+      console.error(`::error::  ${k} (${kind}) declares environment "${v.environment}" — jobs cover: ${[...covered].join(", ")}`);
     }
-    console.error("Add a job for that environment, or the line is declared but unchecked.");
+    console.error("Add a job for that environment, or it is declared but unchecked.");
     process.exit(1);
   }
-  console.log(`\nAll ${entries.length} declared line(s) are covered.`);
+  console.log(`\nAll ${all.length} declared line(s)/agent(s) are covered.`);
+  process.exit(0);
+}
+
+// --agents <env>: print the declared number-less agent ids for an environment (may be empty).
+if (args[0] === "--agents") {
+  const environment = args[1];
+  if (!environment) {
+    console.error("usage: voice-lines-by-environment.mjs --agents <environment>");
+    process.exit(2);
+  }
+  const ids = agentEntries.filter(([, a]) => a.environment === environment).map(([id]) => id);
+  // Empty is legitimate — most environments have no number-less agents — so no non-zero exit.
+  if (ids.length) console.log(ids.join("\n"));
   process.exit(0);
 }
 
 const environment = args[0];
 if (!environment) {
-  console.error("usage: voice-lines-by-environment.mjs <environment> | --assert-covered <environment...>");
+  console.error("usage: voice-lines-by-environment.mjs <environment> | --agents <environment> | --assert-covered <environment...>");
   process.exit(2);
 }
 

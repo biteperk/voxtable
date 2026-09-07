@@ -18,6 +18,13 @@ experience of VoxTable is whether Bella sounds human, knows the venue, and never
 2. **Every change goes through the API**: fresh pre-snapshot → PATCH → **read the config back
    and assert it** (never trust the write response) → post-snapshot with README → commit.
    Rollback is always "re-apply the pre snapshot", one PATCH per object.
+2b. **If the field is DECLARED, edit the declaration instead — do not hand-PATCH it.** Since
+   7 Sep 2026 `deploy/voice-lines.json` declares the greeting (`begin_message`), the agent
+   webhook and tool hosts (`api_base`), the agent name, boosted keywords and pronunciation, and
+   `deploy-backend.yml` runs `apply-line --apply` → `assert-line` after every healthy deploy. A
+   hand PATCH of a declared field is reverted by the next deploy, silently. Change it by PR to
+   `integration` (staging applies itself), then promote to `main` (production applies itself) —
+   **CLAUDE.md §0**. Rule 2 still governs the prompt body and anything else not yet declared.
 3. **The staging dashboard is for ear-tests and voice auditions ONLY.** Dashboard edits create drafts;
    **publishing a stale draft erases every API-applied fix since the draft was opened** —
    this nearly reverted a full day of fixes twice on 19 Aug. If a draft exists, discard it.
