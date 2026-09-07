@@ -178,8 +178,17 @@ adminRouter.get(
     const statusParam = typeof request.query.status === "string" ? request.query.status : undefined;
     const status = ONBOARDING_STATUSES.find((s) => s === statusParam);
     const query = typeof request.query.q === "string" ? request.query.q.slice(0, 100) : undefined;
+    // Real pagination. The list used to cut off at 200 rows with nothing on the
+    // screen saying so, which is the kind of silence that hides a venue.
+    const limit = Number.parseInt(String(request.query.limit ?? "25"), 10);
+    const offset = Number.parseInt(String(request.query.offset ?? "0"), 10);
 
-    const restaurants = await listRestaurantsAdmin({ status, query });
+    const page = await listRestaurantsAdmin({
+      status,
+      query,
+      limit: Number.isFinite(limit) ? limit : 25,
+      offset: Number.isFinite(offset) ? offset : 0
+    });
 
     // The published document-set version lets the UI badge venues whose
     // terms_version has drifted (#191). Best-effort: the list must render
@@ -193,9 +202,47 @@ adminRouter.get(
       }
     }
 
-    response.json({ restaurants, published_terms_version: publishedTermsVersion });
+    response.json({
+      restaurants: page.rows,
+      total: page.total,
+      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : 25,
+      offset: Number.isFinite(offset) ? Math.max(offset, 0) : 0,
+      published_terms_version: publishedTermsVersion
+    });
   })
 );
+
+/**
+ * Optimistic concurrency for venue mutations.
+ *
+ * Venue-360 returns `version` — the row's `updated_at`, which a trigger bumps
+ * on every UPDATE, so it is a real token rather than a hopeful one. A drawer
+ * left open while someone else re-binds the same venue would otherwise submit
+ * a stale form and win.
+ *
+ * Honest about what it is: a pre-check inside the request, not a conditional
+ * UPDATE. It closes the window that actually bites — a form open for minutes —
+ * not the milliseconds between this read and the write. Sending no `If-Match`
+ * is allowed, so existing callers and scripts keep working.
+ */
+async function assertNotStale(request: { header(name: string): string | undefined }, id: string): Promise<void> {
+  const ifMatch = request.header("if-match");
+  if (!ifMatch) return;
+  const result = await pool.query<{ updated_at: Date }>(
+    "SELECT updated_at FROM restaurants WHERE id = $1",
+    [id]
+  );
+  const current = result.rows[0]?.updated_at;
+  if (!current) throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
+  const version = new Date(current).toISOString();
+  if (ifMatch.replace(/"/g, "") !== version) {
+    throw new AppError(
+      409,
+      "STALE_WRITE",
+      "This venue changed since you opened it, so the save was refused rather than overwriting someone else's change. Reload the venue and try again."
+    );
+  }
+}
 
 // Venue 360 — everything the admin venue drawer shows, one round trip.
 adminRouter.get(
@@ -232,12 +279,32 @@ adminRouter.get(
            FROM restaurants WHERE id = $1`,
         [id]
       ),
-      pool.query<{ calls_today: string; bookings_today: string }>(
+      pool.query<{
+        calls_today: string;
+        bookings_today: string;
+        menu_item_count: string;
+        table_count: string;
+        hours_set: boolean;
+        faq_set: boolean;
+        last_call_at: Date | null;
+        last_booking_at: Date | null;
+      }>(
+        // Readiness travels with the venue rather than being inferred in the
+        // browser: a venue with no tables cannot complete a booking, and that
+        // was invisible on this screen while it read "live".
         `SELECT
            (SELECT COUNT(*) FROM call_logs
              WHERE restaurant_id = $1 AND started_at >= date_trunc('day', now()))::text AS calls_today,
            (SELECT COUNT(*) FROM reservations
-             WHERE restaurant_id = $1 AND created_at >= date_trunc('day', now()))::text AS bookings_today`,
+             WHERE restaurant_id = $1 AND created_at >= date_trunc('day', now()))::text AS bookings_today,
+           (SELECT COUNT(*) FROM menu_items WHERE restaurant_id = $1)::text AS menu_item_count,
+           (SELECT COUNT(*) FROM tables WHERE restaurant_id = $1 AND is_active)::text AS table_count,
+           COALESCE((SELECT opening_hours_json IS NOT NULL AND opening_hours_json::text <> '{}'
+                       FROM restaurant_settings WHERE restaurant_id = $1), false) AS hours_set,
+           COALESCE((SELECT faq_json IS NOT NULL AND faq_json::text <> '{}'
+                       FROM restaurant_settings WHERE restaurant_id = $1), false) AS faq_set,
+           (SELECT MAX(started_at) FROM call_logs WHERE restaurant_id = $1) AS last_call_at,
+           (SELECT MAX(created_at) FROM reservations WHERE restaurant_id = $1) AS last_booking_at`,
         [id]
       )
     ]);
@@ -278,7 +345,17 @@ adminRouter.get(
         calls: Number(activityRow.rows[0]?.calls_today ?? "0"),
         bookings: Number(activityRow.rows[0]?.bookings_today ?? "0")
       },
-      voice_paused_at: e?.voice_paused_at ?? null
+      readiness: {
+        menu_items: Number(activityRow.rows[0]?.menu_item_count ?? "0"),
+        tables: Number(activityRow.rows[0]?.table_count ?? "0"),
+        hours_set: activityRow.rows[0]?.hours_set ?? false,
+        faq_set: activityRow.rows[0]?.faq_set ?? false,
+        last_call_at: activityRow.rows[0]?.last_call_at ?? null,
+        last_booking_at: activityRow.rows[0]?.last_booking_at ?? null
+      },
+      voice_paused_at: e?.voice_paused_at ?? null,
+      // Concurrency token — send it back as If-Match on a mutation.
+      version: provisioning.updated_at ? new Date(provisioning.updated_at).toISOString() : null
     });
   })
 );
@@ -306,6 +383,7 @@ adminRouter.patch(
   adminActionLimiter,
   asyncHandler(async (request, response) => {
     const id = request.params.id!;
+    await assertNotStale(request, id);
     const body = adminProvisioningSchema.parse(request.body);
 
     // Prove the agent before storing it. `restaurants.retell_agent_id` is plain
@@ -509,6 +587,7 @@ adminRouter.post(
   adminActionLimiter,
   asyncHandler(async (request, response) => {
     const id = request.params.id!;
+    await assertNotStale(request, request.params.id!);
     const body = adminUnbindSchema.parse(request.body);
 
     const current = await getProvisioning(id);
@@ -570,6 +649,7 @@ adminRouter.post(
   adminActionLimiter,
   asyncHandler(async (request, response) => {
     const id = request.params.id!;
+    await assertNotStale(request, id);
     const status = await getOnboardingStatus(id);
     if (!status) throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
     assertCanGoLive(status);

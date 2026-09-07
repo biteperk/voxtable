@@ -789,6 +789,10 @@ export interface ProvisioningRow {
   retell_agent_id: string | null;
   calcom_event_type_id: number | null;
   created_at: string;
+  // Bumped by the set_restaurants_updated_at trigger on every UPDATE, so it
+  // doubles as the optimistic-concurrency token the admin drawer sends back as
+  // If-Match.
+  updated_at: string;
 }
 
 /** Counts of restaurants currently in each onboarding status (funnel snapshot). */
@@ -824,7 +828,7 @@ export async function listByOnboardingStatus(
   const result = await pool.query<ProvisioningRow>(
     `SELECT id, name, contact_email, onboarding_status,
             twilio_phone_number, retell_phone_number, retell_agent_id,
-            calcom_event_type_id, created_at
+            calcom_event_type_id, created_at, updated_at
        FROM restaurants
       WHERE onboarding_status = $1::onboarding_status
       ORDER BY created_at ASC`,
@@ -841,37 +845,90 @@ export interface AdminRestaurantRow extends ProvisioningRow {
   has_stripe_customer: boolean;
   stripe_connect_charges_enabled: boolean;
   stripe_connect_payouts_enabled: boolean;
+  // Readiness, computed server-side so the list and the drawer cannot
+  // disagree about whether a venue can actually take a call.
+  voice_paused_at: Date | null;
+  menu_item_count: number;
+  table_count: number;
+  hours_set: boolean;
+  last_call_at: Date | null;
+  last_booking_at: Date | null;
 }
 
+export interface AdminRestaurantListPage {
+  rows: AdminRestaurantRow[];
+  total: number;
+}
+
+/**
+ * The admin venue list, one page at a time.
+ *
+ * Two things this deliberately does that the old version did not. It reports
+ * the TOTAL matching count (via a window function over the filtered set, so it
+ * costs no second query) — the previous `LIMIT 200` truncated silently, and an
+ * operator had no way to know a venue existed beyond the cut. And it carries
+ * the readiness figures the list needs to be triaged without expanding every
+ * row: a venue's own pause state, whether it has a menu, tables and hours, and
+ * when it last took a call or a booking. Those were computed in the browser
+ * from partial data, so the list and the drawer could disagree about the same
+ * venue.
+ */
 export async function listRestaurantsAdmin(filter: {
   status?: OnboardingStatus;
   query?: string;
-}): Promise<AdminRestaurantRow[]> {
+  limit?: number;
+  offset?: number;
+}): Promise<AdminRestaurantListPage> {
   const clauses: string[] = [];
-  const params: string[] = [];
+  const params: Array<string | number> = [];
   if (filter.status) {
     params.push(filter.status);
-    clauses.push(`onboarding_status = $${params.length}::onboarding_status`);
+    clauses.push(`r.onboarding_status = $${params.length}::onboarding_status`);
   }
   if (filter.query) {
     params.push(`%${filter.query}%`);
-    clauses.push(`name ILIKE $${params.length}`);
+    clauses.push(`(r.name ILIKE $${params.length} OR r.contact_email ILIKE $${params.length})`);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  const result = await pool.query<AdminRestaurantRow>(
-    `SELECT id, name, contact_email, onboarding_status,
-            twilio_phone_number, retell_phone_number, retell_agent_id,
-            calcom_event_type_id, created_at,
-            terms_version,
-            stripe_customer_id IS NOT NULL AS has_stripe_customer,
-            stripe_connect_charges_enabled, stripe_connect_payouts_enabled
-       FROM restaurants
+
+  const limit = Math.min(Math.max(filter.limit ?? 25, 1), 100);
+  const offset = Math.max(filter.offset ?? 0, 0);
+  params.push(limit);
+  const limitParam = `$${params.length}`;
+  params.push(offset);
+  const offsetParam = `$${params.length}`;
+
+  const result = await pool.query<AdminRestaurantRow & { total_count: string }>(
+    `SELECT r.id, r.name, r.contact_email, r.onboarding_status,
+            r.twilio_phone_number, r.retell_phone_number, r.retell_agent_id,
+            r.calcom_event_type_id, r.created_at,
+            r.terms_version,
+            r.stripe_customer_id IS NOT NULL AS has_stripe_customer,
+            r.stripe_connect_charges_enabled, r.stripe_connect_payouts_enabled,
+            r.voice_paused_at,
+            (SELECT COUNT(*) FROM menu_items m WHERE m.restaurant_id = r.id)::int AS menu_item_count,
+            (SELECT COUNT(*) FROM tables t WHERE t.restaurant_id = r.id AND t.is_active)::int AS table_count,
+            COALESCE(
+              (SELECT s.opening_hours_json IS NOT NULL AND s.opening_hours_json::text <> '{}'
+                 FROM restaurant_settings s WHERE s.restaurant_id = r.id),
+              false
+            ) AS hours_set,
+            (SELECT MAX(c.started_at) FROM call_logs c WHERE c.restaurant_id = r.id) AS last_call_at,
+            (SELECT MAX(b.created_at) FROM reservations b WHERE b.restaurant_id = r.id) AS last_booking_at,
+            COUNT(*) OVER ()::text AS total_count
+       FROM restaurants r
        ${where}
-      ORDER BY created_at DESC
-      LIMIT 200`,
+      ORDER BY r.created_at DESC
+      LIMIT ${limitParam} OFFSET ${offsetParam}`,
     params
   );
-  return result.rows;
+
+  return {
+    rows: result.rows.map(({ total_count: _ignored, ...row }) => row),
+    // No rows means no matches, not an unknown total — the window function
+    // simply has nothing to report on an empty result.
+    total: Number(result.rows[0]?.total_count ?? "0")
+  };
 }
 
 /**
@@ -907,7 +964,7 @@ export async function clearProvisioningBindings(
       WHERE id = $1
       RETURNING id, name, contact_email, onboarding_status,
                 twilio_phone_number, retell_phone_number, retell_agent_id,
-            calcom_event_type_id, created_at`,
+                calcom_event_type_id, created_at, updated_at`,
     [restaurantId]
   );
   if (!result.rows[0]) return null;
@@ -919,7 +976,7 @@ export async function getProvisioning(restaurantId: string): Promise<Provisionin
   const result = await pool.query<ProvisioningRow>(
     `SELECT id, name, contact_email, onboarding_status,
             twilio_phone_number, retell_phone_number, retell_agent_id,
-            calcom_event_type_id, created_at
+            calcom_event_type_id, created_at, updated_at
        FROM restaurants WHERE id = $1`,
     [restaurantId]
   );
