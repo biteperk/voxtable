@@ -65,7 +65,7 @@
     "libphonenumber-js": "^1.13.12",
     "pg": "^8.23.0",
     "retell-sdk": "^5.64.0",
-    "stripe": "^18.5.0",
+    "stripe": "^21.0.1",
     "twilio": "^6.1.0",
     "zod": "^3.24.1"
   },
