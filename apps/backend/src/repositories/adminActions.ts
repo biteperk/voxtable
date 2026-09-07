@@ -47,6 +47,26 @@ export async function recordAdminAction(
   );
 }
 
+/**
+ * How many times this exact action has been taken against this target.
+ *
+ * The audit log is the honest record of "how often has an admin done this", so
+ * a per-target ceiling reads it rather than keeping a counter somewhere else
+ * that could drift. Used to cap menu-import re-runs, where each re-run is a
+ * paid vision call and the service-level daily cap does not apply.
+ */
+export async function countAdminActions(
+  action: string,
+  target: string,
+  db: DbClient = pool
+): Promise<number> {
+  const result = await db.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM admin_actions WHERE action = $1 AND target = $2",
+    [action, target]
+  );
+  return Number(result.rows[0]?.n ?? "0");
+}
+
 export async function listAdminActions(limit = 50, db: DbClient = pool): Promise<AdminActionRow[]> {
   const result = await db.query<AdminActionRow>(
     `SELECT id, actor_uid, actor_email, action, restaurant_id, target, params, request_id, created_at

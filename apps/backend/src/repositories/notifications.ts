@@ -101,6 +101,41 @@ export async function markNotificationFailed(id: string, error: string): Promise
   ]);
 }
 
+/**
+ * Put a dead notification back in the queue (admin action).
+ *
+ * Same shape as resetFailedProvisioningJob: the row is reset IN PLACE so the
+ * recipient, subject and body are preserved exactly — re-enqueuing a copy would
+ * risk sending a different message than the one that failed. Returns null when
+ * the row doesn't exist or isn't failed, so the route can 404/409 honestly
+ * rather than reporting a retry that never happened.
+ *
+ * `attempts` back to 0 deliberately grants a fresh backoff budget; the audit
+ * row records that an admin did it.
+ */
+export async function retryFailedNotification(id: string): Promise<NotificationRow | null> {
+  const result = await pool.query<NotificationRow>(
+    `UPDATE notifications_outbox
+        SET status = 'pending', attempts = 0, next_attempt_at = now(), last_error = NULL
+      WHERE id = $1 AND status = 'failed'
+      RETURNING *`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
+/** The failed rows themselves, for the Ops panel — stats alone can't be acted on. */
+export async function listFailedNotifications(limit = 20): Promise<NotificationRow[]> {
+  const result = await pool.query<NotificationRow>(
+    `SELECT * FROM notifications_outbox
+      WHERE status = 'failed'
+      ORDER BY created_at DESC
+      LIMIT $1`,
+    [Math.min(Math.max(limit, 1), 100)]
+  );
+  return result.rows;
+}
+
 export interface NotificationOutboxStats {
   pendingDepth: number;
   oldestPendingAt: string | null;
