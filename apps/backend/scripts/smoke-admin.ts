@@ -11,6 +11,10 @@
  *   5. recordAdminAction lands a row carrying actor + params.
  *   6. Support requests: list reads the inbox, status transitions stamp and
  *      clear resolved_at correctly.
+ *   7. Support replies (migration 046): the thread reads oldest-first, an
+ *      internal note is never mistaken for a sent reply, the reply count the
+ *      inbox shows matches the thread, and deleting a request takes its thread
+ *      with it rather than orphaning correspondence.
  *
  * Everything runs inside one transaction and ROLLBACKs at the end — nothing
  * persists. Repo functions that hardcode `pool` are exercised through raw SQL
@@ -20,7 +24,14 @@
  */
 import { pool } from "../src/db/pool";
 import { recordAdminAction } from "../src/repositories/adminActions";
-import { listSupportRequests, setSupportRequestStatus } from "../src/repositories/supportRequests";
+import {
+  addSupportReply,
+  countRepliesByRequest,
+  getSupportRequest,
+  listSupportReplies,
+  listSupportRequests,
+  setSupportRequestStatus
+} from "../src/repositories/supportRequests";
 import { assertSafeSmokeDatabase } from "./lib/smokeTarget";
 
 assertSafeSmokeDatabase();
@@ -171,6 +182,53 @@ async function main(): Promise<void> {
     assert("reopening clears resolved_at", reopened?.resolved_at === null);
     const missing = await setSupportRequestStatus("00000000-0000-0000-0000-000000000000", "closed", client);
     assert("unknown support request returns null", missing === null);
+
+    // --- 7: support replies (migration 046) ---------------------------------
+    const emailed = await addSupportReply(
+      {
+        supportRequestId: supportId,
+        channel: "email",
+        authorUid: "smoke-admin",
+        authorEmail: "admin@example.com",
+        body: "  We have had a look and your line is fine.  ",
+        notificationId: null
+      },
+      client
+    );
+    assert("an emailed reply is stored trimmed", emailed.body === "We have had a look and your line is fine.");
+
+    const note = await addSupportReply(
+      {
+        supportRequestId: supportId,
+        channel: "internal",
+        authorUid: "smoke-admin",
+        body: "Rang the venue, no answer."
+      },
+      client
+    );
+
+    const thread = await listSupportReplies(supportId, client);
+    assert("the thread reads oldest first", thread.map((r) => r.id).join(",") === [emailed.id, note.id].join(","));
+    assert(
+      "an internal note is distinguishable from a sent reply",
+      thread.filter((r) => r.channel === "internal").length === 1 &&
+        thread.filter((r) => r.channel === "email").length === 1
+    );
+
+    const counts = await countRepliesByRequest([supportId], client);
+    assert("the inbox reply count matches the thread", counts.get(supportId) === thread.length);
+    const emptyCounts = await countRepliesByRequest([], client);
+    assert("counting no requests costs no query and returns empty", emptyCounts.size === 0);
+
+    const withVenue = await getSupportRequest(supportId, client);
+    assert("the thread view joins the venue name", withVenue?.restaurant_name === "Smoke Admin Bistro");
+
+    // Correspondence must not outlive the request it belongs to; the FK is ON
+    // DELETE CASCADE precisely so a deleted request cannot leave orphan replies
+    // that no screen can ever show.
+    await client.query("DELETE FROM support_requests WHERE id = $1", [supportId]);
+    const orphans = await listSupportReplies(supportId, client);
+    assert("deleting a request takes its thread with it", orphans.length === 0);
 
     await client.query("ROLLBACK");
   } catch (error) {

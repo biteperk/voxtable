@@ -619,6 +619,14 @@ export const adminSupportStatusSchema = z.object({
   status: z.enum(["open", "in_progress", "resolved", "closed"])
 });
 
+// A reply to a venue, or an internal note. `email` actually sends; `internal`
+// never leaves the building. The body is bounded because it becomes an email
+// body, and an unbounded one is a way to make the outbox row enormous.
+export const adminSupportReplySchema = z.object({
+  channel: z.enum(["email", "internal"]),
+  body: z.string().trim().min(1, "A reply needs some words in it.").max(5000)
+});
+
 // --- Menu OCR ingestion (Phase 2) ------------------------------------------
 
 // Prices are integer cents (never floats). Cap at $10,000 to reject obvious

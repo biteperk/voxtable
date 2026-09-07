@@ -15712,6 +15712,189 @@ button.adm-stat:hover {
   color: var(--adm-ok, var(--primary));
 }
 
+/* ---- Provisioning rail — the pending step is the next action ------------ */
+.adm-pipeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--adm-space-3);
+}
+.adm-pipeline-row {
+  padding: var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  display: grid;
+  gap: var(--adm-space-3);
+}
+.adm-pipeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--adm-space-4);
+  flex-wrap: wrap;
+}
+.adm-rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--adm-space-2);
+}
+.adm-rail-step {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  padding: var(--adm-space-2) var(--adm-space-3);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-pill, 999px);
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+.adm-rail-step.is-done {
+  border-color: color-mix(in srgb, var(--adm-ok) 45%, transparent);
+  color: var(--adm-text);
+}
+/* The one step that needs a human. Ringed, not merely tinted, so it is the
+   thing the eye lands on. */
+.adm-rail-step.is-pending {
+  border-color: var(--adm-warn);
+  background: color-mix(in srgb, var(--adm-warn) 12%, transparent);
+  color: var(--adm-text);
+  font-weight: 600;
+}
+
+/* ---- Support inbox — a list beside a thread ----------------------------- */
+.adm-inbox {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: var(--adm-space-4);
+  align-items: start;
+}
+.adm-inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--adm-space-1);
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.adm-inbox-item {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  padding: var(--adm-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.adm-inbox-item:hover {
+  border-color: var(--adm-line);
+}
+.adm-inbox-item.is-active {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--adm-line));
+}
+.adm-inbox-subject {
+  font-weight: 600;
+}
+.adm-inbox-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  font-size: var(--adm-fs-small);
+}
+.adm-thread {
+  display: grid;
+  gap: var(--adm-space-4);
+  min-width: 0;
+}
+.adm-thread-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--adm-space-4);
+  flex-wrap: wrap;
+}
+.adm-thread-head h4 {
+  margin: 0;
+  font-size: var(--adm-fs-h3);
+}
+.adm-thread-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--adm-space-3);
+}
+.adm-msg {
+  padding: var(--adm-space-4);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  border-left: 3px solid var(--adm-line);
+}
+.adm-msg p {
+  margin: var(--adm-space-2) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.adm-msg-who {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  flex-wrap: wrap;
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+.adm-msg.is-outbound {
+  border-left-color: var(--adm-ok);
+}
+/* An internal note must not be mistakable for something the venue can see. */
+.adm-msg.is-note {
+  border-left-color: var(--adm-info, var(--adm-line));
+  border-left-style: dashed;
+  background: transparent;
+  border: 1px dashed var(--adm-line);
+}
+.adm-composer {
+  display: grid;
+  gap: var(--adm-space-3);
+  padding-top: var(--adm-space-4);
+  border-top: 1px solid var(--adm-line);
+}
+.adm-composer-tabs {
+  display: flex;
+  gap: var(--adm-space-2);
+  flex-wrap: wrap;
+}
+.adm-composer-tabs button {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  padding: var(--adm-space-2) var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-pill, 999px);
+  background: transparent;
+  color: var(--adm-text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+.adm-composer-tabs button.is-active {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--adm-line));
+  color: var(--adm-text);
+}
+.adm-composer textarea.admin-input {
+  resize: vertical;
+  min-height: 96px;
+  font: inherit;
+}
+
 /* The admin had exactly one media query. Three real steps instead. */
 @media (max-width: 1179px) {
   .admin-shell .adm-stat-grid {
@@ -15719,6 +15902,12 @@ button.adm-stat:hover {
   }
 }
 @media (max-width: 767px) {
+  .adm-inbox {
+    grid-template-columns: 1fr;
+  }
+  .adm-inbox-list {
+    max-height: 320px;
+  }
   .adm-drawer {
     width: 100%;
     padding: var(--adm-space-4);

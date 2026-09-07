@@ -9,6 +9,7 @@ import { adminActionLimiter } from "../http/rateLimiters";
 import {
   adminProvisioningSchema,
   adminReenqueueSchema,
+  adminSupportReplySchema,
   adminSupportStatusSchema,
   adminUnbindSchema
 } from "../http/schemas";
@@ -19,6 +20,7 @@ import { getInboxStats } from "../repositories/inbox";
 import { listRestaurantMembers } from "../repositories/members";
 import { getMenuIngestionSummary, rerunFailedIngestionJob } from "../repositories/menuIngestion";
 import {
+  enqueueNotification,
   getNotificationOutboxStats,
   listFailedNotifications,
   retryFailedNotification
@@ -46,7 +48,14 @@ import {
   setVoicePaused,
   type OnboardingStatus
 } from "../repositories/restaurants";
-import { listSupportRequests, setSupportRequestStatus } from "../repositories/supportRequests";
+import {
+  addSupportReply,
+  countRepliesByRequest,
+  getSupportRequest,
+  listSupportReplies,
+  listSupportRequests,
+  setSupportRequestStatus
+} from "../repositories/supportRequests";
 import { quotaSnapshotFromDb } from "../services/calcomQuotaTracker";
 import { verifyCalcomEventTypeForVenue } from "../services/calcomService";
 import {
@@ -1085,7 +1094,112 @@ adminRouter.get(
     const statusParam = typeof request.query.status === "string" ? request.query.status : undefined;
     const status = SUPPORT_STATUSES.find((s) => s === statusParam);
     const requests = await listSupportRequests({ status });
-    response.json({ support_requests: requests });
+    // Reply counts, so the inbox can show which requests have been answered.
+    // A request with a status of "in_progress" and no reply is a venue that has
+    // been read and not spoken to.
+    const counts = await countRepliesByRequest(requests.map((r) => r.id));
+    response.json({
+      support_requests: requests.map((r) => ({ ...r, reply_count: counts.get(r.id) ?? 0 }))
+    });
+  })
+);
+
+
+// One request with its thread. Support was status changes and nothing else, so
+// there was no record of what anyone had told the venue.
+adminRouter.get(
+  "/api/admin/support-requests/:id",
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    const [supportRequest, replies] = await Promise.all([
+      getSupportRequest(id),
+      listSupportReplies(id)
+    ]);
+    if (!supportRequest) {
+      throw new AppError(404, "SUPPORT_REQUEST_NOT_FOUND", "Support request not found.");
+    }
+    response.json({
+      support_request: supportRequest,
+      replies,
+      // The reply box is useless if nothing can send, and finding that out from
+      // a failed send is worse than being told up front.
+      email_enabled: isEmailEnabled()
+    });
+  })
+);
+
+/**
+ * Reply to a venue, or leave an internal note.
+ *
+ * An emailed reply rides the existing notifications outbox — `enqueueNotification`
+ * consults no template layer, which five services already rely on, so no
+ * template system is needed for this. Two things it must do that the queue does
+ * not do for us: check `isEmailEnabled()` (the queue happily accepts a row no
+ * worker can drain, which would look sent and never arrive), and refuse when we
+ * have no address for the requester.
+ */
+adminRouter.post(
+  "/api/admin/support-requests/:id/replies",
+  adminActionLimiter,
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    const body = adminSupportReplySchema.parse(request.body);
+    const supportRequest = await getSupportRequest(id);
+    if (!supportRequest) {
+      throw new AppError(404, "SUPPORT_REQUEST_NOT_FOUND", "Support request not found.");
+    }
+
+    let notificationId: string | null = null;
+
+    if (body.channel === "email") {
+      if (!supportRequest.user_email) {
+        throw new AppError(
+          409,
+          "SUPPORT_REQUEST_NO_EMAIL",
+          "This request has no email address on it, so there is nobody to reply to. Leave an internal note instead."
+        );
+      }
+      if (!isEmailEnabled()) {
+        throw new AppError(
+          503,
+          "EMAIL_NOT_ENABLED",
+          "Email is switched off in this environment, so the reply was not queued — it would have sat unsent. Leave an internal note instead."
+        );
+      }
+      notificationId = await enqueueNotification({
+        restaurantId: supportRequest.restaurant_id,
+        channel: "email",
+        recipient: supportRequest.user_email,
+        kind: "support_reply",
+        subject: `Re: ${supportRequest.subject}`,
+        body: body.body
+      });
+    }
+
+    const reply = await addSupportReply({
+      supportRequestId: id,
+      channel: body.channel,
+      authorUid: actorFor(request),
+      // Same shape audit() uses: the request carries the verified Firebase user
+      // once requireFirebaseAuth has run above.
+      authorEmail: (request as Parameters<typeof actorFor>[0]).firebaseUser?.email ?? null,
+      body: body.body,
+      notificationId
+    });
+
+    // Answering a request moves it along on its own — a reply that leaves the
+    // request sitting in "open" is how the same venue gets answered twice.
+    if (body.channel === "email" && supportRequest.status === "open") {
+      await setSupportRequestStatus(id, "in_progress");
+    }
+
+    await audit(request, body.channel === "email" ? "support_reply" : "support_note", {
+      restaurantId: supportRequest.restaurant_id,
+      target: id,
+      params: { channel: body.channel, notification_id: notificationId }
+    });
+
+    response.status(201).json({ reply, notification_id: notificationId });
   })
 );
 
