@@ -1,5 +1,12 @@
 // Flat ESLint config.
 //
+// `.mjs`, not `.js`: the root package.json has no `"type": "module"`, so Node
+// re-parsed this file as CommonJS, failed, and re-parsed it as ESM — printing a
+// MODULE_TYPELESS_PACKAGE_JSON warning and a performance note on every single
+// lint run, including in CI. Adding `"type": "module"` at the root would have
+// been the other fix, and would have changed how every plain `.js` file in the
+// repo is loaded. The extension is the smaller change.
+//
 // Until now `.github/workflows/ci.yml` ran `npm run lint --if-present` with no
 // `lint` script and no ESLint anywhere in the repo — so the step exited 0
 // silently on every run and showed a green tick having executed nothing. The
@@ -194,6 +201,38 @@ export default [
           // `const { SECRET, ...rest } = env` is how you omit a key. The omitted
           // name is not dead code, it is the whole point of the expression.
           ignoreRestSiblings: true
+        }
+      ]
+    }
+  },
+
+  // ---- The admin console's one structural rule ----------------------------
+  //
+  // A `disabled` button in the admin is the silent-bind bug. On 7 Sep 2026 an
+  // operator believed they had bound a live venue's phone line; the button was
+  // greyed out with a hover tooltip, no request ever left the browser, and
+  // nothing anywhere said so — the venue sat unprovisioned while everyone
+  // thought it was done.
+  //
+  // The fix was a rule: an admin control either acts, or it says why it cannot.
+  // `components/admin/AdminAction.jsx` implements that (and is where the one
+  // legitimate `disabled` lives — it blocks only a request already in flight,
+  // which is not a refusal to explain). This makes the rule structural rather
+  // than a convention someone has to remember, scoped to the pages so it cannot
+  // creep back in a new panel.
+  //
+  // `error`, not `warn`, deliberately: `npm run lint` is `--max-warnings 27`, a
+  // ratchet, so a new warning fails the build anyway but reports itself as
+  // "too many warnings" rather than naming the problem.
+  {
+    files: ["apps/frontend/src/pages/admin/**/*.jsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: 'JSXAttribute[name.name="disabled"]',
+          message:
+            "Admin controls must never be silently disabled. Use <AdminAction blocked=\"why not\"> so the control explains itself on click — see components/admin/AdminAction.jsx."
         }
       ]
     }
