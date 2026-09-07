@@ -58,8 +58,11 @@
         "Two things learned during the resume, both worth keeping:",
         "  1. Unchecking 'Add an inbound webhook' in the Retell dashboard CLEARS the URL. It is not",
         "     preserved for a one-click re-hook, so the URL must be pasted back from this file.",
-        "  2. The URL pasted back must be api_base above (Cloud Run), NOT api.biteperk.com.au.",
-        "     See $api_base_comment — that host is the sandbox VM and answers /readyz identically.",
+        "  2. Paste back exactly api_base above + /retell/inbound, and read $api_base_comment",
+        "     first. For THIS line that is api.biteperk.com.au, which looks wrong and is right.",
+        "     Substituting the Cloud Run URL took the line down on 7 Sep 2026 — see #415.",
+        "  3. Leave Call Agent at 'None (disable inbound)'. A statically bound agent is what turned",
+        "     that outage into a wrong greeting instead of a clean failure, per CLAUDE.md's warning.",
         "The pause mechanism itself is documented in GitHub issue #391."
       ],
       "pronunciation_dictionary": [
