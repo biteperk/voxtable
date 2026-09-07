@@ -15496,6 +15496,222 @@ button.adm-stat:hover {
   color: var(--adm-text);
 }
 
+/* ---- Toolbar, pager, venue cells ---------------------------------------- */
+.adm-toolbar {
+  display: flex;
+  gap: var(--adm-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--adm-space-4);
+}
+.adm-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  flex: 1 1 260px;
+}
+.adm-search .admin-input {
+  width: 100%;
+}
+.adm-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--adm-space-4);
+  flex-wrap: wrap;
+  margin-top: var(--adm-space-4);
+}
+.adm-venue-cell {
+  display: grid;
+  gap: 2px;
+}
+.adm-setup-cell {
+  font-size: var(--adm-fs-small);
+  white-space: nowrap;
+}
+
+/* ---- Drawer — the venue detail, beside the list instead of inside it ----- */
+.adm-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.5);
+}
+.adm-drawer {
+  width: min(760px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--adm-space-5);
+  background: var(--adm-surface);
+  border-left: 1px solid var(--adm-line);
+  box-shadow: var(--adm-shadow-raised);
+  display: flex;
+  flex-direction: column;
+  gap: var(--adm-space-4);
+  animation: admDrawerIn 200ms var(--ob-ease);
+}
+@keyframes admDrawerIn {
+  from {
+    transform: translateX(24px);
+    opacity: 0.6;
+  }
+}
+.adm-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--adm-space-4);
+  position: sticky;
+  top: calc(var(--adm-space-5) * -1);
+  padding: var(--adm-space-4) 0;
+  margin-top: calc(var(--adm-space-5) * -1);
+  background: var(--adm-surface);
+  z-index: 1;
+}
+.adm-drawer-head h2 {
+  margin: 0;
+  font-size: var(--adm-fs-h1);
+  letter-spacing: -0.02em;
+}
+.adm-drawer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--adm-space-2);
+  margin-top: var(--adm-space-2);
+}
+.adm-drawer-body {
+  display: grid;
+  gap: var(--adm-space-4);
+}
+
+/* ---- Readiness list — what is missing, item by item --------------------- */
+.adm-readiness {
+  list-style: none;
+  margin: 0 0 var(--adm-space-4);
+  padding: 0;
+  display: grid;
+  gap: var(--adm-space-1);
+}
+.adm-readiness li {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-3);
+  padding: var(--adm-space-2) var(--adm-space-3);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  font-size: var(--adm-fs-small);
+  flex-wrap: wrap;
+}
+
+/* ---- Modal — where destructive actions live, so they cannot be reached by
+   scrolling past them. ----------------------------------------------------- */
+.adm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: var(--adm-space-4);
+  background: rgba(0, 0, 0, 0.62);
+}
+.adm-modal {
+  width: min(620px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--adm-space-5);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-lg);
+  background: var(--adm-surface);
+  box-shadow: var(--adm-shadow-raised);
+  display: grid;
+  gap: var(--adm-space-3);
+}
+.adm-modal.is-danger {
+  border-color: color-mix(in srgb, var(--adm-danger) 45%, transparent);
+}
+.adm-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--adm-space-4);
+}
+.adm-modal-head h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  margin: 0;
+  font-size: var(--adm-fs-h2);
+}
+/* The consequence, in the venue's own values, is the first thing read. */
+.adm-modal-consequence {
+  margin: 0;
+  padding: var(--adm-space-4);
+  border-left: 3px solid var(--adm-danger);
+  border-radius: var(--adm-radius-sm);
+  background: color-mix(in srgb, var(--adm-danger) 10%, transparent);
+  font-size: var(--adm-fs-body);
+  color: var(--adm-text);
+}
+.adm-modal-fields {
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  padding: var(--adm-space-4);
+  margin: 0;
+  display: grid;
+  gap: var(--adm-space-2);
+}
+.adm-modal-fields legend {
+  padding: 0 var(--adm-space-2);
+  font-size: var(--adm-fs-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--adm-text-dim);
+}
+.adm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--adm-space-2);
+  flex-wrap: wrap;
+}
+.adm-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--adm-space-3);
+  padding: var(--adm-space-2);
+  border-radius: var(--adm-radius-sm);
+  cursor: pointer;
+}
+.adm-check:hover {
+  background: var(--adm-surface-raised);
+}
+.adm-check input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+.adm-check-label {
+  display: block;
+  font-size: var(--adm-fs-small);
+}
+.adm-check-value {
+  display: block;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+  overflow-wrap: anywhere;
+}
+.adm-match-ok {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  margin: 0;
+  font-size: var(--adm-fs-small);
+  color: var(--adm-ok, var(--primary));
+}
+
 /* The admin had exactly one media query. Three real steps instead. */
 @media (max-width: 1179px) {
   .admin-shell .adm-stat-grid {
@@ -15503,6 +15719,16 @@ button.adm-stat:hover {
   }
 }
 @media (max-width: 767px) {
+  .adm-drawer {
+    width: 100%;
+    padding: var(--adm-space-4);
+  }
+  .adm-drawer-head h2 {
+    font-size: var(--adm-fs-h2);
+  }
+  .adm-pager {
+    justify-content: flex-start;
+  }
   .admin-shell .adm-attention-row {
     grid-template-columns: 1fr;
     align-items: start;
@@ -15527,7 +15753,8 @@ button.adm-stat:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .adm-skeleton,
-  .adm-toast {
+  .adm-toast,
+  .adm-drawer {
     animation: none;
   }
   button.adm-stat:hover {
