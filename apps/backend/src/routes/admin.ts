@@ -12,13 +12,17 @@ import {
   adminSupportStatusSchema,
   adminUnbindSchema
 } from "../http/schemas";
-import { listAdminActions, recordAdminAction } from "../repositories/adminActions";
+import { countAdminActions, listAdminActions, recordAdminAction } from "../repositories/adminActions";
 import { verifyAgentForVenue } from "../services/retellProvisioning";
 import { getLatestAcceptance } from "../repositories/agreements";
 import { getInboxStats } from "../repositories/inbox";
 import { listRestaurantMembers } from "../repositories/members";
-import { getMenuIngestionSummary } from "../repositories/menuIngestion";
-import { getNotificationOutboxStats } from "../repositories/notifications";
+import { getMenuIngestionSummary, rerunFailedIngestionJob } from "../repositories/menuIngestion";
+import {
+  getNotificationOutboxStats,
+  listFailedNotifications,
+  retryFailedNotification
+} from "../repositories/notifications";
 import { getOpsState, listOpsStateByPrefix } from "../repositories/opsState";
 import { getOutboxStats } from "../repositories/outbox";
 import {
@@ -650,7 +654,18 @@ adminRouter.post(
 adminRouter.get(
   "/api/admin/ops-summary",
   asyncHandler(async (_request, response) => {
-    const [outbox, inbox, breakerRow, quota, latches, notifications, menuOcr, paymentsRow, kdsHeartbeats] =
+    const [
+      outbox,
+      inbox,
+      breakerRow,
+      quota,
+      latches,
+      notifications,
+      failedNotifications,
+      menuOcr,
+      paymentsRow,
+      kdsHeartbeats
+    ] =
       await Promise.all([
         getOutboxStats(),
         getInboxStats(),
@@ -658,6 +673,9 @@ adminRouter.get(
         quotaSnapshotFromDb(),
         getOpsState("health-alerter-latches"),
         getNotificationOutboxStats(),
+        // The rows, not just the counts: "failed: 1" cannot be acted on, and
+        // the panel now offers a retry per row.
+        listFailedNotifications(10),
         getMenuIngestionSummary(),
         pool.query<{ stuck: string; disputes: string; mismatches: string }>(
           `SELECT
@@ -697,6 +715,16 @@ adminRouter.get(
       // currently OPEN in Slack. Zero extra SQL — the worker maintains this row.
       alert_latches: latches ?? {},
       notifications,
+      failed_notifications: failedNotifications.map((n) => ({
+        id: n.id,
+        restaurant_id: n.restaurant_id,
+        channel: n.channel,
+        kind: n.kind,
+        recipient: n.recipient,
+        attempts: n.attempts,
+        last_error: n.last_error,
+        created_at: n.created_at
+      })),
       menu_ocr: menuOcr,
       order_payments: {
         stuck: Number(paymentsRow.rows[0]?.stuck ?? "0"),
@@ -744,8 +772,14 @@ adminRouter.get(
         FROM restaurants r
         LEFT JOIN calls c ON c.restaurant_id = r.id
         LEFT JOIN bookings b ON b.restaurant_id = r.id
-       WHERE c.restaurant_id IS NOT NULL OR b.restaurant_id IS NOT NULL
-       ORDER BY COALESCE(c.calls, 0) DESC
+       -- Every LIVE venue appears, including the silent ones. The old filter
+       -- required a calls or bookings row, so it dropped any venue with no
+       -- activity -- and "this venue has taken no calls today", the single most
+       -- interesting thing on the page, was therefore invisible.
+       WHERE r.onboarding_status = 'live'
+          OR c.restaurant_id IS NOT NULL
+          OR b.restaurant_id IS NOT NULL
+       ORDER BY COALESCE(c.calls, 0) DESC, r.name ASC
       `
     );
     const venues = result.rows.map((row) => ({
@@ -753,15 +787,167 @@ adminRouter.get(
       name: row.name,
       calls_today: Number(row.calls_today),
       bookings_today: Number(row.bookings_today),
-      duration_seconds_today: Number(row.duration_seconds_today)
+      duration_seconds_today: Number(row.duration_seconds_today),
+      // Rounded up per venue for display, because a 40-second call is a minute
+      // of billable voice. Do NOT sum this column — see voice_minutes_today
+      // below for the platform figure.
+      voice_minutes_today: Math.ceil(Number(row.duration_seconds_today) / 60)
     }));
     response.json({
       venues,
       totals: {
         calls_today: venues.reduce((n, v) => n + v.calls_today, 0),
-        bookings_today: venues.reduce((n, v) => n + v.bookings_today, 0)
+        bookings_today: venues.reduce((n, v) => n + v.bookings_today, 0),
+        // Summed from SECONDS then rounded once. Summing the per-venue rounded
+        // minutes over-counted by up to a minute per venue, so the column and
+        // the total disagreed and neither was the real figure.
+        voice_minutes_today: Math.ceil(
+          venues.reduce((n, v) => n + v.duration_seconds_today, 0) / 60
+        )
       }
     });
+  })
+);
+
+/**
+ * Everything waiting on a human, in one list.
+ *
+ * The Overview's only signal was "All quiet", which is true right up until it
+ * isn't — a venue that paid and then sat in `provisioning` for hours showed up
+ * nowhere, and that is exactly what happened on 7 Sep 2026. Each row carries
+ * what it is, which venue, how long it has been waiting, and where to go.
+ *
+ * Three parallel queries rather than one: the restaurants signals collapse into
+ * a single scan with FILTERs, and notifications and order payments are
+ * different tables. Same shape as /ops-summary.
+ */
+adminRouter.get(
+  "/api/admin/needs-attention",
+  asyncHandler(async (_request, response) => {
+    const [venueRows, notifRow, paymentRow, openSupport] = await Promise.all([
+      pool.query<{
+        id: string;
+        name: string;
+        reason: string;
+        since: string;
+      }>(
+        `
+        SELECT id, name, 'stuck_provisioning' AS reason, updated_at AS since
+          FROM restaurants
+         WHERE onboarding_status = 'provisioning'
+        UNION ALL
+        -- A venue marked live that cannot actually take a call. The admin used
+        -- to render a green "Live" pill for exactly this state.
+        SELECT id, name, 'live_without_line' AS reason, updated_at AS since
+          FROM restaurants
+         WHERE onboarding_status = 'live'
+           AND (twilio_phone_number IS NULL OR retell_agent_id IS NULL)
+        UNION ALL
+        SELECT id, name, 'paused_over_24h' AS reason, voice_paused_at AS since
+          FROM restaurants
+         WHERE voice_paused_at IS NOT NULL
+           AND voice_paused_at < now() - interval '24 hours'
+        `
+      ),
+      pool.query<{ n: string }>(
+        "SELECT count(*)::text AS n FROM notifications_outbox WHERE status = 'failed'"
+      ),
+      // Same predicate as /ops-summary's `stuck` count, deliberately — two
+      // surfaces disagreeing about what "stuck" means is worse than either
+      // number being slightly off. ('pending' is not a valid
+      // order_payment_status; the live states are created/sent/processing.)
+      pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM order_payments
+          WHERE status IN ('created','sent','processing')
+            AND expires_at IS NOT NULL
+            AND expires_at < now() - interval '30 minutes'`
+      ),
+      listSupportRequests({ status: "open" })
+    ]);
+
+    const items = venueRows.rows.map((row) => ({
+      kind: row.reason,
+      restaurant_id: row.id,
+      venue: row.name,
+      since: row.since,
+      href: `/admin/venues?venue=${row.id}`
+    }));
+
+    const failedNotifications = Number(notifRow.rows[0]?.n ?? "0");
+    const stuckPayments = Number(paymentRow.rows[0]?.n ?? "0");
+
+    response.json({
+      items,
+      counts: {
+        venues: items.length,
+        failed_notifications: failedNotifications,
+        stuck_payments: stuckPayments,
+        open_support: openSupport.length
+      },
+      // One number for the tab badge and the headline tile.
+      total: items.length + failedNotifications + stuckPayments + openSupport.length
+    });
+  })
+);
+
+// Put a dead notification back in the queue. The Ops panel showed "failed: 1"
+// with no way to act on it, so a bounced welcome email just sat there.
+adminRouter.post(
+  "/api/admin/notifications/:id/retry",
+  adminActionLimiter,
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    const row = await retryFailedNotification(id);
+    if (!row) {
+      throw new AppError(
+        409,
+        "NOTIFICATION_NOT_RETRYABLE",
+        "That notification either doesn't exist or isn't in a failed state, so there is nothing to retry."
+      );
+    }
+    await audit(request, "notification_retry", {
+      restaurantId: row.restaurant_id,
+      target: id,
+      params: { kind: row.kind, channel: row.channel }
+    });
+    response.json({ notification: row });
+  })
+);
+
+// Re-run a failed menu import. Capped per job from the audit log because this
+// bypasses the daily cap and each run is a paid vision call — see
+// rerunFailedIngestionJob.
+const MAX_MENU_IMPORT_RERUNS = 3;
+
+adminRouter.post(
+  "/api/admin/menu-imports/:id/rerun",
+  adminActionLimiter,
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    const already = await countAdminActions("menu_import_rerun", id);
+    if (already >= MAX_MENU_IMPORT_RERUNS) {
+      throw new AppError(
+        409,
+        "MENU_IMPORT_RERUN_LIMIT",
+        `This import has already been re-run ${already} times. Each run is a paid vision call, ` +
+          `so the limit is ${MAX_MENU_IMPORT_RERUNS} — the menu likely needs a different photo ` +
+          `or a manual entry rather than another attempt.`
+      );
+    }
+    const job = await rerunFailedIngestionJob(id);
+    if (!job) {
+      throw new AppError(
+        409,
+        "MENU_IMPORT_NOT_RETRYABLE",
+        "That import either doesn't exist or isn't in a failed state, so there is nothing to re-run."
+      );
+    }
+    await audit(request, "menu_import_rerun", {
+      restaurantId: job.restaurant_id,
+      target: id,
+      params: { attempt: already + 1, of: MAX_MENU_IMPORT_RERUNS }
+    });
+    response.json({ job, reruns_used: already + 1, reruns_allowed: MAX_MENU_IMPORT_RERUNS });
   })
 );
 
