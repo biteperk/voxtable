@@ -641,12 +641,6 @@ export function adminSetVoicePaused(id, paused) {
   });
 }
 
-export function adminSetVoicePaused(id, paused) {
-  return authedFetch(`/api/admin/restaurants/${id}/voice/${paused ? "pause" : "resume"}`, {
-    method: "POST"
-  });
-}
-
 export function getAdminProvisioningJobs(status) {
   const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
   return authedFetch(`/api/admin/provisioning-jobs${suffix}`);
