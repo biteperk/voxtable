@@ -591,10 +591,12 @@ export function getAdminProvisioningQueue() {
   return authedFetch(`/api/admin/provisioning-queue`);
 }
 
-export function getAdminRestaurants({ status, q } = {}) {
+export function getAdminRestaurants({ status, q, limit, offset } = {}) {
   const params = new URLSearchParams();
   if (status) params.set("status", status);
   if (q) params.set("q", q);
+  if (limit) params.set("limit", String(limit));
+  if (offset) params.set("offset", String(offset));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return authedFetch(`/api/admin/restaurants${suffix}`);
 }
@@ -607,22 +609,30 @@ export function getAdminRestaurantSubscription(id) {
   return authedFetch(`/api/admin/restaurants/${id}/subscription`);
 }
 
-export function adminBindProvisioning(id, payload) {
+// `version` is the venue's concurrency token from GET /api/admin/restaurants/:id.
+// Sent as If-Match so a drawer left open while someone else re-binds the same
+// venue is refused with 409 STALE_WRITE rather than quietly winning.
+export function adminBindProvisioning(id, payload, version) {
   return authedFetch(`/api/admin/restaurants/${id}/provisioning`, {
     method: "PATCH",
+    headers: version ? { "If-Match": version } : undefined,
     body: JSON.stringify(payload)
   });
 }
 
-export function adminUnbindProvisioning(id, payload) {
+export function adminUnbindProvisioning(id, payload, version) {
   return authedFetch(`/api/admin/restaurants/${id}/unbind`, {
     method: "POST",
+    headers: version ? { "If-Match": version } : undefined,
     body: JSON.stringify(payload)
   });
 }
 
-export function adminGoLive(id) {
-  return authedFetch(`/api/admin/restaurants/${id}/go-live`, { method: "POST" });
+export function adminGoLive(id, version) {
+  return authedFetch(`/api/admin/restaurants/${id}/go-live`, {
+    method: "POST",
+    headers: version ? { "If-Match": version } : undefined
+  });
 }
 
 export function adminSetVoicePaused(id, paused) {
