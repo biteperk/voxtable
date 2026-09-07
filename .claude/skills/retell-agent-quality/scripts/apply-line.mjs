@@ -114,7 +114,14 @@ if (apply) {
     // workaround: exporting the repo's .env key, which is the LEGACY workspace.
     // assert-line.mjs does the same for assert-agent.mjs, for the same reason.
     { encoding: "utf8", env: { ...process.env, RETELL_API_KEY: KEY } });
-  if (r.status !== 0) { console.error("snapshot failed — refusing to write without a rollback point.\n", r.stderr); process.exit(1); }
+  // Report WHY. `r.error` is set when the process could not be spawned at all (a missing
+  // interpreter, no exec bit) and `r.stderr` is undefined in that case — which printed a bare
+  // "undefined" and cost a debugging round trip on 7 Sep 2026.
+  if (r.status !== 0) {
+    console.error("snapshot failed — refusing to write without a rollback point.");
+    console.error(r.error ? `  spawn error: ${r.error.message}` : `  ${r.stderr || `exit status ${r.status}`}`);
+    process.exit(1);
+  }
   say(`snapshot: ${snapDir}-pre\n`);
   }
 }
