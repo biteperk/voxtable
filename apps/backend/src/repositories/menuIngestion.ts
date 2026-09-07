@@ -215,6 +215,35 @@ export async function markFailed(id: string, error: string): Promise<void> {
 }
 
 /**
+ * Re-run a failed menu import (admin action). Resets the row IN PLACE so the
+ * source urls and page_results survive — the worker picks it up through
+ * claimReadyJobs' `pending AND due` branch.
+ *
+ * ⚠️ This deliberately bypasses the daily cap. The 25/day limit lives in
+ * menuIngestionService.enqueueIngestion, which counts ROWS created in the last
+ * 24h, and this resets an existing row rather than creating one. That is the
+ * behaviour we want — re-running an already-counted job should not count twice
+ * — but it means the cap is NOT a backstop here and every re-run is a fresh
+ * PAID vision call. The per-job ceiling is enforced by the route from the audit
+ * log, which is the real record of how many times an admin has done this.
+ * Deliberately not stored on the row: `attempts` is reset by the re-run itself,
+ * and parsed_draft belongs to the owner's edits, not to our bookkeeping.
+ *
+ * Returns null when the job doesn't exist or isn't failed, so the route can say
+ * so rather than reporting a re-run that never happened.
+ */
+export async function rerunFailedIngestionJob(id: string): Promise<MenuIngestionJob | null> {
+  const result = await pool.query<MenuIngestionJob>(
+    `UPDATE menu_ingestion_jobs
+        SET status = 'pending', attempts = 0, next_attempt_at = now(), last_error = NULL
+      WHERE id = $1 AND status = 'failed'
+      RETURNING *`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
  * Save the owner's edits. Deliberately does NOT touch `page_results`: the draft
  * records what they did, page_results records what we found, and deleting a row
  * must never erase the evidence that page 3 came back empty.

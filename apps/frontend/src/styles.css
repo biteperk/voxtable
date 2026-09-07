@@ -15342,6 +15342,160 @@ button.adm-stat:hover {
   background: color-mix(in srgb, var(--adm-danger) 22%, transparent);
 }
 
+/* ---- Needs attention — the Overview centrepiece. Each row is one thing
+   waiting on a human, with its age and its own action. --------------------- */
+.adm-attention {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--adm-space-2);
+}
+.adm-attention-row {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) 1fr auto auto;
+  align-items: center;
+  gap: var(--adm-space-4);
+  padding: var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+}
+.adm-attention-body {
+  min-width: 0;
+}
+.adm-attention-body strong {
+  display: block;
+  font-size: var(--adm-fs-body);
+}
+.adm-attention-body p {
+  margin: var(--adm-space-1) 0 0;
+  font-size: var(--adm-fs-small);
+  line-height: var(--adm-lh-body);
+}
+.adm-attention-age {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-small);
+  white-space: nowrap;
+}
+
+/* ---- Funnel — every stage is a filter, not a decoration. ----------------- */
+.adm-funnel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--adm-space-2);
+}
+.adm-funnel-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--adm-space-1);
+  padding: var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms var(--ob-ease);
+}
+.adm-funnel-step:hover {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--adm-line));
+}
+.adm-funnel-value {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-h2);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.adm-funnel-label {
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+
+/* ---- Key/value rows for the Ops panels ---------------------------------- */
+.adm-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--adm-space-2);
+  margin-bottom: var(--adm-space-4);
+}
+.adm-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--adm-space-2);
+  padding: var(--adm-space-3) var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+}
+.adm-kv-label {
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+.adm-kv-value {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-body);
+  font-variant-numeric: tabular-nums;
+}
+.adm-error-text {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-small);
+  color: var(--adm-warn);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Flags, split into On and Off with the word rendered ----------------- */
+.adm-flag-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--adm-space-5);
+}
+.adm-flag-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  margin: 0 0 var(--adm-space-2);
+  font-size: var(--adm-fs-small);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--adm-text-dim);
+}
+.adm-flag-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--adm-space-2);
+}
+
+/* ---- Audit / heartbeat list --------------------------------------------- */
+.adm-audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--adm-space-1);
+}
+.adm-audit-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-3);
+  padding: var(--adm-space-3) var(--adm-space-4);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  font-size: var(--adm-fs-small);
+  flex-wrap: wrap;
+}
+.adm-audit-what {
+  font-weight: 600;
+  color: var(--adm-text);
+}
+
 /* The admin had exactly one media query. Three real steps instead. */
 @media (max-width: 1179px) {
   .admin-shell .adm-stat-grid {
@@ -15349,6 +15503,10 @@ button.adm-stat:hover {
   }
 }
 @media (max-width: 767px) {
+  .admin-shell .adm-attention-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
   .admin-shell .adm-card {
     padding: var(--adm-space-4);
     border-radius: var(--adm-radius-md);

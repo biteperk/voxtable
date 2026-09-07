@@ -46,6 +46,21 @@ export function AdminPage({ navigate, path }) {
     };
   }, []);
 
+  // Deep links keep `path` clean: the router only tracks pathname, so a query
+  // string passed to navigate() would break every `path === "/admin/..."`
+  // comparison. Push the clean path, then rewrite the URL in place — the
+  // destination page reads window.location.search (the same shape as
+  // AcceptInvitePage).
+  const goTab = (route, query) => {
+    navigate(route);
+    if (query) window.history.replaceState({}, "", `${route}?${query}`);
+  };
+  const goVenues = (status, venueId) =>
+    goTab(
+      "/admin/venues",
+      venueId ? `venue=${encodeURIComponent(venueId)}` : status ? `status=${encodeURIComponent(status)}` : null
+    );
+
   const handleSignOut = async () => {
     await signOutUser();
     navigate("/");
@@ -131,7 +146,9 @@ export function AdminPage({ navigate, path }) {
         ))}
       </nav>
       <main className="admin-main">
-        {active === "Overview" ? <AdminOverview flags={flags} /> : null}
+        {active === "Overview" ? (
+          <AdminOverview flags={flags} goVenues={goVenues} goTab={goTab} />
+        ) : null}
         {active === "Venues" ? <AdminVenues /> : null}
         {active === "Provisioning" ? <AdminJobs /> : null}
         {active === "Ops" ? <AdminOps /> : null}
