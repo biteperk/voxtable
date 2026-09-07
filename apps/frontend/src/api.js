@@ -199,6 +199,12 @@ export function getRestaurantProfile() {
   return authedFetch(`/api/restaurant/profile`);
 }
 
+export function setVoicePaused(paused) {
+  return authedFetch(`/api/restaurant/voice/${paused ? "pause" : "resume"}`, {
+    method: "POST"
+  });
+}
+
 export function updateRestaurantProfile(payload) {
   return authedFetch(`/api/restaurant/profile`, {
     method: "PATCH",
@@ -617,6 +623,12 @@ export function adminUnbindProvisioning(id, payload) {
 
 export function adminGoLive(id) {
   return authedFetch(`/api/admin/restaurants/${id}/go-live`, { method: "POST" });
+}
+
+export function adminSetVoicePaused(id, paused) {
+  return authedFetch(`/api/admin/restaurants/${id}/voice/${paused ? "pause" : "resume"}`, {
+    method: "POST"
+  });
 }
 
 export function getAdminProvisioningJobs(status) {

@@ -5,6 +5,7 @@ import {
   getRestaurantProfile,
   getStaffList,
   inviteStaff,
+  setVoicePaused,
   submitSupportRequest,
   updateRestaurantProfile,
   updateStaffRole,
@@ -238,6 +239,26 @@ function RestaurantProfileSection({ canEdit, onSupport }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [voicePausedAt, setVoicePausedAt] = useState(null);
+  const [pauseBusy, setPauseBusy] = useState(false);
+
+  const togglePause = async () => {
+    const next = !voicePausedAt;
+    setPauseBusy(true);
+    setError(null);
+    try {
+      const res = await setVoicePaused(next);
+      setVoicePausedAt(res.voice_paused_at ?? null);
+      // Let the dashboard banner (and any other open tab) update immediately.
+      window.dispatchEvent(
+        new CustomEvent("voxtable:voice-paused-changed", { detail: { paused: Boolean(next) } })
+      );
+    } catch (e) {
+      setError(e.message ?? "Couldn't change the phone line — please try again.");
+    } finally {
+      setPauseBusy(false);
+    }
+  };
 
   const loadProfile = async () => {
     setLoading(true);
@@ -246,6 +267,7 @@ function RestaurantProfileSection({ canEdit, onSupport }) {
       const data = await getRestaurantProfile();
       const p = data.profile ?? {};
       setProfile(p);
+      setVoicePausedAt(p.voice_paused_at ?? null);
       setForm({
         name: p.name ?? "",
         restaurantId: p.id ?? "",
@@ -359,6 +381,31 @@ function RestaurantProfileSection({ canEdit, onSupport }) {
           </div>
         </div>
       </header>
+
+      {canEdit && !loading && (
+        <div className={`voice-pause-control${voicePausedAt ? " paused" : ""}`}>
+          <div className="voice-pause-copy">
+            <Icon name={voicePausedAt ? "phone_disabled" : "phone_in_talk"} />
+            <div>
+              <strong>{voicePausedAt ? "Phone bookings are paused" : "Phone bookings are on"}</strong>
+              <span>
+                {voicePausedAt
+                  ? "Callers hear that you're not taking phone bookings right now."
+                  : "Bella is answering the phone and taking bookings."}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`kitchen-btn ghost${voicePausedAt ? "" : " warn"}`}
+            onClick={togglePause}
+            disabled={pauseBusy}
+          >
+            <Icon name={voicePausedAt ? "play_circle" : "pause_circle"} />
+            {voicePausedAt ? "Resume phone bookings" : "Pause phone bookings"}
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="staff-error">

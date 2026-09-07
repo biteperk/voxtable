@@ -10,7 +10,9 @@ import {
   getOnboardingStatus,
   getRestaurantProfile,
   getRestaurantSettings,
+  getVoicePausedAt,
   setOnboardingStatus,
+  setVoicePaused,
   updateRestaurantProfile,
   upsertRestaurantSettings
 } from "../repositories/restaurants";
@@ -46,9 +48,36 @@ restaurantRouter.get(
       profile: {
         ...profile,
         booking_duration_minutes: bookingDurationMinutes,
-        opening_hours: openingHours
+        opening_hours: openingHours,
+        voice_paused_at: await getVoicePausedAt(restaurantId)
       }
     });
+  })
+);
+
+// Per-venue phone kill switch (owner/manager). Deliberately its OWN routes, not
+// a field on PATCH /api/restaurant/profile: that handler runs the onboarding
+// advance (account_created → profile), so toggling pause through it could move a
+// venue's onboarding status as a side effect. These do one thing.
+restaurantRouter.post(
+  "/api/restaurant/voice/pause",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    const pausedAt = await setVoicePaused(tenantId(request), true);
+    response.json({ voice_paused_at: pausedAt });
+  })
+);
+
+restaurantRouter.post(
+  "/api/restaurant/voice/resume",
+  requireFirebaseAuth,
+  resolveTenant,
+  requireMemberRole("manager"),
+  asyncHandler(async (request, response) => {
+    await setVoicePaused(tenantId(request), false);
+    response.json({ voice_paused_at: null });
   })
 );
 

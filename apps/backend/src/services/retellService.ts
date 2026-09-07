@@ -23,7 +23,8 @@ import {
   getRestaurantName,
   getRestaurantVoiceContext,
   getRestaurantTimezone,
-  getRetellAgentId
+  getRetellAgentId,
+  getVoicePausedAt
 } from "../repositories/restaurants";
 import { normalizePhone } from "../utils/phone";
 import { enrichLogContext, logger } from "../utils/logger";
@@ -219,13 +220,33 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
   // caller for a number and books them with no way to reach them.
   const callerPhoneKnown = callerPhoneKnownFlag(callerPhoneForAgent);
 
-  // One cached query for the venue's identity + FAQ, and one uncached query for
-  // the agent id (kept separate so a rebind lands on the very next call).
-  const [venue, perRestaurantAgentId] = await Promise.all([
+  // One cached query for the venue's identity + FAQ, one uncached query for the
+  // agent id (kept separate so a rebind lands on the very next call), and one
+  // uncached query for the pause flag (same reason — a pause must land now).
+  const [venue, perRestaurantAgentId, voicePausedAt] = await Promise.all([
     getRestaurantVoiceContext(restaurantId),
-    getRetellAgentId(restaurantId)
+    getRetellAgentId(restaurantId),
+    getVoicePausedAt(restaurantId)
   ]);
   const { timezone: tz, name: restaurantName, ownerName } = venue;
+
+  // Kill switch: a paused venue routes to the shared "we're not taking bookings"
+  // agent and hands it only the venue name. Return before the menu/hours queries
+  // — the paused agent never uses them. If RETELL_PAUSED_AGENT_ID is unset we
+  // send no override (the call falls through to the number's own handling); the
+  // tool gate in handleRetellFunction is still the hard guarantee against a
+  // booking. metadata.voice_paused is set either way so a call is attributable.
+  if (voicePausedAt) {
+    logger.warn({ evt: "voice_paused_inbound", restaurant_id: restaurantId });
+    return {
+      call_inbound: {
+        ...(env.RETELL_PAUSED_AGENT_ID ? { override_agent_id: env.RETELL_PAUSED_AGENT_ID } : {}),
+        dynamic_variables: { restaurant_name: restaurantName },
+        metadata: { restaurant_id: restaurantId, source: "vocotable", voice_paused: "true" }
+      }
+    };
+  }
+
   const agentChoice = resolveOverrideAgentId(perRestaurantAgentId, env.APP_ENV, env.RETELL_AGENT_ID);
   const overrideAgentId = agentChoice.agentId;
   if (agentChoice.source === "env") {
@@ -445,6 +466,16 @@ export async function handleRetellFunction(
       "RESTAURANT_NOT_CONFIGURED",
       "Sorry, this phone line isn't fully set up yet. Please try again later."
     );
+  }
+
+  // Per-venue kill switch. A caller who reached the paused agent never gets here
+  // (it has no tools), so this exists for the RACE: a call already in flight on
+  // the real agent when the owner pauses stays on the real agent (the inbound
+  // override is per-call), and this is what stops it booking. Refused with the
+  // same response as the global VOICE_BOOKING_ENABLED gate above.
+  if (await getVoicePausedAt(restaurantId)) {
+    logger.warn({ evt: "voice_paused_refusal", tool: name, restaurant_id: restaurantId });
+    return voiceBookingDisabledResponse();
   }
 
   // The cap is checked before availability, not after. If she is told a table

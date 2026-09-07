@@ -9,6 +9,8 @@ export interface Membership {
   role: MemberRole;
   /** Contracted Vox products, e.g. ["voxtable"]. Empty until the agreement step. */
   services: string[];
+  /** When the venue's phone line is paused (kill switch), or null when live. */
+  voicePausedAt: Date | null;
 }
 
 export interface RestaurantMember {
@@ -24,6 +26,7 @@ interface MembershipRow {
   restaurant_name: string;
   role: MemberRole;
   services: string[] | null;
+  voice_paused_at: Date | null;
 }
 
 interface RestaurantMemberRow {
@@ -46,7 +49,7 @@ export async function getUserMemberships(
 ): Promise<Membership[]> {
   const result = await db.query<MembershipRow>(
     `
-    SELECT rm.restaurant_id, r.name AS restaurant_name, rm.role, r.services
+    SELECT rm.restaurant_id, r.name AS restaurant_name, rm.role, r.services, r.voice_paused_at
     FROM restaurant_members rm
     JOIN restaurants r ON r.id = rm.restaurant_id
     WHERE rm.user_id = $1
@@ -61,7 +64,8 @@ export async function getUserMemberships(
     // Which Vox products this venue contracted for (migration 018). Written once
     // at the agreement step and, until now, read by exactly one admin endpoint no
     // UI rendered — so the dashboard could not tell what a venue had bought.
-    services: row.services ?? []
+    services: row.services ?? [],
+    voicePausedAt: row.voice_paused_at ?? null
   }));
 }
 
