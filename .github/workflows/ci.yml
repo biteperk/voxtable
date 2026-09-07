@@ -309,11 +309,21 @@ jobs:
         if: env.SHOULD_PUSH == 'true'
         run: gcloud auth configure-docker "$REGISTRY_HOST" --quiet
 
+      # APP_VERSION is baked in from the same package.json version that tags the
+      # image, so the admin header, /health and Sentry all report what is
+      # actually running. Left unset it defaults to 0.1.0 in the schema, which is
+      # what production reported for months while running 1.2.x.
       - name: Build api image
-        run: docker build -f Dockerfile.api -t voxtable-api:ci .
+        run: |
+          docker build -f Dockerfile.api \
+            --build-arg APP_VERSION="${{ steps.package-version.outputs.version }}" \
+            -t voxtable-api:ci .
 
       - name: Build worker image
-        run: docker build -f Dockerfile.worker -t voxtable-worker:ci .
+        run: |
+          docker build -f Dockerfile.worker \
+            --build-arg APP_VERSION="${{ steps.package-version.outputs.version }}" \
+            -t voxtable-worker:ci .
 
       # A built image is not a working image: on 1 Aug 2026 a green pipeline
       # shipped containers that died on their first line (CommonJS output run

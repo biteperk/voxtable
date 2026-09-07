@@ -55,7 +55,7 @@ import {
   isSmsEnabled,
   notifyRestaurant
 } from "../services/notificationService";
-import { assertCanGoLive } from "../services/onboardingService";
+import { assertCanGoLive, becameLineReady } from "../services/onboardingService";
 import { stripeMode } from "../services/stripeClient";
 import { getSubscription } from "../services/stripeService";
 import { currentRequestId, logger } from "../utils/logger";
@@ -313,10 +313,16 @@ adminRouter.patch(
     // migration 034), because the agent is where a venue's identity and tools
     // live, and one agent serving two venues is the bug itself.
     const allowNameMismatch = request.query.allow_name_mismatch === "true";
-    if (body.retell_agent_id) {
-      const venue = await getProvisioning(id);
-      if (!venue) throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
 
+    // Read the venue ONCE, before anything is written. Two things need this:
+    // the name checks below, and knowing whether the line was already ready —
+    // see the number_ready gate at the end of the handler. It used to be
+    // fetched separately inside each check branch, so a bind that touched
+    // neither the agent nor Cal.com never validated that the venue existed.
+    const venue = await getProvisioning(id);
+    if (!venue) throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
+
+    if (body.retell_agent_id) {
       const conflict = await getRestaurantByRetellAgentId(body.retell_agent_id, id);
       if (conflict) {
         throw new AppError(
@@ -367,8 +373,6 @@ adminRouter.patch(
     // seats this restaurant's online diners at another restaurant's tables,
     // with every name resolving correctly on the way through.
     if (body.calcom_event_type_id !== undefined) {
-      const venue = await getProvisioning(id);
-      if (!venue) throw new AppError(404, "RESTAURANT_NOT_FOUND", "Restaurant not found.");
 
       const conflict = await getRestaurantByCalcomEventTypeId(body.calcom_event_type_id, id);
       if (conflict) {
@@ -474,11 +478,14 @@ adminRouter.patch(
       retellAgentId: body.retell_agent_id,
       calcomEventTypeId: body.calcom_event_type_id
     });
-    // Once both the number and agent are bound, tell the owner their line is
-    // ready so they can forward + verify.
+    // Tell the owner their line is ready — but only when this bind is what made
+    // it ready. The condition used to be "both columns are non-null now", which
+    // is true on EVERY later bind too, so correcting a typo in the Cal.com field
+    // re-sent the launch email. enqueueNotification has no per-kind dedupe, so
+    // the venue simply received it again. Gate on the transition instead.
     const prov = await getProvisioning(id);
-    if (prov?.twilio_phone_number && prov?.retell_agent_id) {
-      void notifyRestaurant("number_ready", id, { number: prov.twilio_phone_number });
+    if (becameLineReady(venue, prov)) {
+      void notifyRestaurant("number_ready", id, { number: prov!.twilio_phone_number! });
     }
     await audit(request, "provisioning_bind", {
       restaurantId: id,
