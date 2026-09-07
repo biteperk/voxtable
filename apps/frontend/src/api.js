@@ -659,6 +659,18 @@ export function getAdminActions(limit = 25) {
   return authedFetch(`/api/admin/actions?limit=${limit}`);
 }
 
+export function getAdminNeedsAttention() {
+  return authedFetch(`/api/admin/needs-attention`);
+}
+
+export function adminRetryNotification(id) {
+  return authedFetch(`/api/admin/notifications/${id}/retry`, { method: "POST" });
+}
+
+export function adminRerunMenuImport(id) {
+  return authedFetch(`/api/admin/menu-imports/${id}/rerun`, { method: "POST" });
+}
+
 export function getAdminSupportRequests(status) {
   const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
   return authedFetch(`/api/admin/support-requests${suffix}`);

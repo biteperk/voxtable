@@ -14920,6 +14920,621 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   }
 }
 
+/* ==== Admin design system ===================================================
+   The admin had no scale to design against: Tailwind's frozen preflight resets
+   h1-h6 to font-size/font-weight: inherit (see line ~221), and there were no
+   spacing, radius or shadow tokens — every size was an ad-hoc literal. So each
+   screen invented its own, and none of them agreed.
+
+   Everything here is prefixed --adm-* and scoped to .admin-shell so it cannot
+   leak into the venue dashboard. It sits AFTER preflight in source order, which
+   is why the heading rules below win on equal specificity with no !important.
+   (apps/kds has its own stylesheet, so nothing here reaches the KDS.)
+
+   Colour: this app is dark-only, so --primary is safe as text. State is never
+   carried by gold alone — gold means "brand/primary action", and the semantic
+   tokens below carry ok/warn/danger so a destructive control can never look
+   like the happy path. That was a real defect: "Clear the selected bindings"
+   shipped in the same gold as "Save bindings".
+   ------------------------------------------------------------------------- */
+.admin-shell {
+  /* Type — a real scale, finally. Display is for the big figures operators
+     read across a desk; the rest steps down from it. */
+  --adm-fs-display: clamp(2rem, 1.4rem + 2vw, 2.75rem);
+  --adm-fs-h1: clamp(1.5rem, 1.2rem + 1vw, 1.875rem);
+  --adm-fs-h2: 1.25rem;
+  --adm-fs-h3: 1.0625rem;
+  --adm-fs-body: 0.9375rem;
+  --adm-fs-small: 0.8125rem;
+  --adm-fs-eyebrow: 0.6875rem;
+  --adm-lh-tight: 1.15;
+  --adm-lh-body: 1.55;
+
+  /* Spacing — 4px base, so gaps stop being 10/14/16 by coincidence. */
+  --adm-space-1: 4px;
+  --adm-space-2: 8px;
+  --adm-space-3: 12px;
+  --adm-space-4: 16px;
+  --adm-space-5: 24px;
+  --adm-space-6: 32px;
+  --adm-space-7: 48px;
+
+  --adm-radius-sm: 8px;
+  --adm-radius-md: 14px;
+  --adm-radius-lg: 20px;
+  --adm-radius-pill: 999px;
+
+  --adm-shadow-card: 0 18px 48px -24px rgb(0 0 0 / 65%);
+  --adm-shadow-raised: 0 28px 70px -28px rgb(0 0 0 / 78%);
+
+  /* Semantic state. Mapped onto the existing palette so the admin agrees with
+     the rest of the app, but named by MEANING so no control has to reach for
+     --primary to say "danger". */
+  --adm-ok: var(--primary);
+  --adm-info: var(--secondary-fixed);
+  --adm-warn: var(--tertiary);
+  --adm-danger: var(--error);
+  --adm-surface: var(--surface-container-low);
+  --adm-surface-raised: var(--surface-container);
+  --adm-line: var(--outline-variant);
+  --adm-text: var(--on-surface);
+  --adm-text-dim: var(--on-surface-variant);
+}
+
+/* Headings inside the admin get a scale. Both font-size AND font-weight must be
+   set — preflight resets both to `inherit`, so setting only size leaves the
+   weight inherited from body. */
+.admin-shell h1 {
+  font-size: var(--adm-fs-h1);
+  font-weight: 700;
+  line-height: var(--adm-lh-tight);
+  letter-spacing: -0.015em;
+  color: var(--adm-text);
+}
+.admin-shell h2 {
+  font-size: var(--adm-fs-h2);
+  font-weight: 650;
+  line-height: var(--adm-lh-tight);
+  color: var(--adm-text);
+}
+.admin-shell h3,
+.admin-shell h4 {
+  font-size: var(--adm-fs-h3);
+  font-weight: 600;
+  line-height: var(--adm-lh-tight);
+  color: var(--adm-text);
+}
+.admin-shell .adm-eyebrow {
+  font-size: var(--adm-fs-eyebrow);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--adm-text-dim);
+}
+
+/* ---- Focus. Every interactive thing in the admin gets a visible ring.
+   .kitchen-btn and .profile-small-btn had none at all, so a keyboard operator
+   could not tell where they were. ------------------------------------------ */
+.admin-shell :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--adm-radius-sm);
+}
+
+/* ---- SectionCard — one card, used everywhere, instead of the ad-hoc
+   `onboarding-card admin-card` stack each screen assembled by hand. -------- */
+.adm-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--adm-space-4);
+  padding: var(--adm-space-5);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-lg);
+  background: var(--adm-surface);
+  box-shadow: var(--adm-shadow-card);
+}
+.adm-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--adm-space-4);
+  flex-wrap: wrap;
+}
+.adm-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  min-width: 0;
+}
+.adm-card-sub {
+  margin: var(--adm-space-1) 0 0;
+  font-size: var(--adm-fs-small);
+  line-height: var(--adm-lh-body);
+  color: var(--adm-text-dim);
+}
+.adm-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  flex-wrap: wrap;
+}
+.adm-card.is-danger {
+  border-color: color-mix(in srgb, var(--adm-danger) 42%, transparent);
+  background: color-mix(in srgb, var(--adm-danger) 7%, var(--adm-surface));
+}
+
+/* ---- StatTile — the big readable figure. Clickable when it drills in. ---- */
+.adm-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--adm-space-4);
+}
+.adm-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--adm-space-2);
+  padding: var(--adm-space-5);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-lg);
+  background: var(--adm-surface);
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+button.adm-stat {
+  cursor: pointer;
+  transition: border-color 160ms var(--ob-ease), transform 160ms var(--ob-ease);
+}
+button.adm-stat:hover {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--adm-line));
+  transform: translateY(-1px);
+}
+.adm-stat-label {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+.adm-stat-value {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-display);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--adm-text);
+  font-variant-numeric: tabular-nums;
+}
+.adm-stat.is-warn .adm-stat-value {
+  color: var(--adm-warn);
+}
+.adm-stat.is-danger .adm-stat-value {
+  color: var(--adm-danger);
+}
+.adm-stat-note {
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+
+/* ---- Badge — wraps the state vocabulary so nothing conveys state by colour
+   alone; the word is always present. --------------------------------------- */
+.adm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--adm-radius-pill);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.adm-badge .material-symbols-outlined {
+  font-size: 13px;
+}
+.adm-badge.is-ok {
+  border-color: color-mix(in srgb, var(--adm-ok) 40%, transparent);
+  background: color-mix(in srgb, var(--adm-ok) 14%, transparent);
+  color: var(--adm-ok);
+}
+.adm-badge.is-info {
+  border-color: color-mix(in srgb, var(--adm-info) 40%, transparent);
+  background: color-mix(in srgb, var(--adm-info) 12%, transparent);
+  color: var(--adm-info);
+}
+.adm-badge.is-warn {
+  border-color: color-mix(in srgb, var(--adm-warn) 45%, transparent);
+  background: color-mix(in srgb, var(--adm-warn) 12%, transparent);
+  color: var(--adm-warn);
+}
+.adm-badge.is-danger {
+  border-color: color-mix(in srgb, var(--adm-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--adm-danger) 12%, transparent);
+  color: var(--adm-danger);
+}
+.adm-badge.is-neutral {
+  border-color: var(--adm-line);
+  background: var(--surface-container-high);
+  color: var(--adm-text-dim);
+}
+
+/* ---- DataTable ---------------------------------------------------------- */
+.adm-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+}
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--adm-fs-body);
+}
+.adm-table caption {
+  padding: var(--adm-space-3) var(--adm-space-4);
+  text-align: left;
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+.adm-table th {
+  position: sticky;
+  top: 0;
+  padding: var(--adm-space-3) var(--adm-space-4);
+  border-bottom: 1px solid var(--adm-line);
+  background: var(--surface-container-high);
+  text-align: left;
+  font-size: var(--adm-fs-small);
+  font-weight: 600;
+  color: var(--adm-text-dim);
+  white-space: nowrap;
+}
+.adm-table td {
+  padding: var(--adm-space-3) var(--adm-space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--adm-line) 55%, transparent);
+  vertical-align: middle;
+}
+.adm-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.adm-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.adm-table-sort .material-symbols-outlined {
+  font-size: 16px;
+  opacity: 0.55;
+}
+.adm-table-sort[aria-sort="ascending"] .material-symbols-outlined,
+.adm-table-sort[aria-sort="descending"] .material-symbols-outlined {
+  opacity: 1;
+  color: var(--primary);
+}
+.adm-table tbody tr.is-clickable {
+  cursor: pointer;
+}
+.adm-table tbody tr.is-clickable:hover {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+.adm-num {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- EmptyState — says what it means and how it gets filled, rather than
+   leaving dead space. ------------------------------------------------------ */
+.adm-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--adm-space-3);
+  padding: var(--adm-space-7) var(--adm-space-5);
+  text-align: center;
+  color: var(--adm-text-dim);
+}
+.adm-empty .material-symbols-outlined {
+  font-size: 32px;
+  opacity: 0.5;
+}
+.adm-empty-title {
+  font-size: var(--adm-fs-h3);
+  font-weight: 600;
+  color: var(--adm-text);
+}
+.adm-empty-body {
+  max-width: 46ch;
+  font-size: var(--adm-fs-small);
+  line-height: var(--adm-lh-body);
+}
+
+/* ---- Toast. Success and failure finally look different; the admin used the
+   `menu-error` class for both. --------------------------------------------- */
+.adm-toasts {
+  position: fixed;
+  right: var(--adm-space-4);
+  bottom: var(--adm-space-4);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--adm-space-2);
+  max-width: min(420px, calc(100vw - 2 * var(--adm-space-4)));
+}
+.adm-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--adm-space-3);
+  padding: var(--adm-space-3) var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  box-shadow: var(--adm-shadow-raised);
+  font-size: var(--adm-fs-body);
+  color: var(--adm-text);
+  animation: adm-toast-in 200ms var(--ob-ease) both;
+}
+.adm-toast.is-ok {
+  border-color: color-mix(in srgb, var(--adm-ok) 45%, transparent);
+}
+.adm-toast.is-danger {
+  border-color: color-mix(in srgb, var(--adm-danger) 50%, transparent);
+}
+.adm-toast-body {
+  flex: 1;
+  min-width: 0;
+  line-height: var(--adm-lh-body);
+}
+.adm-toast-action {
+  flex: none;
+}
+@keyframes adm-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ---- Skeleton ----------------------------------------------------------- */
+.adm-skeleton {
+  border-radius: var(--adm-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--surface-container) 25%,
+    var(--surface-container-high) 37%,
+    var(--surface-container) 63%
+  );
+  background-size: 400% 100%;
+  animation: adm-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes adm-shimmer {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: 0 50%;
+  }
+}
+
+/* ---- AdminAction — a control acts, or it explains itself. It is never
+   quietly grey. The explanation renders here, next to the button. ---------- */
+.adm-action-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--adm-space-2);
+  margin: var(--adm-space-2) 0 0;
+  font-size: var(--adm-fs-small);
+  line-height: var(--adm-lh-body);
+  color: var(--adm-warn);
+}
+.adm-btn-danger {
+  border-color: color-mix(in srgb, var(--adm-danger) 55%, transparent);
+  background: color-mix(in srgb, var(--adm-danger) 14%, transparent);
+  color: var(--adm-danger);
+}
+.adm-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--adm-danger) 22%, transparent);
+}
+
+/* ---- Needs attention — the Overview centrepiece. Each row is one thing
+   waiting on a human, with its age and its own action. --------------------- */
+.adm-attention {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--adm-space-2);
+}
+.adm-attention-row {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) 1fr auto auto;
+  align-items: center;
+  gap: var(--adm-space-4);
+  padding: var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+}
+.adm-attention-body {
+  min-width: 0;
+}
+.adm-attention-body strong {
+  display: block;
+  font-size: var(--adm-fs-body);
+}
+.adm-attention-body p {
+  margin: var(--adm-space-1) 0 0;
+  font-size: var(--adm-fs-small);
+  line-height: var(--adm-lh-body);
+}
+.adm-attention-age {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-small);
+  white-space: nowrap;
+}
+
+/* ---- Funnel — every stage is a filter, not a decoration. ----------------- */
+.adm-funnel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--adm-space-2);
+}
+.adm-funnel-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--adm-space-1);
+  padding: var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms var(--ob-ease);
+}
+.adm-funnel-step:hover {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--adm-line));
+}
+.adm-funnel-value {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-h2);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.adm-funnel-label {
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+
+/* ---- Key/value rows for the Ops panels ---------------------------------- */
+.adm-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--adm-space-2);
+  margin-bottom: var(--adm-space-4);
+}
+.adm-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--adm-space-2);
+  padding: var(--adm-space-3) var(--adm-space-4);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+}
+.adm-kv-label {
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+}
+.adm-kv-value {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-body);
+  font-variant-numeric: tabular-nums;
+}
+.adm-error-text {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--adm-fs-small);
+  color: var(--adm-warn);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Flags, split into On and Off with the word rendered ----------------- */
+.adm-flag-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--adm-space-5);
+}
+.adm-flag-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-2);
+  margin: 0 0 var(--adm-space-2);
+  font-size: var(--adm-fs-small);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--adm-text-dim);
+}
+.adm-flag-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--adm-space-2);
+}
+
+/* ---- Audit / heartbeat list --------------------------------------------- */
+.adm-audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--adm-space-1);
+}
+.adm-audit-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-3);
+  padding: var(--adm-space-3) var(--adm-space-4);
+  border-radius: var(--adm-radius-md);
+  background: var(--adm-surface-raised);
+  font-size: var(--adm-fs-small);
+  flex-wrap: wrap;
+}
+.adm-audit-what {
+  font-weight: 600;
+  color: var(--adm-text);
+}
+
+/* The admin had exactly one media query. Three real steps instead. */
+@media (max-width: 1179px) {
+  .admin-shell .adm-stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+}
+@media (max-width: 767px) {
+  .admin-shell .adm-attention-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .admin-shell .adm-card {
+    padding: var(--adm-space-4);
+    border-radius: var(--adm-radius-md);
+  }
+  .admin-shell .adm-stat {
+    padding: var(--adm-space-4);
+  }
+  .admin-shell .adm-stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .adm-toasts {
+    right: var(--adm-space-2);
+    left: var(--adm-space-2);
+    bottom: var(--adm-space-2);
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-skeleton,
+  .adm-toast {
+    animation: none;
+  }
+  button.adm-stat:hover {
+    transform: none;
+  }
+}
+
 /* ---- Venue home ------------------------------------------------------------
    The service line is the one bold thing on this page; everything else stays
    quiet. Mono for figures because every operational surface in a venue — the
