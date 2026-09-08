@@ -24,7 +24,8 @@ import {
   getRestaurantVoiceContext,
   getRestaurantTimezone,
   getRetellAgentId,
-  getVoicePausedAt
+  getVoicePausedAt,
+  getOnboardingStatus
 } from "../repositories/restaurants";
 import { normalizePhone } from "../utils/phone";
 import { enrichLogContext, logger } from "../utils/logger";
@@ -223,10 +224,14 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
   // One cached query for the venue's identity + FAQ, one uncached query for the
   // agent id (kept separate so a rebind lands on the very next call), and one
   // uncached query for the pause flag (same reason — a pause must land now).
-  const [venue, perRestaurantAgentId, voicePausedAt] = await Promise.all([
+  const [venue, perRestaurantAgentId, voicePausedAt, onboardingStatus] = await Promise.all([
     getRestaurantVoiceContext(restaurantId),
     getRetellAgentId(restaurantId),
-    getVoicePausedAt(restaurantId)
+    getVoicePausedAt(restaurantId),
+    // Uncached, same reason as the pause flag: a billing suspension must land on
+    // the very next call. 'suspended' is written only by the billing lapse path,
+    // so it is a safe proxy for "paused for non-payment".
+    getOnboardingStatus(restaurantId)
   ]);
   const { timezone: tz, name: restaurantName, ownerName } = venue;
 
@@ -243,6 +248,22 @@ export async function handleRetellInbound(body: unknown): Promise<unknown> {
         ...(env.RETELL_PAUSED_AGENT_ID ? { override_agent_id: env.RETELL_PAUSED_AGENT_ID } : {}),
         dynamic_variables: { restaurant_name: restaurantName },
         metadata: { restaurant_id: restaurantId, source: "vocotable", voice_paused: "true" }
+      }
+    };
+  }
+
+  // Billing pause (recoverable): a venue unpaid past its grace window is
+  // 'suspended'. Route it to the same "not taking bookings" agent as a manual
+  // pause and stop before the menu/hours queries. Kept as a distinct signal from
+  // voice_paused_at so an owner resuming a rush-pause never lifts a billing
+  // suspension. It resumes automatically when Stripe reports the payment.
+  if (onboardingStatus === "suspended") {
+    logger.warn({ evt: "billing_suspended_inbound", restaurant_id: restaurantId });
+    return {
+      call_inbound: {
+        ...(env.RETELL_PAUSED_AGENT_ID ? { override_agent_id: env.RETELL_PAUSED_AGENT_ID } : {}),
+        dynamic_variables: { restaurant_name: restaurantName },
+        metadata: { restaurant_id: restaurantId, source: "vocotable", billing_suspended: "true" }
       }
     };
   }
@@ -475,6 +496,13 @@ export async function handleRetellFunction(
   // same response as the global VOICE_BOOKING_ENABLED gate above.
   if (await getVoicePausedAt(restaurantId)) {
     logger.warn({ evt: "voice_paused_refusal", tool: name, restaurant_id: restaurantId });
+    return voiceBookingDisabledResponse();
+  }
+
+  // Billing pause: a venue suspended for non-payment must not book, even for a
+  // call already in flight when the sweep suspended it. Same refusal as above.
+  if ((await getOnboardingStatus(restaurantId)) === "suspended") {
+    logger.warn({ evt: "billing_suspended_refusal", tool: name, restaurant_id: restaurantId });
     return voiceBookingDisabledResponse();
   }
 

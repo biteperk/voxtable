@@ -11,6 +11,10 @@ export interface Membership {
   services: string[];
   /** When the venue's phone line is paused (kill switch), or null when live. */
   voicePausedAt: Date | null;
+  /** True while a payment has failed and the venue is in the recoverable grace
+      window (still live). The dashboard shows a "past due" banner; once the
+      sweep suspends the venue it is redirected to billing instead. */
+  billingPastDue: boolean;
 }
 
 export interface RestaurantMember {
@@ -27,6 +31,7 @@ interface MembershipRow {
   role: MemberRole;
   services: string[] | null;
   voice_paused_at: Date | null;
+  billing_past_due_since: Date | null;
 }
 
 interface RestaurantMemberRow {
@@ -49,7 +54,7 @@ export async function getUserMemberships(
 ): Promise<Membership[]> {
   const result = await db.query<MembershipRow>(
     `
-    SELECT rm.restaurant_id, r.name AS restaurant_name, rm.role, r.services, r.voice_paused_at
+    SELECT rm.restaurant_id, r.name AS restaurant_name, rm.role, r.services, r.voice_paused_at, r.billing_past_due_since
     FROM restaurant_members rm
     JOIN restaurants r ON r.id = rm.restaurant_id
     WHERE rm.user_id = $1
@@ -65,7 +70,8 @@ export async function getUserMemberships(
     // at the agreement step and, until now, read by exactly one admin endpoint no
     // UI rendered — so the dashboard could not tell what a venue had bought.
     services: row.services ?? [],
-    voicePausedAt: row.voice_paused_at ?? null
+    voicePausedAt: row.voice_paused_at ?? null,
+    billingPastDue: row.billing_past_due_since != null
   }));
 }
 
