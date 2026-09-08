@@ -125,7 +125,22 @@ async function authedFetch(path, options = {}) {
       if (response.status >= 500) reportApiFailure(err, path, options, response.status);
       throw err;
     }
+    // express-rate-limit answers with plain text, not the AppError shape, so
+    // this would otherwise reach the user as
+    // "429 : Too many requests, please try again later." — which reads like a
+    // fault rather than what it is: the app asked for too much, too fast.
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const err = new Error(
+        "Asking the server too often — it will accept requests again shortly."
+      );
+      err.status = 429;
+      err.code = "RATE_LIMITED";
+      err.retryAfterMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 60_000;
+      throw err;
+    }
     const err = new Error(`${response.status} ${response.statusText}: ${body}`);
+    err.status = response.status;
     if (response.status >= 500) reportApiFailure(err, path, options, response.status);
     throw err;
   }
