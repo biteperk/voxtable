@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { applyResult, isStale, shouldRefetchOnVisible } from "../lib/adminRefresh";
+import { applyResult, isStale, nextPollDelay, shouldRefetchOnVisible } from "../lib/adminRefresh";
 
 /**
  * The data half of an admin screen: fetch, poll, refresh, and report.
@@ -54,7 +54,7 @@ export function useAdminData(fetcher, { intervalMs, deps = [] } = {}) {
       const data = await fetcherRef.current();
       result = { ok: true, data, at: Date.now() };
     } catch (e) {
-      result = { ok: false, error: e?.message ?? "Something went wrong" };
+      result = { ok: false, error: e?.message ?? "Something went wrong", cause: e };
     }
     if (!mountedRef.current) return result;
     // A response older than one already applied is dropped rather than
@@ -74,34 +74,49 @@ export function useAdminData(fetcher, { intervalMs, deps = [] } = {}) {
     return result;
   }, []);
 
+  /**
+   * Self-scheduling poll rather than a fixed setInterval, so the next delay can
+   * depend on how the last one went — a screen that polls straight through a
+   * 429 is the screen that caused it.
+   */
+  const scheduleRef = useRef(null);
+  const scheduleNext = useCallback(
+    (error) => {
+      if (!mountedRef.current) return;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      const delay = nextPollDelay(intervalMs, error);
+      if (!delay) return;
+      timerRef.current = setTimeout(async () => {
+        if (document.hidden) {
+          scheduleRef.current?.(null);
+          return;
+        }
+        const result = await load({ manual: false });
+        scheduleRef.current?.(result?.ok ? null : result?.cause);
+      }, delay);
+    },
+    [intervalMs, load]
+  );
+  scheduleRef.current = scheduleNext;
+
   /** Manual refresh: reports, and re-arms the poll so the two cannot collide. */
   const refresh = useCallback(async () => {
     const result = await load({ manual: true });
-    if (intervalMs && mountedRef.current) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = setInterval(() => {
-        if (!document.hidden) load({ manual: false });
-      }, intervalMs);
-    }
+    scheduleRef.current?.(result?.ok ? null : result?.cause);
     return result;
-  }, [load, intervalMs]);
+  }, [load]);
 
   useEffect(() => {
     mountedRef.current = true;
-    load({ manual: false });
-    if (intervalMs) {
-      timerRef.current = setInterval(() => {
-        if (!document.hidden) load({ manual: false });
-      }, intervalMs);
-    }
+    load({ manual: false }).then((result) => scheduleRef.current?.(result?.ok ? null : result?.cause));
     const onVisible = () => {
       if (document.hidden) return;
-      if (shouldRefetchOnVisible(lastUpdatedRef.current, intervalMs)) load({ manual: false });
+      if (shouldRefetchOnVisible(lastUpdatedRef.current, intervalMs)) refresh();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       mountedRef.current = false;
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
       document.removeEventListener("visibilitychange", onVisible);
     };
     // `deps` is the caller's "re-fetch when these change" contract, spread on

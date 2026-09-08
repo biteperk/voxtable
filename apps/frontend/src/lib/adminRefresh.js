@@ -76,3 +76,21 @@ export function shouldRefetchOnVisible(lastUpdatedAt, intervalMs, now = Date.now
   if (!intervalMs || !lastUpdatedAt) return false;
   return now - lastUpdatedAt >= intervalMs;
 }
+
+/**
+ * How long to wait before the next automatic poll.
+ *
+ * A screen that keeps polling straight through a 429 is the thing that caused
+ * the 429 — on 8 Sep 2026 the production Overview hit 152 admin requests in one
+ * minute against a 120/min per-IP ceiling, because five endpoints fan out per
+ * refresh and the button gave no feedback, so it was clicked ~28 times. Backing
+ * off is what lets the window clear.
+ *
+ * Only rate limiting extends the interval; other failures keep the normal
+ * cadence, because those are worth retrying promptly.
+ */
+export function nextPollDelay(intervalMs, error) {
+  if (!intervalMs) return null;
+  if (error?.status === 429) return Math.max(intervalMs, error.retryAfterMs ?? 60_000);
+  return intervalMs;
+}

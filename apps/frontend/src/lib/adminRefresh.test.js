@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyResult, isStale, shouldBlockPage, shouldRefetchOnVisible } from "./adminRefresh.js";
+import {
+  applyResult,
+  isStale,
+  nextPollDelay,
+  shouldBlockPage,
+  shouldRefetchOnVisible
+} from "./adminRefresh.js";
 
 const loaded = { data: { calls: 7 }, error: null, lastUpdatedAt: 1000 };
 
@@ -55,4 +61,18 @@ test("a hidden tab re-fetches on return only once its data is older than one pol
   assert.equal(shouldRefetchOnVisible(now - 999_999, undefined, now), false);
   // And nothing to compare against yet.
   assert.equal(shouldRefetchOnVisible(null, 30_000, now), false);
+});
+
+test("a rate limit backs the poll off; other failures keep the cadence", () => {
+  // The screen that keeps polling through a 429 is the screen that caused it.
+  assert.equal(nextPollDelay(30_000, { status: 429, retryAfterMs: 90_000 }), 90_000);
+  // No Retry-After header — fall back to a minute, the limiter's window.
+  assert.equal(nextPollDelay(30_000, { status: 429 }), 60_000);
+  // Never shorter than the normal interval, even if the server says so.
+  assert.equal(nextPollDelay(30_000, { status: 429, retryAfterMs: 1_000 }), 30_000);
+  // A 500 is worth retrying promptly.
+  assert.equal(nextPollDelay(30_000, { status: 500 }), 30_000);
+  assert.equal(nextPollDelay(30_000, null), 30_000);
+  // A screen that does not poll never starts because of an error.
+  assert.equal(nextPollDelay(undefined, { status: 429 }), null);
 });
