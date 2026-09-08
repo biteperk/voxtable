@@ -49,7 +49,8 @@ meRouter.get(
           name: m.restaurantName,
           role: m.role,
           services: m.services,
-          voice_paused_at: m.voicePausedAt
+          voice_paused_at: m.voicePausedAt,
+          billing_past_due: m.billingPastDue
         })),
         active_restaurant_id: memberships.length === 1 ? memberships[0]!.restaurantId : null,
         // Dev bypass: requireAdminRole lets everyone through when verify-auth
@@ -80,7 +81,8 @@ meRouter.get(
         name: m.restaurantName,
         role: m.role,
         services: m.services,
-        voice_paused_at: m.voicePausedAt
+        voice_paused_at: m.voicePausedAt,
+        billing_past_due: m.billingPastDue
       })),
       // Auto-select when there's exactly one; the frontend persists the choice
       // and sends X-Restaurant-Id thereafter. null → frontend must pick.

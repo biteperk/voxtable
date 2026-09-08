@@ -36,6 +36,21 @@ export function DashboardShell({ active, children, navigate, path }) {
         </span>
       </div>
     ) : null;
+  // "Payment past due" banner — the recoverable grace window before a billing
+  // suspension. The venue is still live and using the dashboard; a suspended
+  // venue is redirected to /manage-plan (main.jsx) and never sees this. Driven
+  // by billing_past_due from /api/me. Shown to managers, who can fix the card.
+  const billingPastDue = Boolean(activeMembership?.billing_past_due);
+  const billingBanner =
+    billingPastDue && hasMinRole("manager") ? (
+      <div className="billing-pastdue-banner" role="alert">
+        <Icon name="credit_card_off" />
+        <span>
+          <strong>We couldn&apos;t take your last payment.</strong> Update your card within a few
+          days or Bella will pause taking calls. <a href="/manage-plan">Update payment method</a>.
+        </span>
+      </div>
+    ) : null;
   const burgerRef = useRef(null);
   const drawer = useDrawer({ pathname: path, triggerRef: burgerRef });
   const { scrolled, sentinelRef } = useScrolled();
@@ -158,6 +173,7 @@ export function DashboardShell({ active, children, navigate, path }) {
       <div className="dashboard-shell">
         {sidebarMarkup}
         <main className="dashboard-content">
+          {billingBanner}
           {pauseBanner}
           {children}
         </main>
@@ -232,6 +248,7 @@ export function DashboardShell({ active, children, navigate, path }) {
         className="dashboard-content mobile-main"
         inert={drawer.isOpen || undefined}
       >
+        {billingBanner}
         {pauseBanner}
         {children}
       </main>

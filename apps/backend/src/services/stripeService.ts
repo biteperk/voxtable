@@ -36,6 +36,8 @@ import {
   getRestaurantTimezone,
   getStripeCustomerId,
   setOnboardingStatus,
+  setBillingPastDueSince,
+  clearBillingPastDueSince,
   setStripeCustomerId
 } from "../repositories/restaurants";
 import { logger } from "../utils/logger";
@@ -476,11 +478,16 @@ export async function createCheckoutSession(restaurantId: string): Promise<{ url
 }
 
 // Map a Stripe subscription status to the onboarding event it should drive.
-function eventForSubscriptionStatus(status: Stripe.Subscription.Status): "subscription_active" | "subscription_lapsed" | null {
+export function eventForSubscriptionStatus(
+  status: Stripe.Subscription.Status
+): "subscription_active" | "subscription_past_due" | "subscription_lapsed" | null {
   if (status === "trialing" || status === "active") return "subscription_active";
-  if (status === "past_due" || status === "unpaid" || status === "canceled" || status === "incomplete_expired") {
-    return "subscription_lapsed";
-  }
+  // Soft: a payment failed but the subscription is still alive and retrying.
+  // This starts the recoverable 3-day grace (billing_past_due_since) and does
+  // NOT touch onboarding_status — the venue keeps working.
+  if (status === "past_due" || status === "unpaid") return "subscription_past_due";
+  // Hard: Stripe has given up. Suspend immediately.
+  if (status === "canceled" || status === "incomplete_expired") return "subscription_lapsed";
   return null;
 }
 
@@ -570,7 +577,7 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<string>
 
     // Determine the subscription status: subscription.* events carry it
     // directly; checkout.session.completed implies a started (trialing) sub.
-    let event_: "subscription_active" | "subscription_lapsed" | null = null;
+    let event_: "subscription_active" | "subscription_past_due" | "subscription_lapsed" | null = null;
     if (type === "checkout.session.completed") {
       event_ = "subscription_active";
     } else if (type === "customer.subscription.deleted") {
@@ -580,6 +587,20 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<string>
       event_ = status ? eventForSubscriptionStatus(status) : null;
     }
     if (!event_) return "no-op";
+
+    // Soft lapse: start (or leave running) the recoverable grace clock and stop
+    // here. onboarding_status stays 'live' — the venue keeps answering calls for
+    // the grace window; the daily sweep is what pauses it after 3 days.
+    if (event_ === "subscription_past_due") {
+      await setBillingPastDueSince(restaurantId);
+      logger.info({ evt: "billing_past_due", restaurant_id: restaurantId, stripe_event: type });
+      return `${type} → past_due`;
+    }
+    // Recovery: clear the clock before the state-machine advance below, which
+    // reactivates suspended → live.
+    if (event_ === "subscription_active") {
+      await clearBillingPastDueSince(restaurantId);
+    }
 
     const current = await getOnboardingStatus(restaurantId);
     if (!current) return "no-restaurant";
@@ -610,15 +631,17 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<string>
   }
 
   if (type === "invoice.payment_failed") {
+    // Start the recoverable grace clock — do NOT suspend on the first failure.
+    // The daily sweep pauses the venue only after 3 days unpaid. The customer is
+    // told by Stripe's own failed-payment email + the in-app dashboard banner;
+    // our payment_failed email was email-only and is dead under EMAIL_PROVIDER=none,
+    // so it is deliberately not fired here. subscription.updated → past_due sets
+    // the same flag, so whichever event Stripe delivers first wins (idempotent).
     const object = event.data.object as unknown as Record<string, unknown>;
     const restaurantId = await restaurantIdForEvent(object);
     if (restaurantId) {
-      const current = await getOnboardingStatus(restaurantId);
-      if (current) {
-        const next = nextOnboardingStatus(current, "subscription_lapsed");
-        if (next !== current) await setOnboardingStatus(restaurantId, next);
-      }
-      void notifyRestaurant("payment_failed", restaurantId);
+      await setBillingPastDueSince(restaurantId);
+      logger.info({ evt: "billing_past_due", restaurant_id: restaurantId, stripe_event: type });
     }
     return "payment_failed";
   }
