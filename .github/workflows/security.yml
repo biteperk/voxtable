@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     container: semgrep/semgrep:1.172.0
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Semgrep (fail on ERROR severity)
         run: >
@@ -48,7 +48,7 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Run gitleaks over the checked-out tree
         # Pinned official image; the runner mounts the checkout into it, so
