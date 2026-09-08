@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
 import { adminReenqueueJob, getAdminProvisioningJobs, getAdminProvisioningQueue } from "../../api";
 import { AdminAction } from "../../components/admin/AdminAction";
+import { RefreshControl } from "../../components/admin/RefreshControl";
 import { Badge } from "../../components/admin/Badge";
 import { DataTable } from "../../components/admin/DataTable";
 import { EmptyState } from "../../components/admin/EmptyState";
@@ -10,35 +11,32 @@ import { SkeletonLines } from "../../components/admin/Skeleton";
 import { StatTile } from "../../components/admin/StatTile";
 import { useToast } from "../../components/admin/Toast";
 import { Icon } from "../../components/Icon";
+import { useAdminData } from "../../hooks/useAdminData";
+import { shouldBlockPage } from "../../lib/adminRefresh";
 import { relativeTime } from "../../lib/format";
 import { nextAction, pipelineFor, waitingHours } from "../../lib/provisioningPipeline";
 
 export function AdminJobs({ goVenues }) {
-  const [queue, setQueue] = useState(null);
-  const [jobs, setJobs] = useState(null);
-  // Not `true`: assuming auto-provisioning is on and correcting a moment later
-  // flashed the warning in after first paint, which reads as a glitch. Null
-  // means "not known yet" and renders nothing.
-  const [workerEnabled, setWorkerEnabled] = useState(null);
-  const [error, setError] = useState(null);
   const [reenqueueTarget, setReenqueueTarget] = useState(null);
   const toast = useToast();
 
-  const refresh = useCallback(async () => {
-    try {
+  const { data, error, lastUpdatedAt, refreshing, announcement, refresh } = useAdminData(
+    async () => {
       const [q, j] = await Promise.all([getAdminProvisioningQueue(), getAdminProvisioningJobs()]);
-      setQueue(q.restaurants ?? []);
-      setJobs(j.jobs ?? []);
-      setWorkerEnabled(Boolean(j.worker_enabled));
-      setError(null);
-    } catch (e) {
-      setError(e.message ?? "Couldn't load the provisioning queue");
+      return {
+        queue: q.restaurants ?? [],
+        jobs: j.jobs ?? [],
+        // Not defaulted true: assuming auto-provisioning is on and correcting a
+        // moment later flashed the warning in after first paint, which reads as
+        // a glitch. Undefined until known, and it renders nothing.
+        workerEnabled: Boolean(j.worker_enabled)
+      };
     }
-  }, []);
+  );
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  const queue = data?.queue ?? null;
+  const jobs = data?.jobs ?? null;
+  const workerEnabled = data ? data.workerEnabled : null;
 
   const failed = (jobs ?? []).filter((j) => j.status === "failed");
   const oldestWait = (queue ?? []).reduce(
@@ -73,12 +71,22 @@ export function AdminJobs({ goVenues }) {
       </section>
 
       {error ? (
-        <SectionCard title="Couldn't load this tab" tone="danger" icon="error">
-          <p className="admin-muted">{error}</p>
-          <AdminAction onAct={refresh} icon="refresh">
-            Try again
-          </AdminAction>
-        </SectionCard>
+        shouldBlockPage({ data, error }) ? (
+          <SectionCard title="Couldn't load this tab" tone="danger" icon="error">
+            <p className="admin-muted">{error}</p>
+            <AdminAction onAct={refresh} icon="refresh" busy={refreshing} busyLabel="Retrying…">
+              Try again
+            </AdminAction>
+          </SectionCard>
+        ) : (
+          <div className="adm-stale-notice" role="status">
+            <Icon name="cloud_off" />
+            <span>
+              Couldn&apos;t refresh — showing the last good data from{" "}
+              {lastUpdatedAt ? relativeTime(new Date(lastUpdatedAt)).toLowerCase() : "earlier"}. {error}
+            </span>
+          </div>
+        )
       ) : null}
 
       {workerEnabled === false ? (
@@ -100,9 +108,12 @@ export function AdminJobs({ goVenues }) {
         icon="hourglass_top"
         subtitle="A venue here has paid and cannot take a call yet. The highlighted step is what it is waiting on."
         actions={
-          <AdminAction onAct={refresh} icon="refresh">
-            Refresh
-          </AdminAction>
+          <RefreshControl
+            lastUpdatedAt={lastUpdatedAt}
+            refreshing={refreshing}
+            announcement={announcement}
+            onRefresh={refresh}
+          />
         }
       >
         {!queue ? (
