@@ -15060,6 +15060,42 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
   align-items: center;
   gap: var(--adm-space-2);
   flex-wrap: wrap;
+  /* The header is `align-items: flex-start`, which top-aligned the actions
+     against the TITLE ROW rather than the header block — so on a card with an
+     icon, a title, a badge and a subtitle, a lone small button floated above
+     the header's visual centre and read as detached. Centring only the actions
+     leaves every title alignment untouched. */
+  align-self: center;
+}
+
+/* "Updated 12 seconds ago", beside the Refresh button. This is what makes a
+   refresh observable on a screen of zeroes, where the data changing looks
+   exactly like nothing happening. */
+.adm-refresh {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-3);
+  flex-wrap: wrap;
+}
+.adm-card-stamp {
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A failed refresh no longer replaces the page, so it needs somewhere quiet to
+   say that what you are reading is not current. */
+.adm-stale-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--adm-space-3);
+  padding: var(--adm-space-3) var(--adm-space-4);
+  border: 1px solid color-mix(in srgb, var(--adm-warn) 40%, transparent);
+  border-radius: var(--adm-radius-md);
+  background: color-mix(in srgb, var(--adm-warn) 8%, transparent);
+  font-size: var(--adm-fs-small);
+  color: var(--adm-text);
 }
 .adm-card.is-danger {
   border-color: color-mix(in srgb, var(--adm-danger) 42%, transparent);
