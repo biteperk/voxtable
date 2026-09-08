@@ -124,6 +124,28 @@ export async function retryFailedNotification(id: string): Promise<NotificationR
   return result.rows[0] ?? null;
 }
 
+/**
+ * Remove a dead notification for good (admin action).
+ *
+ * The counterpart to retry, and the reason it exists: the cleanup worker's
+ * retention sweep deletes only `sent` rows, deliberately keeping failures for
+ * ops. So a failure that will never be sendable — a verification code whose
+ * 15-minute window closed days ago, or anything queued for a provider that no
+ * longer exists — sat in the admin's "needs attention" list permanently, with
+ * Retry as the only available action and nothing for it to achieve.
+ *
+ * Scoped to `failed` so it can never remove a row still in flight, and returns
+ * null otherwise so the route can refuse honestly rather than reporting a
+ * deletion that did not happen.
+ */
+export async function discardFailedNotification(id: string): Promise<NotificationRow | null> {
+  const result = await pool.query<NotificationRow>(
+    "DELETE FROM notifications_outbox WHERE id = $1 AND status = 'failed' RETURNING *",
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
 /** The failed rows themselves, for the Ops panel — stats alone can't be acted on. */
 export async function listFailedNotifications(limit = 20): Promise<NotificationRow[]> {
   const result = await pool.query<NotificationRow>(

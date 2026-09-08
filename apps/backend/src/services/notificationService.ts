@@ -5,6 +5,12 @@ import { getRestaurantProfile } from "../repositories/restaurants";
 
 export function isEmailEnabled(): boolean {
   if (!env.NOTIFICATIONS_ENABLED) return false;
+  // "none" is a deliberate choice, not a missing credential: sign-up verification
+  // rides Firebase Auth's native link, and there is no transactional provider
+  // behind the rest. It must be checked EXPLICITLY — the ternary below treats
+  // any non-zeptomail value as SendGrid, so "none" would otherwise fall through
+  // and be judged on a SendGrid key that will never exist.
+  if (env.EMAIL_PROVIDER === "none") return false;
   // The worker can only drain email rows with the active provider's credential.
   return env.EMAIL_PROVIDER === "zeptomail"
     ? Boolean(env.ZEPTOMAIL_TOKEN)
@@ -139,7 +145,13 @@ export async function notifyRestaurant(
   restaurantId: string,
   vars: Vars = {}
 ): Promise<void> {
-  if (!isEmailEnabled()) return;
+  if (!isEmailEnabled()) {
+    // Loud enough to grep, quiet enough not to page anyone. Email being off is
+    // a config decision, but a venue silently never hearing that its number is
+    // ready — or that its card failed — should leave a trace somewhere.
+    logger.warn({ evt: "email_skipped", kind, restaurant_id: restaurantId });
+    return;
+  }
   try {
     const profile = await getRestaurantProfile(restaurantId);
     const email = profile?.contact_email;
