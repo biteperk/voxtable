@@ -310,11 +310,7 @@ jobs:
       # artifact — that is the rollback point if a reconcile turns out wrong.
       - name: Upload Retell snapshots
         if: always()
-<<<<<<< HEAD
-        uses: actions/upload-artifact@v4
-=======
         uses: actions/upload-artifact@v7
->>>>>>> origin/integration
         with:
           name: retell-snapshots-${{ steps.deploy-meta.outputs.deploy_env }}-${{ github.run_id }}
           path: deploy/retell-snapshots/

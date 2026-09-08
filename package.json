@@ -1,10 +1,6 @@
 {
   "name": "voxtable",
-<<<<<<< HEAD
-  "version": "1.5.1",
-=======
   "version": "1.5.2",
->>>>>>> origin/integration
   "private": true,
   "description": "Voice AI booking platform for restaurants.",
   "workspaces": [
@@ -83,13 +79,8 @@
     "eslint-plugin-import-x": "^4.17.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-<<<<<<< HEAD
-    "globals": "^17.11.0",
-    "typescript-eslint": "^8.68.0"
-=======
     "globals": "^17.12.0",
     "typescript-eslint": "^8.69.0"
->>>>>>> origin/integration
   },
   "overrides": {
     "qs": "^6.16.0"
