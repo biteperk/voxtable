@@ -279,6 +279,43 @@ test("production with the full order-payments config boots", () => {
   assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
 });
 
+test("production boots with email switched off and SMS still configured", () => {
+  // The shape production actually runs in from 8 Sep 2026. Two things must hold
+  // at once and they pull against each other: no email credential of any kind,
+  // and SMS fully alive. Dropping the credential while EMAIL_PROVIDER=zeptomail
+  // trips the boot gate, and NOTIFICATIONS_ENABLED=false would take SMS with it
+  // AND block every SMS feature flag from ever being enabled — EMAIL_PROVIDER=none
+  // is what makes this combination expressible.
+  const result = validateEnv({
+    ...productionEnv,
+    NOTIFICATIONS_ENABLED: "true",
+    EMAIL_PROVIDER: "none",
+    NOTIFICATIONS_MESSAGING_SERVICE_SID: "MG7ceaa2aaa3cea6195ea7979d57b78b14",
+    TWILIO_ACCOUNT_SID: "AC00000000000000000000000000000000",
+    TWILIO_AUTH_TOKEN: "twilio-token"
+  });
+  assert.equal(result.success, true, JSON.stringify(issuePaths(result)));
+});
+
+test("EMAIL_PROVIDER=none refuses to boot alongside the verification-code flag", () => {
+  // Production carried EMAIL_VERIFICATION_CODE_ENABLED=true for days against a
+  // sender with no credit, queueing codes nobody could receive. Nothing calls
+  // that endpoint any more — sign-up verification is Firebase's native link —
+  // so the two settings together are always a mistake, and the boot says so
+  // rather than the admin's "needs attention" list discovering it later.
+  const result = validateEnv({
+    ...productionEnv,
+    NOTIFICATIONS_ENABLED: "true",
+    EMAIL_PROVIDER: "none",
+    EMAIL_VERIFICATION_CODE_ENABLED: "true",
+    NOTIFICATIONS_MESSAGING_SERVICE_SID: "MG7ceaa2aaa3cea6195ea7979d57b78b14",
+    TWILIO_ACCOUNT_SID: "AC00000000000000000000000000000000",
+    TWILIO_AUTH_TOKEN: "twilio-token"
+  });
+  assert.equal(result.success, false);
+  assert.ok(issuePaths(result).includes("EMAIL_VERIFICATION_CODE_ENABLED"));
+});
+
 test("production order-payments boots on the Messaging Service alone, with no NOTIFICATIONS_SMS_FROM", () => {
   // The branded-SMS configuration: the Messaging Service owns the sender pool,
   // so there is no bare `from` to set. Before the sender ID landed this gate

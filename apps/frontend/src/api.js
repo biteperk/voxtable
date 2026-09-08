@@ -677,6 +677,12 @@ export function adminRetryNotification(id) {
   return authedFetch(`/api/admin/notifications/${id}/retry`, { method: "POST" });
 }
 
+// Permanently removes a dead notification. Only a `failed` row can be
+// discarded — the API refuses anything still queued.
+export function adminDiscardNotification(id) {
+  return authedFetch(`/api/admin/notifications/${id}/discard`, { method: "POST" });
+}
+
 export function adminRerunMenuImport(id) {
   return authedFetch(`/api/admin/menu-imports/${id}/rerun`, { method: "POST" });
 }

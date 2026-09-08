@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  adminDiscardNotification,
   adminRetryNotification,
   getAdminActions,
   getAdminActivity,
@@ -136,6 +137,22 @@ export function AdminOverview({ flags, goVenues, goTab }) {
     ([key, value]) => value === true && LATCH_LABELS[key]
   );
 
+  // Email off means a retry cannot succeed — see AdminOps for the same rule.
+  const emailOff = flags?.flags?.notifications_email === false;
+
+  const discardNotification = async (id) => {
+    setBusy(`discard-${id}`);
+    try {
+      await adminDiscardNotification(id);
+      toast.success("Discarded — it will not be sent, and the audit log records what it was.");
+      await refresh();
+    } catch (e) {
+      toast.error(e.message ?? "That discard didn't go through.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const retryNotification = async (id) => {
     setBusy(`notif-${id}`);
     try {
@@ -247,13 +264,29 @@ export function AdminOverview({ flags, goVenues, goTab }) {
                 <span className="admin-muted adm-attention-age">
                   {n.created_at ? relativeTime(new Date(n.created_at)) : "—"}
                 </span>
-                <AdminAction
-                  onAct={() => retryNotification(n.id)}
-                  busy={busy === `notif-${n.id}`}
-                  icon="replay"
-                >
-                  Retry
-                </AdminAction>
+                <div className="adm-row-actions">
+                  <AdminAction
+                    onAct={() => retryNotification(n.id)}
+                    busy={busy === `notif-${n.id}`}
+                    blocked={
+                      n.channel === "email" && emailOff
+                        ? "Email is switched off in this environment, so a retry would sit unsent. Discard it instead."
+                        : null
+                    }
+                    icon="replay"
+                  >
+                    Retry
+                  </AdminAction>
+                  <AdminAction
+                    onAct={() => discardNotification(n.id)}
+                    busy={busy === `discard-${n.id}`}
+                    tone="danger"
+                    icon="delete"
+                    busyLabel="Discarding…"
+                  >
+                    Discard
+                  </AdminAction>
+                </div>
               </li>
             ))}
 
