@@ -15,6 +15,18 @@ updates:
         update-types:
           - minor
           - patch
+    # Temporary, and each one is a migration with an issue behind it — NOT a decision to stay
+    # behind. Delete the entry in the migration PR, the way PR #281 deleted the tailwindcss rule.
+    # Scoped to majors only, so minor and patch updates for both keep flowing through the group
+    # above. Security advisories are still caught by `npm run audit:production` in CI, which runs
+    # with no --audit-level and cannot be muted from here.
+    ignore:
+      # zod 4 rewrites ~25 call sites, 19 of them inside the env boot gate. Issue #437.
+      - dependency-name: zod
+        update-types: ["version-update:semver-major"]
+      # stripe 21 re-dates every response shape behind unvalidated webhook casts. Issue #438.
+      - dependency-name: stripe
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
