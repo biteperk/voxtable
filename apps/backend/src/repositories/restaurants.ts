@@ -1102,6 +1102,60 @@ export async function setVoicePaused(restaurantId: string, paused: boolean): Pro
 }
 
 /**
+ * The billing "past due" clock (migration 047).
+ *
+ * Set when a subscription first goes past-due, from the Stripe webhook. Uses
+ * COALESCE so the clock is written only if it is not already running — the
+ * three-day grace measures from the FIRST failure, not the latest retry, so a
+ * second failed retry must not reset it. No cache invalidation: this column is
+ * read only by the daily sweep and /api/me, never on the voice hot path.
+ */
+export async function setBillingPastDueSince(
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(
+    "UPDATE restaurants SET billing_past_due_since = COALESCE(billing_past_due_since, now()) WHERE id = $1",
+    [restaurantId]
+  );
+}
+
+/** Clear the clock on recovery (payment succeeded). Idempotent. */
+export async function clearBillingPastDueSince(
+  restaurantId: string,
+  db: DbClient = pool
+): Promise<void> {
+  await db.query(
+    "UPDATE restaurants SET billing_past_due_since = NULL WHERE id = $1",
+    [restaurantId]
+  );
+}
+
+/**
+ * The daily sweep: pause every LIVE venue whose past-due clock has been running
+ * longer than `graceDays`. Recoverable — the flag stays set (it is cleared only
+ * by payment), and going to 'suspended' is what the voice gate and the dashboard
+ * redirect both key off. Scoped to 'live' so it never touches a venue that is
+ * still onboarding or already suspended, which also enforces the state machine's
+ * "only a live venue can be suspended" rule. Returns the ids paused, for logging.
+ */
+export async function suspendVenuesPastDueBeyond(
+  graceDays: number,
+  db: DbClient = pool
+): Promise<string[]> {
+  const result = await db.query<{ id: string }>(
+    `UPDATE restaurants
+        SET onboarding_status = 'suspended'
+      WHERE onboarding_status = 'live'
+        AND billing_past_due_since IS NOT NULL
+        AND billing_past_due_since < now() - ($1 || ' days')::interval
+      RETURNING id`,
+    [String(graceDays)]
+  );
+  return result.rows.map((r) => r.id);
+}
+
+/**
  * Bind the telephony/provisioning identifiers for a restaurant (admin action).
  * Numbers are stored normalized to E.164 so the dialed-number lookup matches.
  * Invalidates the cache so a rebind takes effect immediately.

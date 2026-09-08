@@ -16352,3 +16352,26 @@ button.adm-stat:hover {
   flex: none;
   color: var(--error);
 }
+
+/* Payment past-due warning — the recoverable grace window before a billing
+   suspension. Amber rather than the pause banner's red: it's a heads-up, not a
+   line-down. Same shape as .voice-pause-banner and .billing-lapsed-notice. */
+.billing-pastdue-banner {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border: 1px solid color-mix(in srgb, var(--tertiary, #b8860b) 45%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tertiary, #b8860b) 12%, var(--surface, transparent));
+}
+.billing-pastdue-banner > .material-symbols-outlined {
+  flex: none;
+  color: var(--tertiary, #b8860b);
+}
+.billing-pastdue-banner a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
