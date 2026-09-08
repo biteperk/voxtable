@@ -20,6 +20,7 @@ import { getInboxStats } from "../repositories/inbox";
 import { listRestaurantMembers } from "../repositories/members";
 import { getMenuIngestionSummary, rerunFailedIngestionJob } from "../repositories/menuIngestion";
 import {
+  discardFailedNotification,
   enqueueNotification,
   getNotificationOutboxStats,
   listFailedNotifications,
@@ -1000,6 +1001,43 @@ adminRouter.post(
       params: { kind: row.kind, channel: row.channel }
     });
     response.json({ notification: row });
+  })
+);
+
+// Throw a dead notification away. The retention sweep keeps failed rows
+// indefinitely on purpose, so without this the "needs attention" count can
+// never reach zero — and Retry is useless for a row that can never send: an
+// expired verification code, or anything queued for a provider we no longer
+// use. Deletion rather than a status change, because there is no "dismissed"
+// state and inventing one would leave the same rows in the same list.
+adminRouter.post(
+  "/api/admin/notifications/:id/discard",
+  adminActionLimiter,
+  asyncHandler(async (request, response) => {
+    const id = request.params.id!;
+    const row = await discardFailedNotification(id);
+    if (!row) {
+      throw new AppError(
+        409,
+        "NOTIFICATION_NOT_DISCARDABLE",
+        "That notification either doesn't exist or isn't in a failed state. Only a failed message can be discarded — one still queued may yet send."
+      );
+    }
+    // The row is gone, so the audit entry is the only remaining record of what
+    // was thrown away. Keep enough of it to answer "what did we not send?".
+    await audit(request, "notification_discard", {
+      restaurantId: row.restaurant_id,
+      target: id,
+      params: {
+        kind: row.kind,
+        channel: row.channel,
+        recipient: row.recipient,
+        attempts: row.attempts,
+        last_error: row.last_error?.slice(0, 200) ?? null,
+        created_at: row.created_at
+      }
+    });
+    response.json({ discarded: { id, kind: row.kind, recipient: row.recipient } });
   })
 );
 
