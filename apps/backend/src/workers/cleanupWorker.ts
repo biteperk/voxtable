@@ -27,7 +27,7 @@ import { registerTickExpectation } from "../utils/tickPulse";
 import { purgeOpsStateByPrefix } from "../repositories/opsState";
 import { purgeStaleKdsHeartbeats } from "../services/kdsHeartbeats";
 import { purgeStaleRetellAuthBuckets } from "../services/retellAuthHealth";
-import { cancelAbandonedOnboarding } from "../repositories/restaurants";
+import { cancelAbandonedOnboarding, suspendVenuesPastDueBeyond } from "../repositories/restaurants";
 
 const TICK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
 const INITIAL_DELAY_MS = 60 * 60 * 1000;     // 1h after boot
@@ -111,6 +111,23 @@ async function tick(): Promise<void> {
       logger.warn({ evt: "cleanup_worker_phase6_skipped", error });
     }
 
+    // Phase 6b: pause venues unpaid past the grace window (migration 047). A
+    // live venue whose card failed and stayed unpaid for >3 days is suspended —
+    // Bella stops (retellService checks onboarding_status), the owner is
+    // redirected to billing, and it reverses automatically when Stripe reports
+    // the payment. Isolated so a failure here never skips the phases around it.
+    const BILLING_GRACE_DAYS = 3;
+    let billingSuspended = 0;
+    try {
+      const paused = await suspendVenuesPastDueBeyond(BILLING_GRACE_DAYS);
+      billingSuspended = paused.length;
+      if (paused.length > 0) {
+        logger.warn({ evt: "billing_swept_to_suspended", count: paused.length, restaurant_ids: paused });
+      }
+    } catch (error) {
+      logger.warn({ evt: "cleanup_worker_phase6b_skipped", error });
+    }
+
     // Phase 7: ops_state hygiene (migration 028). Heartbeats and auth-failure
     // buckets only mean anything fresh; quota mirrors age out after two
     // months. Guarded like phase 5 so a pre-028 database stays harmless.
@@ -178,6 +195,7 @@ async function tick(): Promise<void> {
       inbox_deleted: inbox.rows[0]?.deleted ?? 0,
       notifications_deleted: notificationsDeleted,
       abandoned_cancelled: abandonedCancelled,
+      billing_suspended: billingSuspended,
       ops_state_purged: opsStatePurged
     });
   } catch (error) {

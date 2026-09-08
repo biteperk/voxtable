@@ -1,6 +1,6 @@
 {
   "name": "voxtable",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "private": true,
   "description": "Voice AI booking platform for restaurants.",
   "workspaces": [
@@ -49,6 +49,7 @@
     "smoke:business-alerts": "npm run smoke:business-alerts --workspace=@voxtable/backend",
     "smoke:voice-kill-switch": "npm run smoke:voice-kill-switch --workspace=@voxtable/backend",
     "smoke:voice-pause": "npm run smoke:voice-pause --workspace=@voxtable/backend",
+    "smoke:billing-pause": "npm run smoke:billing-pause --workspace=@voxtable/backend",
     "smoke:notification-lease": "npm run smoke:notification-lease --workspace=@voxtable/backend",
     "smoke:booking-sms": "npm run smoke:booking-sms --workspace=@voxtable/backend",
     "smoke:identity-collision": "npm run smoke:identity-collision --workspace=@voxtable/backend",
