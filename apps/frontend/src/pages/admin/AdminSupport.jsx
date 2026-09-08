@@ -7,12 +7,14 @@ import {
   getAdminSupportRequests
 } from "../../api";
 import { AdminAction } from "../../components/admin/AdminAction";
+import { RefreshControl } from "../../components/admin/RefreshControl";
 import { Badge } from "../../components/admin/Badge";
 import { EmptyState } from "../../components/admin/EmptyState";
 import { SectionCard } from "../../components/admin/SectionCard";
 import { SkeletonLines } from "../../components/admin/Skeleton";
 import { useToast } from "../../components/admin/Toast";
 import { Icon } from "../../components/Icon";
+import { useAdminData } from "../../hooks/useAdminData";
 import { relativeTime } from "../../lib/format";
 
 const STATUS_FLOW = {
@@ -38,30 +40,29 @@ const STATUS_TONE = {
 
 export function AdminSupport({ goVenues }) {
   const [statusFilter, setStatusFilter] = useState("");
-  const [requests, setRequests] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
-  const [error, setError] = useState(null);
   const toast = useToast();
 
-  const refresh = useCallback(async () => {
-    try {
-      const result = await getAdminSupportRequests(statusFilter || undefined);
-      const list = result.support_requests ?? [];
-      setRequests(list);
-      // Keep a thread open across a refresh; otherwise resolving a request
-      // closes the pane you were reading.
-      setSelectedId((current) =>
-        current && list.some((r) => r.id === current) ? current : (list[0]?.id ?? null)
-      );
-      setError(null);
-    } catch (e) {
-      setError(e.message ?? "Couldn't load the support inbox");
-    }
-  }, [statusFilter]);
+  const {
+    data: requests,
+    error,
+    lastUpdatedAt,
+    refreshing,
+    announcement,
+    refresh
+  } = useAdminData(() => getAdminSupportRequests(statusFilter || undefined).then((r) => r.support_requests ?? []), {
+    deps: [statusFilter]
+  });
 
+  // Keep a thread open across a refresh; otherwise resolving a request closes
+  // the pane you were reading. Derived from the list rather than written during
+  // the fetch, so a stale response cannot move the selection.
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!requests) return;
+    setSelectedId((current) =>
+      current && requests.some((r) => r.id === current) ? current : (requests[0]?.id ?? null)
+    );
+  }, [requests]);
 
   const openCount = (requests ?? []).filter((r) => r.status === "open").length;
 
@@ -81,9 +82,12 @@ export function AdminSupport({ goVenues }) {
         }
         subtitle="A venue asked us something. Answering it is a reply, not a status change."
         actions={
-          <AdminAction onAct={refresh} icon="refresh">
-            Refresh
-          </AdminAction>
+          <RefreshControl
+            lastUpdatedAt={lastUpdatedAt}
+            refreshing={refreshing}
+            announcement={announcement}
+            onRefresh={refresh}
+          />
         }
       >
         <div className="adm-toolbar">
@@ -102,8 +106,9 @@ export function AdminSupport({ goVenues }) {
         </div>
 
         {error ? (
-          <div className="menu-error" role="alert">
-            {error}
+          <div className="adm-stale-notice" role="status">
+            <Icon name="cloud_off" />
+            <span>Couldn&apos;t refresh the inbox. {error}</span>
           </div>
         ) : null}
 

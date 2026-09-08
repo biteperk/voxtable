@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { getAdminRestaurants } from "../../api";
 import { AdminAction } from "../../components/admin/AdminAction";
+import { RefreshControl } from "../../components/admin/RefreshControl";
 import { SectionCard } from "../../components/admin/SectionCard";
 import { Icon } from "../../components/Icon";
+import { useAdminData } from "../../hooks/useAdminData";
+import { relativeTime } from "../../lib/format";
 import { VenueDrawer } from "./venues/VenueDrawer";
 import { VenuesTable } from "./venues/VenuesTable";
 
@@ -41,30 +44,30 @@ export function AdminVenues() {
     q: ""
   });
   const [offset, setOffset] = useState(0);
-  const [page, setPage] = useState(null);
-  const [error, setError] = useState(null);
   const [openVenue, setOpenVenue] = useState(
     initial.venue ? { id: initial.venue, name: "This venue" } : null
   );
 
-  const refresh = useCallback(async () => {
-    try {
-      const result = await getAdminRestaurants({
+  // `deps` is the refetch-on-filter contract: the fetcher itself is held in a
+  // ref inside the hook, so it needs no useCallback and a keystroke cannot
+  // restart anything but the request it should.
+  const {
+    data: page,
+    error,
+    lastUpdatedAt,
+    refreshing,
+    announcement,
+    refresh
+  } = useAdminData(
+    () =>
+      getAdminRestaurants({
         status: filter.status || undefined,
         q: filter.q || undefined,
         limit: PAGE_SIZE,
         offset
-      });
-      setPage(result);
-      setError(null);
-    } catch (e) {
-      setError(e.message ?? "Couldn't load the venues");
-    }
-  }, [filter, offset]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+      }),
+    { deps: [filter.status, filter.q, offset] }
+  );
 
   // A venue arriving by deep link has no name until the list resolves it, and
   // the drawer's heading should not read "This venue" once we know better.
@@ -107,9 +110,12 @@ export function AdminVenues() {
             : "Loading…"
         }
         actions={
-          <AdminAction onAct={refresh} icon="refresh">
-            Refresh
-          </AdminAction>
+          <RefreshControl
+            lastUpdatedAt={lastUpdatedAt}
+            refreshing={refreshing}
+            announcement={announcement}
+            onRefresh={refresh}
+          />
         }
       >
         <div className="adm-toolbar">
@@ -142,8 +148,12 @@ export function AdminVenues() {
         </div>
 
         {error ? (
-          <div className="menu-error" role="alert">
-            {error}
+          <div className="adm-stale-notice" role="status">
+            <Icon name="cloud_off" />
+            <span>
+              Couldn&apos;t refresh — showing the last good data from{" "}
+              {lastUpdatedAt ? relativeTime(new Date(lastUpdatedAt)).toLowerCase() : "earlier"}. {error}
+            </span>
           </div>
         ) : null}
 

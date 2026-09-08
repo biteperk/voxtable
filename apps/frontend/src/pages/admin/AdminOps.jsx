@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   adminDiscardNotification,
@@ -7,6 +7,7 @@ import {
   getAdminOpsSummary
 } from "../../api";
 import { AdminAction } from "../../components/admin/AdminAction";
+import { RefreshControl } from "../../components/admin/RefreshControl";
 import { Badge } from "../../components/admin/Badge";
 import { DataTable } from "../../components/admin/DataTable";
 import { EmptyState } from "../../components/admin/EmptyState";
@@ -14,6 +15,9 @@ import { SectionCard } from "../../components/admin/SectionCard";
 import { SkeletonLines } from "../../components/admin/Skeleton";
 import { StatTile } from "../../components/admin/StatTile";
 import { useToast } from "../../components/admin/Toast";
+import { Icon } from "../../components/Icon";
+import { useAdminData } from "../../hooks/useAdminData";
+import { shouldBlockPage } from "../../lib/adminRefresh";
 import { relativeTime } from "../../lib/format";
 
 const STRIPE_DISPUTES_URL = "https://dashboard.stripe.com/disputes";
@@ -37,34 +41,20 @@ function Row({ label, children }) {
 }
 
 export function AdminOps({ flags }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
   const toast = useToast();
 
-  const refresh = useCallback(async () => {
-    try {
-      setData(await getAdminOpsSummary());
-      setError(null);
-    } catch (e) {
-      setError(e.message ?? "Failed to load");
-    }
-  }, []);
+  const { data, error, lastUpdatedAt, refreshing, announcement, refresh } = useAdminData(
+    () => getAdminOpsSummary(),
+    { intervalMs: 30000 }
+  );
 
-  useEffect(() => {
-    refresh();
-    const timer = setInterval(() => {
-      if (!document.hidden) refresh();
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [refresh]);
-
-  if (error) {
+  if (shouldBlockPage({ data, error })) {
     return (
       <div className="admin-stack">
         <SectionCard title="Couldn't load platform health" tone="danger" icon="error">
           <p className="admin-muted">{error}</p>
-          <AdminAction onAct={refresh} icon="refresh">
+          <AdminAction onAct={refresh} icon="refresh" busy={refreshing} busyLabel="Retrying…">
             Try again
           </AdminAction>
         </SectionCard>
@@ -172,6 +162,15 @@ export function AdminOps({ flags }) {
 
   return (
     <div className="admin-stack">
+      {error ? (
+        <div className="adm-stale-notice" role="status">
+          <Icon name="cloud_off" />
+          <span>
+            Couldn&apos;t refresh — showing the last good data from{" "}
+            {lastUpdatedAt ? relativeTime(new Date(lastUpdatedAt)).toLowerCase() : "earlier"}. {error}
+          </span>
+        </div>
+      ) : null}
       <section className="adm-stat-grid" aria-label="Platform health at a glance">
         <StatTile
           label="Cal.com mirror"
@@ -212,6 +211,14 @@ export function AdminOps({ flags }) {
         }
         icon="sync"
         badge={health(calcomHealth)}
+        actions={
+          <RefreshControl
+            lastUpdatedAt={lastUpdatedAt}
+            refreshing={refreshing}
+            announcement={announcement}
+            onRefresh={refresh}
+          />
+        }
       >
         <div className="adm-kv-grid">
           <Row label="Outbox pending">
