@@ -151,7 +151,7 @@ export function AdminPage({ navigate, path }) {
         ) : null}
         {active === "Venues" ? <AdminVenues /> : null}
         {active === "Provisioning" ? <AdminJobs goVenues={goVenues} /> : null}
-        {active === "Ops" ? <AdminOps /> : null}
+        {active === "Ops" ? <AdminOps flags={flags} /> : null}
         {active === "Support" ? <AdminSupport goVenues={goVenues} /> : null}
       </main>
     </div>

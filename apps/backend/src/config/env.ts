@@ -339,7 +339,14 @@ const envSchema = z
   // Which transactional-email API the notification worker speaks. "zeptomail"
   // is Zoho's transactional service (AU data centre by default) — used for the
   // branded verification-code emails; "sendgrid" is the original path.
-  EMAIL_PROVIDER: z.enum(["sendgrid", "zeptomail"]).default("sendgrid"),
+  // "none" means email is deliberately OFF, not misconfigured: sign-up
+  // verification rides Firebase Auth's native link (apps/frontend/src/firebase.js),
+  // and nothing else in the product is worth a transactional provider today.
+  // It is a value rather than a flag because there is no env-only way to switch
+  // email off otherwise — dropping a credential trips the boot gate below, and
+  // NOTIFICATIONS_ENABLED=false would take SMS down with it and block every SMS
+  // feature flag from ever being turned on.
+  EMAIL_PROVIDER: z.enum(["sendgrid", "zeptomail", "none"]).default("sendgrid"),
   ZEPTOMAIL_TOKEN: z.string().optional(),
   ZEPTOMAIL_BASE_URL: z.string().url().default("https://api.zeptomail.com.au/v1.1"),
 
@@ -791,6 +798,19 @@ const envSchema = z
         "NOTIFICATIONS_ENABLED must be true when EMAIL_VERIFICATION_CODE_ENABLED=true " +
           "(verification codes are delivered via the notifications outbox)."
       );
+      // And an outbox with no email provider is the same dead end by another
+      // route. Production ran for days with this flag on and no working sender,
+      // which queued codes nobody could receive and left them in the admin's
+      // "needs attention" list forever. Fail the boot instead.
+      if (value.EMAIL_PROVIDER === "none") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["EMAIL_VERIFICATION_CODE_ENABLED"],
+          message:
+            "EMAIL_VERIFICATION_CODE_ENABLED=true needs an email provider, but EMAIL_PROVIDER=none. " +
+            "Sign-up verification goes through Firebase's native link, so this flag should be false."
+        });
+      }
     }
 
     if (value.PROVISIONING_AUTO_ENABLED && !value.RETELL_TEMPLATE_AGENT_ID) {

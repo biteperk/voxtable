@@ -90,6 +90,16 @@ async function sendViaZeptoMail(row: NotificationRow): Promise<void> {
 }
 
 async function sendEmail(row: NotificationRow): Promise<void> {
+  // Unreachable in normal operation — enabledChannels() never claims email rows
+  // when the provider is "none". It exists so a row claimed by an older
+  // revision mid-deploy fails FAST and permanently rather than falling through
+  // to SendGrid with no key and burning all five attempts on a 401. Same shape
+  // as sendSms's "not configured" guard below.
+  if (env.EMAIL_PROVIDER === "none") {
+    const err = new Error("Email is switched off in this environment (EMAIL_PROVIDER=none)");
+    (err as Error & { transient?: boolean }).transient = false;
+    throw err;
+  }
   if (env.EMAIL_PROVIDER === "zeptomail") return sendViaZeptoMail(row);
   return sendViaSendGrid(row);
 }

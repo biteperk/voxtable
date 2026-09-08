@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { adminRerunMenuImport, adminRetryNotification, getAdminOpsSummary } from "../../api";
+import {
+  adminDiscardNotification,
+  adminRerunMenuImport,
+  adminRetryNotification,
+  getAdminOpsSummary
+} from "../../api";
 import { AdminAction } from "../../components/admin/AdminAction";
 import { Badge } from "../../components/admin/Badge";
 import { DataTable } from "../../components/admin/DataTable";
@@ -31,7 +36,7 @@ function Row({ label, children }) {
   );
 }
 
-export function AdminOps() {
+export function AdminOps({ flags }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -126,6 +131,27 @@ export function AdminOps() {
       await refresh();
     } catch (e) {
       toast.error(e.message ?? "That retry didn't go through.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Retrying an email with no provider configured is theatre — the row would
+  // be claimed by nothing and sit pending. The button says so instead.
+  const emailOff = flags?.flags?.notifications_email === false;
+  const retryBlocked = (row) =>
+    row.channel === "email" && emailOff
+      ? "Email is switched off in this environment, so a retry would sit unsent. Discard it instead."
+      : null;
+
+  const discardNotification = async (id) => {
+    setBusy(`discard-${id}`);
+    try {
+      await adminDiscardNotification(id);
+      toast.success("Discarded — it will not be sent, and the audit log records what it was.");
+      await refresh();
+    } catch (e) {
+      toast.error(e.message ?? "That discard didn't go through.");
     } finally {
       setBusy(null);
     }
@@ -253,13 +279,25 @@ export function AdminOps() {
               key: "act",
               label: "",
               render: (row) => (
-                <AdminAction
-                  onAct={() => retryNotification(row.id)}
-                  busy={busy === `notif-${row.id}`}
-                  icon="replay"
-                >
-                  Retry
-                </AdminAction>
+                <div className="adm-row-actions">
+                  <AdminAction
+                    onAct={() => retryNotification(row.id)}
+                    busy={busy === `notif-${row.id}`}
+                    blocked={retryBlocked(row)}
+                    icon="replay"
+                  >
+                    Retry
+                  </AdminAction>
+                  <AdminAction
+                    onAct={() => discardNotification(row.id)}
+                    busy={busy === `discard-${row.id}`}
+                    tone="danger"
+                    icon="delete"
+                    busyLabel="Discarding…"
+                  >
+                    Discard
+                  </AdminAction>
+                </div>
               )
             }
           ]}

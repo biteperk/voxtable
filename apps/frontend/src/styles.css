@@ -14701,7 +14701,10 @@ html.lp-js-ready .lp-reveal:not(.lp-in) {
 }
 .admin-main {
   padding: clamp(16px, 3vw, 28px) clamp(16px, 4vw, 32px);
-  max-width: 1180px;
+  /* 1180px is a reading width, and this is an operations console: seven columns
+     of venue state had ~1068px to live in after the card padding, on any screen,
+     so the Venues table was clipped even on a 2000px display. */
+  max-width: 1600px;
   width: 100%;
   margin: 0 auto;
 }
@@ -15169,7 +15172,12 @@ button.adm-stat:hover {
 }
 .adm-table {
   width: 100%;
-  border-collapse: collapse;
+  /* `separate`, not `collapse`, so the frozen first column keeps its borders:
+     collapsed borders belong to the TABLE and scroll away from a sticky cell.
+     Visually identical here because every border is already declared on the
+     cells below and the outer frame belongs to .adm-table-wrap. */
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: var(--adm-fs-body);
 }
 .adm-table caption {
@@ -15197,6 +15205,33 @@ button.adm-stat:hover {
 }
 .adm-table tbody tr:last-child td {
   border-bottom: 0;
+}
+/* ---- The frozen identifying column -------------------------------------
+   A wide table that scrolls sideways is fine; one that scrolls the venue NAME
+   out of view is not — the rows stop being identifiable. Same approach as the
+   live-tables axis (.lt-table-label), including the detail that a sticky cell
+   needs its own opaque background or scrolled content shows through it. */
+.adm-table th:first-child,
+.adm-table td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--adm-surface);
+}
+/* The header cell is sticky on BOTH axes (it is already top: 0), so it has to
+   sit above the other sticky cells rather than beside them. */
+.adm-table th:first-child {
+  z-index: 3;
+  background: var(--surface-container-high);
+}
+.adm-table td:first-child {
+  z-index: 1;
+}
+/* The row hover is a TRANSLUCENT tint on the <tr>, which an opaque sticky cell
+   would sit on top of — leaving the frozen column as the one cell that never
+   highlights, on the one table whose rows are clickable. Pre-mix the same tint
+   over the surface instead. */
+.adm-table tbody tr.is-clickable:hover td:first-child {
+  background: color-mix(in srgb, var(--primary) 6%, var(--adm-surface));
 }
 .adm-table-sort {
   display: inline-flex;
@@ -15496,6 +15531,14 @@ button.adm-stat:hover {
   color: var(--adm-text);
 }
 
+/* Two actions in one table cell — Retry beside Discard — without the buttons
+   colliding on a narrow column. */
+.adm-row-actions {
+  display: flex;
+  gap: var(--adm-space-2);
+  flex-wrap: wrap;
+}
+
 /* ---- Toolbar, pager, venue cells ---------------------------------------- */
 .adm-toolbar {
   display: flex;
@@ -15524,10 +15567,15 @@ button.adm-stat:hover {
 .adm-venue-cell {
   display: grid;
   gap: 2px;
+  /* A contact email has no break opportunities, so without this it sets the
+     first column's floor single-handedly. */
+  overflow-wrap: anywhere;
 }
+/* Deliberately allowed to wrap. `nowrap` pinned this column's minimum width at
+   the full "hours · 10 tables · 414 menu items" string, which was the single
+   widest natural-language cell in the venues table. */
 .adm-setup-cell {
   font-size: var(--adm-fs-small);
-  white-space: nowrap;
 }
 
 /* ---- Drawer — the venue detail, beside the list instead of inside it ----- */

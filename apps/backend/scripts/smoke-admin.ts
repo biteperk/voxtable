@@ -11,7 +11,10 @@
  *   5. recordAdminAction lands a row carrying actor + params.
  *   6. Support requests: list reads the inbox, status transitions stamp and
  *      clear resolved_at correctly.
- *   7. Support replies (migration 046): the thread reads oldest-first, an
+ *   7. discardFailedNotification removes a FAILED notification and refuses any
+ *      other state, so the admin's "needs attention" count can reach zero
+ *      without a row still in flight being thrown away.
+ *   8. Support replies (migration 046): the thread reads oldest-first, an
  *      internal note is never mistaken for a sent reply, the reply count the
  *      inbox shows matches the thread, and deleting a request takes its thread
  *      with it rather than orphaning correspondence.
@@ -23,6 +26,7 @@
  * Usage:  tsx apps/backend/scripts/smoke-admin.ts   (needs a migrated DB)
  */
 import { pool } from "../src/db/pool";
+import { discardFailedNotification } from "../src/repositories/notifications";
 import { recordAdminAction } from "../src/repositories/adminActions";
 import {
   addSupportReply,
@@ -183,7 +187,48 @@ async function main(): Promise<void> {
     const missing = await setSupportRequestStatus("00000000-0000-0000-0000-000000000000", "closed", client);
     assert("unknown support request returns null", missing === null);
 
-    // --- 7: support replies (migration 046) ---------------------------------
+    // --- 7: discarding a dead notification ----------------------------------
+    // discardFailedNotification hardcodes `pool`, so it cannot join this
+    // transaction — these two rows are created and removed OUTSIDE it and are
+    // cleaned up explicitly below. Everything else here still rolls back.
+    const deadRow = await pool.query<{ id: string }>(
+      `INSERT INTO notifications_outbox (restaurant_id, channel, recipient, kind, subject, body, status, last_error)
+       VALUES (NULL, 'email', 'smoke-discard@example.com', 'smoke_dead', 's', 'b', 'failed', 'ZeptoMail 429: credit exhausted')
+       RETURNING id`
+    );
+    const deadId = deadRow.rows[0]!.id;
+    const liveRow = await pool.query<{ id: string }>(
+      `INSERT INTO notifications_outbox (restaurant_id, channel, recipient, kind, subject, body, status)
+       VALUES (NULL, 'email', 'smoke-live@example.com', 'smoke_live', 's', 'b', 'pending')
+       RETURNING id`
+    );
+    const liveId = liveRow.rows[0]!.id;
+
+    try {
+      const discarded = await discardFailedNotification(deadId);
+      assert("discarding a failed notification returns the row it removed", discarded?.id === deadId);
+      assert(
+        "the discarded row carries what was thrown away, for the audit entry",
+        discarded?.recipient === "smoke-discard@example.com" && discarded?.kind === "smoke_dead"
+      );
+
+      const gone = await pool.query("SELECT 1 FROM notifications_outbox WHERE id = $1", [deadId]);
+      assert("the row is really gone, so the failed count can reach zero", gone.rowCount === 0);
+
+      const again = await discardFailedNotification(deadId);
+      assert("discarding the same row twice returns null rather than lying", again === null);
+
+      // The guard that matters: a message still queued may yet send, so it must
+      // never be removable by this path.
+      const refused = await discardFailedNotification(liveId);
+      assert("a pending notification is refused", refused === null);
+      const stillThere = await pool.query("SELECT status FROM notifications_outbox WHERE id = $1", [liveId]);
+      assert("and it is untouched", stillThere.rows[0]?.status === "pending");
+    } finally {
+      await pool.query("DELETE FROM notifications_outbox WHERE id = ANY($1::uuid[])", [[deadId, liveId]]);
+    }
+
+    // --- 8: support replies (migration 046) ---------------------------------
     const emailed = await addSupportReply(
       {
         supportRequestId: supportId,
